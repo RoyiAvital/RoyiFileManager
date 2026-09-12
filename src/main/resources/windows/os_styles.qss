@@ -1,0 +1,90 @@
+QHeaderView::section {
+	/*
+	 * Would just like padding-top = padding-bottom = 1ex here but for some
+	 * reason it does not center vertically.
+	 */
+	padding: .75ex 2ex 1.25ex;
+}
+
+QTableView::item {
+	padding-top: .5ex;
+	padding-bottom: .5ex;
+}
+
+QInputDialog QLineEdit {
+	min-width: 15em;
+}
+
+QPushButton {
+	padding: 1ex 6ex;
+}
+
+Quicksearch #query-container {
+	margin: .6ex;
+	border-width: .2ex;
+}
+
+Quicksearch #query-container > Div {
+	border-width: .2ex;
+}
+
+Quicksearch QLineEdit {
+	border-width: .2ex;
+}
+
+Quicksearch #items-container {
+	margin-bottom: .8ex;
+}
+
+Quicksearch QListView {
+	min-width: 150ex;
+	margin-left: .8ex;
+	margin-right: .8ex;
+}
+
+QStatusBar {
+	min-height: 6ex;
+}
+
+SplashScreen QPushButton {
+	max-width: 3em;
+}
+
+Overlay {
+	max-width: 25em;
+	padding: 5ex 5ex 3ex;
+}
+
+QMenu {
+	background-color: white;
+	border: 1px solid #a0a0a0;
+	padding: 2px;
+	font-family: "Segoe UI";
+	color: black;
+}
+
+QMenu::item {
+	padding: 1.5ex 5ex 1.5ex 10ex;
+	margin-top: .5ex;
+	margin-bottom: .5ex;
+	min-width: 40ex;
+}
+
+QMenu::item:selected {
+	background-color: #e5e5e5;
+}
+
+QMenu::separator {
+	height: 1px;
+	background: #bfbfbf;
+	margin-left: 10ex;
+}
+
+FilterBar {
+	min-height: 5ex;
+	padding: .25em;
+}
+
+FilterBar QLineEdit {
+	margin: 0;
+}

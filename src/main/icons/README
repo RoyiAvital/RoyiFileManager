@@ -1,0 +1,15 @@
+As of Jan 2017:
+ * Windows uses Icon.ico
+ * Mac uses icons/base + icons/mac
+ * Linux (Ubuntu) uses icons/base + icons/linux.
+
+The difference between the icons on Mac and the other platforms is that on Mac,
+they contain a ~10% transparent margin. This is because otherwise they look too
+big (eg. in the Dock or in the app switcher).
+
+The icons on Mac were created from the .ai files submitted by the designer, via
+"Slices" in Sketch.
+
+Icon.ico was created from the .png files submitted by the designer with [1].
+
+[1]: http://icoconvert.com/Multi_Image_to_one_icon/

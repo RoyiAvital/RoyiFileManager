@@ -1,0 +1,8 @@
+{
+	"app_name": "RoyiFileManager",
+	"version": "0.1.0",
+	"author": "Royi",
+	"description": "A portable, extensible dual-pane file manager for Windows based on fman.",
+	"main_module": "src/main/python/fman/main.py",
+	"freeze_dir": "target/${app_name}"
+}

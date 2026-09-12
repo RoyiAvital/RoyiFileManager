@@ -1,0 +1,5 @@
+{
+	"environment": "${environment}",
+	"version": "${version}",
+	"server_url": "${server_url}"
+}

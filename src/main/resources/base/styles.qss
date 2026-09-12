@@ -1,0 +1,247 @@
+QTableView, QMessageBox, QDialog, QListView {
+	background-color: #272822;
+	border: none;
+}
+
+QHeaderView, QHeaderView::section {
+	background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1, stop: 0 #363731, stop: 1 #272822);
+}
+
+QHeaderView::section {
+	color: #8f908a;
+	border: none;
+	padding: 1ex;
+	border-style: solid;
+	border-left-width: 1px;
+	border-left-color: #272822;
+	border-right-color: #363731;
+	border-right-width: 1px;
+}
+
+QTableView::item {
+	color: #75715e;
+	padding-top: 1px;
+	padding-bottom: 1px;
+}
+
+/*
+ * Hack: Unlike QTreeView::item, QTableView::item has no :first and :last
+ * selectors. To work around this, our backend sets State_Children and
+ * State_Open, which we can catch here as :has-children and :open, respectively.
+ */
+QTableView::item:has-children {
+	color: white;
+	padding-left: 0.25em;
+	/* The padding directive has no effect unless we specify a background: */
+	background: transparent;
+}
+QTableView::item:open {
+	padding-right: 0.25em;
+}
+
+QTableView::item:selected {
+	color: #f92672;
+	/* Avoid the ugly default blue background color for selected cells: */
+	background-color: #272822;
+}
+
+QTableView::item:focus {
+	background-color: #49483e;
+}
+
+QTableView #editor {
+	/*
+	 * The Qt "editor" when renaming a file. It's a QLineEdit, which has a
+	 * border (see below). On Windows, this border shifts the file name down so
+	 * much that underscores "_" are obscured. Prevent this:
+	 */
+	border-top: none;
+	border-bottom: none;
+}
+
+QLabel, QRadioButton, QCheckBox {
+	color: #8f908a;
+}
+
+QMessageBox QLabel {
+	font-weight: normal;
+}
+
+QLineEdit {
+	color: white;
+	background-color: #303030;
+	border: 1px solid #363731;
+	border-left-color: #272822;
+	border-top-color: #272822;
+}
+
+QDialog#shortcuts-dialog {
+	background-color: #272822;
+}
+
+QDialog#shortcuts-dialog QLabel#shortcuts-title {
+	color: #f8f8f2;
+	font-size: 18px;
+	font-weight: bold;
+}
+
+QDialog#shortcuts-dialog QLabel#shortcuts-description {
+	color: #a6a79f;
+}
+
+QDialog#shortcuts-dialog QLineEdit {
+	padding: 8px;
+	border: 1px solid #55564f;
+}
+
+QDialog#shortcuts-dialog QTabWidget::pane {
+	border: 1px solid #45463f;
+	top: -1px;
+}
+
+QDialog#shortcuts-dialog QTabBar::tab {
+	color: #a6a79f;
+	background-color: #20211d;
+	border: 1px solid #45463f;
+	padding: 8px 16px;
+}
+
+QDialog#shortcuts-dialog QTabBar::tab:selected {
+	color: #f8f8f2;
+	background-color: #34352f;
+	border-bottom-color: #34352f;
+}
+
+QTreeWidget#shortcuts-tree {
+	color: #e8e8e2;
+	background-color: #20211d;
+	alternate-background-color: #292a25;
+	border: none;
+	outline: none;
+}
+
+QTreeWidget#shortcuts-tree::item {
+	padding: 6px 8px;
+}
+
+QTreeWidget#shortcuts-tree::item:selected {
+	color: white;
+	background-color: #49483e;
+}
+
+Prompt QLineEdit {
+	min-width: 20em;
+}
+
+Quicksearch {
+	background-color: #404040;
+}
+
+Quicksearch #query-container {
+	/*
+	 * The sole purpose of this Div is to draw an extra border at the bottom.
+	 */
+	padding: 0;
+	margin: 3px;
+	border: 1px solid #404040;
+	border-bottom-color: #8e8e8e;
+}
+
+Quicksearch #query-container > Div {
+	padding: 0;
+	border: 1px solid #2c2c2c;
+}
+
+Quicksearch QLineEdit {
+	color: #1d1d1d;
+	background-color: #e6e6e6;
+	border: 1px solid #dddddd;
+	border-top-color: #aeaeae;
+	border-left-color: #c9c9c9;
+	border-right-color: #d0d0d0;
+}
+
+Quicksearch #items-container {
+	margin-bottom: 4px;
+}
+
+Quicksearch QListView {
+	min-width: 40em;
+	background-color: #404040;
+	margin-left: 4px;
+	margin-right: 4px;
+}
+
+Quicksearch QListView::item:selected {
+	background-color: #575757;
+}
+
+QLineEdit:read-only {
+	color: #9a9a9a;
+}
+
+QStatusBar {
+	background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1, stop: 0 #5b5b5b, stop: 1 #545454);
+	border-top: 1px solid #7d7d7d;
+}
+
+QStatusBar, QStatusBar QLabel {
+	color: white;
+}
+
+QStatusBar QLabel {
+	padding-left: .1ex;
+}
+
+SplashScreen QPushButton {
+	max-width: 4em;
+}
+
+Overlay {
+	min-width: 20em;
+	max-width: 22em;
+	background-color: #272822;
+	border: 1px solid #7d7d7d;
+}
+
+Overlay QPushButton {
+	max-width: 10em;
+}
+
+FilterBar {
+	background-color: #272822;
+	border: 1px solid #7d7d7d;
+	min-width: 8em;
+}
+
+FilterBar QLineEdit {
+	font-size: 9pt;
+	width: 7em;
+	margin: 0 .25em;
+}
+
+NonexistentShortcutDialog {
+	min-width: 15em;
+}
+
+NonexistentShortcutDialog QRadioButton {
+	margin-left: 1em;
+}
+
+NonexistentShortcutDialog QLineEdit {
+	margin-left: 2.25em;
+	margin-right: 1em;
+}
+
+QRadioButton::checked {
+	color: white;
+}
+
+ProgressDialog {
+	min-width: 25em;
+	/*
+	 * Make max-width at least a little wider than min-width.
+	 * Otherwise, there sometimes seem to be visual artifacts.
+	 */
+	max-width: 30em;
+}
