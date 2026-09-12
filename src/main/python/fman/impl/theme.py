@@ -8,6 +8,10 @@ class Theme:
 		'*': '*',
 		'th': 'QTableView QHeaderView::section',
 		'.statusbar': 'QStatusBar, QStatusBar QLabel',
+		'.statusbar-pane': 'PaneStatusWidget, PaneStatusWidget QLabel',
+		'.statusbar-pane[active="true"]':
+			'PaneStatusWidget[active="true"], '
+			'PaneStatusWidget[active="true"] QLabel',
 		'.quicksearch-query': 'Quicksearch QLineEdit',
 		'.quicksearch-item': 'Quicksearch QListView::item',
 		'.locationbar': 'LocationBar:read-only'

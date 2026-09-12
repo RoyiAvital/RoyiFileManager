@@ -7,16 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
+
+### Added
+
+- Added the bundled `SearchFileFuzzy` plug-in with configurable fuzzy or regular
+  current-folder and recursive file search.
+- Added an optional extended status bar for the active pane or both panes,
+  toggled with `Ctrl+S`.
+- Added a `Sync Pane Location` Command Center command that navigates the
+  inactive pane to the active pane's current folder.
+
+### Changed
+
+- Task provenance records now distinguish the acting agent from the underlying
+  model, with each acting contributor supplying its own metadata.
+
 ## [0.1.0] - 2026-09-12
 
-`RoyiFileManager` is based on [fman 1.7.5](https://github.com/mherrmann/fman).
+`RoyiFileManager` is based on [fman `1.7.5`](https://github.com/mherrmann/fman).
+
+API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
 
 ### Added
 
 - Windows only portable distribution with settings stored in `UserSettings`
   beside the executable.
 - Conda environment and lock file workflow for reproducible builds.
-- PyInstaller-based portable ZIP packaging.
+- PyInstaller based portable ZIP packaging.
 - Automatic retrieval of the official 7-Zip command line executable required
   for archive operations.
 - Windows compatible tests that do not require symbolic link privileges.

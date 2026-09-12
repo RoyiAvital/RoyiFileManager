@@ -193,6 +193,15 @@ QStatusBar QLabel {
 	padding-left: .1ex;
 }
 
+PaneStatusWidget {
+	background-color: #545454;
+	border-top: 1px solid #7d7d7d;
+}
+
+PaneStatusWidget[active="true"] {
+	background-color: #676767;
+}
+
 SplashScreen QPushButton {
 	max-width: 4em;
 }

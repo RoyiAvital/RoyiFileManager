@@ -1,0 +1,4 @@
+[
+	{ "keys": ["Ctrl+F"], "command": "search_files_in_current_folder" },
+	{ "keys": ["Ctrl+Shift+F"], "command": "search_files_recursively" }
+]

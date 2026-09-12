@@ -1027,6 +1027,8 @@ class InitHiddenFilesFilter(DirectoryPaneListener):
 		# lazily.
 		if not _is_showing_hidden_files(self.pane):
 			_toggle_hidden_files(self.pane, False)
+		else:
+			self.pane._set_hidden_files_shown(True)
 
 def _is_showing_hidden_files(pane):
 	return _get_pane_info(pane)['show_hidden_files']
@@ -1046,6 +1048,7 @@ def _toggle_hidden_files(pane, value):
 	# one when fman was last closed. But this does not reflect the fact that we
 	# are now showing hidden files. So we flush Panes.json immediately to disk:
 	save_json('Panes.json')
+	pane._set_hidden_files_shown(value)
 	# When we toggle hidden files again, this avoids an error caused by
 	# `_remove_filter` being called for a non-active filter.
 
@@ -1710,6 +1713,13 @@ class SwitchPanes(DirectoryPaneCommand):
 		else:
 			pane = self.pane.window.get_panes()[pane_index]
 		pane.focus()
+
+class SyncPaneLocation(DirectoryPaneCommand):
+	def __call__(self):
+		opposite_pane = _get_opposite_pane(self.pane)
+		if opposite_pane is self.pane:
+			raise NotImplementedError()
+		opposite_pane.set_path(self.pane.get_path())
 
 class SortByColumn(DirectoryPaneCommand):
 

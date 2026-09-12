@@ -15,6 +15,14 @@ th {
 	font-size: 8pt;
 }
 
+.statusbar-pane {
+	font-size: 8pt;
+}
+
+.statusbar-pane[active="true"] {
+	background-color: #676767;
+}
+
 .quicksearch-query, .quicksearch-item-title {
 	font-size: 10pt;
 }

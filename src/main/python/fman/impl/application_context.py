@@ -81,6 +81,7 @@ class DevelopmentApplicationContext(ApplicationContext):
 		_ = self.main_window
 		for plugin_dir in plugin_dirs:
 			self.plugin_support.load_plugin(plugin_dir)
+		self.builtin_plugin.initialize_status_bar()
 		self.theme.enable_updates()
 	@property
 	def fman_version(self):
@@ -194,7 +195,7 @@ class DevelopmentApplicationContext(ApplicationContext):
 	def builtin_plugin(self):
 		return BuiltinPlugin(
 			self.tour_controller, self.tutorial_factory,
-			self.cleanupguide_factory, self.plugin_error_handler,
+			self.cleanupguide_factory, self.config, self.plugin_error_handler,
 			self.application_command_registry, self.pane_command_registry,
 			self.key_bindings, self.mother_fs, self.window
 		)

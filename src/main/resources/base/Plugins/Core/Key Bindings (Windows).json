@@ -6,6 +6,7 @@
 	{ "keys": ["Ctrl+X"], "command": "cut" },
 	{ "keys": ["Ctrl+V"], "command": "paste" },
 	{ "keys": ["Ctrl+A"], "command": "select_all" },
+	{ "keys": ["Ctrl+S"], "command": "toggle_extended_status_bar" },
 	{ "keys": ["Ctrl+D"], "command": "deselect" },
 	{ "keys": ["Ctrl+."], "command": "toggle_hidden_files" },
 	{ "keys": ["Ctrl+P"], "command": "go_to" },

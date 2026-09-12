@@ -1,4 +1,5 @@
 from core.commands import History, Move, ResetWindowGeometry, \
+	SyncPaneLocation, \
 	_from_human_readable, \
 	get_dest_suggestion, _find_extension_start, _get_shortcuts_for_command
 from core.tests import StubUI
@@ -24,6 +25,36 @@ class ResetWindowGeometryTest(TestCase):
 			ResetWindowGeometry(window)()
 
 		session_manager.reset_window_geometry.assert_called_once_with(window)
+
+class SyncPaneLocationTest(TestCase):
+	def test_syncs_opposite_pane_to_active_path(self):
+		left_pane = Mock()
+		right_pane = Mock()
+		left_pane.window.get_panes.return_value = [left_pane, right_pane]
+		left_pane.get_path.return_value = 'file://C:/source'
+
+		SyncPaneLocation(left_pane)()
+
+		right_pane.set_path.assert_called_once_with('file://C:/source')
+		left_pane.set_path.assert_not_called()
+	def test_syncs_left_pane_when_right_is_active(self):
+		left_pane = Mock()
+		right_pane = Mock()
+		right_pane.window.get_panes.return_value = [left_pane, right_pane]
+		right_pane.get_path.return_value = 'file://C:/source'
+
+		SyncPaneLocation(right_pane)()
+
+		left_pane.set_path.assert_called_once_with('file://C:/source')
+		right_pane.set_path.assert_not_called()
+	def test_requires_an_opposite_pane(self):
+		pane = Mock()
+		pane.window.get_panes.return_value = [pane]
+
+		with self.assertRaises(NotImplementedError):
+			SyncPaneLocation(pane)()
+
+		pane.set_path.assert_not_called()
 
 class FindExtensionStartTest(TestCase):
 	def test_no_extension(self):

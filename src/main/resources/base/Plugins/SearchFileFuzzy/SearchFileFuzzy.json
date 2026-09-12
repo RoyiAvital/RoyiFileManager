@@ -1,0 +1,6 @@
+{
+	"mode": "fuzzy",
+	"max_recursive_entries": 50000,
+	"max_results": 100,
+	"include_hidden": true
+}

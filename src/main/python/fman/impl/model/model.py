@@ -4,6 +4,7 @@ from fman.impl.model.record_files import RecordFiles
 from fman.impl.model.sorted_table import SortFilterTableModel
 from fman.impl.model.table import Cell, Row
 from fman.impl.model.worker import Worker
+from fman.impl.status_bar import StatusEntry
 from fman.impl.util.qt import EditRole
 from fman.impl.util.qt.thread import run_in_main_thread, is_in_main_thread
 from fman.url import join, dirname
@@ -50,6 +51,7 @@ class Model(SortFilterTableModel, DragAndDrop):
 	"""
 
 	location_loaded = pyqtSignal(str)
+	all_rows_loaded = pyqtSignal()
 	file_renamed = pyqtSignal(str, str)
 	location_disappeared = pyqtSignal(str)
 
@@ -346,6 +348,13 @@ class Model(SortFilterTableModel, DragAndDrop):
 		return self.index(rownum, 0)
 	def get_rows(self):
 		return self._files.values()
+	def get_status_entries(self, selected_urls):
+		return tuple(
+			StatusEntry(
+				row.url, row.is_dir, row.is_loaded, row.url in selected_urls
+			)
+			for row in self._rows
+		)
 	def get_sort_value(self, row, column, ascending):
 		cell = row.cells[column]
 		result = cell.sort_value_asc if ascending else cell.sort_value_desc
@@ -410,7 +419,9 @@ class Model(SortFilterTableModel, DragAndDrop):
 		else:
 			all_loaded = True
 		self._record_files(files, disappeared)
-		if not all_loaded:
+		if all_loaded:
+			self.all_rows_loaded.emit()
+		else:
 			self._load_remaining_files()
 	def shutdown(self):
 		if self._shutdown:

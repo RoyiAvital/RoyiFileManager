@@ -101,6 +101,8 @@ class DirectoryPane:
 		self._widget.add_filter(filter_)
 	def _remove_filter(self, filter_):
 		self._widget.remove_filter(filter_)
+	def _set_hidden_files_shown(self, value):
+		self._widget.set_hidden_files_shown(value)
 
 	def get_selected_files(self):
 		return self._widget.get_selected_files()
@@ -176,6 +178,8 @@ class Window:
 		self._widget.minimize()
 	def reset_geometry(self, width, height):
 		self._widget.reset_geometry(width, height)
+	def set_extended_status_bar(self, settings):
+		self._widget.set_extended_status_bar(settings)
 	def add_pane(self):
 		pane_widget = self._widget.add_pane()
 		pane = DirectoryPane(self, pane_widget, self._panecmd_registry)

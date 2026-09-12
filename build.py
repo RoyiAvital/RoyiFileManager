@@ -85,7 +85,9 @@ def _environment():
 		ROOT / 'src' / 'main' / 'python',
 		ROOT / 'src' / 'unittest' / 'python',
 		ROOT / 'src' / 'integrationtest' / 'python',
-		ROOT / 'src' / 'main' / 'resources' / 'base' / 'Plugins' / 'Core'
+		ROOT / 'src' / 'main' / 'resources' / 'base' / 'Plugins' / 'Core',
+		ROOT / 'src' / 'main' / 'resources' / 'base' / 'Plugins' /
+		'SearchFileFuzzy'
 	]
 	existing = environment.get('PYTHONPATH')
 	if existing:
@@ -108,6 +110,9 @@ def test():
 	_ensure_7za()
 	environment = _environment()
 	environment.setdefault('QT_QPA_PLATFORM', 'offscreen')
+	windows_fonts = Path(environment.get('WINDIR', r'C:\Windows')) / 'Fonts'
+	if windows_fonts.is_dir():
+		environment.setdefault('QT_QPA_FONTDIR', str(windows_fonts))
 	test_directories = [
 		ROOT / 'src' / 'unittest' / 'python',
 		ROOT / 'src' / 'integrationtest' / 'python',

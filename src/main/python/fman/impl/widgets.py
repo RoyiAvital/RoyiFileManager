@@ -2,6 +2,9 @@ from fbs_runtime.platform import is_windows, is_mac
 from fman import OK
 from fman.impl.model import SortedFileSystemModel
 from fman.impl.quicksearch import Quicksearch
+from fman.impl.status_bar import ACTIVE_PANE, DISABLED, PER_PANE, \
+	PaneStatusSnapshot, PaneStatusWidget, StatusCalculationService, \
+	set_size_divisor
 from fman.impl.util.qt import disable_window_animations_mac, Key_Escape, \
 	NoFocus, Key_Backspace, DisplayRole
 from fman.impl.util.qt.thread import run_in_main_thread
@@ -44,6 +47,7 @@ class DirectoryPaneWidget(QWidget):
 
 	location_changed = pyqtSignal(QWidget)
 	location_bar_clicked = pyqtSignal(QWidget)
+	status_changed = pyqtSignal()
 
 	def __init__(self, fs, null_location, parent, controller):
 		super().__init__(parent)
@@ -67,6 +71,9 @@ class DirectoryPaneWidget(QWidget):
 			lambda: self.location_bar_clicked.emit(self)
 		)
 		self._filter_bar = FilterBar(self, self._model, self._file_view)
+		self._hidden_files_shown = False
+		self._status_widget = None
+		self._status_tracking = False
 	def resizeEvent(self, e):
 		super().resizeEvent(e)
 		self._filter_bar.reposition()
@@ -133,6 +140,46 @@ class DirectoryPaneWidget(QWidget):
 	@run_in_main_thread
 	def remove_filter(self, filter_):
 		self._model.remove_filter(filter_)
+	def set_hidden_files_shown(self, value):
+		self._hidden_files_shown = value
+		self.status_changed.emit()
+	@property
+	def hidden_files_shown(self):
+		return self._hidden_files_shown
+	def get_status_snapshot(self):
+		selected_urls = set(self.get_selected_files())
+		entries = self._model.get_status_entries(selected_urls)
+		return PaneStatusSnapshot(
+			self._model.get_location(), entries,
+			all(entry.is_loaded for entry in entries),
+			self._hidden_files_shown
+		)
+	def set_status_widget(self, widget):
+		if self._status_widget is not None:
+			self.layout().removeWidget(self._status_widget)
+		self._status_widget = widget
+		if widget is not None:
+			self.layout().addWidget(widget)
+	def enable_status_tracking(self):
+		if self._status_tracking:
+			return
+		self._status_tracking = True
+		self._file_view.selectionModel().selectionChanged.connect(
+			self._on_status_changed
+		)
+		self._model.transaction_ended.connect(self._on_status_changed)
+		self._model.all_rows_loaded.connect(self._on_status_changed)
+	def disable_status_tracking(self):
+		if not self._status_tracking:
+			return
+		self._status_tracking = False
+		self._file_view.selectionModel().selectionChanged.disconnect(
+			self._on_status_changed
+		)
+		self._model.transaction_ended.disconnect(self._on_status_changed)
+		self._model.all_rows_loaded.disconnect(self._on_status_changed)
+	def _on_status_changed(self, *_):
+		self.status_changed.emit()
 	@property
 	def window(self):
 		return self.parentWidget().parentWidget()
@@ -186,6 +233,7 @@ class DirectoryPaneWidget(QWidget):
 	def _on_location_changed(self, url):
 		self._filter_bar.close()
 		self._location_bar.setText(as_human_readable(url))
+		self.status_changed.emit()
 	def _on_location_loaded(self, url):
 		if not self.get_file_under_cursor():
 			self.move_cursor_home()
@@ -280,12 +328,18 @@ class MainWindow(QMainWindow):
 		self._fs = fs
 		self._null_location = null_location
 		self._panes = []
+		self._active_pane = None
+		self._extended_status_mode = DISABLED
+		self._status_service = None
+		self._single_pane_status = None
+		self._pane_status_widgets = {}
+		self._status_focus_tracking = False
 		self._splitter = Splitter(self)
 		self.setCentralWidget(self._splitter)
 		self._status_bar = QStatusBar(self)
 		self._status_bar_text = QLabel(self._status_bar)
 		self._status_bar_text.setOpenExternalLinks(True)
-		self._status_bar.addWidget(self._status_bar_text)
+		self._status_bar.addWidget(self._status_bar_text, 1)
 		self._status_bar.setSizeGripEnabled(False)
 		self.setStatusBar(self._status_bar)
 		self._timer = QTimer(self)
@@ -400,7 +454,77 @@ class MainWindow(QMainWindow):
 		)
 		self._panes.append(result)
 		self._splitter.addWidget(result)
+		if self._active_pane is None:
+			self._set_active_pane(result)
+		if self._extended_status_mode == PER_PANE:
+			self._add_pane_status(result)
+		elif self._extended_status_mode == ACTIVE_PANE:
+			self._single_pane_status.bind(self._active_pane)
 		return result
+	@run_in_main_thread
+	def set_extended_status_bar(self, settings):
+		self._clear_extended_status_bar()
+		self._status_settings = settings
+		set_size_divisor(settings['size_divisor'])
+		self._extended_status_mode = settings['mode']
+		if self._extended_status_mode == DISABLED:
+			return
+		self._app.focusChanged.connect(self._on_focus_changed)
+		self._status_focus_tracking = True
+		self._on_focus_changed(None, self._app.focusWidget())
+		self._status_service = StatusCalculationService(self._fs, self)
+		if self._extended_status_mode == ACTIVE_PANE:
+			widget = PaneStatusWidget(
+				self._status_service, settings['max_entries'],
+				settings['size_divisor'], False, self._status_bar
+			)
+			self._single_pane_status = widget
+			self._status_bar.addPermanentWidget(widget)
+			widget.bind(self._active_pane)
+		else:
+			for pane in self._panes:
+				self._add_pane_status(pane)
+	def _add_pane_status(self, pane):
+		widget = PaneStatusWidget(
+			self._status_service,  self._status_settings['max_entries'],
+			self._status_settings['size_divisor'], True, pane
+		)
+		widget.bind(pane)
+		widget.set_active(pane is self._active_pane)
+		pane.set_status_widget(widget)
+		self._pane_status_widgets[pane] = widget
+	def _clear_extended_status_bar(self):
+		if self._status_focus_tracking:
+			self._app.focusChanged.disconnect(self._on_focus_changed)
+			self._status_focus_tracking = False
+		if self._single_pane_status is not None:
+			self._single_pane_status.deactivate()
+			self._status_bar.removeWidget(self._single_pane_status)
+			self._single_pane_status.deleteLater()
+			self._single_pane_status = None
+		for pane, widget in self._pane_status_widgets.items():
+			widget.deactivate()
+			pane.set_status_widget(None)
+			widget.deleteLater()
+		self._pane_status_widgets.clear()
+		if self._status_service is not None:
+			self._status_service.shutdown()
+			self._status_service = None
+	def _on_focus_changed(self, _old, new):
+		if new is None:
+			return
+		for pane in self._panes:
+			if pane is new or pane.isAncestorOf(new):
+				self._set_active_pane(pane)
+				return
+	def _set_active_pane(self, pane):
+		if pane is self._active_pane:
+			return
+		self._active_pane = pane
+		if self._single_pane_status is not None:
+			self._single_pane_status.bind(pane)
+		for candidate, widget in self._pane_status_widgets.items():
+			widget.set_active(candidate is pane)
 	def get_panes(self):
 		return self._panes
 	@run_in_main_thread
@@ -417,6 +541,7 @@ class MainWindow(QMainWindow):
 		# placed correctly over the center of the window.
 		QTimer(self).singleShot(50, self.shown.emit)
 	def closeEvent(self, _):
+		self._clear_extended_status_bar()
 		self.closed.emit()
 	@run_in_main_thread
 	def show_overlay(self, overlay):
