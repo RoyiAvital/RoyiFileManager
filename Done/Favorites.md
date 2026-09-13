@@ -121,8 +121,8 @@ Commands (`DirectoryPaneCommand` so `self.pane` is the active pane):
 - `RemoveFromFavorites` (`remove_from_favorites`, alias
   `Remove from favorites`): if the active pane's location is a favorite,
   removes it after a `YES | NO` confirmation; otherwise opens the same
-  Quicksearch with the prompt `Remove favorite:` and removes the chosen
-  entry. Command Center only.
+  Quicksearch and removes the chosen entry. The Quicksearch API has no custom
+  prompt or caption. Command Center only.
 - `RenameFavorite` (`rename_favorite`, alias `Rename favorite`): Quicksearch
   to pick, then `show_prompt` with the current name preselected. Cancel and
   blank or whitespace-only names make no change. Command Center only.
@@ -292,3 +292,161 @@ missing location without navigating or raising a traceback.
 - Outcome: Revised persistence, concurrency, stale-location handling,
   Quicksearch highlighting, URL identity, packaging, shortcut ownership, and
   test coverage; approved the plan for implementation with those corrections.
+
+## Implementer
+
+### 2026_09_13 - GitHub Copilot
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: GPT-5.6 Sol
+- Effort: High
+- Context window: Not exposed by host
+- Outcome: Implemented the bundled Favorites plug-in, persistent store, four
+  commands, `Ctrl+B` binding, concurrency protection, documentation, and tests.
+
+### 2026_09_13 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Claude Fable 5.1
+- Effort: High
+- Context Window: 1M
+- Outcome: Approved with follow-ups. The implementation matches the revised
+  design: pure store with defensive copies, `RLock`-guarded
+  load-mutate-save transactions, no dialogs under the lock, snapshot-based
+  Quicksearch, selected-item-only existence check, and case-insensitive
+  Windows `file://` identity. Unit and integration suites (21 tests) re-run
+  and pass; store and matcher edge cases probed manually (drive root, trailing
+  slash, case-folded duplicate, non-file schemes) behave as specified. The
+  items below are quality and documentation fixes; none changes behavior the
+  acceptance criteria depend on.
+
+#### Follow Up Tasks
+
+Code (`favorites/__init__.py`):
+
+- [x] `_find_favorite` rebuilds a `FavoritesStore` from the snapshot on every
+      call (`FavoritesStore.load({...})`) only to reuse `find`. Expose a
+      module-level `FavoritesStore.key(url, windows)` (or keep a `keys` map
+      alongside the snapshot) and compare directly; it runs after every
+  Quicksearch selection and in `RemoveFromFavorites` on the current path.
+  `FavoritesStore.key` now provides direct identity comparison.
+- [x] `get_favorite_items` lower-cases `query` and `name` before calling the
+      matchers, but `path_starts_with`/`basename_starts_with` already lower
+      both sides internally while `contains_substring`/`contains_chars` do
+      not. The result is correct, but the double handling is confusing; either
+      lower once and document that the matcher chain is mixed, or lower only
+      inside a small adapter. Add a test with a mixed-case query
+  (`D:\Pro`) so the intent is pinned. Case folding now lives in one adapter.
+- [x] `_report_invalid_entries` is called from every command and shows the
+      status message on each invocation as long as the invalid entries
+      remain, since the file is not rewritten until the next mutation. Show
+      it once per session (module flag) or rewrite the cleaned list on the
+  first mutation only, as designed, and note that the message repeats.
+  A lock-protected module flag now limits the message to once per session.
+- [x] `AddCurrentFolderToFavorites` reads `store.favorites[0].name` after
+      `store.add(url)`. That is correct today because `add` always moves the
+      entry to index 0, but the coupling is implicit; have `add` return the
+      resulting `Favorite` (it currently returns the *evicted* entry or
+      `None`, which reads as a success flag) and use two clearly named return
+  values or a small result tuple. `AddResult(favorite, evicted)` now makes
+  both outcomes explicit.
+- [x] `ShowFavorites.__call__(self, query='')` accepts a `query` argument but
+      the alias/README do not mention that key bindings can pre-fill it.
+  The plug-in README now documents a custom binding example.
+- [x] Optional: `ShowFavorites` calls `exists(url)` on the command thread for
+      UNC `file://` URLs too. The design deliberately moved the probe to the
+      selected item only, so a stalled network path now blocks a single
+  `Enter` rather than the dialog; this is now documented in the plug-in
+  README.
+
+Code (`favorites/store.py`):
+
+- [x] `load` silently truncates at `max_favorites` (`break`) without counting
+      the dropped entries in `invalid_count`, so a user who lowers
+      `max_favorites` loses favorites on the next save with no message. Count
+  them or keep them in memory and only evict on `add`. Excess valid entries
+  are now counted and included in the once-per-session warning.
+- [x] `_key` calls `splitscheme` on every comparison; `add`/`find` are O(n)
+      with a `splitscheme` per entry. Fine at 200 entries, but a cached key
+      on `Favorite` (three-field namedtuple) would remove the repeated
+  parsing and simplify `_find_favorite` above. A parallel private key list
+  preserves the two-field `Favorite` API while avoiding repeated parsing.
+- [x] `_default_name` for `file:///C:` returns `C:\` via
+      `path.lstrip('/') + '\\'`; `as_human_readable` already produces this.
+  Executable validation showed `as_human_readable('file:///C:')` produces
+  `\C:` in this environment, so the suggestion was rejected. The simpler
+  verified `name + '\\'` expression preserves the required `C:\` label.
+
+Tests (`fman_unittest/test_favorites.py`):
+
+- [x] Add: mixed-case query matching (`D:\Pro`), `RenameFavorite` cancel path
+      (currently only blank name is covered), `RemoveFromFavorites` via
+      Quicksearch when the current location is *not* a favorite, and
+  `ShowFavorites` with an `OSError` from `exists` (alert, no navigation).
+- [x] The concurrency test (`test_concurrent_adds_preserve_both_updates`)
+      should also cover add + remove interleaving, which is the case the
+  "post-dialog revalidation" design point protects. A threaded add during
+  remove confirmation verifies both updates are preserved.
+- [x] Add a test that `load` reports entries beyond `max_favorites`.
+
+Documentation:
+
+- [x] Plug-in README lists `Remove from Favorites`/`Rename Favorite` but not
+      the `Favorites (Windows).json` location, the `max_favorites` setting,
+      or that re-adding moves an entry to the top. Add a short Settings
+  section mirroring `SearchFileFuzzy/README.md`.
+- [x] Main README's one-line Favorites summary now states that unavailable
+  locations are reported instead of navigated.
+- [x] Validation Results: `python build.py test` was skipped and manual
+      checks were not run. Run the full suite before the next release and
+      perform the two manual checks listed under Tests (zip favorite across
+  restart; deleted folder reports without traceback). These remain pending
+  release validation; the full suite is not run automatically under the
+  repository's focused-validation policy.
+
+## Validation Results
+
+- `python -X faulthandler -u -m unittest fman_unittest.test_favorites` passed:
+  20 tests covering storage, validation, matching, commands, stale locations,
+  limits, registration, and concurrent updates.
+- `python -X faulthandler -u -m unittest
+  fman_integrationtest.impl.plugins.test_favorites_plugin` passed: 1 integration
+  test covering plug-in loading, four registered commands, `Ctrl+B`, merged
+  defaults, and the Windows user-settings destination.
+- Workspace diagnostics reported no errors in the implementation, tests, or
+  documentation.
+- `git diff --check` passed for all Favorites-related changes.
+- `python build.py test` was requested but skipped by the user, so the complete
+  repository suite was not rerun.
+- Manual application checks were not run.
+
+## Follow-up Validation Results
+
+- `python -X faulthandler -u -m unittest fman_unittest.test_favorites` passed:
+  26 tests covering the original behavior plus all requested matcher, command,
+  warning, capacity, return-contract, and concurrency regressions.
+- `python -X faulthandler -u -m unittest
+  fman_integrationtest.impl.plugins.test_favorites_plugin` passed: 1 test
+  covering plug-in loading, commands, binding, defaults, and settings writes.
+- Diagnostics reported no errors in the Favorites implementation, tests, or
+  documentation. `git diff --check` passed.
+- Full-suite and manual zip/restart and deleted-folder checks remain pending
+  release validation, consistent with repository policy.
+
+## Implementer
+
+### 2026_09_13 - GitHub Copilot
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: Not exposed by host
+- Effort: High
+- Context window: Not exposed by host
+- Outcome: Addressed the Favorites review with cached identity keys, explicit
+  add results, once-per-session validation notices, excess-entry reporting,
+  clearer matching, expanded tests, and complete user documentation.

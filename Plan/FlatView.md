@@ -3,10 +3,11 @@
 ## Task
 
 Add a per pane *flat view* that lists every file below the current directory
-in one flat list, similar to Total Commander's "Branch View" (`Ctrl+B`). The
-view is toggled per pane with a `Toggle Flat View` command available from the
-Command Center and bindable as `toggle_flat_view`. Leaving the flat view
-returns to the normal listing of the same directory.
+in one flat list, similar to Total Commander's "Branch View". The view is
+toggled per pane with a `Toggle Flat View` command available from the Command
+Center and bindable as `toggle_flat_view`. It has no default shortcut because
+`Ctrl+B` is reserved for Favorites. Leaving the flat view returns to the normal
+listing of the same directory.
 
 ## User-visible behavior
 
@@ -110,6 +111,9 @@ is the common use).
   command architecture while preserving underlying `file://` identities.
 - Following junctions or symbolic links was rejected because it can create
   cycles and escape the selected tree.
+- Assigning Total Commander's `Ctrl+B` shortcut was rejected because Favorites
+  already owns that binding. Flat View remains available through the Command
+  Center and custom key bindings.
 
 ## Runtime Effects
 
@@ -155,10 +159,13 @@ Invalid values fall back to defaults.
 
 ## Tests
 
-Required final command from the repository root:
+Required focused commands from the repository root with the repository test
+`PYTHONPATH`:
 
 ```powershell
-python build.py test
+python -m unittest core.tests.fs.test_flat
+python -m unittest fman_unittest.test_search_file_fuzzy
+python -m unittest fman_integrationtest.impl.test_flat_view
 ```
 
 Unit tests (`core/tests/fs/test_flat.py`, temp directories):
@@ -182,6 +189,7 @@ archive entry inside the flat view, sort order remembered per scheme.
 ## Acceptance Criteria
 
 - Toggling is per pane, reversible, and restores the cursor sensibly.
+- Flat View has no default shortcut; `Ctrl+B` remains assigned to Favorites.
 - Archives never expand inside the flat view; they are single, openable
   entries.
 - Hidden-file state, sorting, columns, status bar, and file operations work
@@ -203,3 +211,14 @@ archive entry inside the flat view, sort order remembered per scheme.
 - Context window: Not exposed by host
 - Outcome: Initial `flat://` filesystem design created with bounded traversal
   and existing pane behavior reused.
+
+### 2026_09_13 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-5.6 Sol
+- Effort: Low
+- Context window: Not exposed by host
+- Outcome: Reserved `Ctrl+B` for Favorites, left Flat View without a default
+  shortcut, and replaced full-suite validation with focused test commands.

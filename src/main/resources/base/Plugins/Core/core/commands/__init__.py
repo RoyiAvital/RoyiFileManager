@@ -473,48 +473,88 @@ def _get_applications_directory():
 		return '/usr/bin'
 	raise NotImplementedError(PLATFORM)
 
+def _prompt_for_file(pane, caption):
+	file_under_cursor = pane.get_file_under_cursor()
+	default_name = ''
+	if file_under_cursor:
+		try:
+			file_is_dir = is_dir(file_under_cursor)
+		except OSError:
+			file_is_dir = False
+		if not file_is_dir:
+			default_name = basename(file_under_cursor)
+	selection_end = _find_extension_start(default_name)
+	file_name, ok = show_prompt(
+		caption, default_name, selection_end=selection_end
+	)
+	if ok and file_name:
+		return join(pane.get_path(), file_name)
+
+def _touch_file_if_missing(file_url, unsupported_message):
+	"""Return True if created, False if present, or None after an alert."""
+	if exists(file_url):
+		return False
+	try:
+		touch(file_url)
+	except PermissionError:
+		show_alert(
+			"You do not have enough permissions to create %s."
+			% as_human_readable(file_url)
+		)
+		return None
+	except NotImplementedError:
+		show_alert(unsupported_message)
+		return None
+	except OSError as error:
+		show_alert(
+			'Could not create %s: %s' % (
+				as_human_readable(file_url), error.strerror or str(error)
+			)
+		)
+		return None
+	return True
+
+def _place_cursor_at(pane, file_url):
+	try:
+		pane.place_cursor_at(file_url)
+	except ValueError:
+		# This can happen when the file is hidden. Eg .bashrc on Linux.
+		pass
+
+class NewEmptyFile(DirectoryPaneCommand):
+
+	aliases = ('New empty file', 'Create empty file', 'Touch')
+
+	def __call__(self):
+		file_url = _prompt_for_file(self.pane, 'Enter file name to create:')
+		if file_url is None:
+			return
+		if _touch_file_if_missing(
+			file_url, 'Sorry, creating a file is not supported here.'
+		):
+			_place_cursor_at(self.pane, file_url)
+	def is_visible(self):
+		scheme = splitscheme(self.pane.get_path())[0]
+		return _fs_implements(scheme, 'touch')
+
 class CreateAndEditFile(OpenWithEditor):
 
 	aliases = ('New file', 'Create file', 'Create and edit file')
 
 	def __call__(self, url=None):
-		file_under_cursor = self.pane.get_file_under_cursor()
-		default_name = ''
-		if file_under_cursor:
-			try:
-				file_is_dir = is_dir(file_under_cursor)
-			except OSError:
-				file_is_dir = False
-			if not file_is_dir:
-				default_name = basename(file_under_cursor)
-		selection_end = _find_extension_start(default_name)
-		file_name, ok = show_prompt(
-			'Enter file name to create/edit:', default_name,
-			selection_end=selection_end
+		file_to_edit = _prompt_for_file(
+			self.pane, 'Enter file name to create/edit:'
 		)
-		if ok and file_name:
-			file_to_edit = join(self.pane.get_path(), file_name)
-			if not exists(file_to_edit):
-				try:
-					touch(file_to_edit)
-				except PermissionError:
-					show_alert(
-						"You do not have enough permissions to create %s."
-						% as_human_readable(file_to_edit)
-					)
-					return
-				except NotImplementedError:
-					show_alert(
-						'Sorry, creating a file for editing is not supported '
-						'here.'
-					)
-					return
-			try:
-				self.pane.place_cursor_at(file_to_edit)
-			except ValueError:
-				# This can happen when the file is hidden. Eg .bashrc on Linux.
-				pass
-			super().__call__(file_to_edit)
+		if file_to_edit is None:
+			return
+		creation_result = _touch_file_if_missing(
+			file_to_edit,
+			'Sorry, creating a file for editing is not supported here.'
+		)
+		if creation_result is None:
+			return
+		_place_cursor_at(self.pane, file_to_edit)
+		super().__call__(file_to_edit)
 
 def _find_extension_start(file_name, start=0):
 	for dual_extension in ('.pkg.tar.xz', '.tar.xz', '.tar.gz'):
@@ -1715,11 +1755,22 @@ class SwitchPanes(DirectoryPaneCommand):
 		pane.focus()
 
 class SyncPaneLocation(DirectoryPaneCommand):
+	aliases = ('Sync Pane Location',)
+
 	def __call__(self):
+		if not self.is_visible():
+			show_status_message('No other pane to sync.', timeout_secs=3)
+			return
+		path = self.pane.get_path()
+		if path == 'null://':
+			show_status_message('No location to sync.', timeout_secs=3)
+			return
 		opposite_pane = _get_opposite_pane(self.pane)
-		if opposite_pane is self.pane:
-			raise NotImplementedError()
-		opposite_pane.set_path(self.pane.get_path())
+		if opposite_pane.get_path() != path:
+			opposite_pane.set_path(path)
+
+	def is_visible(self):
+		return len(self.pane.window.get_panes()) > 1
 
 class SortByColumn(DirectoryPaneCommand):
 

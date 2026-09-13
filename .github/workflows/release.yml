@@ -1,0 +1,177 @@
+name: Release
+
+# A release is produced only for annotated tags of the form vX.Y.Z (optionally
+# with a pre-release suffix such as v1.0.0-rc.1). Ordinary pushes never build a
+# release. `workflow_dispatch` runs the same build as a dry run and uploads the
+# ZIP as a workflow artifact without publishing anything.
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    outputs:
+      artifact-name: ${{ steps.version.outputs.artifact-name }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+      version: ${{ steps.version.outputs.version }}
+    env:
+      RELEASE_ENV: RoyiFileManager
+    steps:
+      - name: Check out
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: version
+        shell: pwsh
+        run: |
+          $settings = Get-Content src/build/settings/base.json -Raw | ConvertFrom-Json
+          $version = $settings.version
+          $identifier = '(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)'
+          $semverBody = "(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-$identifier(?:\.$identifier)*)?"
+          $semver = "^$semverBody`$"
+          if ($version -notmatch $semver) {
+            throw "Version '$version' in src/build/settings/base.json is not valid SemVer."
+          }
+          if ($env:GITHUB_REF_TYPE -eq 'tag') {
+            $tag = $env:GITHUB_REF_NAME
+            if ($tag -notmatch "^v$semverBody`$" -or $tag -cne "v$version") {
+              throw "Tag '$tag' does not exactly match SemVer version 'v$version'."
+            }
+            git fetch --force origin "refs/tags/${tag}:refs/tags/${tag}"
+            if ($LASTEXITCODE -ne 0) {
+              throw "Could not fetch tag '$tag' from origin."
+            }
+            if ((git cat-file -t "refs/tags/$tag") -ne 'tag') {
+              throw "Tag '$tag' must be annotated; lightweight tags cannot publish releases."
+            }
+            $prerelease = $tag -match '-'
+          } else {
+            $tag = "v$version"
+            $prerelease = $false
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "prerelease=$($prerelease.ToString().ToLower())" >> $env:GITHUB_OUTPUT
+          "artifact-name=RoyiFileManager-$version" >> $env:GITHUB_OUTPUT
+
+      - name: Extract release notes from CHANGELOG.md
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          # This helper is stdlib-only so it can fail before environment setup.
+          $arguments = @(
+            '.github/scripts/release_notes.py',
+            '--version', $env:RELEASE_VERSION,
+            '--output', 'target/release-notes.md'
+          )
+          if ($env:GITHUB_REF_TYPE -ne 'tag') {
+            $arguments += '--dry-run'
+          }
+          python @arguments
+          Get-Content target/release-notes.md
+
+      - name: Set up conda environment from lock file
+        uses: mamba-org/setup-micromamba@f457c30a868e4760d3a6fcea5f25dc655b8edf39 # v3.2.1
+        with:
+          environment-file: conda-lock.yml
+          environment-name: ${{ env.RELEASE_ENV }}
+          cache-environment: true
+          cache-environment-key: lock-${{ hashFiles('conda-lock.yml') }}
+
+      - name: Run tests
+        shell: pwsh
+        run: micromamba run -n $env:RELEASE_ENV python build.py test
+
+      - name: Freeze
+        shell: pwsh
+        run: micromamba run -n $env:RELEASE_ENV python build.py freeze
+
+      - name: Package
+        id: package
+        shell: pwsh
+        run: |
+          $output = @(micromamba run -n $env:RELEASE_ENV python build.py package)
+          if ($LASTEXITCODE -ne 0) {
+            throw "Package command failed with exit code $LASTEXITCODE."
+          }
+          $archive = $output | Select-Object -Last 1
+          if (-not (Test-Path $archive)) {
+            throw "Package did not produce '$archive'."
+          }
+          $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLower()
+          "$hash *$(Split-Path $archive -Leaf)" | Set-Content "$archive.sha256"
+          "archive=$archive" >> $env:GITHUB_OUTPUT
+
+      - name: Upload build artifact (dry run and audit trail)
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: ${{ steps.version.outputs.artifact-name }}
+          path: |
+            ${{ steps.package.outputs.archive }}
+            ${{ steps.package.outputs.archive }}.sha256
+            target/release-notes.md
+          if-no-files-found: error
+
+  publish:
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: windows-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ github.ref_name }}
+      RELEASE_VERSION: ${{ needs.build.outputs.version }}
+      RELEASE_PRERELEASE: ${{ needs.build.outputs.prerelease }}
+    steps:
+      - name: Download verified build artifact
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        with:
+          name: ${{ needs.build.outputs.artifact-name }}
+          path: target/release
+
+      - name: Publish immutable GitHub release
+        shell: pwsh
+        run: |
+          gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -eq 0) {
+            throw "Release '$env:RELEASE_TAG' already exists; refusing to replace it."
+          }
+          $archive = @(Get-ChildItem target/release -Filter '*.zip' -File)
+          $checksum = @(Get-ChildItem target/release -Filter '*.zip.sha256' -File)
+          if ($archive.Count -ne 1 -or $checksum.Count -ne 1) {
+            throw 'Expected exactly one ZIP and one SHA-256 file in the build artifact.'
+          }
+          $arguments = @(
+            'release', 'create', $env:RELEASE_TAG,
+            '--verify-tag',
+            '--repo', $env:GITHUB_REPOSITORY,
+            '--title', "RoyiFileManager $env:RELEASE_VERSION",
+            '--notes-file', 'target/release/release-notes.md',
+            $archive[0].FullName,
+            $checksum[0].FullName
+          )
+          if ($env:RELEASE_PRERELEASE -eq 'true') {
+            $arguments += '--prerelease'
+          }
+          gh @arguments
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to create release '$env:RELEASE_TAG'."
+          }

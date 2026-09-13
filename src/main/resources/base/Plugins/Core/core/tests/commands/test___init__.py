@@ -1,16 +1,247 @@
-from core.commands import History, Move, ResetWindowGeometry, \
+from core.commands import CreateAndEditFile, History, Move, NewEmptyFile, \
+	ResetWindowGeometry, \
 	SyncPaneLocation, \
 	_from_human_readable, \
 	get_dest_suggestion, _find_extension_start, _get_shortcuts_for_command
 from core.tests import StubUI
 from core.util import filenotfounderror
 from fman import OK, YES, NO, PLATFORM
+from fman.impl.plugins.plugin import _get_command_name
 from fman.url import join, as_human_readable, as_url, dirname
 from unittest import TestCase
-from unittest.mock import Mock, patch
+from unittest.mock import call, Mock, patch
 
+import json
 import os
 import os.path
+
+class NewEmptyFileTest(TestCase):
+	def test_has_command_center_identifier_and_aliases(self):
+		self.assertEqual('new_empty_file', _get_command_name(NewEmptyFile))
+		self.assertEqual(
+			('New empty file', 'Create empty file', 'Touch'),
+			NewEmptyFile.aliases
+		)
+	@patch('core.commands.touch')
+	@patch('core.commands.exists', return_value=False)
+	@patch('core.commands.show_prompt', return_value=('report.txt', True))
+	@patch('core.commands.OpenWithEditor.__call__')
+	def test_creates_file_and_places_cursor_without_editor(
+		self, open_mock, show_prompt_mock, exists_mock, touch_mock
+	):
+		pane = self._create_pane()
+
+		NewEmptyFile(pane)()
+
+		show_prompt_mock.assert_called_once_with(
+			'Enter file name to create:', '', selection_end=None
+		)
+		exists_mock.assert_called_once_with('file:///folder/report.txt')
+		touch_mock.assert_called_once_with('file:///folder/report.txt')
+		pane.place_cursor_at.assert_called_once_with(
+			'file:///folder/report.txt'
+		)
+		open_mock.assert_not_called()
+	@patch('core.commands.exists', return_value=True)
+	@patch('core.commands.is_dir', return_value=False)
+	@patch('core.commands.show_prompt', return_value=('', False))
+	def test_suggests_file_under_cursor_and_selects_stem(
+		self, show_prompt_mock, is_dir_mock, exists_mock
+	):
+		pane = self._create_pane()
+		pane.get_file_under_cursor.return_value = \
+			'file:///folder/source.tar.gz'
+
+		NewEmptyFile(pane)()
+
+		show_prompt_mock.assert_called_once_with(
+			'Enter file name to create:', 'source.tar.gz', selection_end=6
+		)
+	@patch('core.commands.is_dir', return_value=True)
+	@patch('core.commands.show_prompt', return_value=('', False))
+	def test_directory_under_cursor_is_not_suggested(
+		self, show_prompt_mock, is_dir_mock
+	):
+		pane = self._create_pane()
+		pane.get_file_under_cursor.return_value = 'file:///folder/subfolder'
+
+		NewEmptyFile(pane)()
+
+		show_prompt_mock.assert_called_once_with(
+			'Enter file name to create:', '', selection_end=None
+		)
+	@patch('core.commands.touch')
+	@patch('core.commands.exists', return_value=True)
+	@patch('core.commands.show_prompt', return_value=('existing.txt', True))
+	def test_existing_path_is_no_op(
+		self, show_prompt_mock, exists_mock, touch_mock
+	):
+		pane = self._create_pane()
+
+		NewEmptyFile(pane)()
+
+		exists_mock.assert_called_once_with('file:///folder/existing.txt')
+		touch_mock.assert_not_called()
+		pane.place_cursor_at.assert_not_called()
+	@patch('core.commands.exists')
+	@patch('core.commands.show_prompt', return_value=('', False))
+	def test_cancel_is_no_op(self, show_prompt_mock, exists_mock):
+		pane = self._create_pane()
+
+		NewEmptyFile(pane)()
+
+		exists_mock.assert_not_called()
+		pane.place_cursor_at.assert_not_called()
+	@patch('core.commands.exists')
+	@patch('core.commands.show_prompt', return_value=('', True))
+	def test_empty_name_is_no_op(self, show_prompt_mock, exists_mock):
+		pane = self._create_pane()
+
+		NewEmptyFile(pane)()
+
+		exists_mock.assert_not_called()
+		pane.place_cursor_at.assert_not_called()
+	@patch('core.commands.show_alert')
+	@patch('core.commands.touch', side_effect=PermissionError)
+	@patch('core.commands.exists', return_value=False)
+	@patch('core.commands.show_prompt', return_value=('blocked.txt', True))
+	def test_permission_error_is_reported(
+		self, show_prompt_mock, exists_mock, touch_mock, show_alert_mock
+	):
+		pane = self._create_pane()
+
+		NewEmptyFile(pane)()
+
+		self.assertIn(
+			'blocked.txt', show_alert_mock.call_args.args[0]
+		)
+		pane.place_cursor_at.assert_not_called()
+	@patch('core.commands.show_alert')
+	@patch('core.commands.touch', side_effect=NotImplementedError)
+	@patch('core.commands.exists', return_value=False)
+	@patch('core.commands.show_prompt', return_value=('unsupported.txt', True))
+	def test_unsupported_filesystem_is_reported(
+		self, show_prompt_mock, exists_mock, touch_mock, show_alert_mock
+	):
+		pane = self._create_pane()
+
+		NewEmptyFile(pane)()
+
+		show_alert_mock.assert_called_once_with(
+			'Sorry, creating a file is not supported here.'
+		)
+		pane.place_cursor_at.assert_not_called()
+	@patch('core.commands.show_alert')
+	@patch(
+		'core.commands.touch', side_effect=OSError(123, 'Invalid file name')
+	)
+	@patch('core.commands.exists', return_value=False)
+	@patch('core.commands.show_prompt', return_value=('a?b', True))
+	def test_other_os_error_is_reported(
+		self, show_prompt_mock, exists_mock, touch_mock, show_alert_mock
+	):
+		pane = self._create_pane()
+
+		NewEmptyFile(pane)()
+
+		message = show_alert_mock.call_args.args[0]
+		self.assertIn('a?b', message)
+		self.assertIn('Invalid file name', message)
+		pane.place_cursor_at.assert_not_called()
+	@patch('core.commands.touch')
+	@patch('core.commands.exists', return_value=False)
+	@patch('core.commands.show_prompt', return_value=('hidden.txt', True))
+	def test_hidden_file_cursor_failure_is_ignored(
+		self, show_prompt_mock, exists_mock, touch_mock
+	):
+		pane = self._create_pane()
+		pane.place_cursor_at.side_effect = ValueError
+
+		NewEmptyFile(pane)()
+
+		touch_mock.assert_called_once_with('file:///folder/hidden.txt')
+	def test_ctrl_n_binding(self):
+		bindings_path = os.path.abspath(os.path.join(
+			os.path.dirname(__file__), '..', '..', '..', 'Key Bindings.json'
+		))
+		with open(bindings_path, encoding='utf-8') as bindings_file:
+			bindings = json.load(bindings_file)
+		self.assertIn(
+			{'keys': ['Ctrl+N'], 'command': 'new_empty_file'}, bindings
+		)
+	@patch('core.commands._fs_implements')
+	def test_visibility_requires_touch_support(self, fs_implements_mock):
+		pane = self._create_pane()
+		fs_implements_mock.side_effect = [True, False]
+		command = NewEmptyFile(pane)
+
+		self.assertTrue(command.is_visible())
+		self.assertFalse(command.is_visible())
+		self.assertEqual(
+			[call('file://', 'touch'), call('file://', 'touch')],
+			fs_implements_mock.call_args_list
+		)
+
+	@staticmethod
+	def _create_pane():
+		pane = Mock()
+		pane.get_file_under_cursor.return_value = None
+		pane.get_path.return_value = 'file:///folder'
+		return pane
+
+class CreateAndEditFileTest(TestCase):
+	@patch('core.commands.OpenWithEditor.__call__')
+	@patch('core.commands.show_alert')
+	@patch('core.commands.touch', side_effect=OSError(2, 'Folder vanished'))
+	@patch('core.commands.exists', return_value=False)
+	@patch('core.commands.show_prompt', return_value=('new.txt', True))
+	def test_os_error_is_reported_without_opening_editor(
+		self, show_prompt_mock, exists_mock, touch_mock, show_alert_mock,
+		open_mock
+	):
+		pane = Mock()
+		pane.get_file_under_cursor.return_value = None
+		pane.get_path.return_value = 'file:///folder'
+
+		CreateAndEditFile(pane)()
+
+		self.assertIn('Folder vanished', show_alert_mock.call_args.args[0])
+		pane.place_cursor_at.assert_not_called()
+		open_mock.assert_not_called()
+	@patch('core.commands.OpenWithEditor.__call__')
+	@patch('core.commands.touch')
+	@patch('core.commands.exists', return_value=False)
+	@patch('core.commands.show_prompt', return_value=('new.txt', True))
+	def test_new_file_is_created_selected_and_opened(
+		self, show_prompt_mock, exists_mock, touch_mock, open_mock
+	):
+		pane = Mock()
+		pane.get_file_under_cursor.return_value = None
+		pane.get_path.return_value = 'file:///folder'
+
+		CreateAndEditFile(pane)()
+
+		touch_mock.assert_called_once_with('file:///folder/new.txt')
+		pane.place_cursor_at.assert_called_once_with('file:///folder/new.txt')
+		open_mock.assert_called_once_with('file:///folder/new.txt')
+	@patch('core.commands.OpenWithEditor.__call__')
+	@patch('core.commands.touch')
+	@patch('core.commands.exists', return_value=True)
+	@patch('core.commands.show_prompt', return_value=('existing.txt', True))
+	def test_existing_file_is_selected_and_opened_without_touch(
+		self, show_prompt_mock, exists_mock, touch_mock, open_mock
+	):
+		pane = Mock()
+		pane.get_file_under_cursor.return_value = None
+		pane.get_path.return_value = 'file:///folder'
+
+		CreateAndEditFile(pane)()
+
+		touch_mock.assert_not_called()
+		pane.place_cursor_at.assert_called_once_with(
+			'file:///folder/existing.txt'
+		)
+		open_mock.assert_called_once_with('file:///folder/existing.txt')
 
 class ResetWindowGeometryTest(TestCase):
 	def test_resets_active_session_window(self):
@@ -27,34 +258,81 @@ class ResetWindowGeometryTest(TestCase):
 		session_manager.reset_window_geometry.assert_called_once_with(window)
 
 class SyncPaneLocationTest(TestCase):
+	def test_has_command_center_identifier_and_alias(self):
+		self.assertEqual(
+			'sync_pane_location', _get_command_name(SyncPaneLocation)
+		)
+		self.assertEqual(('Sync Pane Location',), SyncPaneLocation.aliases)
 	def test_syncs_opposite_pane_to_active_path(self):
 		left_pane = Mock()
 		right_pane = Mock()
 		left_pane.window.get_panes.return_value = [left_pane, right_pane]
-		left_pane.get_path.return_value = 'file://C:/source'
+		left_pane.get_path.return_value = 'file:///C:/source'
+		right_pane.get_path.return_value = 'file:///D:/target'
 
 		SyncPaneLocation(left_pane)()
 
-		right_pane.set_path.assert_called_once_with('file://C:/source')
+		right_pane.set_path.assert_called_once_with('file:///C:/source')
 		left_pane.set_path.assert_not_called()
+		left_pane.focus.assert_not_called()
+		right_pane.focus.assert_not_called()
 	def test_syncs_left_pane_when_right_is_active(self):
 		left_pane = Mock()
 		right_pane = Mock()
 		right_pane.window.get_panes.return_value = [left_pane, right_pane]
-		right_pane.get_path.return_value = 'file://C:/source'
+		right_pane.get_path.return_value = 'file:///C:/source'
+		left_pane.get_path.return_value = 'file:///D:/target'
 
 		SyncPaneLocation(right_pane)()
 
-		left_pane.set_path.assert_called_once_with('file://C:/source')
+		left_pane.set_path.assert_called_once_with('file:///C:/source')
 		right_pane.set_path.assert_not_called()
-	def test_requires_an_opposite_pane(self):
+		left_pane.focus.assert_not_called()
+		right_pane.focus.assert_not_called()
+	def test_visibility_requires_an_opposite_pane(self):
+		pane = Mock()
+		pane.window.get_panes.return_value = [pane]
+		self.assertFalse(SyncPaneLocation(pane).is_visible())
+
+		other_pane = Mock()
+		pane.window.get_panes.return_value = [pane, other_pane]
+		self.assertTrue(SyncPaneLocation(pane).is_visible())
+	@patch('core.commands.show_status_message')
+	def test_single_pane_invocation_reports_without_navigation(
+		self, show_status_message_mock
+	):
 		pane = Mock()
 		pane.window.get_panes.return_value = [pane]
 
-		with self.assertRaises(NotImplementedError):
-			SyncPaneLocation(pane)()
+		SyncPaneLocation(pane)()
 
 		pane.set_path.assert_not_called()
+		show_status_message_mock.assert_called_once_with(
+			'No other pane to sync.', timeout_secs=3
+		)
+	@patch('core.commands.show_status_message')
+	def test_null_location_is_not_synchronized(self, show_status_message_mock):
+		pane = Mock()
+		other_pane = Mock()
+		pane.window.get_panes.return_value = [pane, other_pane]
+		pane.get_path.return_value = 'null://'
+
+		SyncPaneLocation(pane)()
+
+		other_pane.set_path.assert_not_called()
+		show_status_message_mock.assert_called_once_with(
+			'No location to sync.', timeout_secs=3
+		)
+	def test_same_location_does_not_reload_opposite_pane(self):
+		pane = Mock()
+		other_pane = Mock()
+		pane.window.get_panes.return_value = [pane, other_pane]
+		pane.get_path.return_value = 'file:///C:/same'
+		other_pane.get_path.return_value = 'file:///C:/same'
+
+		SyncPaneLocation(pane)()
+
+		other_pane.set_path.assert_not_called()
 
 class FindExtensionStartTest(TestCase):
 	def test_no_extension(self):

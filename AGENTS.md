@@ -122,9 +122,13 @@ Once implementation is complete:
 - Match test breadth to risk: unit tests for pure logic, Qt integration tests
   for signals/widgets/thread affinity, and end-to-end smoke tests for startup,
   persistence, packaging, or external tools.
-- State the exact validation command in the task document and final report.
+- State the exact focused validation commands in the task document and final
+  report.
 - Run the narrowest relevant test immediately after the first substantive edit,
-  then run `python build.py test` before completion when the environment allows.
+  then run focused tests covering the task and every file changed by it before
+  completion.
+- Do not run the complete `python build.py test` suite automatically at the end
+  of a task. Run it only when the user explicitly requests the full suite.
 - Do not mark a task complete when required tests fail. Document unrelated or
   environmental failures rather than hiding them.
 

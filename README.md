@@ -5,7 +5,7 @@
 It retains the `fman` plug-in API so existing plug-ins can be used
 without changing their imports.
 
-## Planning workflow
+## Planning and Implementation Workflow
 
 [Plan.md](Plan.md) is the task index. Each pending task has one standalone
 document under [Plan](Plan/), and completed tasks move to [Done](Done/). Task
@@ -16,17 +16,15 @@ Repository-wide contribution and task-lifecycle requirements are defined in
 [AGENTS.md](AGENTS.md). Completed user-visible work must also be reflected in
 [CHANGELOG.md](CHANGELOG.md).
 
-## Extended status bar
+## Features
 
-Press `Ctrl+S` to cycle the extended status bar between `Disabled`,
-`Active pane`, and `Per pane`. The selected mode is saved immediately under
-`UserSettings`. Directory counts and file sizes are calculated in a background
-thread; disabling the feature stops status calculations entirely.
+Significant additions compared with `fman`:
 
-## Sync pane location
-
-Run `Sync Pane Location` from the Command Center to navigate the inactive pane
-to the active pane's current folder. The command does not change pane focus.
+- **Search File Fuzzy:** Find files in the current folder or recursively using fuzzy or regular matching.
+- **Extended Status Bar:** Press `Ctrl+S` to cycle through disabled, active-pane, and per-pane file statistics.
+- **Sync Pane Location:** Send the inactive pane to the active pane's current folder from the Command Center.
+- **Favorites:** Press `Ctrl+B` to search and manage saved folders; unavailable locations are reported without navigation.
+- **New Empty File:** Press `Ctrl+N` to create an empty file without opening an editor.
 
 ## Development
 
@@ -39,16 +37,16 @@ python build.py run
 ```
 
 The environment intentionally constrains PyQt to the 5.15 branch. Other
-packages use compatibility bounds rather than patch pins, so recreating the
-environment for a release selects their latest compatible versions. `freeze`
+packages use compatibility bounds rather than patch pins. Local `freeze`
 generates the Windows release lock when it is missing or older than
-`environment.yml`. It can also be generated manually:
+`environment.yml`; CI always consumes the committed lock and fails if it is
+missing. The lock can also be generated manually:
 
 ```powershell
 conda-lock lock -f environment.yml -p win-64
 ```
 
-## Tests and packaging
+## Tests and Packaging
 
 ```powershell
 python build.py test
@@ -73,6 +71,40 @@ executable. Development and tests can override this path with the
 RoyiFileManager does not intentionally write to the Windows Registry. Release
 validation should confirm this with Process Monitor, filtering on the
 RoyiFileManager process and Registry write operations.
+
+## Releasing
+
+Releases are built by the `Release` GitHub Actions workflow
+(`.github/workflows/release.yml`). It never runs on ordinary pushes; it runs
+only when a version tag is pushed:
+
+1. Set `version` in `src/build/settings/base.json`.
+2. In `CHANGELOG.md`, rename `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD`
+   and add a fresh `## [Unreleased]` section above it containing only the
+   `API compatibility:` statement. Keep that statement in the dated release
+   section too.
+3. Commit (`Release vX.Y.Z`) and push.
+4. Tag and push the tag:
+
+   ```powershell
+   git tag -a vX.Y.Z -m "RoyiFileManager vX.Y.Z"
+   git push origin vX.Y.Z
+   ```
+
+The workflow verifies that the tag matches `version`, that the changelog has a
+dated `## [X.Y.Z]` section with the compatibility statement and that
+`## [Unreleased]` is empty, runs `python build.py test`, `freeze` and
+`package`, and publishes a GitHub release whose notes are that changelog
+section and whose assets are the ZIP and its SHA-256. Tags with a suffix
+(`v1.0.0-rc.1`) are published as pre-releases.
+
+Run the workflow manually from the Actions tab (`workflow_dispatch`) to build
+without publishing; the ZIP is then available as a workflow artifact. The
+changelog check can be previewed locally:
+
+```powershell
+python .github/scripts/release_notes.py --version X.Y.Z
+```
 
 ## Miscellaneous Scripts
 

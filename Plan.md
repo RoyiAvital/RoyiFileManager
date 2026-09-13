@@ -2,14 +2,20 @@
 
 ## Pending
 
+- [Calculate File Hash](Plan/CalculateFileHash.md)
+- [Directory Size](Plan/DirectorySize.md)
 - [Extended Quicksearch UI](Plan/ExtendedQuicksearchUI.md)
-- [Favorites](Plan/Favorites.md)
 - [Flat View](Plan/FlatView.md)
-- [New File](Plan/NewFile.md)
 - [Search File Content](Plan/SearchFileContent.md)
-- [Sync Pane Location](Plan/SyncPaneLocation.md)
+- [Unpack Archive](Plan/UnpackArchive.md)
 
 ## Completed
 
+- [Concise README Features](Done/ConciseReadmeFeatures.md)
 - [Correct Provenance Metadata](Done/CorrectProvenanceMetadata.md)
+- [Favorites](Done/Favorites.md)
+- [Focused Validation Policy](Done/FocusedValidationPolicy.md)
+- [New File](Done/NewFile.md)
+- [Release Workflow Hardening](Done/ReleaseWorkflowHardening.md)
 - [Status Bar](Done/StatusBar.md)
+- [Sync Pane Location](Done/SyncPaneLocation.md)

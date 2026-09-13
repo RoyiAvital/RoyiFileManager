@@ -1,4 +1,5 @@
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -6,6 +7,7 @@ import shutil
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
+import time
 from urllib.request import urlopen
 from zipfile import ZIP_DEFLATED, ZipFile
 
@@ -16,15 +18,25 @@ DIST_DIR = TARGET_DIR / 'RoyiFileManager'
 SETTINGS_PATH = ROOT / 'src' / 'build' / 'settings' / 'base.json'
 ENVIRONMENT_PATH = ROOT / 'environment.yml'
 CONDA_LOCK_PATH = ROOT / 'conda-lock.yml'
-SEVEN_ZIP_VERSION = '2603'
+SEVEN_ZIP_VERSION = '26.03'
 SEVEN_ZIP_PATH = (
 	ROOT / 'src' / 'main' / 'resources' / 'base' / 'Plugins' / 'Core' /
 	'bin' / 'windows' / '7za.exe'
 )
-SEVEN_ZIP_ARCHIVE_URL = (
-	f'https://www.7-zip.org/a/7z{SEVEN_ZIP_VERSION}-extra.7z'
+SEVEN_ZIP_RELEASE_URL = (
+	f'https://github.com/ip7z/7zip/releases/download/{SEVEN_ZIP_VERSION}'
 )
-SEVEN_ZIP_EXTRACTOR_URL = 'https://www.7-zip.org/a/7zr.exe'
+SEVEN_ZIP_ARCHIVE_URL = (
+	f'{SEVEN_ZIP_RELEASE_URL}/7z{SEVEN_ZIP_VERSION.replace(".", "")}-extra.7z'
+)
+SEVEN_ZIP_EXTRACTOR_URL = f'{SEVEN_ZIP_RELEASE_URL}/7zr.exe'
+SEVEN_ZIP_ARCHIVE_SHA256 = \
+	'191894e6acb3647ffb69ce630479ff318523b2e2b9890aa7f05c1127c2e59b8f'
+SEVEN_ZIP_EXTRACTOR_SHA256 = \
+	'ad4c82fadcbdf93c03b4fc440f300509c7d60c5c2f4d183e35d9d70d6957037d'
+SEVEN_ZIP_BINARY_SHA256 = \
+	'edbee35370e14030e4c785cf88200f42dc651c1eb4217c1e3963c38a12f099b0'
+DOWNLOAD_SETTLE_SECONDS = 0.25
 
 
 def _require_windows():
@@ -32,33 +44,56 @@ def _require_windows():
 		raise SystemExit('RoyiFileManager is supported on Windows only.')
 
 
-def _is_windows_executable(path):
+def _sha256(path):
+	digest = hashlib.sha256()
 	try:
 		with path.open('rb') as file:
-			return file.read(2) == b'MZ'
+			for chunk in iter(lambda: file.read(1024 * 1024), b''):
+				digest.update(chunk)
 	except OSError:
-		return False
+		return None
+	return digest.hexdigest()
 
 
-def _download(url, destination):
-	with urlopen(url, timeout=120) as response, destination.open('wb') as output:
-		shutil.copyfileobj(response, output)
+def _verify_sha256(path, expected, description):
+	actual = _sha256(path)
+	if actual != expected:
+		raise SystemExit(
+			f'{description} failed SHA-256 verification: expected {expected}, '
+			f'got {actual or "an unreadable file"}.'
+		)
+
+
+def _download(url, destination, expected_sha256):
+	verified = False
+	try:
+		with urlopen(url, timeout=120) as response, \
+				destination.open('wb') as output:
+			shutil.copyfileobj(response, output)
+			output.flush()
+			os.fsync(output.fileno())
+		time.sleep(DOWNLOAD_SETTLE_SECONDS)
+		_verify_sha256(destination, expected_sha256, url)
+		verified = True
+	finally:
+		if not verified:
+			destination.unlink(missing_ok=True)
 
 
 def _ensure_7za(destination=SEVEN_ZIP_PATH):
 	destination = Path(destination)
-	if _is_windows_executable(destination):
+	if _sha256(destination) == SEVEN_ZIP_BINARY_SHA256:
 		return
-	print(f'Downloading 7-Zip {SEVEN_ZIP_VERSION} from 7-zip.org...')
+	print(f'Downloading 7-Zip {SEVEN_ZIP_VERSION} from GitHub...')
 	with TemporaryDirectory() as temporary_directory:
 		temporary_directory = Path(temporary_directory)
 		extractor = temporary_directory / '7zr.exe'
 		archive = temporary_directory / '7zip-extra.7z'
 		extracted = temporary_directory / 'extracted'
-		_download(SEVEN_ZIP_EXTRACTOR_URL, extractor)
-		_download(SEVEN_ZIP_ARCHIVE_URL, archive)
-		if not _is_windows_executable(extractor):
-			raise SystemExit('The downloaded 7zr.exe is not a Windows executable.')
+		_download(
+			SEVEN_ZIP_EXTRACTOR_URL, extractor, SEVEN_ZIP_EXTRACTOR_SHA256
+		)
+		_download(SEVEN_ZIP_ARCHIVE_URL, archive, SEVEN_ZIP_ARCHIVE_SHA256)
 		subprocess.run(
 			[
 				str(extractor), 'x', str(archive), f'-o{extracted}', '-y'
@@ -66,8 +101,10 @@ def _ensure_7za(destination=SEVEN_ZIP_PATH):
 			check=True, stdout=subprocess.DEVNULL
 		)
 		downloaded_7za = extracted / 'x64' / '7za.exe'
-		if not _is_windows_executable(downloaded_7za):
-			raise SystemExit('The 7-Zip Extra archive does not contain x64/7za.exe.')
+		_verify_sha256(
+			downloaded_7za, SEVEN_ZIP_BINARY_SHA256,
+			'The extracted x64/7za.exe'
+		)
 		destination.parent.mkdir(parents=True, exist_ok=True)
 		temporary_destination = destination.with_suffix('.exe.tmp')
 		shutil.copy2(downloaded_7za, temporary_destination)
@@ -87,7 +124,9 @@ def _environment():
 		ROOT / 'src' / 'integrationtest' / 'python',
 		ROOT / 'src' / 'main' / 'resources' / 'base' / 'Plugins' / 'Core',
 		ROOT / 'src' / 'main' / 'resources' / 'base' / 'Plugins' /
-		'SearchFileFuzzy'
+		'SearchFileFuzzy',
+		ROOT / 'src' / 'main' / 'resources' / 'base' / 'Plugins' /
+		'Favorites'
 	]
 	existing = environment.get('PYTHONPATH')
 	if existing:
@@ -136,6 +175,12 @@ def clean():
 
 
 def _ensure_conda_lock():
+	if os.environ.get('CI', '').lower() == 'true':
+		if CONDA_LOCK_PATH.is_file():
+			return
+		raise SystemExit(
+			'CI requires the committed conda-lock.yml and will not generate it.'
+		)
 	if CONDA_LOCK_PATH.is_file() and \
 		CONDA_LOCK_PATH.stat().st_mtime_ns >= \
 		ENVIRONMENT_PATH.stat().st_mtime_ns:

@@ -17,11 +17,28 @@ API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
   toggled with `Ctrl+S`.
 - Added a `Sync Pane Location` Command Center command that navigates the
   inactive pane to the active pane's current folder.
+- Added a bundled Favorites plug-in with `Ctrl+B` search plus commands to add,
+  remove, and rename saved folder locations.
+- Added `Ctrl+N` to create an empty file without opening an editor; existing
+  paths are left unchanged, unsupported locations hide the command, and
+  filesystem errors are reported without a traceback.
 
 ### Changed
 
+- Condensed the README feature overview into one-line descriptions of
+  significant user-facing additions.
 - Task provenance records now distinguish the acting agent from the underlying
   model, with each acting contributor supplying its own metadata.
+- Reserved `Ctrl+B` for Favorites and made focused task-related tests the
+  default validation policy instead of an automatic full-suite run.
+- Hardened `Sync Pane Location` for single-pane, empty-location, and
+  already-synchronized states without changing focus.
+- Hardened Favorites validation, matching, concurrent updates, and inaccessible
+  location handling, with clearer settings documentation.
+- Hardened release builds with SHA-256-verified 7-Zip 26.03 downloads,
+  immutable GitHub Action revisions, annotated SemVer tag enforcement,
+  committed-lock-only CI builds, least-privilege publication, and refusal to
+  create missing tags or replace existing releases.
 
 ## [0.1.0] - 2026-09-12
 
