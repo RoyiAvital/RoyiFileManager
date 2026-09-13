@@ -19,4 +19,7 @@
 - [Release Workflow Hardening](Done/ReleaseWorkflowHardening.md)
 - [Self-Contained ZIP Tests](Done/SelfContainedZipTests.md)
 - [Status Bar](Done/StatusBar.md)
+- [Status Bar Active Background](Done/StatusBarActiveBackground.md)
+- [Status Bar Active Indicator](Done/StatusBarActiveIndicator.md)
+- [Status Bar Worker Results](Done/StatusBarWorkerResults.md)
 - [Sync Pane Location](Done/SyncPaneLocation.md)

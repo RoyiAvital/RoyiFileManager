@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
 
+## [0.2.2] - 2026-09-13
+
+API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
+
+### Fixed
+
+- Extended Status Bar summaries now display directory, file, size, and
+  selected-item details correctly on 64-bit builds in both display modes.
+- Active Extended Status Bar panes now use one continuous background instead
+  of drawing separate background rectangles behind each text field.
+- In Per pane mode, only the active pane's Extended Status Bar footer now
+  displays the `Active` marker.
+
 ## [0.2.1] - 2026-09-13
 
 API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.

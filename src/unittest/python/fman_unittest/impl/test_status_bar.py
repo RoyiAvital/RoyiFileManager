@@ -1,7 +1,43 @@
 from fman.impl.status_bar import ACTIVE_PANE, DEFAULT_SETTINGS, DISABLED, \
-	PER_PANE, StatusEntry, calculate_status_summary, format_size, \
+	PER_PANE, PaneStatusSnapshot, StatusCalculationService, StatusEntry, \
+	PaneStatusWidget, _CancellationToken, calculate_status_summary, format_size, \
 	next_status_bar_mode, validate_status_bar_settings
+from PyQt5.QtCore import QCoreApplication, QEventLoop, QObject, QThread, \
+	QTimer, pyqtSignal, pyqtSlot
+from PyQt5.QtWidgets import QApplication
 from unittest import TestCase
+
+
+class _ResultReceiver(QObject):
+	def __init__(self, event_loop):
+		super().__init__()
+		self._event_loop = event_loop
+		self.result = None
+		self.received_on_thread = None
+	@pyqtSlot(object, int, object)
+	def receive(self, owner_id, generation, summary):
+		self.result = owner_id, generation, summary
+		self.received_on_thread = QThread.currentThread()
+		self._event_loop.quit()
+
+
+class _Pane(QObject):
+	status_changed = pyqtSignal()
+	def enable_status_tracking(self):
+		pass
+	def disable_status_tracking(self):
+		pass
+	def get_status_snapshot(self):
+		return PaneStatusSnapshot(
+			'file:///',
+			(StatusEntry('file:///selected.txt', False, True, True),),
+			True, False
+		)
+
+
+class _FileSystem:
+	def query(self, _url, _attribute):
+		return 42
 
 
 class StatusBarSettingsTest(TestCase):
@@ -65,3 +101,66 @@ class CalculateStatusSummaryTest(TestCase):
 			lambda _: 1, True, 10, lambda: True
 		)
 		self.assertIsNone(result)
+
+
+class PaneStatusWidgetTest(TestCase):
+	def test_active_marker_follows_per_pane_active_state(self):
+		app = QApplication.instance() or QApplication([])
+		service = StatusCalculationService(_FileSystem())
+		widget = PaneStatusWidget(service, 10, 1024, True)
+		self.assertTrue(widget._active.isHidden())
+		widget.set_active(True)
+		self.assertFalse(widget._active.isHidden())
+		widget.set_active(False)
+		self.assertTrue(widget._active.isHidden())
+		service.shutdown()
+		self.assertIsNotNone(app)
+	def test_active_marker_stays_hidden_in_active_pane_mode(self):
+		app = QApplication.instance() or QApplication([])
+		service = StatusCalculationService(_FileSystem())
+		widget = PaneStatusWidget(service, 10, 1024, False)
+		widget.set_active(True)
+		self.assertTrue(widget._active.isHidden())
+		service.shutdown()
+		self.assertIsNotNone(app)
+	def test_worker_result_renders_selected_details(self):
+		app = QApplication.instance() or QApplication([])
+		event_loop = QEventLoop()
+		service = StatusCalculationService(_FileSystem())
+		widget = PaneStatusWidget(service, 10, 1024, False)
+		widget.bind(_Pane())
+		QTimer.singleShot(500, event_loop.quit)
+		event_loop.exec()
+		service.shutdown()
+		self.assertEqual('1 files', widget._files.text())
+		self.assertEqual(
+			'Selected: 0 dirs, 1 files, 42 B', widget._selection.text()
+		)
+		self.assertIsNotNone(app)
+
+
+class StatusCalculationServiceTest(TestCase):
+	def test_worker_result_is_published_on_qt_thread(self):
+		app = QCoreApplication.instance() or QCoreApplication([])
+		event_loop = QEventLoop()
+		receiver = _ResultReceiver(event_loop)
+		service = StatusCalculationService(_FileSystem())
+		service.finished.connect(receiver.receive)
+		snapshot = PaneStatusSnapshot(
+			'file:///',
+			(StatusEntry('file:///selected.txt', False, True, True),),
+			True, False
+		)
+		QTimer.singleShot(
+			0, lambda: service.submit(
+				7, 3, snapshot, 10, _CancellationToken()
+			)
+		)
+		QTimer.singleShot(2000, event_loop.quit)
+		event_loop.exec()
+		service.shutdown()
+		self.assertIsNotNone(receiver.result)
+		self.assertEqual((7, 3), receiver.result[:2])
+		self.assertEqual(1, receiver.result[2].selected_file_count)
+		self.assertEqual(service.thread(), receiver.received_on_thread)
+		self.assertIsNotNone(app)

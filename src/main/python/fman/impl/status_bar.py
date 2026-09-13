@@ -1,6 +1,6 @@
 from collections import namedtuple
 from concurrent.futures import ThreadPoolExecutor
-from PyQt5.QtCore import QObject, pyqtSignal, QTimer, Qt
+from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot, QTimer
 from PyQt5.QtWidgets import QWidget, QHBoxLayout, QLabel
 
 
@@ -142,7 +142,7 @@ class _CancellationToken:
 
 class StatusCalculationService(QObject):
 
-	finished = pyqtSignal(int, int, object)
+	finished = pyqtSignal(object, int, object)
 
 	def __init__(self, fs, parent=None):
 		super().__init__(parent)
@@ -191,8 +191,9 @@ class PaneStatusWidget(QWidget):
 		self._pane = None
 		self._generation = 0
 		self._token = None
+		self._show_active = show_active
 		self._active = QLabel('Active', self)
-		self._active.setVisible(show_active)
+		self._active.setVisible(False)
 		self._hidden = QLabel(self)
 		self._directories = QLabel(self)
 		self._files = QLabel(self)
@@ -225,6 +226,7 @@ class PaneStatusWidget(QWidget):
 			pane.enable_status_tracking()
 			self.schedule_refresh()
 	def set_active(self, active):
+		self._active.setVisible(self._show_active and active)
 		if self.property('active') == active:
 			return
 		self.setProperty('active', active)
@@ -260,6 +262,7 @@ class PaneStatusWidget(QWidget):
 			id(self), self._generation, snapshot, self._max_entries,
 			self._token
 		)
+	@pyqtSlot(object, int, object)
 	def _on_finished(self, owner_id, generation, summary):
 		if owner_id != id(self) or generation != self._generation:
 			return
