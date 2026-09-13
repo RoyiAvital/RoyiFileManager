@@ -2,18 +2,19 @@
 
 ## Pending
 
-- [Calculate File Hash](Plan/CalculateFileHash.md)
 - [Directory Size](Plan/DirectorySize.md)
 - [Extended Quicksearch UI](Plan/ExtendedQuicksearchUI.md)
 - [Flat View](Plan/FlatView.md)
 - [Process Pane](Plan/ProcessPane.md)
 - [Search File Content](Plan/SearchFileContent.md)
+- [Text Editor Service](Plan/TextEditor.md)
 - [UI Elements](Plan/UIElements.md)
 - [Unpack Archive](Plan/UnpackArchive.md)
 
 ## Completed
 
 - [Assigned Model Signatures](Done/AssignedModelSignatures.md)
+- [Calculate File Hash](Done/CalculateFileHash.md)
 - [Concise README Features](Done/ConciseReadmeFeatures.md)
 - [Context Window Capitalization](Done/ContextWindowCapitalization.md)
 - [Correct Provenance Metadata](Done/CorrectProvenanceMetadata.md)

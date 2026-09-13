@@ -335,7 +335,7 @@ class DevelopmentApplicationContext(ApplicationContext):
 		settings = Settings(self._get_local_data_file('Session.json'))
 		return SessionManager(
 			settings, self.mother_fs, self.plugin_error_handler,
-			self.fman_version, True
+			self.build_settings['version'], True
 		)
 	@cached_property
 	def theme(self):

@@ -8,6 +8,7 @@ send2trash_datas, send2trash_binaries, send2trash_imports = \
 
 datas = [
 	('src/main/resources/base', 'resources'),
+	('src/build/settings/base.json', 'resources/build-settings'),
 	('src/main/resources/windows', 'resources'),
 	('src/main/icons/Icon.ico', 'resources')
 ] + winpty_datas + send2trash_datas
@@ -16,7 +17,8 @@ hidden_imports = [
 	'adodbapi', 'ctypes.wintypes', 'win32com.shell.shell',
 	'win32com.shell.shellcon', 'win32gui', 'win32wnet',
 	'fman.ui', 'fman.impl.ui.quicklist', 'fman.impl.ui.panel',
-	'fman.impl.ui.session', 'fman.impl.navigation'
+	'fman.impl.ui.session', 'fman.impl.ui.output', 'fman.impl.navigation',
+	'PyQt5.QtSvg'
 ] + winpty_imports + send2trash_imports
 
 a = Analysis(

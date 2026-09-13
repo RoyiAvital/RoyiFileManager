@@ -1,10 +1,42 @@
 from unittest import TestCase
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from fman.impl.session import SessionManager, _encode
 
 
 class SessionManagerWindowTest(TestCase):
+	def test_startup_version_messages_and_persistence(self):
+		version = '0.3.0'
+		for previous_version in (None, version, '0.2.2', '1.7.5'):
+			with self.subTest(previous_version=previous_version):
+				settings = _Settings({})
+				if previous_version is not None:
+					settings['fman_version'] = previous_version
+				manager = SessionManager(settings, None, None, version, True)
+				window = Mock()
+				window.saveGeometry.return_value = b'geometry'
+				window.saveState.return_value = b'state'
+				window.get_panes.return_value = []
+				expected = 'v%s ready.' % version
+				if previous_version and previous_version != version:
+					expected = 'Updated to v%s.' % version
+
+				manager._show_startup_messages(window)
+
+				window.show_status_message.assert_called_once_with(
+					expected, timeout_secs=5
+				)
+				self.assertEqual(expected, manager._get_startup_message())
+				manager.on_close(window)
+				self.assertEqual(version, settings['fman_version'])
+				self.assertEqual(1, settings.flush_calls)
+				restored = SessionManager(settings, None, None, version, True)
+				window.show_status_message.reset_mock()
+				restored._show_startup_messages(window)
+				window.show_status_message.assert_called_once_with(
+					'v%s ready.' % version, timeout_secs=5
+				)
+
 	def test_first_run_starts_windowed_at_default_size(self):
 		window = _Window()
 		manager = SessionManager({}, None, None, '1.7.5', True)

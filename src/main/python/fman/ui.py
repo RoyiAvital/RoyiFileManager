@@ -13,6 +13,7 @@ from fman.impl.ui import ListItem, Resource, UiController, UiOwner, matchers
 from fman.impl.ui import resource as settings_resource
 from fman.impl.ui.quicklist import QuickList
 from fman.impl.ui.panel import Panel, DropDown, IconButton, JsonSettings, TextButton
+from fman.impl.ui.output import OutputTextBox
 from fman.impl.ui.session import NavigationHandle, PaneToolWindow, ToolWindow, navigate
 
 
@@ -20,5 +21,5 @@ __all__ = [
 	'ListItem', 'QuickList', 'Panel', 'IconButton', 'TextButton',
 	'DropDown', 'JsonSettings', 'UiController', 'UiOwner', 'Resource',
 	'settings_resource', 'matchers', 'ToolWindow', 'PaneToolWindow',
-	'NavigationHandle', 'navigate'
+	'NavigationHandle', 'navigate', 'OutputTextBox'
 ]

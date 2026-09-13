@@ -2,6 +2,13 @@
 
 These instructions apply to the entire repository.
 
+## Guidelines
+
+ - Do not create new virtual Python environments.
+ - Do not install new Python packages. You may ask the user to install.
+ - Make the code easy to grasp for human and agents.
+ - Be focused and short on documentation and text.
+
 ## Task Documents
 
 Create a dedicated Markdown task document under `Plan/` only when the user
@@ -81,7 +88,7 @@ Rules:
 - `Outcome` briefly records the decision, important concerns, or approval state.
 - Preserve previous records; reviewer history is append-only.
 
-## Implementation And Completion
+## Implementation and Completion
 
 When a task document exists, ensure its design is reviewed and its acceptance
 criteria are testable before implementation. Keep that document aligned with
@@ -99,8 +106,8 @@ document exists:
 
   ### YYYY_MM_DD - <Contributor name>
 
-   - Role: Implementer
-   - Activity: Implementation
+  - Role: Implementer
+  - Activity: Implementation
   - Agent: <Acting agent>
   - Model: <Model identifier or Not exposed by host>
   - Effort: <Low, Medium, or High>
@@ -118,9 +125,11 @@ document exists:
 
 Update `CHANGELOG.md` when a task makes an implemented application change covered
 by the Changelog policy below, whether or not a task document exists. Plans,
-reviews, and documentation-only work do not require a changelog entry.
+reviews, and documentation only work do not require a changelog entry.  
+Unless a features is in released version, no need to add fixes to it in the 
+changelog.
 
-## Runtime And Compatibility Requirements
+## Runtime and Compatibility Requirements
 
 - Disabled optional features must avoid feature-specific background jobs, I/O,
   model scans, timers, and recurring signal work unless the task explicitly
@@ -148,6 +157,8 @@ reviews, and documentation-only work do not require a changelog entry.
   completion.
 - Do not run the complete `python build.py test` suite automatically at the end
   of a task. Run it only when the user explicitly requests the full suite.
+- No need to run `build.py clean` / `build.py freeze`.  
+  Avoid running them unless explicitly asked.
 - Do not mark a task complete when required tests fail. Document unrelated or
   environmental failures rather than hiding them.
 

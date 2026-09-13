@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
 
+## [0.3.1] - 2026-09-13
+
+API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
+
+### Added
+
+- Added Calculate File Hash on `Ctrl+H` and an algorithm picker command, with
+  cancellable local file hashing and concurrent-change detection. Both show
+  centered results with the file path as the window title and the hash algorithm
+  beside Copy. Calculate File Hash By selects the algorithm in QuickSearch;
+  neither command opens a docked Panel.
+- Added public `fman.ui.OutputTextBox`: selectable read only output with a
+  top left copy icon, optional adjacent title, Return / Enter copy all and normal
+  selected text copying.
+
+### Fixed
+
+- Startup status messages now use the application version from the build
+  settings instead of the upstream fman API version.
+
 ## [0.3.0] - 2026-09-13
 
 API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.

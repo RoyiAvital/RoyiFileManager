@@ -40,6 +40,344 @@ class SortedFileSystemModelIT(SortedFileSystemModelAT, QtIT):
 class RunInThreadIT(RunInThreadAT, QtIT):
 	pass
 
+class OutputTextBoxIT(QtIT):
+	def test_title_parameter_layout_and_digest_only_copy(self):
+		def check():
+			from fman.ui import OutputTextBox
+			from PyQt5.QtWidgets import QLabel, QToolButton, QWidget
+			parent = QWidget()
+			output = OutputTextBox('digest', parent, title='File Hash: sample.txt, SHA-256')
+			try:
+				parent.resize(640, 300)
+				parent.show()
+				output.resize(480, 140)
+				output.show()
+				QApplication.processEvents()
+				label = output.findChild(QLabel, 'output-title')
+				button = output.findChild(QToolButton)
+				self.assertIs(parent, output.parentWidget())
+				self.assertEqual(label.fontMetrics().elidedText(output.title(), Qt.ElideMiddle, label.contentsRect().width()), label.text())
+				self.assertEqual(Qt.PlainText, label.textFormat())
+				self.assertLess(button.geometry().right(), label.geometry().left())
+				title = 'File Hash: ' + 'long filename ' * 30 + '\u03bb.txt, SHA-512'
+				output.set_title(title)
+				for width in (240, 480):
+					output.resize(width, 140)
+					QApplication.processEvents()
+					self.assertEqual(width, output.width())
+					self.assertLessEqual(label.fontMetrics().horizontalAdvance(label.text()), label.contentsRect().width())
+				self.assertEqual(title, output.title())
+				self.assertEqual(title, label.toolTip())
+				output.copy_text()
+				self.assertEqual('digest', QApplication.clipboard().text())
+				with self.assertRaises(TypeError):
+					output.set_title(None)
+				with self.assertRaises(TypeError):
+					OutputTextBox(title=None)
+				output.set_title('')
+				self.assertEqual('', label.text())
+			finally:
+				parent.close()
+				parent.deleteLater()
+		self.run_in_app(check)
+
+	def test_high_dpi_icon_is_not_cropped(self):
+		def check():
+			from fman.ui import OutputTextBox
+			from PyQt5.QtWidgets import QToolButton
+			from unittest.mock import patch
+			with patch.object(OutputTextBox, 'devicePixelRatioF', return_value=2):
+				output = OutputTextBox('digest')
+			try:
+				image = output.findChild(QToolButton).icon().pixmap(32, 32).toImage()
+				self.assertEqual((32, 32), (image.width(), image.height()))
+				self.assertGreater(image.pixelColor(29, 16).alpha(), 0)
+			finally:
+				output.deleteLater()
+		self.run_in_app(check)
+
+	def test_copy_readonly_keyboard_and_exact_text(self):
+		def check():
+			from fman.ui import OutputTextBox
+			from PyQt5.QtTest import QTest
+			from PyQt5.QtWidgets import QPlainTextEdit, QToolButton
+			text = '<b>literal</b>\r\nUnicode: \u03bb\tvalue\n'
+			output = OutputTextBox(text)
+			try:
+				output.resize(320, 140)
+				output.show()
+				editor = output.findChild(QPlainTextEdit)
+				button = output.findChild(QToolButton)
+				calls = []
+				output.copied.connect(lambda: calls.append(True))
+				self.assertEqual(text, output.text())
+				self.assertTrue(editor.isReadOnly())
+				self.assertFalse(button.isCheckable())
+				self.assertFalse(button.icon().isNull())
+				cursor = editor.textCursor()
+				cursor.setPosition(3)
+				cursor.setPosition(10, cursor.KeepAnchor)
+				editor.setTextCursor(cursor)
+				QTest.keyClick(editor, Qt.Key_C, Qt.ControlModifier)
+				self.assertEqual('literal', QApplication.clipboard().text())
+				for key, modifier in ((Qt.Key_Return, Qt.NoModifier), (Qt.Key_Enter, Qt.KeypadModifier)):
+					QTest.keyClick(editor, key, modifier)
+					self.assertEqual(text.replace('\r\n', '\n'), QApplication.clipboard().text().replace('\r\n', '\n'))
+				QTest.mouseClick(button, Qt.LeftButton)
+				self.assertEqual(3, len(calls))
+				before = editor.toPlainText()
+				QTest.keyClicks(editor, 'changed')
+				QTest.keyClick(editor, Qt.Key_V, Qt.ControlModifier)
+				QTest.keyClick(editor, Qt.Key_X, Qt.ControlModifier)
+				self.assertEqual(before, editor.toPlainText())
+				output.set_text('replacement')
+				self.assertEqual('', editor.textCursor().selectedText())
+				output.copy_text()
+				self.assertEqual('replacement', QApplication.clipboard().text())
+				output.set_text('')
+				self.assertFalse(button.isEnabled())
+				output.copy_text()
+				self.assertEqual('replacement', QApplication.clipboard().text())
+				self.assertEqual(4, len(calls))
+				with self.assertRaises(TypeError):
+					output.set_text(None)
+			finally:
+				output.close()
+				output.deleteLater()
+		self.run_in_app(check)
+
+	def test_public_export_and_thread_guards(self):
+		import fman.ui
+		self.assertIn('OutputTextBox', fman.ui.__all__)
+		with self.assertRaises(RuntimeError):
+			fman.ui.OutputTextBox()
+		output = self.run_in_app(fman.ui.OutputTextBox)
+		try:
+			for operation in (output.text, output.title, output.copy_text, lambda: output.set_text('no'), lambda: output.set_title('no')):
+				with self.assertRaises(RuntimeError):
+					operation()
+		finally:
+			self.run_in_app(output.deleteLater)
+
+	def test_copy_passes_original_string_to_clipboard(self):
+		def check():
+			from fman.ui import OutputTextBox
+			from unittest.mock import patch
+			text = 'first\r\nsecond\rthird\t\n'
+			output = OutputTextBox(text)
+			try:
+				with patch('fman.impl.ui.output.QApplication.clipboard') as clipboard:
+					output.copy_text()
+					clipboard.return_value.setText.assert_called_once_with(text)
+			finally:
+				output.deleteLater()
+		self.run_in_app(check)
+
+class HashResultIT(QtIT):
+	def setUp(self):
+		from calculate_file_hash.ui import HashController
+		from fman import DirectoryPane, Window
+		from fman.impl.widgets import MainWindow
+		from fman.ui import UiOwner
+		from pathlib import Path
+		from tempfile import TemporaryDirectory
+		from unittest.mock import Mock, patch
+		self.directory = TemporaryDirectory()
+		self.addCleanup(self.directory.cleanup)
+		self.path = Path(self.directory.name) / 'hash.txt'
+		self.path.write_bytes(b'abc')
+		self.url = 'file://' + self.path.as_posix()
+		self.controller = HashController
+		self.owner = UiOwner()
+		for target, options in (
+			('calculate_file_hash.HashController.owner', {'new': self.owner}),
+			('calculate_file_hash.load_json', {'return_value': {}}),
+			('calculate_file_hash.submit_task', {'side_effect': lambda task: task()}),
+			('calculate_file_hash.show_status_message', {}),
+			('calculate_file_hash.ui.show_status_message', {}),
+			('calculate_file_hash.ui.show_alert', {}),
+		):
+			patcher = patch(target, **options)
+			patcher.start()
+			self.addCleanup(patcher.stop)
+		def prepare():
+			from PyQt5.QtWidgets import QWidget
+			theme = Mock()
+			theme.get_quicksearch_item_css.return_value = None
+			self.main = MainWindow(Mock(), [], theme, Mock(), Mock(), 'null://')
+			self.pane = DirectoryPane(Window(self.main, Mock()), QWidget(self.main), Mock())
+			self.pane.get_file_under_cursor = Mock(return_value=self.url)
+			self.pane.get_path = Mock(return_value='file://C:/')
+			self.pane.run_command = Mock()
+			self.main.show()
+		self.run_in_app(prepare)
+
+	def tearDown(self):
+		self.owner.invalidate()
+		self.run_in_app(self.main.close)
+		self.run_in_app(self.main.deleteLater)
+
+	def test_result_centers_on_main_window_when_shown(self):
+		def place_main():
+			self.main.setGeometry(70, 60, 640, 400)
+			QApplication.processEvents()
+		self.run_in_app(place_main)
+		window = self.controller.show(self.pane)
+		def check_center():
+			QApplication.processEvents()
+			self.assertEqual(self.main.frameGeometry().center(), window.frameGeometry().center())
+		self.run_in_app(check_center)
+		def move_windows():
+			self.main.move(120, 100)
+			window.move(0, 0)
+		self.run_in_app(move_windows)
+		self.assertIs(window, self.controller.show(self.pane))
+		self.run_in_app(check_center)
+
+	def test_quick_output_and_picker_share_panel_free_result(self):
+		from calculate_file_hash import CalculateFileHash, CalculateFileHashBy
+		from fman.url import as_human_readable
+		from unittest.mock import patch
+		import hashlib
+		self.run_in_app(lambda: self.main.setGeometry(70, 60, 640, 400))
+		CalculateFileHash(self.pane)()
+		window = self.controller.show(self.pane)
+		def check(algorithm, digest):
+			QApplication.processEvents()
+			self.assertEqual(self.main.frameGeometry().center(), window.frameGeometry().center())
+			self.assertIsNone(window.bottom_panel)
+			self.assertIsNone(self.main._panel_dock)
+			self.assertEqual(2, window.layout().count())
+			self.assertTrue(window.path_label.isVisible())
+			self.assertEqual(as_human_readable(self.url), window.path_label.toolTip())
+			self.assertEqual(as_human_readable(self.url), window.windowTitle())
+			self.assertEqual(digest, window.output.text())
+			self.assertEqual('Hash Algorithm: ' + algorithm, window.output.title())
+			self.pane.run_command.assert_not_called()
+		self.run_in_app(lambda: check('SHA-256', hashlib.sha256(b'abc').hexdigest()))
+		def choose(*args, **kwargs):
+			self.run_in_app(lambda: check('SHA-256', hashlib.sha256(b'abc').hexdigest()))
+			self.pane.get_file_under_cursor.return_value = 'file://C:/another.txt'
+			return '', 'sha512'
+		with patch('calculate_file_hash.show_quicksearch', side_effect=choose) as picker:
+			CalculateFileHashBy(self.pane)()
+			picker.assert_called_once()
+		self.assertIs(window, self.controller.show(self.pane))
+		self.run_in_app(lambda: check('SHA-512', hashlib.sha512(b'abc').hexdigest()))
+		self.pane.get_file_under_cursor.return_value = self.url
+		with patch('calculate_file_hash.show_quicksearch', return_value=None):
+			CalculateFileHashBy(self.pane)()
+		self.run_in_app(lambda: check('SHA-512', hashlib.sha512(b'abc').hexdigest()))
+		CalculateFileHash(self.pane)()
+		self.run_in_app(lambda: check('SHA-256', hashlib.sha256(b'abc').hexdigest()))
+
+	def test_published_result_focuses_output_for_enter_copy(self):
+		from calculate_file_hash.hashing import HashResult
+		from PyQt5.QtTest import QTest
+		window = self.controller.show(self.pane)
+		self.run_in_app(lambda: QApplication.setActiveWindow(window))
+		for algorithm, digest in (('sha256', 'first digest'), ('sha512', 'new digest')):
+			request = window.session.begin(self.url, algorithm, False)
+			self.assertFalse(self.run_in_app(window.output.isEnabled))
+			window.session.complete(request, HashResult(digest, 3, False))
+			def check():
+				QApplication.processEvents()
+				focused = QApplication.focusWidget()
+				self.assertIsNotNone(focused)
+				self.assertTrue(focused is window.output or window.output.isAncestorOf(focused))
+				QApplication.clipboard().setText('not copied')
+				QTest.keyClick(focused, Qt.Key_Return)
+				self.assertEqual(digest, QApplication.clipboard().text())
+			self.run_in_app(check)
+
+	def test_canceled_recompute_retains_result(self):
+		from calculate_file_hash import CalculateFileHash, CalculateFileHashBy, Task
+		from unittest.mock import patch
+		for command in (CalculateFileHash, CalculateFileHashBy):
+			with self.subTest(command=command.__name__):
+				with patch('calculate_file_hash.show_quicksearch', return_value=('', 'sha256')):
+					command(self.pane)()
+				window = self.controller.show(self.pane)
+				before = self.run_in_app(window.output.text)
+				before_title = self.run_in_app(window.output.title)
+				before_path = self.run_in_app(window.windowTitle)
+				with patch('calculate_file_hash.compute_hash', side_effect=Task.Canceled()), \
+						patch('calculate_file_hash.show_quicksearch', return_value=('', 'sha512')):
+					args = {'algorithm': 'sha512'} if command is CalculateFileHash else {}
+					command(self.pane)(**args)
+				self.run_in_app(lambda: None)
+				self.assertEqual(before, self.run_in_app(window.output.text))
+				self.assertEqual(before_title, self.run_in_app(window.output.title))
+				self.assertEqual(before_path, self.run_in_app(window.windowTitle))
+				self.assertEqual('sha256', self.run_in_app(lambda: window.session.last[1]))
+				self.assertIsNone(self.run_in_app(lambda: window.bottom_panel))
+				self.assertFalse(self.run_in_app(lambda: window.busy))
+
+	def test_hash_commands_preserve_unrelated_dock(self):
+		from calculate_file_hash import CalculateFileHash, CalculateFileHashBy
+		from fman.ui import Panel
+		from unittest.mock import Mock, patch
+		def prepare():
+			panel = Panel()
+			closed = Mock(side_effect=lambda: self.main.remove_bottom_panel(panel))
+			self.main.set_bottom_panel(panel, closed)
+			return panel, closed
+		panel, closed = self.run_in_app(prepare)
+		for command in (CalculateFileHash, CalculateFileHashBy):
+			with self.subTest(command=command.__name__), \
+					patch('calculate_file_hash.show_quicksearch', return_value=('', 'sha256')):
+				command(self.pane)()
+				window = self.controller.show(self.pane)
+				self.assertIsNone(self.run_in_app(lambda: window.bottom_panel))
+				self.assertIs(panel, self.run_in_app(lambda: self.main._panel_dock.panel))
+				self.run_in_app(window.close)
+				self.assertIs(panel, self.run_in_app(lambda: self.main._panel_dock.panel))
+				closed.assert_not_called()
+
+	def test_long_path_elides_without_growing_window(self):
+		window = self.controller.show(self.pane)
+		def check():
+			path = 'C:/' + 'long folder/' * 30 + 'file.txt'
+			window.path_label.set_path(path)
+			for width in (480, 760):
+				window.resize(width, 180)
+				QApplication.processEvents()
+				label = window.path_label
+				self.assertLessEqual(label.fontMetrics().horizontalAdvance(label.text()), label.contentsRect().width())
+				self.assertEqual(path, label.toolTip())
+				self.assertEqual(width, window.width())
+		self.run_in_app(check)
+
+	def test_auto_copy_and_closed_session_reject_late_results(self):
+		from calculate_file_hash import CalculateFileHash, Task
+		from calculate_file_hash.hashing import HashResult
+		from unittest.mock import patch
+		with patch('calculate_file_hash.load_json', return_value={'auto_copy': True}):
+			CalculateFileHash(self.pane)()
+		window = self.controller.show(self.pane)
+		self.assertEqual(self.run_in_app(window.output.text), self.run_in_app(lambda: QApplication.clipboard().text()))
+		session = window.session
+		request = session.begin(self.url, 'sha512', True)
+		self.run_in_app(lambda: QApplication.clipboard().setText('keep'))
+		self.run_in_app(window.close)
+		with self.assertRaises(Task.Canceled):
+			request.check_canceled()
+		session.complete(request, HashResult('stale', 3, False))
+		self.run_in_app(lambda: None)
+		self.assertEqual('keep', self.run_in_app(lambda: QApplication.clipboard().text()))
+
+	def test_unload_during_completion_prevents_auto_copy(self):
+		from calculate_file_hash.hashing import HashResult
+		window = self.controller.show(self.pane)
+		request = window.session.begin(self.url, 'sha256', True)
+		def prepare():
+			QApplication.clipboard().setText('keep')
+			window.busy_changed.connect(lambda busy: None if busy else self.owner.invalidate())
+		self.run_in_app(prepare)
+		window.session.complete(request, HashResult('late', 3, False))
+		self.run_in_app(lambda: None)
+		self.assertEqual('keep', self.run_in_app(lambda: QApplication.clipboard().text()))
+
 class PublicUiIT(QtIT):
 	def setUp(self):
 		from fman.ui import UiController, UiOwner, QuickList, Panel
@@ -201,6 +539,18 @@ class DockedPanelIT(QtIT):
 			window = Demo.show(pane)
 			self.assertIs(window, Demo.show(pane))
 			self.assertIs(window.bottom_panel, self.run_in_app(lambda: main._panel_dock.panel))
+			def detach_and_restore():
+				window.set_panel(None)
+				self.assertIsNone(main._panel_dock)
+				self.assertIsNone(window.bottom_panel)
+				self.assertTrue(window.alive.is_set())
+				self.assertTrue(window.isVisible())
+				window.set_panel(None)
+				panel = Panel()
+				panel.add(TextButton('Run'))
+				window.set_panel(panel)
+				self.assertIs(panel, main._panel_dock.panel)
+			self.run_in_app(detach_and_restore)
 			self.run_in_app(lambda: window.disposed.connect(disposed.set))
 			def operation():
 				started.set()

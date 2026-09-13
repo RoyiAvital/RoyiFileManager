@@ -126,7 +126,9 @@ def _environment():
 		ROOT / 'src' / 'main' / 'resources' / 'base' / 'Plugins' /
 		'SearchFileFuzzy',
 		ROOT / 'src' / 'main' / 'resources' / 'base' / 'Plugins' /
-		'Favorites'
+		'Favorites',
+		ROOT / 'src' / 'main' / 'resources' / 'base' / 'Plugins' /
+		'CalculateFileHash'
 	]
 	existing = environment.get('PYTHONPATH')
 	if existing:

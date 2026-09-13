@@ -188,7 +188,8 @@ class PaneToolWindow(ToolWindow):
 			return
 		self._remove_bottom_panel()
 		self.bottom_panel = panel
-		self.pane.window._widget.set_bottom_panel(panel, self.close, self._focus_from_panel)
+		if panel is not None:
+			self.pane.window._widget.set_bottom_panel(panel, self.close, self._focus_from_panel)
 
 	def _focus_from_panel(self, backwards=False):
 		self.raise_()

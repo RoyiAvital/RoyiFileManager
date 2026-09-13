@@ -29,6 +29,7 @@ Significant additions compared with `fman`:
 - **Sync Pane Location**: Send the inactive pane to the active pane's current folder from the Command Center.
 - **Favorites**: Press <kbd>Ctrl</kbd>+<kbd>B</kbd> for a fully features Favorites Manager, built entirely with the plug-in APIs.
 - **New Empty File**: Press <kbd>Cmd</kbd>+<kbd>N</kbd> to create an empty file without opening an editor.
+- **File Hash**: Press <kbd>Ctrl</kbd>+<kbd>H</kbd> for centered checksum output; use Calculate File Hash By to pick an algorithm in QuickSearch, then view the result. [Usage and settings](src/main/resources/base/Plugins/CalculateFileHash/README.md).
 
 ## Development
 

@@ -28,3 +28,5 @@
  - [ ] Add option to compare 2 files using external file comparison or integrate Meld view. See [SimpleCompare
 ](https://github.com/rjwojcicki/SimpleCompare).
  - [ ] Show System Process in a Pane with teh ability to kill a process. See [ProcessFS](https://github.com/mherrmann/ProcessFS).
+ - [x] Bug: On launch the status bar shows `v1.7.5`. It should show the version from `base.json`.
+ - [ ] Move to `PyQt6`.

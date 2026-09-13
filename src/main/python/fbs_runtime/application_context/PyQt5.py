@@ -1,8 +1,19 @@
+from fbs_runtime.application_context import cached_property
 from pathlib import Path
+import json
 import sys
 
 
 class ApplicationContext:
+	@cached_property
+	def build_settings(self):
+		if getattr(sys, 'frozen', False):
+			settings_path = Path(self.get_resource('build-settings/base.json'))
+		else:
+			settings_path = Path(__file__).resolve().parents[5] / \
+				'src/build/settings/base.json'
+		return json.loads(settings_path.read_text(encoding='utf-8'))
+
 	def get_resource(self, relative_path):
 		if getattr(sys, 'frozen', False):
 			resource_root = Path(sys._MEIPASS) / 'resources'

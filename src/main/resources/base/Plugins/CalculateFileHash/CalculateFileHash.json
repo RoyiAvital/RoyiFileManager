@@ -1,0 +1,6 @@
+{
+  "default_algorithm": "sha256",
+  "remember_last_algorithm": false,
+  "auto_copy": false,
+  "chunk_size_mib": 4
+}

@@ -9,6 +9,12 @@ API names outside the revised three-component contract remain proposed. Frozen v
 QuickSearch/QuickList navigation, Favorites management and Search File Content; broader
 viewer/editor infrastructure requires separately approved consumer plans.
 
+The file-hash consumer additionally ships `fman.ui.OutputTextBox`: selectable
+plain-text output with a top-left copy icon and Return/Enter copy-all. Its source
+and portable ZIP workflow are validated at 100/150/200% DPI. See the completed
+[Calculate File Hash task](../Done/CalculateFileHash.md); this does not complete
+the broader UI Elements roadmap.
+
 The motivating elements are a selectable QuickList and a compact bottom
 interaction panel inspired by Sublime Text's find panel. Extend that foundation
 with composable results and preview surfaces for the following plug-in ideas:
@@ -132,13 +138,13 @@ recency policy, not behavior that already exists.
 
 - Bounded list confirmation serves Favorites removal and can later serve
   [Process Pane](ProcessPane.md), [Unpack Archive](UnpackArchive.md), and
-  [Calculate File Hash](CalculateFileHash.md). Show the exact total and the first
+  [Calculate File Hash](../Done/CalculateFileHash.md). Show the exact total and the first
   K captured item labels, then the omitted count; default to Cancel/No.
-- Calculate File Hash is also a result-with-actions consumer: QuickList chooses
-  hash items; the bottom panel offers Copy, Copy Labeled and Compare with an
-  explicit current-item or selected-items scope. No inline row actions or
-  activation as an implicit operation. Prove this with a small
-  fixture in Phase A; the hash calculation feature remains its own task.
+- Both hash commands use a centered OutputTextBox beneath a file-path heading.
+  Calculate File Hash By selects the algorithm in QuickSearch before showing
+  the result; neither command mounts a Panel. Copy belongs to the output
+  control; comparison and alternate copy formats remain deferred. This
+  replaces the earlier hash QuickList/action-picker sketch for that consumer.
 
 ## Scope
 
@@ -466,6 +472,8 @@ Call `window.set_panel(panel)` after composing controls, instead of adding
 the panel to the tool window layout. The dock's close icon ends the whole session;
 its ownership and single-slot replacement policy are specified above. Panels not
 docked remain ordinary reusable widgets. Do not retain/use a panel after disposal.
+`window.set_panel(None)` detaches this session's panel without ending the result
+window or affecting another session's dock. Recreate controls before remounting.
 
 Theme.css hooks `.quicksearch-query` and `.quicksearch-item` also style QuickList.
 `.panel` maps to object name `panel` (`.bottom-panel` is a compatibility alias);
@@ -1308,6 +1316,32 @@ the dependent consumer task is complete.
   unshipped aliases, and make controller build canonical. Preserve the selected
   floating-list/docked-panel layout with focus-recovery coverage. Physical
   Alt+Tab and multi-monitor checks remain pending.
+
+### 2026_09_13 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: High
+- Context Window: Not exposed by host
+- Outcome: Aligned the hash consumer with the implemented public OutputTextBox
+  and docked algorithm/Calculate Panel. Shared regressions and extracted-ZIP
+  checks passed; broader UI Elements work remains pending. Implementation and
+  validation provenance is recorded in the completed Calculate File Hash task.
+
+### 2026_09_13 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Medium
+- Context Window: Not exposed by host
+- Outcome: Aligned the hash consumer with the user's command-specific layout:
+  centered output only for Ctrl+H, docked controls only for By. Confirmed
+  set_panel(None) should detach the owned panel without ending its window.
+  Shared Qt regressions passed; broader UI Elements scope remains pending.
 
 ## Implementer
 

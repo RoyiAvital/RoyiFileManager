@@ -513,7 +513,7 @@ Import from `fman.ui`. The complete explicit export list is:
 ```python
 ListItem, QuickList, Panel, IconButton, TextButton, DropDown, JsonSettings,
 UiController, UiOwner, Resource, settings_resource, matchers,
-ToolWindow, PaneToolWindow, NavigationHandle, navigate
+ToolWindow, PaneToolWindow, NavigationHandle, navigate, OutputTextBox
 ```
 
 This is an additive **provisional** API, not upstream fman 1.7.5. Public names
@@ -579,7 +579,7 @@ receive a `PaneToolWindow` in `UiController.build` instead of constructing eithe
 
 | Method/signal | Contract |
 | --- | --- |
-| `set_panel(panel)` | PaneToolWindow: mount one Panel across the main window above the status bar, with host-owned close control. Reject a closed/inactive session. |
+| `set_panel(panel)` | PaneToolWindow: mount one Panel across the main window above the status bar, with host-owned close control. `None` removes this session's panel without closing the tool. Reject a closed/inactive session. |
 | `close()` | UI-thread session dismissal; closes paired surfaces and prompts and emits disposal. |
 | `invalidate()` | Clear lifetime immediately and queue closure; safe for owner invalidation from workers. |
 | `post(callback, *args)` | Queue a short callback to Qt; discard delivery if session/owner is no longer active. |
@@ -698,7 +698,9 @@ Interaction contract:
 `add(widget, stretch=None)` adds and returns the widget; default stretch is 1
 for TextButton and 0 otherwise. `add_stretch()` inserts expanding space.
 Use `window.set_panel(panel)` to mount it; adding it to a list layout does not
-create the host dock.
+create the host dock. `window.set_panel(None)` removes the tool's own panel and
+keeps the result window alive. Detached controls are disposed by the host;
+create a new Panel when mounting again. Unrelated docks are not removed.
 
 | Component | Construction and behavior |
 | --- | --- |
@@ -711,6 +713,36 @@ signal `value_changed(value)`. Invalid values raise `ValueError` from set_value.
 Only checkable TextButtons accept boolean settings. DropDown distinguishes values
 by exact type as well as equality. Use normal button `clicked` signals for
 commands; a clicked signal may supply a boolean argument.
+
+### OutputTextBox
+
+`OutputTextBox(text='', parent=None, *, title='')` displays selectable, read-only
+plain text with a small top-left copy button and optional title beside it.
+Construct and use it on the Qt thread, normally
+inside `UiController.build`. Add it to the window layout and assign it to
+`window.focus_widget` when it is the primary output surface.
+
+- `set_title(title)` replaces the plain-text header; `title()` returns the full
+  supplied title. Both require the Qt thread; the title must be a string.
+  Long titles elide to fit and retain their full text in a tooltip. Titles are
+  never included in the copied output. Existing positional text/parent calls work.
+- `set_text(text)` replaces the complete string and resets selection/scroll;
+  non-string values raise `TypeError`.
+- `text()` returns the supplied string without display newline normalization.
+- `copy_text()` copies that complete string regardless of selection. Empty or
+  disabled output does not change the clipboard.
+- `copied` is a no-argument Qt signal emitted once for each nonempty copy-all
+  action. Connect it to caller-owned feedback; the widget starts no timer.
+- Return or keypad Enter in the text invokes copy-all. The icon is also
+  keyboard-accessible. Ctrl+C copies the selected text using normal Qt behavior;
+  Ctrl+A selects all. Copy does not close the owning window.
+
+Long lines wrap and tall output scrolls. HTML is literal text; editing, file I/O,
+streaming, syntax highlighting, and persistence are not provided. The control
+bundles its own theme-tinted SVG icon; callers do not access the private editor
+or button. Both hash commands embed it beneath a file-path window heading, with
+`Hash Algorithm: <Algorithm>` as its title. Calculate File Hash By selects the
+algorithm through QuickSearch first; neither command mounts a Panel.
 
 ### JsonSettings
 

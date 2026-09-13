@@ -53,6 +53,28 @@ QuickList QLineEdit {
 	border: 1px solid palette(mid);
 }
 
+#output-text-box {
+	background-color: palette(base);
+	border: 1px solid palette(mid);
+	border-radius: 3px;
+}
+
+#output-text-box QPlainTextEdit {
+	background-color: palette(base);
+	color: palette(text);
+	border: none;
+}
+
+#output-text-box QToolButton {
+	padding: 0;
+	border: 1px solid transparent;
+	border-radius: 2px;
+}
+
+#output-text-box QToolButton:hover, #output-text-box QToolButton:focus {
+	border-color: palette(highlight);
+}
+
 #plugin-panel-dock {
 	background-color: palette(button);
 	border-top: 1px solid palette(mid);
