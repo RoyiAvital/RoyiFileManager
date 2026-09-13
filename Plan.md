@@ -15,6 +15,7 @@
 - [Correct Provenance Metadata](Done/CorrectProvenanceMetadata.md)
 - [Favorites](Done/Favorites.md)
 - [Focused Validation Policy](Done/FocusedValidationPolicy.md)
+- [Matching Icon SVG](Done/MatchingIconSvg.md)
 - [New File](Done/NewFile.md)
 - [Release Workflow Hardening](Done/ReleaseWorkflowHardening.md)
 - [Self-Contained ZIP Tests](Done/SelfContainedZipTests.md)
