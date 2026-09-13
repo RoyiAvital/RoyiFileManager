@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
 
+### Fixed
+
+- Fixed a test-suite timing issue that could produce a misleading
+  permission error traceback during successful test runs.
+
 ## [0.3.1] - 2026-09-13
 
 API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.

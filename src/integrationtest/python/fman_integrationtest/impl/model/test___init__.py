@@ -80,8 +80,13 @@ class SortedFileSystemModelAT: # Instantiated in fman_integrationtest.test_qt
 		self.assertIn('listing denied', message)
 	def test_tracked_initial_error_and_cursor_failure(self):
 		from unittest.mock import patch
-		with patch.object(self._fs, 'iterdir', side_effect=PermissionError('denied')):
-			self.assertEqual('failure', self._tracked_location('stub://')[0])
+		with patch('fman.impl.model.worker.sys.excepthook') as exception_hook:
+			with patch.object(self._fs, 'iterdir', side_effect=PermissionError('denied')) as iterdir:
+				outcome, message = self._tracked_location('stub://')
+			self.assertEqual('failure', outcome)
+			self.assertIn('denied', message)
+			iterdir.assert_called_once_with('stub://')
+			exception_hook.assert_not_called()
 		def missing_cursor():
 			raise ValueError('File disappeared')
 		self.assertEqual('failure', self._tracked_location('stub://', missing_cursor)[0])
@@ -299,6 +304,7 @@ class SortedFileSystemModelAT: # Instantiated in fman_integrationtest.test_qt
 		self._model = self.run_in_app(
 			SortedFileSystemModel, None, self._fs, 'null://'
 		)
+		self._drain_initialization()
 		self._timeout = None if _is_debugger_attached() else .2
 	def tearDown(self):
 		model = self._model.sourceModel()
