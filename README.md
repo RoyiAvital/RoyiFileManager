@@ -5,9 +5,11 @@
 It retains the `fman` plug-in API so existing plug-ins can be used
 without changing their imports.
 
+See the [Plug In API Reference](PlugIn.md) for legacy APIs and new extensions.
+
 ## Planning and Implementation Workflow
 
-[Plan.md](Plan.md) is the task index. Each pending task has one standalone
+The [`Plan.md`](Plan.md) file is the task index. Each pending task has one standalone
 document under [Plan](Plan/), and completed tasks move to [Done](Done/). Task
 documents record design and review provenance, alternatives, runtime effects,
 tests, acceptance criteria, implementation provenance, and validation results.
@@ -20,11 +22,13 @@ Repository-wide contribution and task-lifecycle requirements are defined in
 
 Significant additions compared with `fman`:
 
-- **Search File Fuzzy:** Find files in the current folder or recursively using fuzzy or regular matching.
-- **Extended Status Bar:** Press `Ctrl+S` to cycle through disabled, active-pane, and per-pane file statistics.
-- **Sync Pane Location:** Send the inactive pane to the active pane's current folder from the Command Center.
-- **Favorites:** Press `Ctrl+B` to search and manage saved folders; unavailable locations are reported without navigation.
-- **New Empty File:** Press `Ctrl+N` to create an empty file without opening an editor.
+- **Docked Panel**: Allows controlling states and operations. Exposed to be used by Plug-In's.
+- **UI Components**: New building blocks that expand what plug-ins can do. [Plug-in UI guide](Plan/UIElements.md#plug-in-api).
+- **Fuzzy File Search**: Find files in the current folder or recursively using fuzzy or regular matching.
+- **Extended Status Bar**: Press <kbd>Cmd</kbd>+<kbd>S</kbd> to cycle through disabled, active-pane, and per-pane file statistics.
+- **Sync Pane Location**: Send the inactive pane to the active pane's current folder from the Command Center.
+- **Favorites**: Press <kbd>Ctrl</kbd>+<kbd>B</kbd> for a fully features Favorites Manager, built entirely with the plug-in APIs.
+- **New Empty File**: Press <kbd>Cmd</kbd>+<kbd>N</kbd> to create an empty file without opening an editor.
 
 ## Development
 

@@ -149,6 +149,10 @@ class FavoriteItemsTest(TestCase):
 class FavoriteCommandTest(TestCase):
 	def setUp(self):
 		super().setUp()
+		from fman.ui import UiOwner
+		owner = patch.object(favorites.FavoritesController, 'owner', UiOwner())
+		owner.start()
+		self.addCleanup(owner.stop)
 		favorites._invalid_entries_reported = False
 
 	def test_command_names_are_registered_from_class_names(self):
@@ -185,9 +189,13 @@ class FavoriteCommandTest(TestCase):
 	):
 		pane = Mock()
 		pane.get_path.return_value = 'file:///D:/Projects'
+		pane.get_file_under_cursor.return_value = 'file:///D:/Projects/report.txt'
+		pane.get_selected_files.return_value = ['file:///D:/Projects/report.txt']
 
 		AddCurrentFolderToFavorites(pane)()
 
+		pane.get_file_under_cursor.assert_not_called()
+		pane.get_selected_files.assert_not_called()
 		self.assertEqual(
 			'file:///D:/Projects',
 			save_json_mock.call_args.args[1]['favorites'][0]['url']
@@ -196,91 +204,24 @@ class FavoriteCommandTest(TestCase):
 			'Added Projects to favorites.', timeout_secs=3
 		)
 
-	@patch('favorites.exists', return_value=True)
-	@patch('favorites.show_quicksearch')
-	@patch('favorites.load_json')
-	def test_show_opens_selected_existing_favorite(
-		self, load_json_mock, show_quicksearch_mock, exists_mock
-	):
-		url = 'file:///D:/Projects'
-		load_json_mock.return_value = {
-			'favorites': [{'name': 'Projects', 'url': url}]
-		}
-		show_quicksearch_mock.side_effect = lambda get_items, *args: (
-			'', list(get_items(''))[0].value
-		)
+	@patch('favorites.FavoritesController.show')
+	def test_show_routes_to_manager_and_preserves_query(self, open_manager):
 		pane = Mock()
-
-		ShowFavorites(pane)()
-
-		pane.run_command.assert_called_once_with(
-			'open_directory', {'url': url}
-		)
-
-	@patch('favorites.show_alert')
-	@patch('favorites.exists', return_value=False)
-	@patch('favorites.show_quicksearch')
-	@patch('favorites.load_json')
-	def test_show_reports_missing_favorite_without_navigation(
-		self, load_json_mock, show_quicksearch_mock, exists_mock,
-		show_alert_mock
-	):
-		url = 'file:///D:/Missing'
-		load_json_mock.return_value = {
-			'favorites': [{'name': 'Missing', 'url': url}]
-		}
-		show_quicksearch_mock.side_effect = lambda get_items, *args: (
-			'', list(get_items(''))[0].value
-		)
-		pane = Mock()
-
-		ShowFavorites(pane)()
-
-		show_alert_mock.assert_called_once()
+		ShowFavorites(pane)('projects')
+		open_manager.assert_called_once_with(pane, 'projects')
 		pane.run_command.assert_not_called()
 
-	@patch('favorites.show_alert')
-	@patch('favorites.exists', side_effect=OSError('Unavailable'))
-	@patch('favorites.show_quicksearch')
-	@patch('favorites.load_json')
-	def test_show_reports_access_error_without_navigation(
-		self, load_json_mock, show_quicksearch_mock, exists_mock,
-		show_alert_mock
-	):
-		url = 'file:///D:/Unavailable'
-		load_json_mock.return_value = {
-			'favorites': [{'name': 'Unavailable', 'url': url}]
-		}
-		show_quicksearch_mock.side_effect = lambda get_items, *args: (
-			'', list(get_items(''))[0].value
-		)
+	@patch('favorites.FavoritesController.show')
+	def test_show_opens_manager_without_requiring_bookmarks(self, open_manager):
 		pane = Mock()
-
 		ShowFavorites(pane)()
+		open_manager.assert_called_once_with(pane, '')
 
-		self.assertIn('Unavailable', show_alert_mock.call_args.args[0])
-		pane.run_command.assert_not_called()
-
-	@patch('favorites.exists', side_effect=NotImplementedError())
-	@patch('favorites.show_quicksearch')
-	@patch('favorites.load_json')
-	def test_show_defers_unsupported_existence_check_to_open_directory(
-		self, load_json_mock, show_quicksearch_mock, exists_mock
-	):
-		url = 'example://Projects'
-		load_json_mock.return_value = {
-			'favorites': [{'name': 'Projects', 'url': url}]
-		}
-		show_quicksearch_mock.side_effect = lambda get_items, *args: (
-			'', list(get_items(''))[0].value
-		)
-		pane = Mock()
-
-		ShowFavorites(pane)()
-
-		pane.run_command.assert_called_once_with(
-			'open_directory', {'url': url}
-		)
+	def test_legacy_commands_are_hidden_but_callable(self):
+		self.assertIn('Show favorites', ShowFavorites.aliases)
+		for command in (RemoveFromFavorites, RenameFavorite):
+			self.assertFalse(command(Mock()).is_visible())
+			self.assertTrue(callable(command(Mock())))
 
 	@patch('favorites.show_status_message')
 	@patch('favorites.show_alert', return_value=YES)
@@ -465,3 +406,52 @@ class FavoriteCommandTest(TestCase):
 			{add_url, keep_url},
 			{favorite['url'] for favorite in state['favorites']}
 		)
+
+
+class FavoritesManagerLogicTest(TestCase):
+	def test_projection_never_changes_recent_order(self):
+		from favorites.ui import project
+		records = (Favorite('Zulu', 'file:///C:/A'), Favorite('Alpha', 'file:///C:/Z'))
+		self.assertEqual(['Zulu', 'Alpha'], [item.title for item in project(records, 'Recent')])
+		self.assertEqual(['Alpha', 'Zulu'], [item.title for item in project(records, 'Name')])
+		self.assertEqual(['Zulu', 'Alpha'], [item.title for item in project(records, 'Path')])
+		self.assertEqual('Zulu', records[0].name)
+
+	def test_mutation_revalidates_captured_records_and_publishes_once(self):
+		from favorites.ui import mutate
+		from fman.impl.ui import UiOwner
+		captured = (Favorite('Old', 'file:///C:/Old'), Favorite('Keep', 'file:///C:/Keep'))
+		state = {'favorites': [
+			{'name': 'Changed', 'url': captured[0].url},
+			captured[1]._asdict(), {'name': 'Added', 'url': 'file:///C:/Added'}
+		]}
+		with patch('favorites.load_json', return_value=state), \
+				patch('favorites.save_json') as save, \
+				patch.object(favorites._resource, 'publish') as publish:
+			self.assertEqual(('Old',), mutate(captured, None, UiOwner()))
+			self.assertEqual(['Changed', 'Added'], [entry['name'] for entry in save.call_args.args[1]['favorites']])
+			publish.assert_called_once()
+		self.assertEqual(3, len(state['favorites']))
+
+	def test_save_failure_does_not_publish_or_mutate_cached_data(self):
+		from favorites.ui import mutate
+		from fman.impl.ui import UiOwner
+		record = Favorite('Keep', 'file:///C:/Keep')
+		state = {'favorites': [record._asdict()]}
+		with patch('favorites.load_json', return_value=state), \
+				patch('favorites.save_json', side_effect=OSError('disk full')), \
+				patch.object(favorites._resource, 'publish') as publish:
+			with self.assertRaises(OSError):
+				mutate((record,), None, UiOwner())
+			publish.assert_not_called()
+		self.assertEqual([record._asdict()], state['favorites'])
+
+	def test_closed_or_unloaded_actions_do_not_write(self):
+		from favorites.ui import mutate
+		from fman.impl.ui import UiOwner
+		owner = UiOwner()
+		with patch('favorites.save_json') as save:
+			mutate((), None, owner, lambda: False)
+			owner.invalidate()
+			mutate((), None, owner)
+			save.assert_not_called()

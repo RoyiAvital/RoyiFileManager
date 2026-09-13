@@ -1,5 +1,12 @@
 # TODO
 
+- [ ] Add a constrained abstraction layer for `fman.ui`: keep Qt widgets,
+  models and signals private, and expose only explicitly supported operations
+  and plain-data callbacks through small wrappers, without unrestricted Qt
+  method forwarding. Keep layout, focus, threading and lifecycle host-owned;
+  migrate Favorites as the reference consumer, document API migration, and add
+  focused tests for the boundary and preserved behavior. Preserve the upstream
+  fman 1.7.5 plug-in API.
 - [ ] Replace legacy `tinycss 0.4` usage with `tinycss2` to remove Python 3.14
   invalid-escape warnings. Preserve existing CSS selector, declaration, value,
   Unicode, and parse-error behavior; add focused parser and theme regression

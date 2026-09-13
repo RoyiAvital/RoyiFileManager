@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+Notable implemented changes to the application are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -9,9 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
 
+## [0.3.0] - 2026-09-13
+
+API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
+
 ### Added
 
 - Added a vector `SVG` icon matching the current bitmap icon.
+- Added reusable `fman.ui` components: an embeddable QuickList, a compact bottom
+  panel, icon toggles, text buttons, drop-downs and asynchronous JSON settings
+  bindings. Controls preserve unrelated settings and synchronize committed state.
+- Added public host-owned UI construction, pane tool windows, resource transactions,
+  shared matchers, theme hooks and cancellable tracked navigation. Favorites now
+  demonstrates these exported services without internal host or Core imports.
+- Added a persistent Favorites Manager on `Ctrl+B`, with Name/Path fuzzy
+  filtering, Recent/Name/Path sorting, multi-selection, immediate bookmark-only
+  deletion, rename and tracked Go To navigation. Open managers synchronize saved
+  changes and close safely on plug-in unload; legacy command IDs remain callable.
 
 ## [0.2.2] - 2026-09-13
 

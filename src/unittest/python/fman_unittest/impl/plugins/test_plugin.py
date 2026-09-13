@@ -27,6 +27,29 @@ class GetCommandClassNameTest(TestCase):
 			self.assertEqual(test_string, result)
 
 class FileSystemWrapperTest(TestCase):
+	def test_tracked_plugin_defects_are_attributed_and_propagated(self):
+		from fman.impl.navigation import NavigationRequest, tracking
+		class Broken(FileSystem):
+			scheme = 'broken://'
+			def iterdir(self, path):
+				yield 42
+		wrapper = self._wrap(Broken)
+		with tracking(NavigationRequest(lambda *args: None)):
+			with self.assertRaises(TypeError):
+				list(wrapper.iterdir(''))
+		self._expect_error("FileSystem 'Broken' raised error.")
+	def test_tracked_iteration_error_propagates_without_duplicate_alert(self):
+		from fman.impl.navigation import NavigationRequest, tracking
+		class Denied(FileSystem):
+			scheme = 'denied://'
+			def iterdir(self, path):
+				yield 'first'
+				raise PermissionError('denied')
+		wrapper = self._wrap(Denied)
+		with tracking(NavigationRequest(lambda *args: None)):
+			with self.assertRaises(PermissionError):
+				list(wrapper.iterdir(''))
+		self.assertEqual([], self._error_handler.error_messages)
 	def test_iterdir_not_implemented(self):
 
 		class IterdirNotImplemented(FileSystem):

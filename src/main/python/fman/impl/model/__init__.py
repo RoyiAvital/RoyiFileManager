@@ -28,6 +28,8 @@ class SortedFileSystemModel(QSortFilterProxyModel):
 		self._filters = []
 		self._already_visited = set()
 		self._num_rows_to_preload = 0
+		self._navigation_request = None
+		self._location_generation = 0
 		self.set_location(null_location)
 		self._fs.file_removed.add_callback(self._on_file_removed)
 	def set_num_rows_to_preload(self, preload_rows):
@@ -35,6 +37,12 @@ class SortedFileSystemModel(QSortFilterProxyModel):
 	def set_location(
 		self, url, sort_column='', ascending=True, callback=None, onerror=None
 	):
+		from fman.impl.navigation import current_request
+		request = current_request()
+		generation = self._begin_navigation(request)
+		if request and not request.active:
+			request.cancel()
+			return
 		if callback is None:
 			callback = lambda: None
 		if onerror is None:
@@ -43,14 +51,21 @@ class SortedFileSystemModel(QSortFilterProxyModel):
 		error_urls = {url}
 		while True:
 			try:
-				self._set_location(url, sort_column, ascending, callback)
+				self._set_location(url, sort_column, ascending, callback, request, generation)
 				break
 			except Exception as e:
 				url = onerror(e, url)
 				if url in error_urls:
 					raise
 				error_urls.add(url)
-	def _set_location(self, url, sort_column, ascending, callback):
+	@run_in_main_thread
+	def _begin_navigation(self, request):
+		if self._navigation_request and self._navigation_request is not request:
+			self._navigation_request.cancel()
+		self._navigation_request = request
+		self._location_generation += 1
+		return self._location_generation
+	def _set_location(self, url, sort_column, ascending, callback, request=None, generation=None):
 		try:
 			url_resolved = self._fs.resolve(url)
 		except FileNotFoundError:
@@ -73,10 +88,9 @@ class SortedFileSystemModel(QSortFilterProxyModel):
 			url = url_resolved
 		old_model = self.sourceModel()
 		if old_model:
-			if url == old_model.get_location():
+			if url == old_model.get_location() and request is None:
 				callback()
 				return
-			old_model.shutdown()
 		columns = self._fs.get_columns(url)
 		sort_col_index = 0
 		if sort_column:
@@ -85,25 +99,47 @@ class SortedFileSystemModel(QSortFilterProxyModel):
 				sort_col_index = column_names.index(sort_column)
 			except ValueError:
 				pass
-		if url in self._already_visited:
+		if url in self._already_visited and request is None:
 			orig_callback = callback
 			def callback():
 				orig_callback()
 				self.reload()
 		self._set_location_main(
-			url, columns, sort_col_index, ascending, callback
+			url, columns, sort_col_index, ascending, callback, request, generation
 		)
 	@run_in_main_thread
 	def _set_location_main(
-		self, url, columns, sort_col_index, ascending, callback
+		self, url, columns, sort_col_index, ascending, callback, request=None, generation=None
 	):
+		if generation is not None and generation != self._location_generation:
+			if request:
+				request.cancel()
+			return
+		if request and not request.active:
+			request.cancel()
+			return
 		old_model = self.sourceModel()
 		if old_model:
+			old_model.shutdown()
 			self._disconnect_signals(old_model)
 		new_model = Model(
 			self._fs, url, columns, sort_col_index, ascending,
 			self._num_rows_to_preload, self._filters
 		)
+		if request:
+			request.started = True
+			new_model._navigation_request = request
+			original_callback = callback
+			def callback():
+				if request.active and generation == self._location_generation:
+					try:
+						original_callback()
+					except Exception as error:
+						request.fail(error)
+					else:
+						request.finish('success')
+				else:
+					request.cancel()
 		self.setSourceModel(new_model)
 		self._connect_signals(new_model)
 		self._already_visited.add(url)

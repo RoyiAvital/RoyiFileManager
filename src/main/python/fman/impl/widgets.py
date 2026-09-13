@@ -335,7 +335,13 @@ class MainWindow(QMainWindow):
 		self._pane_status_widgets = {}
 		self._status_focus_tracking = False
 		self._splitter = Splitter(self)
-		self.setCentralWidget(self._splitter)
+		central = QWidget(self)
+		self._central_layout = QVBoxLayout(central)
+		self._central_layout.setContentsMargins(0, 0, 0, 0)
+		self._central_layout.setSpacing(0)
+		self._central_layout.addWidget(self._splitter, 1)
+		self._panel_dock = None
+		self.setCentralWidget(central)
 		self._status_bar = QStatusBar(self)
 		self._status_bar_text = QLabel(self._status_bar)
 		self._status_bar_text.setOpenExternalLinks(True)
@@ -345,10 +351,33 @@ class MainWindow(QMainWindow):
 		self._timer = QTimer(self)
 		self._timer.timeout.connect(self.clear_status_message)
 		self._timer.setSingleShot(True)
+		self._shown_timer = QTimer(self)
+		self._shown_timer.setSingleShot(True)
+		self._shown_timer.timeout.connect(self.shown)
 		self._dialog = None
 		self._init_help_menu(help_menu_actions)
 	def set_controller(self, controller):
 		self._controller = controller
+	def set_bottom_panel(self, panel, close_session, focus_session=None):
+		from fman.impl.ui.panel import PanelDock
+		if self._panel_dock is not None:
+			if self._panel_dock.panel is panel:
+				return
+			previous = self._panel_dock
+			previous.close_session()
+			self.remove_bottom_panel(previous.panel)
+		self._panel_dock = PanelDock(panel, close_session, self.centralWidget(), focus_session)
+		self._central_layout.addWidget(self._panel_dock)
+		self._panel_dock.show()
+		panel.show()
+	def remove_bottom_panel(self, panel):
+		if self._panel_dock is None or self._panel_dock.panel is not panel:
+			return
+		dock = self._panel_dock
+		self._panel_dock = None
+		dock.hide()
+		self._central_layout.removeWidget(dock)
+		dock.deleteLater()
 	def _init_help_menu(self, help_menu_actions):
 		if not help_menu_actions:
 			return
@@ -539,8 +568,13 @@ class MainWindow(QMainWindow):
 		# singleShot after 50 ms (not 0) ensures that the window is already
 		# fully visible. Any alerts we show in response to .shown are then
 		# placed correctly over the center of the window.
-		QTimer(self).singleShot(50, self.shown.emit)
+		self._shown_timer.start(50)
 	def closeEvent(self, _):
+		self._shown_timer.stop()
+		if self._panel_dock is not None:
+			dock = self._panel_dock
+			dock.close_session()
+			self.remove_bottom_panel(dock.panel)
 		self._clear_extended_status_bar()
 		self.closed.emit()
 	@run_in_main_thread
@@ -572,6 +606,8 @@ class MainWindow(QMainWindow):
 		self._splitter.restoreState(state[self_state_len:-1])
 		return True
 	def focusNextPrevChild(self, next):
+		if self._panel_dock is not None and self._panel_dock.isAncestorOf(self.focusWidget()):
+			return self._panel_dock.focusNextPrevChild(next)
 		# Returning False here lets us receive Tab in keyPressEvent(...).
 		# This in turn lets us define our own key binding for the Tab key.
 		return False

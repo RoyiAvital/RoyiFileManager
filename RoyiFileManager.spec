@@ -14,7 +14,9 @@ datas = [
 binaries = winpty_binaries + send2trash_binaries
 hidden_imports = [
 	'adodbapi', 'ctypes.wintypes', 'win32com.shell.shell',
-	'win32com.shell.shellcon', 'win32gui', 'win32wnet'
+	'win32com.shell.shellcon', 'win32gui', 'win32wnet',
+	'fman.ui', 'fman.impl.ui.quicklist', 'fman.impl.ui.panel',
+	'fman.impl.ui.session', 'fman.impl.navigation'
 ] + winpty_imports + send2trash_imports
 
 a = Analysis(

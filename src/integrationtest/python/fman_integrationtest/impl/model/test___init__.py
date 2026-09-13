@@ -22,6 +22,69 @@ class SortedFileSystemModelAT: # Instantiated in fman_integrationtest.test_qt
 	def test_location_after_init(self):
 		self.assertEqual('null://', self._model.get_location())
 		self.assertEqual((self._null_column,), self._model.get_columns())
+	def _tracked_location(self, url, callback=None):
+		from fman.impl.navigation import NavigationRequest, tracking
+		finished = Event()
+		outcomes = []
+		def deliver(*outcome):
+			outcomes.append(outcome)
+			finished.set()
+		request = NavigationRequest(deliver)
+		with tracking(request):
+			self._model.set_location(url, callback=callback)
+		self.assertTrue(finished.wait(2), 'Tracked navigation did not finish')
+		self.assertTrue(request.settled.wait(2), 'Navigation did not settle')
+		self._drain_initialization()
+		self.assertEqual(1, len(outcomes))
+		return outcomes[0]
+	def test_tracked_empty_and_same_path_navigation(self):
+		self.assertEqual('success', self._tracked_location('stub://dir')[0])
+		self.assertEqual('success', self._tracked_location('stub://dir')[0])
+	def test_superseded_before_init_releases_waiter(self):
+		from unittest.mock import patch
+		from fman.impl.model.model import Model
+		from fman.impl.navigation import NavigationRequest, tracking
+		from fman.impl.ui import submit_work
+		for attempt in range(3):
+			request = NavigationRequest(lambda *args: None)
+			with patch.object(Model, 'start'):
+				with tracking(request):
+					self._model.set_location('stub://dir')
+			old_model = self.run_in_app(self._model.sourceModel)
+			finished = Event()
+			self.assertTrue(submit_work(lambda: request.wait(1), lambda *args: finished.set()))
+			self._set_location('stub://')
+			self.assertTrue(request.settled.wait(1))
+			self.assertTrue(finished.wait(1))
+			self.assertTrue(old_model._shutdown)
+			self.assertFalse(request.begin_initialization())
+	def test_column_failure_preserves_displayed_model(self):
+		from unittest.mock import patch
+		self._set_location('stub://')
+		old_model = self.run_in_app(self._model.sourceModel)
+		with patch.object(self._fs, 'get_columns', side_effect=PermissionError('columns denied')):
+			with self.assertRaises(PermissionError):
+				self._model.set_location('stub://dir')
+		self.assertIs(old_model, self.run_in_app(self._model.sourceModel))
+		self.assertFalse(old_model._shutdown)
+		self._set_location('stub://dir')
+		self.assertTrue(old_model._shutdown)
+	def test_tracked_iterator_failure_is_not_success(self):
+		from unittest.mock import patch
+		def denied(url):
+			yield '0'
+			raise PermissionError('listing denied')
+		with patch.object(self._fs, 'iterdir', side_effect=denied):
+			outcome, message = self._tracked_location('stub://')
+		self.assertEqual('failure', outcome)
+		self.assertIn('listing denied', message)
+	def test_tracked_initial_error_and_cursor_failure(self):
+		from unittest.mock import patch
+		with patch.object(self._fs, 'iterdir', side_effect=PermissionError('denied')):
+			self.assertEqual('failure', self._tracked_location('stub://')[0])
+		def missing_cursor():
+			raise ValueError('File disappeared')
+		self.assertEqual('failure', self._tracked_location('stub://', missing_cursor)[0])
 	def test_set_location(self):
 		inited = Event()
 		self._model.set_location('stub://', callback=inited.set)
@@ -170,6 +233,12 @@ class SortedFileSystemModelAT: # Instantiated in fman_integrationtest.test_qt
 		loaded = Event()
 		self._model.set_location(location, callback=loaded.set)
 		self._wait_for(loaded)
+		self._drain_initialization()
+	def _drain_initialization(self):
+		drained = Event()
+		model = self.run_in_app(self._model.sourceModel)
+		model._worker.submit(1, drained.set)
+		self.assertTrue(drained.wait(2), 'Model initialization did not drain')
 	def _get_data(self, role=DisplayRole):
 		result = []
 		for row in range(self._model.rowCount()):

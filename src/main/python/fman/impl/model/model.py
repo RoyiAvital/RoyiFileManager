@@ -69,24 +69,50 @@ class Model(SortFilterTableModel, DragAndDrop):
 		self._file_watcher = FileWatcher(fs, self)
 		self._worker = Worker()
 		self._shutdown = False
+		self._navigation_request = None
 	def start(self, callback):
 		self._worker.start()
 		self._init(callback)
 	@transaction(priority=1)
 	def _init(self, callback):
+		from fman.impl.navigation import tracking
+		try:
+			with tracking(self._navigation_request):
+				if self._navigation_request:
+					if not self._navigation_request.begin_initialization():
+						return
+					self._fs.clear_cache(self._location)
+				self._initialize(callback)
+		except Exception as error:
+			if self._navigation_request:
+				self._navigation_request.fail(error)
+			else:
+				raise
+		finally:
+			if self._navigation_request:
+				self._navigation_request.end_initialization()
+	def _initialize(self, callback):
 		files = []
 		try:
 			file_names = iter(self._fs.iterdir(self._location))
-		except FileNotFoundError:
+		except FileNotFoundError as error:
+			if self._navigation_request:
+				self._navigation_request.fail(error)
 			self.location_disappeared.emit(self._location)
 			return
 		while not self._shutdown:
 			try:
 				file_name = next(file_names)
-			except FileNotFoundError:
+			except FileNotFoundError as error:
+				if self._navigation_request:
+					self._navigation_request.fail(error)
 				self.location_disappeared.emit(self._location)
 				return
-			except (StopIteration, OSError):
+			except StopIteration:
+				break
+			except OSError as error:
+				if self._navigation_request:
+					self._navigation_request.fail(error)
 				break
 			else:
 				url = join(self._location, file_name)
@@ -427,6 +453,8 @@ class Model(SortFilterTableModel, DragAndDrop):
 		if self._shutdown:
 			return
 		self._shutdown = True
+		if self._navigation_request:
+			self._navigation_request.cancel()
 		# Similarly to why we don't want to call FileWatcher#start() from the
 		# main thread, we also don't want to call #shutdown() from it to avoid
 		# potential deadlocks. So do it asynchronously:

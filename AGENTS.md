@@ -4,9 +4,13 @@ These instructions apply to the entire repository.
 
 ## Task Documents
 
-Every task starts with a dedicated Markdown document under `Plan/` before
-implementation begins, including features, refactors, bug fixes, documentation,
-build changes, and repository-maintenance work.
+Create a dedicated Markdown task document under `Plan/` only when the user
+explicitly requests a plan or task document. A plan us mostly needed for new features or change of the code.
+Do not create one automatically for documentation, build changes, or repository
+maintenance. Do not create or update `Plan.md` entries for tasks without a task
+document, or create a document under `Done/` to bypass this rule.
+
+When a task document is explicitly requested:
 
 - Use one canonical file per task: `Plan/TaskName.md`.
 - Use descriptive PascalCase filenames without spaces, for example
@@ -33,7 +37,8 @@ not apply. Do not silently omit it.
 
 ## Reviewer Records
 
-Append a record whenever a task is designed or reviewed:
+When a task document exists, append a record whenever that task is designed or
+reviewed. Do not create a task document solely to record provenance:
 
 ```markdown
 ## Reviewers
@@ -45,7 +50,7 @@ Append a record whenever a task is designed or reviewed:
 - Agent: <Acting agent>
 - Model: <Model identifier or Not exposed by host>
 - Effort: <Low, Medium, or High>
-- Context window: <Context-window size or Not exposed by host>
+- Context Window: <Context-window size or Not exposed by host>
 - Outcome: <Review outcome>
 ```
 
@@ -54,12 +59,21 @@ Rules:
 - Dates use `YYYY_MM_DD`.
 - The acting contributor supplies its own metadata for every record.
 - `Agent` identifies the product or agent performing the work.
-- `Model` identifies the underlying model when exposed by the host; otherwise
-  write `Not exposed by host`. Do not infer a model or copy the agent name.
+- `Model` records the model signature. First check the session host or an
+  available official API for an explicit identifier of the model running the
+  current session. Use that identifier when available. Do not infer it from a
+  model catalog, configured default, agent name, or another session's metadata.
+- If no explicit current-session identifier is available, use the exact model
+  signature assigned by the user. If neither source provides a signature, write
+  `Not exposed by host`. Do not add a separate user-supplied label field or a
+  qualification suffix to the signature.
+- An assigned signature is a user-directed attribution convention, not independent
+  verification of the underlying model. This policy does not change `Agent`,
+  `Effort`, or `Context Window`, and does not rewrite historical records.
 - `Effort` reflects the effort used for that activity and is `Low`, `Medium`,
   or `High`.
-- `Context window` records the size exposed to the acting agent; otherwise
-  write `Not exposed by host`.
+- `Context Window` records the size exposed to the acting agent; otherwise
+  write `Not exposed by host`. Use exactly this field capitalization in new records.
 - Only the first planning record for a task uses `Activity: Design`.
 - Every later planning pass uses `Activity: Review`, including revisions by the
   original designer.
@@ -69,11 +83,14 @@ Rules:
 
 ## Implementation And Completion
 
-Before implementation, ensure the task design is reviewed and its acceptance
-criteria are testable. During implementation, keep the task document aligned
-with deliberate design changes.
+When a task document exists, ensure its design is reviewed and its acceptance
+criteria are testable before implementation. Keep that document aligned with
+deliberate design changes. Without a task document, proceed with the requested
+work and report the changes and validation results in the final response; no
+formal plan or provenance document is required.
 
-Once implementation is complete:
+Once implementation is complete, apply the following steps only when a task
+document exists:
 
 1. Add an `Implementer` section using the same metadata fields:
 
@@ -87,7 +104,7 @@ Once implementation is complete:
   - Agent: <Acting agent>
   - Model: <Model identifier or Not exposed by host>
   - Effort: <Low, Medium, or High>
-  - Context window: <Context-window size or Not exposed by host>
+  - Context Window: <Context-window size or Not exposed by host>
   - Outcome: <Implementation outcome and decisive checks>
    ```
 
@@ -98,8 +115,10 @@ Once implementation is complete:
 4. Move the canonical task file from `Plan/TaskName.md` to
    `Done/TaskName.md`; do not copy it and leave a duplicate behind.
 5. Move its link from Pending to Completed in `Plan.md`.
-6. Update `CHANGELOG.md` in the same change. A task is not complete until its
-   user-visible result is represented there.
+
+Update `CHANGELOG.md` when a task makes an implemented application change covered
+by the Changelog policy below, whether or not a task document exists. Plans,
+reviews, and documentation-only work do not require a changelog entry.
 
 ## Runtime And Compatibility Requirements
 
@@ -122,8 +141,8 @@ Once implementation is complete:
 - Match test breadth to risk: unit tests for pure logic, Qt integration tests
   for signals/widgets/thread affinity, and end-to-end smoke tests for startup,
   persistence, packaging, or external tools.
-- State the exact focused validation commands in the task document and final
-  report.
+- State the exact focused validation commands in the final report and, when one
+  exists, the task document.
 - Run the narrowest relevant test immediately after the first substantive edit,
   then run focused tests covering the task and every file changed by it before
   completion.
@@ -133,6 +152,14 @@ Once implementation is complete:
   environmental failures rather than hiding them.
 
 ## Changelog
+
+Record implemented application features, fixes, and code changes only, including
+application assets or build/packaging changes that affect the delivered product.
+Do not record planned or proposed features, work on task documents, review or
+provenance bookkeeping, agent instructions, development-process policies, or
+documentation-only and test-only changes. Document an application's actual change,
+not the planning or review activity that preceded it. A task with a qualifying
+application change is not complete until that change is represented here.
 
 Follow Keep a Changelog structure. Every release section, including
 `Unreleased`, must contain an explicit API compatibility statement, for example:

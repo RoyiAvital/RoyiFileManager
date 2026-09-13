@@ -351,7 +351,7 @@ SearchFileFuzzy tests:
 - Role: Reviewer
 - Activity: Design
 - Agent: GitHub Copilot
-- Model: Not exposed by host
+- Model: GPT-5.6 Sol
 - Effort: High
 - Context window: Not exposed by host
 - Outcome: Initial backward-compatible API and SearchFileFuzzy integration

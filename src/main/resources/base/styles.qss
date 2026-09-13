@@ -3,6 +3,69 @@ QTableView, QMessageBox, QDialog, QListView {
 	border: none;
 }
 
+Panel {
+	background-color: palette(button);
+	border-top: 1px solid palette(mid);
+}
+
+Panel QPushButton, Panel QComboBox {
+	padding: 4px 10px;
+	min-height: 18px;
+	border: 1px solid palette(mid);
+	border-radius: 2px;
+	background-color: palette(base);
+	color: palette(text);
+}
+
+Panel QToolButton {
+	width: 26px;
+	height: 26px;
+	padding: 0;
+	border: 1px solid transparent;
+	border-radius: 2px;
+	background: transparent;
+}
+
+Panel QToolButton:checked, Panel QPushButton:checked {
+	background-color: palette(highlight);
+	color: palette(highlighted-text);
+	border-color: palette(highlight);
+}
+
+Panel QToolButton:hover, Panel QPushButton:hover {
+	border-color: palette(highlight);
+}
+
+Panel QToolButton:focus, Panel QPushButton:focus, Panel QComboBox:focus {
+	border-color: palette(highlight);
+}
+
+Panel QPushButton:disabled, Panel QComboBox:disabled {
+	color: palette(mid);
+}
+
+QuickList QLineEdit {
+	padding: 5px;
+	border: 1px solid palette(mid);
+}
+
+#plugin-tool-window {
+	border: 1px solid palette(mid);
+}
+
+#plugin-panel-dock {
+	background-color: palette(button);
+	border-top: 1px solid palette(mid);
+}
+
+#plugin-panel-dock QToolButton {
+	padding: 0;
+}
+
+#plugin-panel-dock Panel {
+	border-top: none;
+}
+
 QHeaderView, QHeaderView::section {
 	background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1, stop: 0 #363731, stop: 1 #272822);
 }
@@ -133,7 +196,7 @@ Prompt QLineEdit {
 	min-width: 20em;
 }
 
-Quicksearch {
+Quicksearch, QuickList {
 	background-color: #404040;
 }
 
@@ -152,7 +215,7 @@ Quicksearch #query-container > Div {
 	border: 1px solid #2c2c2c;
 }
 
-Quicksearch QLineEdit {
+Quicksearch QLineEdit, QuickList QLineEdit {
 	color: #1d1d1d;
 	background-color: #e6e6e6;
 	border: 1px solid #dddddd;
@@ -170,6 +233,10 @@ Quicksearch QListView {
 	background-color: #404040;
 	margin-left: 4px;
 	margin-right: 4px;
+}
+
+QuickList QListView {
+	background-color: #404040;
 }
 
 Quicksearch QListView::item:selected {

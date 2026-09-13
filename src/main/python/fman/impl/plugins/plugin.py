@@ -2,6 +2,7 @@ from fman import DirectoryPaneCommand, DirectoryPaneListener, ApplicationCommand
 from fman.fs import FileSystem, Column
 from fman.impl.font_database import FontError
 from fman.impl.util import listdir_absolute
+from fman.impl.ui import UiController, UiOwner
 from glob import glob
 from importlib.util import module_from_spec, spec_from_file_location
 from inspect import getmro
@@ -117,6 +118,7 @@ class ExternalPlugin(Plugin):
 		self._font_database = font_database
 		self._context_menu_provider = context_menu_provider
 		self._unload_actions = []
+		self._ui_owners = []
 	@property
 	def name(self):
 		return basename(self._path)
@@ -164,6 +166,10 @@ class ExternalPlugin(Plugin):
 		for package in self._load_packages():
 			for cls in self._iterate_classes(package):
 				superclasses = getmro(cls)[1:]
+				if UiController in superclasses:
+					cls.owner = UiOwner()
+					self._ui_owners.append(cls.owner)
+					continue
 				if ApplicationCommand in superclasses:
 					register = self._register_application_command
 					unregister = self._unregister_application_command
@@ -217,6 +223,9 @@ class ExternalPlugin(Plugin):
 	def _add_unload_action(self, f, *args, **kwargs):
 		self._unload_actions.append((f, args, kwargs))
 	def unload(self):
+		for owner in self._ui_owners:
+			owner.invalidate()
+		self._ui_owners.clear()
 		for f, args, kwargs in reversed(self._unload_actions):
 			f(*args, **kwargs)
 		self._unload_actions = []
@@ -237,7 +246,9 @@ class ExternalPlugin(Plugin):
 					raise
 				yield package
 	def _unregister_package(self, package):
-		del sys.modules[package.__name__]
+		for name in tuple(sys.modules):
+			if name == package.__name__ or name.startswith(package.__name__ + '.'):
+				del sys.modules[name]
 	def _iterate_classes(self, module):
 		for cls in [getattr(module, name) for name in dir(module)]:
 			if inspect.isclass(cls):
@@ -342,6 +353,19 @@ class FileSystemWrapper(Wrapper):
 				return result_on_error
 		return result
 	def iterdir(self, path):
+		from fman.impl.navigation import current_request
+		if current_request() is not None:
+			try:
+				for item in self._wrapped.iterdir(path):
+					if not isinstance(item, str):
+						raise TypeError('Directory listing returned a non-string name.')
+					yield item
+			except OSError:
+				raise
+			except Exception as error:
+				self._error_handler.report("FileSystem %r raised error." % self._class_name, error)
+				raise
+			return
 		try:
 			iterdir = self._wrapped.iterdir
 		except AttributeError:

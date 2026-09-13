@@ -10,8 +10,12 @@ class Theme:
 		'.statusbar': 'QStatusBar, QStatusBar QLabel',
 		'.statusbar-pane': 'PaneStatusWidget, PaneStatusWidget QLabel',
 		'.statusbar-pane[active="true"]': 'PaneStatusWidget[active="true"]',
-		'.quicksearch-query': 'Quicksearch QLineEdit',
-		'.quicksearch-item': 'Quicksearch QListView::item',
+		'.quicksearch-query': 'Quicksearch QLineEdit, QuickList QLineEdit',
+		'.quicksearch-item': 'Quicksearch QListView::item, QuickList QListView::item',
+		'.panel': '#panel',
+		'.bottom-panel': '#panel',
+		'.plugin-panel-dock': '#plugin-panel-dock',
+		'.plugin-tool-window': '#plugin-tool-window',
 		'.locationbar': 'LocationBar:read-only'
 	}
 

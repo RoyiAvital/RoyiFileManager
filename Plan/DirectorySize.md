@@ -371,7 +371,7 @@ cancelled (CPU drops); `Ctrl+F4` sorts by size.
 - Role: Reviewer
 - Activity: Review
 - Agent: GitHub Copilot
-- Model: Not exposed by host
+- Model: GPT-5.6 Sol
 - Effort: High
 - Context window: Not exposed by host
 - Outcome: Revised before implementation. Removed cross-plug-in Core settings

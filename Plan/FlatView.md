@@ -206,7 +206,7 @@ archive entry inside the flat view, sort order remembered per scheme.
 - Role: Reviewer
 - Activity: Design
 - Agent: GitHub Copilot
-- Model: Not exposed by host
+- Model: Claude Fable 5.1
 - Effort: High
 - Context window: Not exposed by host
 - Outcome: Initial `flat://` filesystem design created with bounded traversal

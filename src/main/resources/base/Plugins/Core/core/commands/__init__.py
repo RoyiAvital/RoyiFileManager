@@ -256,9 +256,14 @@ class OpenListener(DirectoryPaneListener):
 
 class OpenDirectory(DirectoryPaneCommand):
 	def __call__(self, url):
+		from fman.impl.navigation import current_request
+		request = current_request()
 		try:
 			url_is_dir = is_dir(url)
 		except OSError as e:
+			if request:
+				request.fail(e)
+				return
 			show_alert(
 				'Could not read from %s (%s)' % (as_human_readable(url), e)
 			)
@@ -266,7 +271,10 @@ class OpenDirectory(DirectoryPaneCommand):
 		if url_is_dir:
 			try:
 				self.pane.set_path(url, onerror=None)
-			except PermissionError:
+			except PermissionError as error:
+				if request:
+					request.fail(error)
+					return
 				show_alert(
 					'Access to "%s" was denied.' % as_human_readable(url)
 				)
@@ -275,7 +283,8 @@ class OpenDirectory(DirectoryPaneCommand):
 				try:
 					self.pane.place_cursor_at(url)
 				except ValueError as file_disappeared:
-					pass
+					if request:
+						raise
 			self.pane.set_path(dirname(url), callback=callback, onerror=None)
 	def is_visible(self):
 		return False

@@ -282,7 +282,7 @@ Manual: dialog styling in both themes; performance on a 100k-file tree
 - Role: Reviewer
 - Activity: Design
 - Agent: GitHub Copilot
-- Model: Not exposed by host
+- Model: GPT-5.6 Sol
 - Effort: High
 - Context window: Not exposed by host
 - Outcome: Initial ripgrep-backed streaming search design created after engine

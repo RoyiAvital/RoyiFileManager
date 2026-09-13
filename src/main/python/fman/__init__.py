@@ -80,6 +80,29 @@ class DirectoryPane:
 
 	def get_commands(self):
 		return self._command_registry.get_commands()
+	def on_closed(self, callback):
+		from fman.impl.util.qt.thread import run_in_main_thread
+		if not callable(callback):
+			raise TypeError('The pane-close callback must be callable.')
+		@run_in_main_thread
+		def register():
+			active_callback = callback
+			def closed():
+				nonlocal active_callback
+				pending, active_callback = active_callback, None
+				if pending is not None:
+					pending()
+			self._widget.destroyed.connect(closed)
+			@run_in_main_thread
+			def unsubscribe():
+				nonlocal active_callback
+				active_callback = None
+				try:
+					self._widget.destroyed.disconnect(closed)
+				except (RuntimeError, TypeError):
+					pass
+			return unsubscribe
+		return register()
 	def run_command(self, name, args=None):
 		if args is None:
 			args = {}
@@ -127,6 +150,11 @@ class DirectoryPane:
 		return self._widget.get_location()
 	# TODO: Rename to set_location(...)
 	def set_path(self, dir_url, callback=None, onerror=_set_path_onerror):
+		from fman.impl.navigation import current_request
+		request = current_request()
+		if request and (not request.active or request.pane is not self):
+			request.fail('Navigation no longer belongs to the invoking pane.')
+			return
 		args = dir_url, '', True
 		while True:
 			for listener in self._listeners:

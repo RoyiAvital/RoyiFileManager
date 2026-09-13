@@ -1,20 +1,21 @@
-from core.quicksearch_matchers import basename_starts_with, contains_chars, \
-	contains_substring, path_starts_with
+from fman.ui import matchers
 from fman import DirectoryPaneCommand, NO, QuicksearchItem, YES, load_json, \
 	save_json, show_alert, show_prompt, show_quicksearch, show_status_message
 from fman.fs import exists
 from fman.url import as_human_readable, normalize
 from itertools import chain
-from threading import RLock
 
 from favorites.store import FavoritesStore
+from favorites.ui import FavoritesController, settings_resource
 
 
 _SETTINGS_NAME = 'Favorites.json'
 _MATCHERS = (
-	path_starts_with, basename_starts_with, contains_substring, contains_chars
+	matchers.path_starts_with, matchers.basename_starts_with,
+	matchers.contains_substring, matchers.contains_chars
 )
-_LOCK = RLock()
+_resource = settings_resource
+_LOCK = _resource.lock
 _invalid_entries_reported = False
 
 
@@ -31,10 +32,12 @@ class AddCurrentFolderToFavorites(DirectoryPaneCommand):
 		confirmed_eviction = False
 		while True:
 			with _LOCK:
+				if not FavoritesController.owner.active:
+					return
 				store = _load_store()
 				if not store.would_evict(url) or confirmed_eviction:
 					result = store.add(url)
-					save_json(_SETTINGS_NAME, store.to_json())
+					notification = _commit(store)
 					invalid_count = store.invalid_count
 					break
 			choice = show_alert(
@@ -44,6 +47,7 @@ class AddCurrentFolderToFavorites(DirectoryPaneCommand):
 			if not choice & YES:
 				return
 			confirmed_eviction = True
+		_resource.publish(notification)
 		_report_invalid_entries(invalid_count)
 		show_status_message(
 			'Added %s to favorites.' % result.favorite.name, timeout_secs=3
@@ -54,43 +58,17 @@ class AddCurrentFolderToFavorites(DirectoryPaneCommand):
 
 
 class ShowFavorites(DirectoryPaneCommand):
-	aliases = ('Show favorites',)
+	aliases = ('Favorites Manager', 'Favorites', 'Show favorites')
 
 	def __call__(self, query=''):
-		favorites, invalid_count = _snapshot()
-		_report_invalid_entries(invalid_count)
-		if not favorites:
-			show_status_message('No favorites saved.', timeout_secs=3)
-			return
-		result = show_quicksearch(
-			lambda current_query: get_favorite_items(favorites, current_query),
-			_get_tab_completion, query
-		)
-		if not result or not result[1]:
-			return
-		url = result[1]
-		try:
-			location_exists = exists(url)
-		except NotImplementedError:
-			pass
-		except OSError as error:
-			show_alert(
-				'Could not access favorite %s (%s)' %
-				(as_human_readable(url), error)
-			)
-			return
-		else:
-			if not location_exists:
-				show_alert(
-					'Favorite location not found: %s' %
-					as_human_readable(url)
-				)
-				return
-		self.pane.run_command('open_directory', {'url': url})
+		FavoritesController.show(self.pane, query)
 
 
 class RemoveFromFavorites(DirectoryPaneCommand):
 	aliases = ('Remove from favorites',)
+
+	def is_visible(self):
+		return False
 
 	def __call__(self):
 		favorites, invalid_count = _snapshot()
@@ -110,13 +88,16 @@ class RemoveFromFavorites(DirectoryPaneCommand):
 		if not choice & YES:
 			return
 		with _LOCK:
+			if not FavoritesController.owner.active:
+				return
 			store = _load_store()
-			removed = store.remove(favorite.url)
+			removed = store.remove(favorite.url) if store.find(favorite.url) == favorite else None
 			if removed is not None:
-				save_json(_SETTINGS_NAME, store.to_json())
+				notification = _commit(store)
 		if removed is None:
 			show_status_message('Favorite no longer exists.', timeout_secs=3)
 		else:
+			_resource.publish(notification)
 			show_status_message(
 				'Removed %s from favorites.' % removed.name, timeout_secs=3
 			)
@@ -124,6 +105,9 @@ class RemoveFromFavorites(DirectoryPaneCommand):
 
 class RenameFavorite(DirectoryPaneCommand):
 	aliases = ('Rename favorite',)
+
+	def is_visible(self):
+		return False
 
 	def __call__(self):
 		favorites, invalid_count = _snapshot()
@@ -141,12 +125,16 @@ class RenameFavorite(DirectoryPaneCommand):
 		if not accepted or not name:
 			return
 		with _LOCK:
+			if not FavoritesController.owner.active:
+				return
 			store = _load_store()
-			renamed = store.rename(favorite.url, name)
+			renamed = store.find(favorite.url) == favorite and store.rename(favorite.url, name)
 			if renamed:
-				save_json(_SETTINGS_NAME, store.to_json())
+				notification = _commit(store)
 		if not renamed:
 			show_status_message('Favorite no longer exists.', timeout_secs=3)
+		else:
+			_resource.publish(notification)
 
 
 def get_favorite_items(favorites, query):
@@ -212,6 +200,11 @@ def _snapshot():
 
 def _load_store():
 	return FavoritesStore.load(load_json(_SETTINGS_NAME, default={}))
+
+
+def _commit(store):
+	save_json(_SETTINGS_NAME, store.to_json())
+	return _resource.committed(store.favorites)
 
 
 def _report_invalid_entries(count):

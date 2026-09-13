@@ -6,14 +6,19 @@
 - [Directory Size](Plan/DirectorySize.md)
 - [Extended Quicksearch UI](Plan/ExtendedQuicksearchUI.md)
 - [Flat View](Plan/FlatView.md)
+- [Process Pane](Plan/ProcessPane.md)
 - [Search File Content](Plan/SearchFileContent.md)
+- [UI Elements](Plan/UIElements.md)
 - [Unpack Archive](Plan/UnpackArchive.md)
 
 ## Completed
 
+- [Assigned Model Signatures](Done/AssignedModelSignatures.md)
 - [Concise README Features](Done/ConciseReadmeFeatures.md)
+- [Context Window Capitalization](Done/ContextWindowCapitalization.md)
 - [Correct Provenance Metadata](Done/CorrectProvenanceMetadata.md)
-- [Favorites](Done/Favorites.md)
+- [Favorites 001](Done/Favorites001.md)
+- [Favorites 002: Favorites Manager](Done/Favorites002.md)
 - [Focused Validation Policy](Done/FocusedValidationPolicy.md)
 - [Matching Icon SVG](Done/MatchingIconSvg.md)
 - [New File](Done/NewFile.md)
