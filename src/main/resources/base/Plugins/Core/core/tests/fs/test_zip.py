@@ -1,20 +1,24 @@
 from errno import ENOENT
-from core.fs.zip import ZipFileSystem, _7zip
+from core.fs.zip import ZipFileSystem, _7zip, _get_7zip_args_windows
 from core.tests import StubFS
 from datetime import date
 from fman.url import as_url, join, as_human_readable, splitscheme
 from os import listdir
 from pathlib import Path
-from shutil import copyfile
 from tempfile import TemporaryDirectory
 from unicodedata import normalize
 from unittest import TestCase
-from zipfile import ZipFile
+from zipfile import ZipFile, ZipInfo
 
 import os
 import os.path
 
 class SevenZipExecutableTest(TestCase):
+	def test_windows_output_encoding_is_utf8(self):
+		self.assertEqual(
+			['-sccUTF-8', 'l', 'archive.zip'],
+			_get_7zip_args_windows(['l', 'archive.zip'])
+		)
 	def test_create_archive_through_application_wrapper(self):
 		with TemporaryDirectory() as temporary_directory:
 			source = Path(temporary_directory, 'smoke-test.txt')
@@ -30,6 +34,14 @@ class SevenZipExecutableTest(TestCase):
 				self.assertEqual(b'7za works', zip_file.read('smoke-test.txt'))
 
 class ZipFileSystemTest(TestCase):
+	def test_read_file_info_with_fractional_modified_time(self):
+		file_info = self._fs._read_file_info(iter((
+			'Path = file.txt\n',
+			'Modified = 2026-09-13 12:34:56.5872607\n',
+			'Size = 1\n',
+			'\n'
+		)))
+		self.assertEqual(date(2026, 9, 13), file_info.mtime.date())
 	def test_iterdir(self):
 		self._expect_iterdir_result('', {'ZipFileTest'})
 		self._expect_iterdir_result(
@@ -376,16 +388,26 @@ class ZipFileSystemTest(TestCase):
 			self.assertEqual(contents, self._read_directory(tmp_dir))
 	def _create_empty_zip(self, path):
 		ZipFile(path, 'w').close()
+	def _create_test_zip(self, path):
+		entries = {
+			'ZipFileTest/Empty directory/': '',
+			'ZipFileTest/file.txt': 'file contents',
+			'ZipFileTest/ça va.txt': 'ça va',
+			'ZipFileTest/Directory/file 2.txt': 'file 2 contents',
+			'ZipFileTest/Directory/Subdirectory/file 3.txt': 'file 3 contents'
+		}
+		with ZipFile(path, 'w') as zip_file:
+			for name, contents in entries.items():
+				entry = ZipInfo(name, (2017, 11, 8, 12, 0, 0))
+				zip_file.writestr(entry, contents)
 	def setUp(self):
 		super().setUp()
 		fman_fs = StubFS()
 		self._fs = ZipFileSystem(fman_fs, {'.zip'})
 		fman_fs.add_child(self._fs)
 		self._tmp_dir = TemporaryDirectory()
-		self._zip = copyfile(
-			os.path.join(os.path.dirname(__file__), 'ZipFileSystemTest.zip'),
-			os.path.join(self._tmp_dir.name, 'ZipFileSystemTest.zip')
-		)
+		self._zip = os.path.join(self._tmp_dir.name, 'ZipFileSystemTest.zip')
+		self._create_test_zip(self._zip)
 		self._dirs_in_zip = (
 			'', 'ZipFileTest', 'ZipFileTest/Directory',
 			'ZipFileTest/Directory/Subdirectory', 'ZipFileTest/Empty directory'

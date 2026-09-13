@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
 
+## [0.2.1] - 2026-09-13
+
+API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
+
+### Fixed
+
+- ZIP filesystem tests now generate their fixture in clean checkouts and
+  accept fractional timestamps emitted by 7-Zip 26.03.
+- Windows archive operations now decode Unicode 7-Zip output consistently,
+  including on Python installations running in UTF-8 mode.
+- Release builds now materialize the Git LFS-managed application icon and
+  reject missing or invalid icon payloads before starting the build.
+
 ## [0.2.0] - 2026-09-13
 
 API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.

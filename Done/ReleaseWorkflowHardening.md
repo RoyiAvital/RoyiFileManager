@@ -26,6 +26,8 @@ Included:
   checksum verification.
 - Refetch the pushed tag before checking that it is annotated, preserve package
   command failures, and forbid GitHub CLI from creating a missing tag.
+- Materialize Git LFS assets during checkout and validate the application icon
+  before environment setup and PyInstaller analysis.
 
 Excluded:
 
@@ -58,6 +60,10 @@ the tagged-release empty check.
 Failure behavior is fail-closed: checksum mismatch, malformed version,
 lightweight tag, stale changelog, missing artifact, or existing release stops
 publication.
+
+Checkout downloads Git LFS objects. A cheap ICO signature check immediately
+after checkout detects missing LFS payloads before tests and freezing consume
+runner time.
 
 CI accepts the committed `conda-lock.yml` as the build input and fails when it
 is absent; it never regenerates the lock. Local builds retain the timestamp
@@ -126,6 +132,8 @@ confirm a second run refuses to replace the release.
 - Focused tests and syntax checks pass.
 - CI does not rewrite `conda-lock.yml`, and downloaded files are closed before
   their settling delay and checksum verification.
+- CI materializes the LFS-managed icon and rejects pointer or invalid content
+  before starting the build environment.
 
 ## Reviewers
 
@@ -151,6 +159,18 @@ confirm a second run refuses to replace the release.
 - Outcome: Accepted the CI lock, explicit tag fetch, package failure,
   `--verify-tag`, and Windows file-settling findings; kept approvals and
   provenance attestations outside this focused correction.
+
+### 2026_09_13 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Not exposed by host
+- Effort: Medium
+- Context window: Not exposed by host
+- Outcome: Confirmed the PyInstaller icon failure was caused by checkout
+  leaving the LFS pointer in place; approved LFS checkout plus an early ICO
+  signature guard.
 
 ## Implementer
 
@@ -178,6 +198,17 @@ confirm a second run refuses to replace the release.
   downloads before hashing, made annotated-tag verification robust, preserved
   packaging failures, and required publication to use an existing tag.
 
+### 2026_09_13 - GitHub Copilot
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: Not exposed by host
+- Effort: Medium
+- Context window: Not exposed by host
+- Outcome: Enabled Git LFS checkout for release builds and added an early ICO
+  signature check so pointer files fail before PyInstaller analysis.
+
 ## Validation Results
 
 - `python -m unittest fman_unittest.test_release_support`: passed 9 tests.
@@ -201,3 +232,5 @@ Follow-up validation:
 - `python -m unittest fman_unittest.test_release_support`: passed 11 tests.
 - The workflow parsed successfully as YAML after the tag, package, and
   publication corrections.
+- LFS follow-up: all 11 release-support tests passed, the workflow parsed as
+  YAML, and the materialized `Icon.ico` passed the ICO signature check.

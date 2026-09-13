@@ -34,6 +34,16 @@ jobs:
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
+          lfs: true
+
+      - name: Verify Git LFS assets
+        shell: pwsh
+        run: |
+          $icon = [IO.File]::ReadAllBytes('src/main/icons/Icon.ico')
+          if ($icon.Length -lt 4 -or $icon[0] -ne 0 -or $icon[1] -ne 0 -or
+              $icon[2] -ne 1 -or $icon[3] -ne 0) {
+            throw 'src/main/icons/Icon.ico is not a materialized ICO file. Check Git LFS checkout.'
+          }
 
       - name: Resolve version
         id: version

@@ -136,6 +136,9 @@ class ReleaseWorkflowTest(TestCase):
 		workflow = WORKFLOW_PATH.read_text(encoding='utf-8')
 		for expected in (
 			'permissions:\n  contents: read',
+			'lfs: true',
+			'Verify Git LFS assets',
+			'Icon.ico is not a materialized ICO file',
 			'git fetch --force origin',
 			'git cat-file -t',
 			'contents: write',

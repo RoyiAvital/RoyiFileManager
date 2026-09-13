@@ -257,7 +257,7 @@ class _7ZipFileSystem(FileSystem):
 			elif line.startswith('Modified = '):
 				mtime_str = line[len('Modified = '):]
 				if mtime_str:
-					mtime = datetime.strptime(mtime_str, '%Y-%m-%d %H:%M:%S')
+					mtime = datetime.fromisoformat(mtime_str)
 			elif line.startswith('Attributes = '):
 				attributes = line[len('Attributes = '):]
 				is_dir = is_dir or attributes.startswith('D')
@@ -493,7 +493,10 @@ class Popen7Zip:
 class Popen7ZipWindows(Popen7Zip):
 	def __init__(self, args, cwd):
 		args = _get_7zip_args_windows(args)
-		super().__init__(args, cwd, env=None, startupinfo=self._get_startupinfo())
+		super().__init__(
+			args, cwd, env=None, encoding='utf-8',
+			startupinfo=self._get_startupinfo()
+		)
 	def _get_startupinfo(self):
 		from subprocess import STARTF_USESHOWWINDOW, SW_HIDE, STARTUPINFO
 		result = STARTUPINFO()
@@ -502,8 +505,7 @@ class Popen7ZipWindows(Popen7Zip):
 		return result
 
 def _get_7zip_args_windows(args):
-	# Force an output encoding that works with TextIOWrapper(...):
-	return ['-sccWIN'] + args
+	return ['-sccUTF-8'] + args
 
 class Popen7ZipUnix(Popen7Zip):
 	def __init__(self, args, cwd):

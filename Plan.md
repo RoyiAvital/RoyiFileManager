@@ -17,5 +17,6 @@
 - [Focused Validation Policy](Done/FocusedValidationPolicy.md)
 - [New File](Done/NewFile.md)
 - [Release Workflow Hardening](Done/ReleaseWorkflowHardening.md)
+- [Self-Contained ZIP Tests](Done/SelfContainedZipTests.md)
 - [Status Bar](Done/StatusBar.md)
 - [Sync Pane Location](Done/SyncPaneLocation.md)

@@ -83,10 +83,12 @@ only when a version tag is pushed:
    and add a fresh `## [Unreleased]` section above it containing only the
    `API compatibility:` statement. Keep that statement in the dated release
    section too.
-3. Commit (`Release vX.Y.Z`) and push.
-4. Tag and push the tag:
+3. Commit (`Release vX.Y.Z`), Tag and push.
 
    ```powershell
+   git add -A
+   git commit -m "Release vX.Y.Z"
+   git push origin main
    git tag -a vX.Y.Z -m "RoyiFileManager vX.Y.Z"
    git push origin vX.Y.Z
    ```
