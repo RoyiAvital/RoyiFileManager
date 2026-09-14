@@ -19,12 +19,88 @@ The motivating elements are a selectable QuickList and a compact bottom
 interaction panel inspired by Sublime Text's find panel. Extend that foundation
 with composable results and preview surfaces for the following plug-in ideas:
 
+### Content-search Table Revision
+
+The 2026_09_14 [Search File Content revision](../Done/SearchFileContent.md) is the
+canonical contract for the next shared element: Qt-free
+`show_table(get_rows=..., num_columns=..., columns_header=...)` returning a plain
+TableHandle, with immutable TableRow records, snapshot refresh, fuzzy filtering
+and F1-style presentation. F1 remains independent and unchanged,
+including its current substring filter; migration is deferred by the user.
+The content-search form is a docked Panel. Search runs in the background with
+progress in the status bar, then opens a modal Table with collected results.
+No Table is created during scanning; progressive population is deferred.
+Hosting supports modal=True and modal=False without making plug-ins construct
+windows or interact with Qt. Content search selects modal; a synthetic rename
+preview uses modeless hosting so its associated Panel remains interactive.
+The first real consumer has File Path/Snippet columns; a synthetic current-name/
+proposed-name fixture verifies reuse for a later File Rename / Replace feature.
+
+Table has no explicit buttons, including no filter-clear button, row buttons,
+checkboxes or action footer. It highlights one row but tracks a logical current
+cell. Optional `file_path_column` and `folder_path_column` are distinct zero-based
+indices, both defaulting to None. Double-click/Enter reveals a file or enters a
+folder only in the designated cell; ordinary cells have no built-in operation.
+Right-click offers host-owned Copy Path / Go To for resolvable path cells only.
+`resolve_path=None` uses full cell text and a captured base, with an optional
+pure callback for labels/payloads; no filesystem/CWD lookup during resolution.
+Keyboard equivalents and stale-cell/menu guards live in the canonical plan.
+This does not change
+QuickList's existing multi-selection or right-click toggle behavior.
+
+This supersedes this roadmap's older search tree/adjacent-preview requirements,
+private toolkit imports, public QWidget/signal/menu construction, row-wide file
+actions, Qt-thread QProcess choice, progressive search results, F1 migration
+and deferral of all tables to Folder Diff. Those historical
+sketches are not gates for this increment.
+Comparison-specific columns/actions, previews, editors and actual rename/replace
+remain deferred. The Qt-free facade is proposed, not an existing export. Preserve
+legacy widget exports and the public fman 1.7.5 API without migrating unrelated
+plug-ins; new consumers use services/handles instead. API, engine limits and
+acceptance tests live in the consumer plan, not a second copy here.
+
+The review resolution there also governs this increment's host integration:
+Table is an internal QWidget usable in a plain QDialog; plug-ins get TableHandle,
+never widgets, signals, Qt enum/point/icon objects or a raw window. show_panel
+accepts immutable control descriptors and returns PanelHandle. The host owns
+layout, icon resources, status activity, clipboard, tracked navigation, menus,
+focus and disposal. Callbacks receive ordinary rows/column indices or control
+values and run through the host dispatcher; plug-ins do not perform Qt wiring.
+Existing loader-created UiController owners can be reused with require_owner(),
+without calling its legacy show/build hooks; a subclass without a build override
+is the chosen owner carrier, not a new marker base. Resource ownership itself
+requires an additive loader hook: ExternalPlugin._load_classes supplies the
+new read-only UiOwner.resource_root at construction, with no asset I/O during
+registration. Keep default UiOwner construction and legacy controllers compatible.
+
+The internal results host is TableWindow(ToolWindow), with dialog flags instead
+of tool-window flags. It supplies QObject timer parenting, busy state, guarded
+post, alive/owner and disposed cancellation to the unchanged session.navigate;
+no Qt object enters the public handles. It does not inherit PaneToolWindow's
+panel removal on results close. The canonical plan also names the activation/
+blocking-modal events and activeModalWidget rechecks for deferred presentation.
+Focused adapter, loader/resource, lifetime and legacy-widget regressions are gates.
+
+Keep panel-only search free of blank floating windows and unrelated status
+message overrides. The host contains focus in modal results and bridges to the
+associated Panel for modeless results. Go To defaults to closing only modal
+results after tracked success, with a plain close_on_navigate override. Preserve
+the captured path base and operation inputs across navigation. Host rendering
+uses the nested Panel layout internally, with the measured dock-height budget;
+plug-ins do not create the grid or change control properties. Keep legacy
+IconButton defaults and implement noncheckable actions internally. Scope Table
+styles and check directory-pane/F1 regressions. Exact signatures and failure/
+completion/Stop/close semantics remain in the consumer plan, not duplicated here.
+These additions remain proposed, with the canonical plan's focused tests as
+gates; the earlier implemented widget signatures are not silently changed.
+
 ### Component Responsibilities
 
 | Component | Responsibility |
 | --- | --- |
 | QuickSearch | Built-in fuzzy search over items and single-item choice. |
 | QuickList | Navigate and select multiple items, with optional built-in fuzzy filtering. |
+| Table Service (proposed) | Qt-free data/callback API and handle for buttonless filtered results; optional cell path roles, host navigation/menus and modal/modeless hosting. |
 | Bottom Interaction Panel | Configure operation behavior and expose actions on the chosen items. |
 
 Keep the view elements independent of operations. Neither QuickSearch nor
@@ -33,13 +109,18 @@ QuickList uses selection highlighting and standard Ctrl/Shift interactions, not
 selection checkboxes. A navigation query belongs to the view; operation queries,
 settings and commands belong in the separate Sublime Text-style panel below it.
 Changing the operation does not require a different list-view implementation.
+Content-search path commands use the host's standard cell menu; the docked Panel
+still owns the search inputs and Search/Stop controls. Consumers may supply plain
+custom-action records/callbacks but never create menus or access Qt objects.
 
 | Consumer | Required UI infrastructure | Feature-owned logic |
 | --- | --- | --- |
 | Bookmarks/Favorites management | Searchable multi-selection list, selection count, remove action | Bookmark identity, persistence, confirmation and removal |
+| F1 Shortcuts (reference only) | Existing independent dialog, unchanged; no Table migration | Existing binding collection, substring filtering, grouping and help-only behavior |
 | Simple text diff viewer and merger | Two text surfaces, coordinated scrolling, range highlights, hunk actions, dirty-state handling | Diff engine, alignment, merge decisions, conflict checks and saving |
 | QuickLook: images, Markdown, video, PDF and other files | Preview host, viewer controls, loading/error states, overlay or pane placement | Format detection, decoding/rendering providers and security policy |
-| File content search | Search form, streaming file/match tree, selection-driven text preview, stop/progress controls | ripgrep integration, decoding, match offsets and query semantics |
+| File content search | Qt-free docked Panel, status-bar progress, then modal Table with File Path/Snippet columns; path-cell Copy Path / Go To | ripgrep, bounded result collection, filename/content semantics, captured base and immutable match payloads |
+| File Rename / Replace (future) | Same modeless Table and interactive Qt-free Panel; source path role only, explicit snapshot refresh | Virtual-name computation, fixed source identities/base, conflict checks, explicit Apply, mutations and recovery |
 | Folder diff with hash-table comparison | Multi-column comparison results, filters, paired previews, explicit operation actions | Relative-path matching, hash algorithms, file identity, collision/error policy and synchronization |
 
 ### Tasks to Support
@@ -84,25 +165,37 @@ Required target formats include images, Markdown, video and PDF, plus plain text
 - Correctness scenario: rapidly changing files never displays a late preview
   under the new file's title; closing/hiding releases or pauses media resources.
 
-#### 3. File Content Search with Preview and File List
+#### 3. File Content Search with Table
 
-The user enters a query and file scope, runs a search, browses matching files and
-individual matches, previews surrounding text, and navigates to the chosen file.
-This is the intended UI consumer for [Search File Content](SearchFileContent.md).
+The user sets File Name Pattern, Content Pattern and Include Subdirectories in
+a Panel and explicitly starts Search. The status bar reports progress while
+both panes remain interactive. After completion or an explicit Stop, nonempty
+results appear in a modal Table for fuzzy filtering and navigation. Each pattern
+has an independent regex SVG toggle; recursion also uses an SVG toggle. Every
+search-panel button has a tooltip; the results surface has no explicit buttons.
 
-- UI needs: bottom interaction panel for query, file masks, scope, matching
-  toggles and encoding; Search/Stop actions; streaming file/match tree; adjacent
-  read-only text preview with current-match highlights; counts and completion state.
-- Support current-match preview independently from multi-selected files. Expose
-  Go to File and Open File as explicit actions; selecting a result does not close
-  the search or change the directory pane by itself.
-- Infrastructure boundary: result batching, control validation and preview
-  composition are shared; ripgrep execution, offset conversion and search
-  semantics remain owned by SearchFileContent. Phase A requires a revision of
-  that plan before integration: modeless placement, internal toolkit imports,
-  and bounded Qt-thread QProcess production must be agreed there.
-- Correctness scenario: starting another query cancels/supersedes the previous
-  result generation; old matches cannot enter the new result list or preview.
+- Table uses the callable population/count/header contract in
+  [Search File Content](../Done/SearchFileContent.md), with exactly File Path/Snippet
+  columns initially. One matching line is one row; metadata stays in its payload.
+- Single click selects row/current column without operating on files. The
+  plug-in sets file_path_column=0 and folder_path_column=None. The host resolves
+  File Path against the explicit captured search root, offers Copy Path / Go To,
+  and reveals the file on double-click/Enter. Snippet remains ordinary text with
+  no built-in action, even if it looks like a path. No Open File/Copy Snippet
+  commands, row-wide file menu, private-view access or results buttons.
+- Reuse F1's visual treatment without modifying its implementation or filter.
+  Table filter keystrokes never invoke an engine or population callback. A
+  separate preview pane and progressive row delivery are deferred. Use only
+  verified open-source SVGs with their applicable notices.
+- The shared layer owns presentation, validation, menus, clipboard, navigation
+  and lifetime; the plug-in owns bounded engine production and search semantics.
+  Use public Qt-free `fman.ui` services/handles, throttled progress and one immutable
+  terminal snapshot. Modal Close returns to the retained Panel/options; panel
+  Close cancels the session and prevents any late results dialog.
+- Correctness scenario: filtering preserves row identity; a disposed session
+  cannot accept stale status or open a modal. Zero hits show status without an
+  empty dialog; partial results are labeled. Merely selecting never navigates
+  or writes files. A virtual-rename fixture proves operation-independent reuse.
 
 #### 4. Folder Diff with Hash-Table Comparison
 
@@ -155,7 +248,7 @@ separate action panel, bounded confirmation, modeless owner lifecycle and requir
 navigation/transaction integration first. Favorites002 supersedes this document's
 older reorder and close/reopen pilot wording. Its manager stays open across
 actions, sorts by Recent/Name/Path and uses explicit confirmed Delete fallback.
-Tree, preview, streaming-search and other Phase A surfaces remain pending and do
+Table, preview, content-search and other Phase A surfaces remain pending and do
 not gate this initial subset. This subset does not complete the UI Elements task.
 
 - QuickSearch as a single-choice fuzzy navigator, without embedded operation
@@ -166,14 +259,18 @@ not gate this initial subset. This subset does not complete the UI Elements task
   scoped to the current item or captured selected set.
 - Favorites Manager with Recent/Name/Path sort and confirmed multi-remove,
   following Favorites002 rather than the superseded manual-reorder pilot.
-- One window-level bottom panel and a modeless results tree with adjacent
-  read-only text preview for Search File Content.
+- Qt-free show_panel/show_table, plain descriptors/callbacks/handles, owned status
+  activity and optional file/folder roles with default resolution. Search opens
+  modal results after collection; a modeless Panel-driven rename fixture proves
+  reusable focus, snapshot refresh and navigation/close policy. No real rename,
+  adjacent preview, live search results or F1 migration in this increment.
 - An owned operation handle accepting worker and Qt-thread producers, bounded
   updates, cancellation, generation rejection and deterministic disposal.
 - Bounded list confirmation and a hash-result action-picker fixture.
 
-Phase B, gated on an approved Folder Diff plan: table results, status filters,
-staged operation lists and paired read-only previews. Phase C, gated on approved
+Phase B, gated on an approved Folder Diff plan: comparison-specific Table
+extensions, status filters, staged operation lists and paired read-only previews.
+Phase C, gated on approved
 QuickLook/Merger plans: provider controls/media lifecycle and an editor surface.
 Pane-local panels and pane content replacement need their own consumer approval.
 
@@ -193,7 +290,9 @@ explicitly requested reusable plug-in components: expose the implemented view,
 panel, controls, settings binding and ownership helpers through additive fman.ui.
 This is a provisional RoyiFileManager extension, not part of fman 1.7.5;
 breaking extension changes require CHANGELOG migration notes. Favorites is the
-reference external-style consumer and must use only exported host APIs.
+reference for the shipped widget-based subset and retains that compatibility.
+All new consumer UI uses the Qt-free facade; it may reuse loader-provided plain
+owners but not widget build hooks. Migrating existing plug-ins is separate work.
 Implementation stays under fman.impl.ui. This replaces the earlier internal-only
 restriction for this small surface; future tree/preview/editor APIs remain gated.
 Do not
@@ -203,6 +302,12 @@ this design. Its separate plan needs revision before implementation.
 ## Design
 
 ### General API Boundary Revision
+
+For the new Table/search increment, the Qt-free contract above and its canonical
+consumer plan take precedence over the widget-construction examples below.
+Those document the existing compatible legacy extension, not permission for a
+new plug-in to import Qt, connect signals or obtain widgets. Additive facade
+tests must prove that both the new plain API and legacy consumers still work.
 
 The general fman Window and DirectoryPane wrappers must not hand out widgets or
 signals or accept panel widgets. Internal PaneToolWindow owns private parent,
@@ -797,7 +902,7 @@ of a plug-in operation. Sensitive previews must not be written to diagnostic log
   put SearchFileFuzzy operation options in the bottom Interaction Panel before
   implementing it. Do not change existing Quicksearch behavior or add its
   proposed extended API as a prerequisite for this toolkit.
-- [Search File Content](SearchFileContent.md) is a consumer, not the owner of
+- [Search File Content](../Done/SearchFileContent.md) is a consumer, not the owner of
   shared UI. Before integration, revise and review that task to replace the modal
   exec_dialog flow with the window panel/modeless tree-preview session, keep
   internal toolkit/PyQt imports confined to its adapter, and specify bounded
@@ -1342,6 +1447,104 @@ the dependent consumer task is complete.
   centered output only for Ctrl+H, docked controls only for By. Confirmed
   set_panel(None) should detach the owned panel without ending its window.
   Shared Qt regressions passed; broader UI Elements scope remains pending.
+
+### 2026_09_14 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Medium
+- Context Window: Not exposed by host
+- Outcome: Aligned the roadmap with Search File Content as the first reusable
+  Table consumer. Its canonical plan supersedes older tree/preview and table-
+  deferral sketches; future rename preview reuses presentation without adding
+  mutations. Documentation only; broader implementation remains pending.
+
+### 2026_09_14 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Low
+- Context Window: Not exposed by host
+- Outcome: Aligned exact Table argument names and made F1 migration/fuzzy search
+  part of the consumer-driven increment. Search File Content remains the
+  canonical contract and test plan; only openly licensed SVGs are permitted.
+
+### 2026_09_14 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Medium
+- Context Window: Not exposed by host
+- Outcome: Aligned the shared roadmap with the content-search review resolution:
+  owner-independent Table, explicit focus integration, nested Panel composition,
+  additive IconButton action mode and scoped styling with file-pane regressions.
+  Planning only; implementation and runtime checks remain pending.
+
+### 2026_09_14 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Medium
+- Context Window: Not exposed by host
+- Outcome: Aligned the roadmap with the user's collect-then-display workflow:
+  docked Panel, background search/status-bar progress, then modal results.
+  Deferred progressive Table updates, modeless focus integration and F1
+  migration; F1 remains an unchanged visual reference. The consumer plan owns
+  proposed panel/status/modal hosting and lifecycle gates. Documentation only.
+
+### 2026_09_14 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Low
+- Context Window: Not exposed by host
+- Outcome: Aligned Table with the user's buttonless interaction constraint.
+  Single-row selection, left-double-click activation and consumer-owned row
+  context menus replace the results footer; the filter has no clear button.
+  Detailed keyboard, payload and stale-menu checks remain in Search File
+  Content. Search-panel controls, QuickList and F1 are unchanged. Planning only.
+
+### 2026_09_14 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Medium
+- Context Window: Not exposed by host
+- Outcome: Aligned the roadmap with Qt-free Table/Panel services and plain
+  handles/callbacks. Optional file/folder cell roles and default captured-base
+  resolution replace row-wide file assumptions; host owns Copy Path / Go To,
+  navigation, menus and window lifetime. Both modalities are required, with a
+  modeless Panel-driven preview fixture and modal content search. Prior widget
+  API examples remain legacy compatibility documentation, not the new contract;
+  F1 and unrelated plug-ins stay unchanged. Detailed gates live in the canonical
+  search plan. Design/document checks only; runtime behavior is not verified.
+
+### 2026_09_14 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Low
+- Context Window: Not exposed by host
+- Outcome: Aligned the roadmap with the resolution of Fable 5.1's latest review:
+  internal TableWindow adapts to existing navigation, the new resource-root
+  loader hook is explicit, and UiController without build remains the owner
+  carrier. Deferred-presentation triggers and focused regression gates are
+  owned by the canonical search plan. Retained approved modeless Panel reuse;
+  no application code or runtime validation in this planning revision.
 
 ## Implementer
 

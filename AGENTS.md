@@ -70,11 +70,11 @@ Rules:
   available official API for an explicit identifier of the model running the
   current session. Use that identifier when available. Do not infer it from a
   model catalog, configured default, agent name, or another session's metadata.
-- If no explicit current-session identifier is available, use the exact model
+- If no explicit current session identifier is available, use the exact model
   signature assigned by the user. If neither source provides a signature, write
   `Not exposed by host`. Do not add a separate user-supplied label field or a
   qualification suffix to the signature.
-- An assigned signature is a user-directed attribution convention, not independent
+- An assigned signature is a user directed attribution convention, not independent
   verification of the underlying model. This policy does not change `Agent`,
   `Effort`, or `Context Window`, and does not rewrite historical records.
 - `Effort` reflects the effort used for that activity and is `Low`, `Medium`,
@@ -85,8 +85,9 @@ Rules:
 - Every later planning pass uses `Activity: Review`, including revisions by the
   original designer.
 - `Role` states `Reviewer` in this section.
+- If user assigned you a signature, use that for any field not exposed by the agent.
 - `Outcome` briefly records the decision, important concerns, or approval state.
-- Preserve previous records; reviewer history is append-only.
+- Preserve previous records; reviewer history is append only.
 
 ## Implementation and Completion
 

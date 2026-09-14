@@ -1,23 +1,31 @@
-from PyInstaller.utils.hooks import collect_all
+from PyInstaller.utils.hooks import collect_all, conda_support
+from pathlib import Path
 import os
+import sys
 
 
 winpty_datas, winpty_binaries, winpty_imports = collect_all('winpty')
 send2trash_datas, send2trash_binaries, send2trash_imports = \
 	collect_all('send2trash')
+ripgrep = conda_support.distribution('ripgrep')
+ripgrep_licenses = Path(ripgrep.raw['link']['source']) / 'info' / 'licenses'
 
 datas = [
 	('src/main/resources/base', 'resources'),
 	('src/build/settings/base.json', 'resources/build-settings'),
 	('src/main/resources/windows', 'resources'),
-	('src/main/icons/Icon.ico', 'resources')
+	('src/main/icons/Icon.ico', 'resources'),
+	(str(ripgrep_licenses), 'resources/Plugins/SearchFileContent/licenses')
 ] + winpty_datas + send2trash_datas
-binaries = winpty_binaries + send2trash_binaries
+binaries = winpty_binaries + send2trash_binaries + [
+	(str(Path(sys.prefix) / 'bin' / 'rg.exe'), 'resources/Plugins/SearchFileContent/bin')
+]
 hidden_imports = [
 	'adodbapi', 'ctypes.wintypes', 'win32com.shell.shell',
 	'win32com.shell.shellcon', 'win32gui', 'win32wnet',
 	'fman.ui', 'fman.impl.ui.quicklist', 'fman.impl.ui.panel',
 	'fman.impl.ui.session', 'fman.impl.ui.output', 'fman.impl.navigation',
+	'fman.impl.ui.table', 'fman.impl.ui.table_data', 'fman.impl.ui.facade',
 	'PyQt5.QtSvg'
 ] + winpty_imports + send2trash_imports
 

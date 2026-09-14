@@ -39,7 +39,7 @@ this increment of [UI Elements](../Plan/UIElements.md).
   or explicitly partial result snapshots, and file
   navigation. Nonlocal providers and archive locations report unsupported scope.
 - A separate Panel with File Name Pattern, Content Pattern, independent regex
-  icon toggles, Include Subdirectories icon toggle, and Search/Stop actions.
+  Literal/Glob/RegEx icon groups, Include Subdirectories icon toggle, and Search/Stop actions.
 - A Qt-free Table service with population callback, column count, headers,
   optional file/folder columns, default path resolution, stable row/cell
   identity, fuzzy filter, sorting and bounded snapshot refresh. Both modal and
@@ -117,31 +117,51 @@ associated Table and rejects pending refresh/navigation/menu callbacks.
 Content search remains modal; the modeless gate uses a synthetic rename preview,
 not an implementation of rename or progressive search.
 
-The panel has two labeled rows. Each expanding text box has its own regex
-toggle immediately to its right. A scope/action row contains the read-only
-root path, recursion toggle and Search/Stop. At narrow widths, actions wrap
-below the fields; controls must not shrink into overlapping labels.
+The panel has two labeled rows. Each expanding text box has its own three-option
+mode group immediately to its right. A scope/action row contains the read-only
+root path, recursion toggle and Search/Stop. Recursion and Search/Stop start in
+the same column as the mode groups, not at the panel's far right. All nine
+buttons are 28x28 logical pixels, arranged in three columns with 3-pixel gaps.
+Search/Stop are icon-only with tooltips. Stop remains enabled, uses a red square
+icon and does nothing while idle. At narrow widths the fields shrink so these
+controls remain on the third row. A noninteractive 20-pixel pane icon precedes
+the path, with "Left pane" or "Right pane" as its tooltip and no visible label.
 
 `Panel` currently owns a single horizontal layout. Keep that legacy contract:
 the host renderer creates the nested QWidget/QGridLayout and passes it through
 Panel.add internally. The plug-in only supplies rows of plain descriptors;
 it never imports PyQt, creates layouts, calls addWidget or manipulates signals.
-The renderer wraps actions to a fourth row at the minimum-size breakpoint.
-Budget about 120 logical pixels of dock height for three rows and 155 for four,
-including panel margins; derive the actual minimum from font/control size hints
-at each DPI. This reduces both file panes' visible height, not the status bar's.
-Verify the remaining pane area at the application's minimum supported size;
-do not implement wrapping by clipping controls or shrinking below size hints.
+For forms with capped fields, the renderer aligns trailing controls when every
+row starts with one capped field or label. A capped, shrinkable first column
+and a trailing expanding spacer preserve alignment and compact window sizing.
+Other forms retain their existing action wrapping. Budget about 120 logical
+pixels for the search panel's three rows, including margins; derive minimums
+from styled size hints. This reduces both file panes' visible height, not the
+status bar's. Verify actual window width, unclipped labels and remaining pane
+area at minimum size. Layout remains bounded work on the Qt thread, with no
+extra workers, I/O, timers or disabled-feature cost.
+
+Appearance remains host-owned. The host exposes existing action IDs through an
+internal widget property; `stop` receives a `#ff5252` icon. The Action descriptor
+stays unchanged. Rejected a public color parameter and plug-in-specific Qt access.
+Equal icon buttons were selected over right-aligning unequal-width rows.
 
 Proposed companion surface, bounded to this form rather than a general layout
 language: `show_panel(*, owner, pane, rows, on_change=None, on_action=None,
 on_closed=None) -> PanelHandle`. `rows` is a tuple of tuples containing immutable
-`TextField(id, label, value='', tooltip='')`, `Toggle(id, icon, label,
-value=False, tooltip='')`, `Label(id, text)` and
-`Action(id, label, icon=None, tooltip='')` records. IDs are unique strings;
+`TextField(id, label, value='', tooltip='', max_width=None)`, `Toggle(id, icon, label,
+value=False, tooltip='')`, `Label(id, text, icon=None, tooltip='')` and
+`Action(id, label, icon=None, tooltip='')` records, plus
+`Choice(id, label, options, value, tooltip='')` for exclusive icon groups.
+Choice options are 2-8 immutable `(value, icon, tooltip)` string triples.
+IDs are unique strings;
 values are strings/bools; icons are plug-in-local resource names, not QIcons.
 Descriptor validation and rendering belong to the shared host. This is an
 additive facade, not a change to existing Panel/IconButton constructors.
+
+The host aligns text-field labels using their styled size hints. Optional
+`max_width` is a positive integer cap for the input in logical pixels, or None
+for uncapped fields. Both search inputs use 480; narrow forms may shrink them.
 
 PanelHandle exposes `snapshot()` (an immutable ID/value mapping),
 `update(values=None, enabled=None)` (atomic validated control changes),
@@ -156,10 +176,10 @@ arbitrary parent/layout, QObject, screen coordinates or Qt enum crosses this API
 
 | Control | Default and meaning |
 | --- | --- |
-| File Name Pattern | Empty selects all eligible files. Regex off: `;`-separated ripgrep basename globs such as `*.txt;*.md`; `*`, `?`, bracket sets, leading `!` exclusion. Pass positive `--iglob` masks first and exclusions last; positives are ORed and exclusions win. Exclusion-only input starts from all otherwise eligible files. Native glob exclusions can also prune directories with matching names. No directory/path glob syntax in this version. |
-| File-name regex | Off. On: one expression searched against the basename, including extension, not its parent path; `^` and `$` anchor a full name. Do not split regex input on `;` or interpret leading `!`. |
-| Content Pattern | Required; preserve literal spaces. Regex off means exact literal text, not wildcard/fuzzy matching. On means ripgrep default regex syntax; unsupported lookaround/backreferences produce a field error, not a silent engine change. |
-| Content regex | Off; independent of the file-name toggle. |
+| File Name Pattern | Empty selects all eligible files. Literal searches for literal text within the basename. Glob (default) keeps native `;`-separated basename masks, positive masks before exclusions, with no path syntax. RegEx searches one default-engine expression against the basename; anchors may require a whole name. |
+| Filename mode | Exactly one of Literal, Glob and RegEx. Literal/RegEx use bounded basename filtering; neither splits semicolons nor interprets leading `!`. |
+| Content Pattern | Required; preserve spaces. Literal (default) searches for literal text anywhere in a line. Glob matches a whole line. RegEx uses ripgrep's default engine; unsupported lookaround/backreferences are errors. |
+| Content mode | Exactly one of Literal, Glob and RegEx, independent of the filename mode. |
 | Include Subdirectories | On; off searches only immediate files in the captured root. Do not follow directory symlinks/junctions in either mode. |
 | Search / Stop | Search starts an explicit scan; Stop is enabled only while running. Editing inputs or filtering results never starts a scan. |
 
@@ -167,7 +187,60 @@ Filename matching and content matching are case-insensitive initially. Explain
 glob/regex dialects and case behavior in tooltips and eventual README examples.
 Reject NUL/newline input and invalid patterns before starting engine traversal.
 File-name mask whitespace around separators is trimmed; content is not trimmed.
-Use the regex mode for literal semicolons or wildcard characters in filenames.
+Use Literal mode for literal semicolons or wildcard characters in filenames.
+
+### Three Pattern Modes
+
+Each input has a host-owned `Choice(id, label, options, value)` group with three
+mutually exclusive 28-pixel icon buttons. Options are immutable
+`(value, icon_resource, tooltip)` triples; clicking the selected option never
+deselects it. Selection is a string in Panel snapshots; programmatic updates
+validate atomically and emit no user callback. Disabling the group disables all
+its buttons. Retain ordinary Toggle for recursion. Use pinned Lucide `text`,
+`asterisk` and `regex` icons with Literal/Glob/RegEx tooltips and accessible names.
+
+Content glob syntax: `*` matches zero or more non-newline characters, `?` one,
+`[abc]` a set, `[a-z]` an ascending range, and `[!abc]` a negated set. A first `]`
+inside a set and edge-position `-` are literal. Unclosed/empty sets and reversed
+ranges report an input error. Regex metacharacters outside glob syntax are
+escaped, including backslashes; use `[*]`, `[?]` and `[[]` for literal wildcard
+characters. Slash and repeated stars have no directory/recursive meaning.
+No brace expansion, leading exclusions or semicolon splitting applies to content.
+Use ripgrep's `--line-regexp` with the translated expression and existing
+`--crlf` handling. Thus `cuda` matches a whole line and `*cuda*` contains cuda.
+All modes remain case-insensitive. Whole-line matches highlight the whole line.
+
+The converter is a bounded linear scan in the existing engine module using
+`re.escape` for regex literals. Preflight compiles the final expression through
+the same ripgrep arguments as the real search. A failed conversion starts no
+traversal. No new engine/package, Python regex execution of user expressions,
+download, path lookup or shell invocation is introduced.
+
+Alternatives: directly using `fnmatch.translate` was rejected because its atomic
+groups are unsupported by ripgrep. `glob.translate` has pathname-specific rules
+and can emit unsupported empty-set lookarounds. Explicit small-dialect conversion
+keeps the public semantics independent of Python's regex translation format.
+
+Persist `name_mode` and `content_mode` as `literal`, `glob` or `regex`. Migrate old
+boolean `name_regex` to regex/glob and `content_regex` to regex/literal; a valid
+new mode takes precedence. Ignore invalid modes and use migrated/default values.
+Remove obsolete boolean keys on the next settings save. No patterns are saved.
+Filename Literal shares the bounded filename-RegEx pipeline, with `--fixed-strings`.
+Filename Glob retains the single-traversal fast path and existing hidden behavior.
+
+Runtime effects: O(pattern length) conversion once per worker preflight, bounded
+by the existing pattern/command limits; immutable prepared arguments are reused.
+Each open Panel adds six buttons instead of two toggles, with no new timers,
+workers or recurring subscriptions. Unused/closed features do no mode-specific
+work. Cancellation, row/text/process bounds and fixed-pane ownership are unchanged.
+
+Required checks: native ripgrep Literal/Glob/RegEx content and filename cases;
+whole-line/CRLF/Unicode, metacharacter escaping, empty wildcard matches, repeated
+stars, ranges, negation, literal brackets, invalid sets; legacy settings migration;
+Choice validation/exclusivity, selected-button clicks, callback counts, atomic
+updates, disabled groups; search locking/disposal; native compact layout and
+persisted modes. Use existing engine/unit/Qt tests and source smoke, not a freeze
+or full test suite. Completion requires these checks and aligned API/usage docs.
 
 Glob mode adopts ripgrep's native ignore/hidden interaction: ignore files are
 disabled, hidden entries are normally skipped, but explicit positive globs can
@@ -176,10 +249,17 @@ all hidden entries are always excluded. Filename-regex mode enumerates without
 positive glob overrides and excludes hidden candidates. An Include Hidden
 control remains deferred; neither mode follows symlinks/junctions intentionally.
 
-Capture the pane's root when opening the session and display it in panel and
-results title. Pane navigation never silently retargets a running search.
-Reinvoking the command focuses the existing Panel or its active modal; close/
-reopen captures a new root. Search snapshots all inputs and locks matching
+Keep the session bound to its invoking pane, identified by a fixed left/right
+symbol and label beside the root. No pane-switching control is needed. While
+idle, follow that pane through the public `DirectoryPane.on_path_changed(callback)`
+subscription; changes in the other pane have no effect. Read the current URL
+on opening, before Search, and on returning to idle; non-local locations disable
+Search. Unsubscribe on disposal. Notifications run on Qt and add no polling,
+workers or subscriptions while the feature is unused.
+
+Capture the root separately for each Search. Pane navigation never retargets a
+running search or existing Table; the form catches up when results close or a
+run settles without rows. Search snapshots all inputs and locks matching
 controls until results close, or until the runner settles without rows. Stop is
 available only while the runner is active; Panel Close remains available while
 results are deferred. The form stays locked throughout deferred/modal results.
@@ -258,7 +338,7 @@ buttons spelling out `RegEx` or a downloaded icon package. Selected sources:
 | Stop | Lucide `square` | `Stop search; keep collected results` |
 | Panel Close | Existing host close icon | `Cancel search and close panel` |
 
-The host maps Toggle and Action descriptors to the appropriate controls. It
+The host maps Toggle, Choice and Action descriptors to the appropriate controls. It
 may add an internal action-mode option to IconButton while preserving its
 existing public default; Stop must be noncheckable and unbound to settings.
 Only the host constructs QIcon/QtSvg objects and connects clicked/toggled.
@@ -513,6 +593,11 @@ to the associated Panel at the boundary. These are host-internal focus rules,
 not public widget hooks. Initial focus is the filter, or the view if fuzzy is
 off. Close/Escape returns to the Panel/pane. Keep existing QuickList behavior.
 
+Fuzzy positions come from the shared `contains_chars` matcher used by Table,
+QuickList and Core's re-export: prefer a contiguous substring when present,
+otherwise retain in-order subsequence matching. Casefold offsets map back to
+original characters. This preference is shared, not a Table-specific branch.
+
 F1 is a visual reference only: its
 [current implementation](../src/main/python/fman/impl/shortcuts.py) stays intact,
 including substring filtering and plug-in grouping. Match its header treatment,
@@ -614,7 +699,8 @@ or console window; pass Unicode argument lists, content/regex patterns via
 `-e <pattern>`, then `--` before explicit paths. Use `--no-config`,
 `--no-ignore`, `--no-follow`, `--no-mmap`, `--json`, `--line-buffered`,
 `--line-number`, `--crlf`, `--max-count 200`, `--max-filesize 50M`, and at most
-two search threads. Literal content adds `--fixed-strings`; both modes add
+two search threads. Literal content adds `--fixed-strings`; translated Glob adds
+`--line-regexp`; all modes add
 `--ignore-case`. Default regex engine only; no automatic retry. No `--pre`,
 `--search-zip`, multiline or binary-as-text. Keep stderr instead of suppressing
 read errors. UTF-8 and UTF-16 BOM sniffing work in `auto`; a validated settings-
@@ -624,9 +710,9 @@ The search engine is bundled **ripgrep (`rg.exe`)**, an open-source Rust tool
 under MIT/Unlicense. It supplies literal matching and its default Rust regex
 engine, producing structured JSON match records. Table fuzzy filtering uses
 the existing in-process QuickList matcher; it does not launch ripgrep. Filename
-globs use native `--iglob`; filename regex requires the pipeline below.
+globs use native `--iglob`; filename Literal/RegEx require the pipeline below.
 
-**Filename regex off (common path):** use one content-search process with the
+**Filename Glob (common path):** use one content-search process with the
 captured directory as its only path operand. Pass positive masks using repeated
 `--iglob <mask>`, then all `--iglob !<mask>` exclusions, regardless of their
 order in the input. Do not add an implicit positive `*` for empty/exclusion-only
@@ -638,8 +724,8 @@ during preflight; never substitute a second glob dialect. Reject an oversized
 combined command line as input validation, rather than splitting it into
 multiple traversals with incorrect exclusion/limit semantics.
 
-**Filename regex on:** ripgrep has no filename-regex traversal option. Apply
-the expression before reading contents using this bounded pipeline only:
+**Filename Literal/RegEx:** filter basenames before reading contents using this
+bounded pipeline:
 
 1. Lazily enumerate with `rg --files --null --no-config --no-ignore --no-follow`
    under the captured root; omit hidden files/directories and add
@@ -647,7 +733,7 @@ the expression before reading contents using this bounded pipeline only:
    not a complete path inventory. Do not mix `--files` with `--json`.
 2. Send one bounded batch of NUL-delimited UTF-8 basenames to a
    separate `rg --null-data --json --line-number --ignore-case -e <pattern> -`
-   invocation with `--no-config`. Map its input record numbers back to the
+  invocation with `--no-config`; add `--fixed-strings` for Literal. Map its input record numbers back to the
    original paths, so duplicate basenames in different folders remain distinct.
    This keeps untrusted regex outside Python/Qt and uses the same regex dialect.
 3. Search only accepted absolute files in bounded command-line batches. Add
@@ -726,12 +812,16 @@ slot until that runner exits. Do not start replacement workers without a bound.
 
 ### Persistence and Distribution
 
-Load settings only when invoked. Save the three toggle states and validated
+Load settings only when invoked. Save the two pattern modes, recursion and validated
 engine limits through the existing plain resource transaction service, under
 `UserSettings`. Failed saves leave working controls usable with an error.
-Defaults: both regex toggles false, recursion true, encoding `auto`; engine
+Defaults: filename Glob, content Literal, recursion true, encoding `auto`; engine
 limits below. Patterns, results and local fuzzy filter remain session-only in
 v1, avoiding content-query history on disk. No Registry writes or file watchers.
+
+Migrate legacy booleans as specified under Three Pattern Modes. Bundled JSON
+omits mode keys; code defaults apply only after reading user keys, so merged
+defaults cannot mask legacy regex settings. Remove old keys on the next save.
 
 The user supplies ripgrep through conda-forge in [environment.yml](../environment.yml)
 and [conda-lock.yml](../conda-lock.yml). Conda owns dependency installation and
@@ -866,7 +956,7 @@ source implementation task; no freeze or portable execution result is claimed.
 | Snippet | 512 code points centered near first match; visible truncation, at most 128 retained highlight ranges per row |
 | File size | 50 MiB eligibility cap, not a bound on files changing during search or on child RSS |
 | Pattern / header length | 4,096 / 128 code points; validate before work |
-| Candidate batch (filename regex only) | At most 128 paths and 256 KiB of path data; further split for Windows argv bound; no inventory in glob mode |
+| Candidate batch (filename Literal/RegEx) | At most 128 paths and 256 KiB of path data; further split for Windows argv bound; no inventory in glob mode |
 | One encoded JSON record | 1 MiB; kill and report oversized result before parsing, not silent loss |
 | Read chunk / stderr tail | 64 KiB / 64 KiB per live child |
 | Producer-to-Qt delivery | One latest progress record and one immutable capped terminal snapshot; no incremental row queue |
@@ -1027,7 +1117,7 @@ manual run before claiming those behaviors verified.
 - F1 regression only: existing implementation, grouping, tabs, substring filter,
   binding rules and visual treatment remain unchanged after new Table styles.
   Do not add ShortcutsTableIT or make F1 migration an acceptance dependency.
-- Engine: literal/regex cross-product for both fields, empty filename and blank
+- Engine: Literal/Glob/RegEx cross-product for both fields, empty filename and blank
   content, meaningful spaces, glob exclusions, literal semicolons in regex,
   unsupported/invalid regex, names repeated under different parents, Unicode,
   patterns beginning `-`, quoted paths, no accepted files and argv splitting.
@@ -1052,7 +1142,7 @@ manual run before claiming those behaviors verified.
 - Cancel during validation, enumeration, regex, content, full stdin/stdout/stderr
   pipes, final snapshot transfer and navigation; no stale dialogs, deadlocks, zombies or terminal status overwritten by
   late exit. Repeated open/close leaves process/thread/notification counts stable.
-- Settings defaults, corrupt settings/save failure, three independent toggles,
+- Settings defaults, legacy-mode migration, corrupt settings/save failure, independent modes and recursion,
   no persisted patterns/results and no feature work while unused/disabled.
 - Build: direct conda/bundled path selection without verification I/O; spec wiring
   for binary, license data and normal native dependency analysis; no custom
@@ -1132,6 +1222,12 @@ passes. Frozen execution is outside this source task as selected in review.
 7. Run the scoped performance/native/available portable checks above; record
    results and pending gates. Only then apply the repository's completion rules.
 8. Address the Review Follow-ups below before completion.
+9. Add canonical modes and content-glob conversion in the existing engine; run
+   native pattern/escaping/line-boundary tests before UI integration.
+10. Add the bounded Qt-free Choice descriptor and exclusive icon group; test
+  selection, callback counts, atomic updates and disabled state.
+11. Wire the three modes, pinned icons and settings migration; run native mode
+  persistence/layout/search smoke and update usage/API documentation.
 
 ### Review Follow-ups
 
@@ -1157,13 +1253,17 @@ done and reference the commit or record that resolves it.
   worker thread and marshals each handle call through `run_in_main_thread`.
 - [x] Decide the frozen-artifact gate: recorded as outside this source task;
   portable execution remains a release follow-up requiring explicit authorization.
-- [ ] Once the gate is decided, move this document to `Done/` and update the
+- [x] Once the gate is decided, move this document to `Done/` and update the
   `Plan.md` index.
 
 Resolution record: [Review Follow-up Validation](#review-follow-up-validation).
 
 ## Acceptance Criteria
 
+- Both fields expose exactly-one-selected Literal/Glob/RegEx icon groups with
+  tooltips. Defaults and old settings migrate without changing prior behavior.
+  Literal searches substrings; content Glob matches whole lines with the
+  documented bounded converter, and invalid sets/ranges fail preflight.
 - Qt-free show_table accepts a population callable, explicit column count and
   headers using the exact names `get_rows`, `num_columns`, `columns_header`;
   validates their contract; supports snapshot refresh and fuzzy filtering;
@@ -1173,7 +1273,8 @@ Resolution record: [Review Follow-up Validation](#review-follow-up-validation).
 - file_path_column/folder_path_column default to None, validate zero-based
   distinct indices and affect only their cells. The default resolver uses full
   text and a fixed base without I/O/CWD; custom callbacks remain optional.
-  Both None means no path behavior. Search uses its original captured root.
+  Both None means no path behavior. Each Search uses its own captured root;
+  the idle form follows only its visibly identified invoking pane.
 - Results contain no explicit buttons, including a filter-clear button. Single
   selection/left click never operates on a file. Double-click/Enter on file cells
   highlights the file in its parent, and on folder cells enters the folder.
@@ -1199,7 +1300,7 @@ Resolution record: [Review Follow-up Validation](#review-follow-up-validation).
   identity and query. Default Go To closes modal windows only after success and
   retains modeless ones; close_on_navigate overrides are tested. Navigating does
   not retarget the base or preview source. Panel disposal closes its Table.
-- Both pattern fields have independent SVG regex toggles; recursion is
+- Both pattern fields have independent three-option SVG mode groups; recursion is
   also an SVG toggle. Every button has a meaningful tooltip/accessibility name.
 - The plug-in supplies plain control descriptors/resource names; the host renders
   the nested form with measured dock height and no clipping. Search/Stop are
@@ -1219,7 +1320,7 @@ Resolution record: [Review Follow-up Validation](#review-follow-up-validation).
   disposed searches never open a modal; partial snapshots are clearly marked.
 - Navigation closes the results dialog only on tracked success and retains the
   Panel. Path actions are available through the cell context menu and keyboard
-  equivalents. Toggles persist in UserSettings;
+  equivalents. Modes and recursion persist in UserSettings;
   result text and queries do not. No actual rename/replace or archive traversal.
 - Scoped unit/Qt/engine/performance checks pass; additional native/portable checks
   are run or explicitly recorded as release follow-ups. Packaging includes conda's ripgrep and
@@ -1472,6 +1573,58 @@ Resolution record: [Review Follow-up Validation](#review-follow-up-validation).
   the user's direct conda-forge policy, removing custom ripgrep verification.
   Frozen execution is outside this source task and remains a release follow-up.
 
+### 2026_09_14 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Medium
+- Context Window: Not exposed by host
+- Outcome: Applied UI feedback: contiguous fuzzy preference belongs in the shared
+  matcher; retain literal content semantics. Selected aligned capped fields and
+  idle root following with a fixed pane hint, per the user's simplified scope.
+  No source-pane toggle, cross-pane navigation or F1 migration was introduced.
+
+### 2026_09_14 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Medium
+- Context Window: Not exposed by host
+- Outcome: Reviewed the requested three-mode extension and its testable contract.
+  Approved whole-line content globs, substring Literal mode, native filename
+  globs, a reusable exclusive Choice control and backward-compatible settings
+  migration. Selected explicit conversion after checking standard-library
+  translators against ripgrep syntax. Implementation validation follows below.
+
+### 2026_09_14 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Medium
+- Context Window: Not exposed by host
+- Outcome: Reviewed the aligned search-control column and red Stop text with
+  reduced disabled opacity. Retained the existing Action API per user feedback;
+  styling belongs to the host. Required actual window widths, unclipped labels
+  and rendered color-state checks; no engine or persistence changes.
+
+### 2026_09_14 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Low
+- Context Window: Not exposed by host
+- Outcome: Selected the user's equal-size 3x3 icon layout over right-aligned
+  unequal rows. Added 3-pixel gaps, a larger tooltip-only pane indicator and idle
+  Stop no-op. Kept color host-owned; approved layout-only validation for this pass.
+
 ## Implementer
 
 ### 2026_09_14 - GitHub Copilot
@@ -1532,7 +1685,87 @@ Resolution record: [Review Follow-up Validation](#review-follow-up-validation).
   Focused follow-up tests: 32 run, 31 passed, one expected privilege skip. Native
   source smoke passed, including tracked navigation and form unlocking.
 
+### 2026_09_14 - GitHub Copilot
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Medium
+- Context Window: Not exposed by host
+- Outcome: Updated the shared fuzzy matcher, styled field alignment/width caps,
+  public pane-path subscription, fixed pane hint and idle root synchronization.
+  Documented public APIs and literal-content examples. All 57 focused tests and
+  the extended native source smoke passed; screenshots inspected at 640/960 widths.
+
+### 2026_09_14 - GitHub Copilot
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Medium
+- Context Window: Not exposed by host
+- Outcome: Implemented Literal/Glob/RegEx modes, bounded whole-line glob
+  conversion, filename Literal filtering, saved-mode migration, reusable Choice
+  groups and pinned text/asterisk icons. Focused tests: 59 run, 58 passed, one
+  symlink-privilege skip. Native mode/layout/persistence/search smoke passed.
+
+### 2026_09_14 - GitHub Copilot
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Medium
+- Context Window: Not exposed by host
+- Outcome: Aligned recursion/Search/Stop with the pattern-mode buttons and
+  themed Stop red with faded disabled text, without extending the plug-in API.
+  All 50 focused tests and the native smoke passed at actual 640/960/1440 widths;
+  the dock stays 111 logical pixels tall. Added geometry and color regressions.
+
+### 2026_09_14 - GitHub Copilot
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Medium
+- Context Window: Not exposed by host
+- Outcome: Implemented equal icon controls, pane SVG labels and always-enabled
+  Stop. Native layout-only checks passed for both panes at 640/960/1440 widths;
+  screenshots inspected. Updated existing assertions but skipped their execution
+  at the user's request. No new search workers, timers or persistence changes.
+
 ## Validation Results
+
+### Icon Grid Follow-up
+
+```powershell
+& { $previous = $env:QT_QPA_PLATFORM; $env:QT_QPA_PLATFORM = 'windows'; try { python -X faulthandler -m fman_integrationtest.search_content_smoke --layout-only } finally { $env:QT_QPA_PLATFORM = $previous } }
+```
+
+Passed for both pane icons at actual 640/960/1440 window widths: 28x28 buttons
+in three aligned columns with 3-pixel gaps, nonblank pane icons and correct
+tooltips, red enabled Stop and idle no-op. Dock height remained 111 pixels.
+Native screenshots inspected. Unit/integration suites and actual content search
+were deliberately skipped for this pass as requested; older results below are
+historical, not validation of this revision.
+
+### Panel Alignment and Stop Opacity
+
+```powershell
+python -X faulthandler -m unittest fman_unittest.test_ui_elements fman_unittest.test_search_file_content fman_integrationtest.test_qt.TableIT fman_integrationtest.test_qt.SearchFileContentIT fman_integrationtest.test_qt.DockedPanelIT fman_integrationtest.test_qt.PanelIT -v
+& { $previous = $env:QT_QPA_PLATFORM; $env:QT_QPA_PLATFORM = 'windows'; try { python -X faulthandler -m fman_integrationtest.search_content_smoke } finally { $env:QT_QPA_PLATFORM = $previous } }
+```
+
+All 50 focused tests passed. The initial regression reproduced the original
+misalignment; native captures also exposed a fixed-width resize constraint,
+replaced by Qt-managed shrinkable columns. Tests now assert actual window width,
+shared control edges and readable labels. Native smoke passed at 640/960/1440
+widths with a 111-pixel dock, verifying bright red Stop pixels while enabled
+and the same RGB with reduced opacity before/after work. Editor diagnostics are
+clean. No full suite, freeze or packaging checks were run for this UI follow-up.
 
 ### Focused Regressions
 
@@ -1670,6 +1903,66 @@ conda executable search, persistence, modal navigation, released result handle
 and re-enabled Search. No package download, version/hash check, freeze, full
 suite, install or new virtual environment was run during this follow-up.
 Frozen artifact execution is out of scope for this source task, not a pass.
+
+### UI Feedback Validation
+
+2026-09-14: **57 focused tests passed**:
+
+```powershell
+python -X faulthandler -m unittest fman_unittest.test_ui_elements fman_unittest.test_search_file_content core.tests.test_quicksearch_matchers fman_integrationtest.test_qt.PublicUiIT fman_integrationtest.test_qt.QuickListIT fman_integrationtest.test_qt.TableIT fman_integrationtest.test_qt.SearchFileContentIT -v
+```
+
+Covered shared contiguous/fallback positions, Unicode offsets, public callback
+thread/unsubscribe behavior, styled label alignment and width caps at 640/960/1440,
+both fixed pane hints, ignored other-pane changes, captured busy roots, non-local
+folder disabling and disposal. The 10,000-row Table fuzzy check took 11 ms.
+
+With `QT_QPA_PLATFORM=windows`, ran:
+
+```powershell
+python -X faulthandler -m fman_integrationtest.search_content_smoke
+```
+
+Passed real-pane navigation/root following, unchanged other-pane ownership,
+settings, search, contiguous extension highlights and tracked result navigation.
+Native screenshots inspected: aligned shorter inputs, fixed left-pane hint,
+unclipped actions and full highlighted extension. Dock heights 145/111 logical
+pixels; search-to-visible 198 ms. No freeze, install, new environment or full
+test suite was run. Existing portable release follow-ups remain unverified.
+
+### Three-Mode Validation
+
+2026-09-14: **59 tests run, 58 passed, one expected symlink-privilege skip**:
+
+```powershell
+python -X faulthandler -m unittest fman_unittest.test_ui_elements fman_unittest.test_search_file_content fman_integrationtest.test_qt.TableIT fman_integrationtest.test_qt.SearchFileContentIT fman_integrationtest.test_qt.PublicUiIT fman_integrationtest.test_search_file_content_engine -v
+```
+
+Covered native content/filename modes, whole-line and empty wildcard matches,
+CRLF/Unicode, literal metacharacters/brackets, ranges/negation/edge hyphens,
+invalid patterns, old/new/invalid settings, obsolete-key removal, preserved
+unrelated settings, bounded Choice descriptors, exactly-one selection, silent
+selected clicks, atomic updates, callbacks, disabling and search disposal.
+
+Also ran the expanded nine-mode-pair matrix explicitly:
+
+```powershell
+python -X faulthandler -m unittest fman_unittest.test_search_file_content.SearchEngineTest.test_real_engine_three_filename_modes -v
+```
+
+Native smoke with `QT_QPA_PLATFORM=windows`:
+
+```powershell
+python -X faulthandler -m fman_integrationtest.search_content_smoke
+```
+
+Passed real mode-button clicks, saved-mode restoration on reopen, filename
+RegEx/content Glob search, lock/unlock behavior and tracked navigation. Pixel
+checks found three distinct nonblank icons; screenshots inspected at 640/960
+widths, with geometry checked also at 1440. Dock heights remain 145/111 logical
+pixels; search-to-visible was 198 ms. Existing late-result, root-following and
+public API checks pass. No install, virtual environment, freeze or full suite.
+The previous portable-release caveat remains unchanged.
 
 ### Release Follow-ups
 

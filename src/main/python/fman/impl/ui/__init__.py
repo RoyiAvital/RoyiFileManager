@@ -35,6 +35,20 @@ class Resource:
 		self.revision = 0
 		self._subscribers = set()
 		self._subscriber_lock = RLock()
+		self._work_slot = BoundedSemaphore(1)
+
+	def try_claim(self):
+		if not self._work_slot.acquire(blocking=False):
+			return None
+		released = False
+		guard = RLock()
+		def release():
+			nonlocal released
+			with guard:
+				if not released:
+					released = True
+					self._work_slot.release()
+		return release
 
 	def subscribe(self, callback, snapshot):
 		with self.lock:
@@ -69,10 +83,16 @@ def resource(name):
 
 
 class UiOwner:
-	def __init__(self):
+	def __init__(self, *, resource_root=None):
+		from os.path import abspath
+		self._resource_root = abspath(resource_root) if resource_root is not None else None
 		self.active = True
 		self._sessions = set()
 		self._lock = RLock()
+
+	@property
+	def resource_root(self):
+		return self._resource_root
 
 	def attach(self, dispose):
 		with self._lock:

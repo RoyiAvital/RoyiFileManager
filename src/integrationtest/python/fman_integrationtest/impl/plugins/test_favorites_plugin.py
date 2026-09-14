@@ -67,6 +67,7 @@ class FavoritesPluginTest(TestCase):
 			import sys
 			old_module = sys.modules['favorites']
 			old_controller = old_module.FavoritesController
+			self.assertEqual(str(plugin_path), old_controller.require_owner().resource_root)
 			old_lock = old_module._LOCK
 			from unittest.mock import Mock, patch
 			pane = Mock()

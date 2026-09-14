@@ -187,6 +187,7 @@ construct them with internal widgets yourself.
 | `get_columns()` | List of current qualified column-name strings. |
 | `set_sort_column(column, ascending=True)` | Set a displayed column by qualified name and direction; a missing column raises `ValueError`. |
 | `get_sort_column()` | Return `(qualified_column_name, ascending_bool)`. |
+| `on_path_changed(callback)` | RoyiFileManager addition: register a no-argument path-change callback on the UI thread; return an idempotent unsubscribe function. |
 | `on_closed(callback)` | RoyiFileManager addition: register no-argument pane-destruction callback; return an idempotent unsubscribe function. |
 
 Cursor movement methods all accept `toggle_selection=False`:
@@ -204,6 +205,11 @@ operation requiring success/failure/cancellation, use `fman.ui.navigate` instead
 may be called from a command worker or the UI thread; worker calls dispatch
 synchronously. Unsubscription is safe after destruction. Register while the
 pane is still alive, and do not hold a lock needed by the UI during registration.
+
+`on_path_changed` has the same registration/unsubscription threading contract.
+It does not call back on registration; read `get_path()` for the initial URL.
+Callbacks must be fast and may read the current path or update plain UI handles.
+Unsubscribe when the owning tool closes. No polling or new worker is created.
 
 ### Window
 
@@ -514,12 +520,128 @@ Import from `fman.ui`. The complete explicit export list is:
 ListItem, QuickList, Panel, IconButton, TextButton, DropDown, JsonSettings,
 UiController, UiOwner, Resource, settings_resource, matchers,
 ToolWindow, PaneToolWindow, NavigationHandle, navigate, OutputTextBox
+TableRow, TableAction, TextField, Toggle, Choice, Label, Action,
+TableHandle, PanelHandle, show_table, show_panel
 ```
 
 This is an additive **provisional** API, not upstream fman 1.7.5. Public names
 do not imply permission to change host widget parenting, lifetime or internal
-model state arbitrarily. Standard Qt layout/control APIs are currently necessary
-for composition, but a future constrained facade may replace them.
+model state arbitrarily. The legacy widget components use Qt for composition.
+New Table/Panel consumers can use the plain services below without importing Qt.
+
+### Qt-Free Table and Panel
+
+Expose a `UiController` subclass in the plug-in's root package as an owner carrier.
+Do not implement/call `build` or `show` when using these services; obtain its
+loader-owned lifetime with `require_owner()`.
+
+```python
+from fman.ui import UiController, TableRow, show_table
+
+class ResultsUI(UiController):
+  pass
+
+def display_results(pane, rows):
+  return show_table(
+    owner=ResultsUI.require_owner(), pane=pane, get_rows=lambda: rows,
+    num_columns=2, columns_header=('File Path', 'Snippet'),
+    file_path_column=0, title='Results'
+  )
+```
+
+```python
+show_table(*, owner, get_rows, num_columns, columns_header, pane=None,
+  panel=None, title='', fuzzy=True, file_path_column=None,
+  folder_path_column=None, resolve_path=None, base_path=None, modal=True,
+  close_on_navigate=None, summary='', get_details=None, on_activate=None,
+  get_menu=None, on_closed=None)
+
+show_panel(*, owner, pane, rows, on_change=None, on_action=None, on_closed=None)
+```
+
+`TableRow(id, cells, value=None, highlights=())` is frozen. IDs are unique strings;
+cells contain exactly `num_columns` strings. Optional highlights contain one
+tuple of `(start, end)` character spans per column. Payloads contain immutable
+plain data only, not widgets or mutable containers. The complete provider snapshot
+is validated before replacement: at most 10,000 rows, 16 MiB text/payload and
+128 spans per cell. An exception preserves the prior snapshot.
+
+Path roles are distinct zero-based column indices; `None` disables each role.
+Only designated cells get built-in activation and Copy Path/Go To menus. The
+default resolver uses full cell text, absolute native paths, or relative paths
+against a fixed base captured from the supplied local pane. Supply `base_path`
+explicitly when the pane may have moved. No filesystem/CWD/environment expansion
+occurs during resolution. `resolve_path(row, column)` may instead return an
+authoritative absolute native string or `None`. Without a pane, Copy works but
+Go To is disabled; no active pane is silently selected.
+
+`on_activate(row, column)` handles ordinary cells only. `get_details(row, column)`
+returns passive text. `get_menu(row, column)` returns at most 32
+`TableAction(id, label, callback)` records; callbacks receive `(row, column)`.
+Labels are limited to 128 characters; `copy_path` and `go_to` IDs are reserved.
+Callbacks are serialized on Qt and must be fast, nonblocking plain Python.
+Stale menus/navigation completions and unloaded-owner callbacks are rejected.
+
+`TableHandle` provides `refresh()`, idempotent `close()`, `is_open`,
+`current_cell` (row and logical column, or `None`) and read/write `filter_text`.
+After close, the last filter remains readable, payloads are released and mutations
+raise `RuntimeError`. Calls marshal to Qt but never wait for dialog dismissal.
+Modal results block the invoking window only; inactive/blocked windows defer
+presentation without polling. `modal=False` supports interactive previews;
+Tab/Shift+Tab bridge the associated Panel. Successful Go To closes modal results
+by default, retains modeless results, and obeys `close_on_navigate` overrides.
+There are no buttons in Table content, including the filter.
+
+Table and QuickList use the shared fuzzy matcher: prefer a contiguous match
+when available, otherwise use an in-order subsequence. Highlight positions map
+back to the original text after casefolding. F1 Shortcuts has its own substring
+filter and is not a fuzzy-matcher consumer.
+
+Panel `rows` is a tuple of tuples of frozen descriptors, at most 16 by 16:
+`TextField(id, label, value='', tooltip='', max_width=None)`,
+`Toggle(id, icon, label, value=False, tooltip='')`,
+`Label(id, text, icon=None, tooltip='')`,
+`Choice(id, label, options, value, tooltip='')`,
+`Action(id, label, icon=None, tooltip='')`. IDs are unique. SVG icon names are
+relative to the loader-assigned `UiOwner.resource_root`; traversal/escaping
+resources are rejected. The host loads/tints icons on demand. Actions are not
+toggles; their labels/icons do not appear in value snapshots.
+
+Text-field labels align across rows using their styled size hints.
+`max_width` optionally caps the input in Qt logical pixels; it must be a
+positive integer or `None` (uncapped). Capped fields remain left-aligned and
+shrink within narrow Panels. Search File Content uses `max_width=480`.
+In forms with at least one capped field, when each row starts with one capped
+field or label followed only by icon controls/actions, the trailing controls
+share a left-aligned column. Extra width stays after the controls. Other forms
+retain their existing action wrapping. Control colors remain host-owned; the
+existing `stop` action uses a red icon. Empty action labels with an icon produce
+28-pixel icon buttons with tooltips. Choice and action groups have 3-pixel gaps.
+Optional label icons are noninteractive, render at 20 logical pixels and use
+the label descriptor's tooltip; label value snapshots still contain only text.
+
+`Choice` renders 2-8 mutually exclusive icon buttons. `options` contains unique
+`(value, icon_resource, tooltip)` string triples, normalized to immutable tuples.
+The initial `value` must name an option. Each option has a tooltip and accessible
+name; clicking the selected button leaves it selected and emits no change.
+Snapshots contain the selected string. Use `update(values={'mode': 'glob'})` to
+select silently, or `update(enabled={'mode': False})` to disable the entire group.
+An unknown value fails before any update is applied. Search File Content uses
+Choice for Literal/Glob/RegEx; Toggle remains for independent boolean settings.
+
+`PanelHandle.snapshot()` returns an immutable value mapping.
+`update(values=None, enabled=None)` validates and applies changes atomically
+without echoing `on_change(values)`. User actions call
+`on_action(action_id, values)`. `set_activity_status(text=None, *, get_text=None)`
+owns a separate status label; a fast `get_text()` supplies immutable progress at
+most five times a second. Terminal text or clear/disposal stops its timer.
+`close()`, `is_open`, and the read-only `cancelled.is_set()` token manage lifetime.
+One dock belongs to each main window; replacement closes the previous session.
+Closing a Panel closes its associated Table; closing only Table retains Panel.
+`panel=` supplies the target pane for Table and requires matching ownership.
+
+No new widget, signal, Qt enum or arbitrary layout bridge is exposed by these
+services. Existing widget-based consumers remain supported.
 
 ### UiController
 
@@ -548,7 +670,8 @@ never hold a worker/model lock needed by UI code while calling it.
 
 | Member | Contract |
 | --- | --- |
-| `UiOwner()` | Create an active owner. |
+| `UiOwner(resource_root=None)` | Create an active owner; the optional resource root is keyword-only. Production roots are assigned by the loader. |
+| `resource_root` | Read-only registered plug-in directory; registration performs no asset I/O. |
 | `active` | Current lifetime flag; inspect rather than modifying directly. |
 | `attach(dispose)` | Register a disposal callable; return `False` if already inactive, otherwise `True`. |
 | `detach(dispose)` | Remove a callable if registered. |
@@ -788,6 +911,7 @@ creates an independent coordinator, not a settings file or automatic persistence
 | `unsubscribe(callback)` | Remove if registered. |
 | `committed(snapshot)` | Increment revision under the lock and return a notification containing revision, snapshot and the captured subscriber set. Does not save JSON. |
 | `publish(notification)` | Invoke captured subscribers as `callback(revision, snapshot)` in the publishing thread. No automatic Qt dispatch or exception isolation. |
+| `try_claim()` | Acquire one nonblocking work lease for this named resource; return an idempotent release callable, or `None` if occupied. Retain until actual worker cleanup, including across owner unload/reload. |
 
 Hold `resource.lock` through load/modify/save/committed, then publish **outside**
 the lock. Publish only after a successful write. Share immutable snapshots, or
@@ -805,7 +929,7 @@ requiring an import from the Core plug-in.
 | --- | --- |
 | `path_starts_with(path, query)` | Case-insensitive native-path prefix positions; strips trailing native separators from query. |
 | `basename_starts_with(path, query)` | Case-insensitive native basename prefix, with positions relative to the whole path. |
-| `contains_chars(text, query)` | In-order subsequence positions; case-sensitive when called directly. |
+| `contains_chars(text, query)` | Prefer contiguous substring positions; otherwise use an in-order subsequence. Case-sensitive when called directly. |
 | `contains_substring(text, query)` | Contiguous substring positions; case-sensitive when called directly. |
 | `contains_chars_after_separator(separator)` | Return a matcher that follows matching characters from separated-part starts, skipping the remainder of mismatching parts. |
 

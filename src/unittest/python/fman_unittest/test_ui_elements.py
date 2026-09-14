@@ -5,6 +5,93 @@ from unittest.mock import Mock
 from fman.impl.navigation import NavigationRequest, current_request
 
 
+class TableDataTest(TestCase):
+	def test_choice_descriptors_validate_plain_options(self):
+		from fman.impl.ui.table_data import Choice, panel_records
+		options = [('literal', 'text.svg', 'Literal'), ('glob', 'asterisk.svg', 'Glob')]
+		choice = Choice('mode', 'Mode', options, 'glob')
+		self.assertEqual((tuple(options[0]), tuple(options[1])), choice.options)
+		self.assertEqual(((choice,),), panel_records(((choice,),)))
+		for invalid in (Choice('mode', 'Mode', options, 'unknown'),
+				Choice('mode', 'Mode', (options[0], options[0]), 'literal')):
+			with self.assertRaises(ValueError):
+				panel_records(((invalid,),))
+		for invalid in ([], options * 5, ['abc', 'def']):
+			with self.assertRaises((TypeError, ValueError)):
+				Choice('mode', 'Mode', invalid, 'literal')
+
+	def test_optional_column_roles_and_default_resolution(self):
+		from fman.impl.ui.table_data import TableRow, TableSchema
+		row = TableRow('one', ('nested/file.txt', 'C:\\elsewhere'))
+		resolver = Mock(side_effect=AssertionError('Not a path cell'))
+		self.assertIsNone(TableSchema(2, ('A', 'B'), resolve_path=resolver).target(row, 0))
+		resolver.assert_not_called()
+		schema = TableSchema(2, ('File', 'Folder'), 0, 1, base_path='C:\\base')
+		self.assertEqual('C:\\base\\nested\\file.txt', schema.target(row, 0))
+		self.assertEqual('C:\\elsewhere', schema.target(row, 1))
+		self.assertIsNone(TableSchema(2, ('A', 'B'), 0).target(row, 0))
+		self.assertIsNone(schema.target(TableRow('empty', ('', '')), 0))
+		for invalid in (True, '0', -1, 2):
+			with self.subTest(invalid=invalid), self.assertRaises((TypeError, ValueError)):
+				TableSchema(2, ('A', 'B'), invalid)
+		with self.assertRaises(ValueError):
+			TableSchema(2, ('A', 'B'), 0, 0)
+
+	def test_paths_are_lexical_and_custom_resolver_is_authoritative(self):
+		from fman.impl.ui.table_data import TableRow, TableSchema
+		from unittest.mock import patch
+		schema = TableSchema(1, ('Path',), 0, base_path='C:\\base')
+		with patch('os.stat', side_effect=AssertionError('No filesystem probe')):
+			for value, expected in (('..\\a.txt', 'C:\\a.txt'),
+					('\\\\server\\share\\a.txt', '\\\\server\\share\\a.txt'),
+					(' spaced .txt', 'C:\\base\\ spaced .txt')):
+				self.assertEqual(expected, schema.target(TableRow(value, (value,)), 0))
+			for value in ('C:relative', '\\rooted', 'file:///C:/a', 'https://a', 'bad\x00path'):
+				with self.subTest(value=value), self.assertRaises(ValueError):
+					schema.target(TableRow('row', (value,)), 0)
+		row = TableRow('label', ('Friendly label',), ('D:\\actual.txt',))
+		self.assertEqual('D:\\actual.txt', TableSchema(1, ('Path',), 0,
+			resolve_path=lambda record, column: record.value[0]).target(row, 0))
+		self.assertIsNone(TableSchema(1, ('Path',), 0,
+			resolve_path=lambda record, column: None).target(row, 0))
+		with self.assertRaises(ValueError):
+			TableSchema(1, ('Path',), 0, resolve_path=lambda *args: 'relative').target(row, 0)
+
+	def test_snapshot_schema_bounds_and_immutable_payload(self):
+		from fman.impl.ui.table_data import TableRow, TableSchema
+		from unittest.mock import patch
+		schema = TableSchema(2, ('Path', 'Snippet'))
+		row = TableRow('one', ['one', 'text'], ('value',), ((), ((0, 4),)))
+		provider = Mock(return_value=[row])
+		self.assertEqual((row,), schema.snapshot(provider))
+		provider.assert_called_once_with()
+		for rows in ([row, row], [TableRow('short', ('one',))],
+				[TableRow('mutable', ('one', 'two'), {})],
+				[TableRow('span', ('one', 'two'), highlights=((), ((0, 4),))) ]):
+			with self.assertRaises((TypeError, ValueError)):
+				schema.snapshot(lambda: rows)
+		with patch('fman.impl.ui.table_data.MAX_ROWS', 1), self.assertRaises(ValueError):
+			schema.snapshot(lambda: (TableRow(str(index), ('a', 'b')) for index in range(3)))
+		with patch('fman.impl.ui.table_data.MAX_TEXT_BYTES', 1), self.assertRaises(ValueError):
+			schema.snapshot(provider)
+
+	def test_panel_descriptors_validate_without_qt(self):
+		from fman.impl.ui.table_data import Action, Label, TextField, Toggle, panel_records
+		rows = ((TextField('query', 'Query', max_width=480),
+			Toggle('regex', 'regex.svg', 'Regex')),
+			(Label('root', 'C:\\', 'panel-left.svg', 'Left pane'), Action('search', 'Search')))
+		self.assertEqual(rows, panel_records(rows))
+		for invalid in (((rows[0][0], rows[0][0]),),
+				((Toggle('bad', 'regex.svg', 'Regex', value=1),),),
+				((Label('root', 'C:\\', icon=True),),),
+				((Label('root', 'C:\\', tooltip=True),),), ((),)):
+			with self.assertRaises((TypeError, ValueError)):
+				panel_records(invalid)
+		for width in (True, 0, -1, '480'):
+			with self.assertRaises(ValueError):
+				panel_records(((TextField('query', 'Query', max_width=width),),))
+
+
 class UiStateTest(TestCase):
 	def test_controller_requires_loader_owner(self):
 		from fman.ui import UiController
@@ -20,8 +107,16 @@ class UiStateTest(TestCase):
 
 	def test_casefold_offsets_refer_to_original_characters(self):
 		self.assertEqual((2,), match_positions(contains_chars, 'Ma\u00dfe', 'ss'))
-		self.assertEqual((0, 4), match_positions(contains_chars, 'Stra\u00dfe', 'sS'))
+		self.assertEqual((4,), match_positions(contains_chars, 'Stra\u00dfe', 'sS'))
 		self.assertIsNone(match_positions(contains_chars, 'Alpha', 'z'))
+
+	def test_shared_fuzzy_matcher_prefers_contiguous_text(self):
+		from fman.impl.ui.matchers import contains_chars as shared_matcher
+		self.assertIs(contains_chars, shared_matcher)
+		self.assertEqual([9, 10, 11], contains_chars('cudatext.cmd', 'cmd'))
+		self.assertEqual([0, 2, 3], contains_chars('crmd', 'cmd'))
+		self.assertEqual([], contains_chars('file.cmd', ''))
+		self.assertEqual((9, 10, 11), match_positions(contains_chars, 'Cud\u00e1Text.cmd', 'CMD'))
 
 	def test_astral_highlights_use_utf16_positions(self):
 		self.assertEqual((0, 2), utf16_span('\U0001f600Name', 0))

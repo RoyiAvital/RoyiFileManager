@@ -1,390 +1,439 @@
-# Text Editor Service
+# Text Editor
 
-Status: Proposed design; not approved for implementation. The user requested a
-host service, F3 viewing, F4 editing, syntax highlighting, clipboard editing,
-VS Code-like multi-caret bindings, and the existing Sublime Text-inspired Panel
-concept. Window placement, initial file scope, and the additional features below
-are proposed defaults requiring review, not recorded user approvals.
+Status: Revised design, not implemented. This revision replaces the earlier
+built-in QScintilla editor service with two wizards that integrate external
+programs: one for the text **editor** (`F4`) and one for the text **viewer**
+(`F3`). The user directed the change: no embedded viewer or editor; guided
+setup for Notepad++, CudaText, Textadept, or a user-defined program, with the
+read-only launch command derived automatically for the three known editors.
 
 ## Task
 
-View and edit text without leaving RoyiFileManager. Expose the editor as a host
-service that plug-ins can call, not as a bundled editor plug-in. Keep document
-content separate from compact operation controls, following the
-[UI Elements design](UIElements.md) and the shipped
-[Favorites UI](../src/main/resources/base/Plugins/Favorites/favorites/ui.py).
+Let the user choose two programs once: an editor with advanced editing features
+for `F4`, and a fast viewer with a read-only mode for `F3`. They may be the same
+program or different ones. Each wizard guides the choice for its role, derives
+the launch command from the executable for the three known editors, and asks a
+user-defined program for its arguments.
+
+### Current Behavior
+
+Core already has a minimal editor picker in `OpenWithEditor._get_editor()`
+([commands](../src/main/resources/base/Plugins/Core/core/commands/__init__.py)):
+
+- `F4` (`open_with_editor`) and `Shift+F4` (`create_and_edit_file`) read the
+  `editor` dictionary from `Core Settings.json`, a Popen keyword mapping such as
+  `{"args": ["C:\\...\\editor.exe", "{file}"]}`; `{file}` is replaced through
+  `strformat_dict_values` and launched with `Popen(**kwargs)`.
+- If `editor` is missing, or `args[0]` no longer exists, an OK/Cancel alert
+  (`Editor is currently not configured. Please pick one.` or `Could not find
+  your editor. Please select it again.`) leads to a native open dialog rooted at
+  Program Files with an `Applications (*.exe)` filter. The result is stored as
+  `{"args": [<exe>, "{file}"]}` through `get_popen_kwargs_for_opening` and saved.
+- There is no viewer command, no read-only mode, no preset knowledge, no
+  argument editing, no executable validation, and a Popen failure surfaces as a
+  plug-in traceback. A directory under the cursor is handed to the editor.
+- `Open with...` maintains a separate `Apps.json`/`File Associations.json`
+  picker for arbitrary applications; it is not an editor configuration.
 
 ## Scope
 
-- F3 views the file under the cursor; F4 edits it. Both use QScintilla and the
-  same host-owned document/session implementation, operating on one file per call.
-- Syntax highlighting with available QScintilla lexers, automatic language
-  selection, manual language override, and plain-text fallback.
-- Copy/select/search in View mode; cut/paste/replace/undo/redo/save in Edit mode.
-- VS Code-like multi-caret actions, including mouse and keyboard selection.
-- Panel-based document actions, Find/Replace, and Go to Line. No modal search
-  dialog, operation controls inside the text canvas, or duplicate search engine.
-- Proposed first release: local filesystem text files, including extensionless
-  files. Virtual/archive write-back, generated editable buffers, inactive-pane
-  replacement, tabs, split editors, project features, LSP, automatic formatting,
-  autosave, and crash/session document recovery are deferred.
-- Regex search is supported by QScintilla but deferred from the initial UI:
-  arbitrary native regex calls cannot be reliably canceled on the Qt thread.
-  Literal, case-sensitive, and whole-word search are included.
-- Licensing assessment is outside this design at the user's request.
+Included:
 
-Compatibility: preserve the public `fman` plug-in API from fman 1.7.5. Add a
-provisional RoyiFileManager service API; do not expose QScintilla widgets through
-the general Window/DirectoryPane API. Preserve existing external-editor command
-IDs and settings. Rebinding the shipped F4/Shift+F4 defaults is a documented
-workflow change; user binding overrides continue to win.
+- Core command `view_file` (`F3`, aliases `View`, `View file`) launching the
+  configured viewer command; `open_with_editor` (`F4`) and `create_and_edit_file`
+  (`Shift+F4`) keep their identifiers and launch the configured editor command.
+- Core commands `configure_text_editor` (`Configure text editor`, `Choose text
+  editor`) and `configure_text_viewer` (`Configure text viewer`, `Choose text
+  viewer`). Each runs at any time from the Command Center; `F4`/`Shift+F4` run
+  the editor wizard and `F3` runs the viewer wizard automatically when their own
+  setting is missing or invalid.
+- Presets: Notepad++, CudaText, Textadept, and User defined. The editor wizard
+  derives Edit arguments and the viewer wizard derives read-only View arguments
+  from the executable path; the user-defined preset prompts for one argument
+  line per wizard. The viewer wizard offers `Same as editor` when an editor is
+  configured; the editor wizard offers to reuse the choice as viewer.
+- Best-effort executable detection for presets from well-known install
+  locations and `PATH`, confirmed by the user, with a browse fallback.
+- Settings stored in `Core Settings.json` under `UserSettings`; existing `editor`
+  configurations keep working.
+- Local `file://` files only. Directories and other schemes are refused with a
+  short alert, as today for non-local URLs.
+
+Excluded:
+
+- Any embedded viewer/editor, QScintilla, syntax highlighting, save handling,
+  find/replace, or editor windows owned by RoyiFileManager.
+- Jump-to-line, multiple files per launch, per-extension editors, editor
+  process tracking, waiting for the editor to exit, or reloading panes on save.
+- File-type or binary detection. `F3`/`F4` are text-oriented and hand any
+  local file to the configured viewer/editor; the user is assumed to know what
+  they are opening. Images and other non-text files belong to `Open with...`
+  (`Apps.json` / `File Associations.json`) or `Enter`.
+- Non-Windows presets, Registry lookups, and downloading editors.
+
+Compatibility: preserves the public `fman` plug-in API from fman 1.7.5. Command
+identifiers `open_with_editor` and `create_and_edit_file` and the `editor`
+settings shape are unchanged; `viewer`, `editor_preset`, and `viewer_preset` are
+additive keys. `F3` is a new default binding (currently unassigned in Core and
+bundled plug-ins); user overrides in `Key Bindings.json` continue to win.
 
 ## Design
 
-### Ownership And Placement
+### Ownership
 
-The application context lazily owns an EditorService. Its internal implementation
-belongs under `fman.impl`, with an additive public `fman.editor` facade. Core
-commands select a URL and call the service; loading, documents, saving, and editor
-commands belong to the host. The service is not registered as a plug-in.
+Everything lives in the Core plug-in beside the existing editor code:
 
-Proposed placement: a normal resizable, non-modal top-level Qt window per file,
-in the existing application process. It supports maximize and multiple monitors;
-both directory panes remain usable. Keep the editor widget independent of its
-window so later preview placement does not require another text implementation.
+- `core/commands/__init__.py`: `ViewFile`, `OpenWithEditor`, `CreateAndEditFile`,
+  `ConfigureTextEditor`, `ConfigureTextViewer`, and one shared
+  `_launch_program(url, role, pane)` helper that replaces `_get_editor()`.
+- `core/text_editor.py` (new, pure Python, no Qt): preset table with per-role
+  guidance text, executable detection, command derivation, settings validation,
+  and `{file}` expansion. One `run_wizard(role, ui, settings)` function drives
+  both wizards; the role (`editor` or `viewer`) selects titles, list order,
+  descriptions, argument template, and the settings keys. Unit-testable with a
+  stub UI, as the existing `StubUI` tests do.
+- Dialogs use only the existing public API: `show_quicksearch`,
+  `show_file_open_dialog`, `show_prompt`, `show_alert`, `show_status_message`.
+  No host changes, no `fman.ui` window, no new UI element.
 
-Use a host-owned window/controller, not PaneToolWindow: its
-[current lifecycle](../src/main/python/fman/impl/ui/session.py) requires a plug-in
-owner and unconditionally disposes on close. An editor needs a dirty-document
-close gate and must survive the caller plug-in unloading or navigating away.
-The service retains windows until approved close; application exit coordinates
-all documents before destroying any window. Cancel aborts exit. No dirty document
-is disposed merely because its original pane closes.
+### Presets
 
-### Panel And Commands
+| Preset | Executable detection candidates (first existing wins) | Edit arguments | View arguments |
+| --- | --- | --- | --- |
+| Notepad++ | `%ProgramFiles%\Notepad++\notepad++.exe`, `%ProgramFiles(x86)%\Notepad++\notepad++.exe`, `notepad++.exe` on `PATH` | `["{file}"]` | `["-ro", "{file}"]` |
+| CudaText | `%LocalAppData%\Programs\CudaText\cudatext.exe`, `%ProgramFiles%\CudaText\cudatext.exe`, `cudatext.exe` on `PATH` | `["{file}"]` | `["-r", "{file}"]` |
+| Textadept | `%ProgramFiles%\Textadept\textadept.exe`, `%LocalAppData%\Programs\Textadept\textadept.exe`, `textadept.exe` on `PATH` | `["{file}"]` | `["-r", "{file}"]` |
+| User defined | Browse only | Prompted; default `["{file}"]` | Prompted; default `["{file}"]` |
 
-Reuse [Panel, IconButton, TextButton, DropDown, and PanelDock](../src/main/python/fman/impl/ui/panel.py).
-The content canvas stays above a compact bottom Panel, with a thin status row
-below it. Use the existing theme, spacing, native controls, button width caps,
-accessible labels, and focus conventions. Sublime Text inspires placement and
-operation layout; multi-caret shortcuts remain VS Code-like as requested.
+Role guidance shown as QuickSearch item descriptions (hint = detected path or
+`Not found - browse`):
 
-- The default document Panel exposes save actions and access to Find/Replace,
-  Go to Line, language, indentation, and wrap settings. Keep secondary choices
-  in menus/dropdowns instead of permanently displaying every option.
-- Find reveals a query field, case/whole-word toggles, previous/next actions, and
-  a bounded match-count/result label. Replace adds a second field and explicit
-  Replace/Replace All actions. Go to Line replaces those operation fields.
-- One operation form is visible at a time. These are editor-local Panel modes,
-  not modal dialogs and not nested cards. Preserve their values while switching.
-- Panel currently has a horizontal layout and accepts arbitrary Qt widgets.
-  Put multi-row fields in a child QWidget/layout through Panel.add; do not
-  invent a new public form API solely for this consumer. Reflow controls into
-  rows at compact widths; fields expand while icons and actions stay bounded.
-- Use IconButton for boolean options and familiar action icons; action icons
-  must be non-checkable. Use TextButton for explicit Replace/Replace All actions.
-  Missing symbols require theme-consistent assets, not a new icon library.
-- The editor instantiates its own internal PanelDock. Its close callback hides
-  the Panel and returns focus to the text, not closes the editor. Do not use
-  [MainWindow.set_bottom_panel](../src/main/python/fman/impl/widgets.py), which
-  replaces the main window's current tool session. Favorites remains unaffected.
-- Panel buttons, shortcuts, and any menu entries dispatch the same editor-local
-  command IDs with shared enabled-state checks. Do not route editor keystrokes
-  through DirectoryPaneCommand against whichever file pane was last active.
+| Preset | Editor wizard description | Viewer wizard description |
+| --- | --- | --- |
+| Notepad++ | Full-featured: plugins, macros, multi-editing, tabs and sessions | Read-only tab (`-ro`) in the running instance |
+| CudaText | Multi-carets, 300+ lexers, Python plugins, LSP add-on | Fast startup, read-only mode (`-r`), portable |
+| Textadept | Minimalist, Lua-scriptable, very light | Very light, read-only mode (`-r`), portable |
+| Same as editor | (not offered) | `<preset>` opened read-only, when its read-only switch is known |
+| User defined | Any editor; you enter the command arguments | Any program; enter arguments including its read-only switch, if it has one |
 
-| Context / Binding | Command And Behavior |
-| --- | --- |
-| File pane: F3 | `view_text_file`: open the cursor file in View mode |
-| File pane: F4 | `edit_text_file`: open the cursor file in Edit mode |
-| File pane: Shift+F4 | `create_and_edit_text_file`: reuse the existing create/prompt helpers, then call the service |
-| Editor: F4 | `enable_editing`: upgrade View without reloading or moving the caret |
-| Editor: Ctrl+S / Ctrl+Shift+S | `save` / `save_as` |
-| Editor: Ctrl+F / Ctrl+H / Ctrl+G | `show_find` / `show_replace` / `show_goto_line` |
-| Editor: F3 / Shift+F3 | `find_next` / `find_previous`; never open another file |
-| Query field: Enter / Shift+Enter | Find next / previous; never implicitly Replace All |
-| Editor: Ctrl+C/X/V/A | Copy / cut / paste / select all, subject to mode |
-| Editor: Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z | Undo / redo / redo |
-| Editor: Alt+Z | Toggle word wrap |
-| Editor: Ctrl+W / Alt+F4 | Request document close through the unsaved-change gate |
+List order carries the recommendation: the editor wizard lists Notepad++,
+CudaText, Textadept, User defined; the viewer wizard lists Same as editor (when
+available), CudaText, Textadept, Notepad++, User defined. The initial highlight
+is the currently saved preset for that role, else the first item.
 
-Shortcuts are scoped to the editor window and relevant child, not application
-global. Ctrl+F must not start SearchFileFuzzy, Ctrl+S must not toggle extended
-status, Tab in the canvas indents, and Delete must never delete a filesystem item.
-Text fields retain normal editing shortcuts. Tab/Shift+Tab traverse Panel
-controls; return focus to the canvas at the boundary, following PanelDock.
-Escape first dismisses completion/temporary selection state in its context,
-then hides an active Panel; bare Escape never discards or closes an editor.
+Verified against upstream documentation during planning:
 
-The existing `open_with_editor` and `create_and_edit_file` commands retain their
-external-editor behavior and settings. Add the new thin internal commands and
-change only shipped bindings; do not silently change callable legacy IDs.
-See [current editor commands](../src/main/resources/base/Plugins/Core/core/commands/__init__.py)
-and [key bindings](../src/main/resources/base/Plugins/Core/Key%20Bindings.json).
+- Notepad++ `-ro` marks the opened `filepath` read-only. `-multiInst`/`-nosession`
+  are not added by default: users who prefer a separate viewer window can edit
+  the arguments.
+- CudaText `-r` opens files read-only and is honored by the single-instance
+  activation path.
+- Textadept View uses `-r {file}` as directed by the user. The Textadept 13.1
+  manual does not list `-r`, so step 1 must confirm it on the installed version.
+  If it is not accepted, the fallback is `{file} -e "buffer.read_only = true"`:
+  `-e <code>` runs Lua in the single running instance as if typed in its
+  command entry, which the manual suggests for a read-only mode; the file must
+  precede `-e` so `buffer` is the just-opened file. If neither works, the preset
+  degrades to View = Edit with a note in the confirmation.
+- Textadept on Windows only opens filenames representable in the system code
+  page; the preset description mentions it so the limitation is not reported as
+  a RoyiFileManager bug.
 
-### Public Service Contract
+Detection reads `os.environ` and `shutil.which`; it never touches the Registry.
+CudaText and Textadept are portable applications that are often unpacked to
+arbitrary folders, so a missed detection is expected and just skips to Browse.
 
-Proposed entry point: `fman.editor.open_file(url, *, mode="view", line=None,
-column=None) -> EditorHandle`. The signature is subject to design review.
-It accepts fman URLs, not percent-encoded QUrls; resolves supported aliases once
-and validates a regular filesystem file. Use 1-based line/Unicode-character
-column coordinates; clamp beyond end of document and reject invalid values.
-Translate to Scintilla UTF-8 byte positions internally.
+### Wizard Flow
 
-Calls may originate on a command worker or Qt. Return promptly with an opaque
-handle; dispatch UI operations to Qt. The handle supports focus, request_close,
-and opened/saved/closed/error subscriptions. Subscriptions return idempotent
-unsubscribe functions, deliver on Qt, and can be tied to an existing UiOwner.
-Unloading a subscriber removes its callbacks without destroying host-owned
-documents. No raw widget, document pointer, unrestricted mutation, or
-programmatic bypass of the save/close gate is exposed initially.
+Both wizards run on the command worker and chain blocking dialogs, like `Open
+with...` does today. They differ only in role text, list order, argument
+template, and the keys they save.
 
-Normalize document keys with repository URL/path helpers and Windows path case
-rules; deduplicate ordinary aliases. Do not lowercase displayed paths or treat
-distinct hard-link paths as independent safe write targets. Opening an already
-open file focuses/reuses its buffer. F4 upgrades View. F3 can downgrade a clean
-buffer; when an existing buffer is dirty, report `mode_conflict` and focus that
-editor instead of claiming a successful read-only open or losing edits.
+**Intro (auto-triggered only).** When `F4`/`Shift+F4` or `F3` start a wizard
+because the setting is missing or invalid, one `OK | CANCEL` alert replaces
+today's `Editor is currently not configured. Please pick one.`:
 
-Opening, ready, failed, and closed outcomes are explicit. A repeated request
-cannot reload a dirty buffer. Failed opens do not leave a misleading empty
-editable window. Closing a loading window cancels delivery; late results cannot
-recreate it. Unsupported schemes/directories/binary files produce a clear error
-without executing the file or silently opening an external application.
+- Editor: `No text editor is configured. Choose an editor with the editing
+  features you want: plugins, multi-carets, macros. It is used by F4.`
+- Viewer: `No text viewer is configured. Choose a program that starts fast and
+  can open files read-only. It is used by F3.`
+- Invalid existing setting: the same text prefixed by `Could not find
+  <basename>.` Cancel returns without saving. Running a wizard from the Command
+  Center skips the intro. With a valid setting, `F3`/`F4` launch immediately
+  and show no dialog at all; the intro appears only on the one press that
+  starts a wizard.
 
-### Editing And Search
+**Step 1 - Choose.** `show_quicksearch` over the role's preset list with the
+descriptions above. Escape cancels without saving.
 
-View mode is enforced by QScintilla read-only state and command enabled states;
-cut, paste, drag/drop mutation, replace, save, and undo/redo mutation are disabled.
-Edit mode enables mutations, tracks QScintilla's save point, and marks dirty state
-in the title. Read-only filesystem attributes remain distinct from View mode.
+**Step 2 - Locate.** Skipped for `Same as editor`. If a preset path was
+detected, `show_alert` `Use <path>?` with `YES | NO`; No or no detection opens
+`show_file_open_dialog` (`Pick <preset>`, initial directory from the first
+existing candidate parent or Program Files, filter `Applications (*.exe)`). An
+empty result cancels.
 
-| Multi-Caret Binding | Behavior |
-| --- | --- |
-| Alt+Click | Add a caret without dropping existing selections |
-| Ctrl+Alt+Up/Down | Add carets above/below, retaining the desired visual column |
-| Ctrl+D | Select the caret word, then successive occurrences |
-| Ctrl+Shift+L | Select all occurrences of the current selection |
-| Shift+Alt+Drag | Rectangular selection |
-| Escape in canvas | Collapse additional carets before other Escape behavior |
+**Step 3 - Arguments (User defined only).** One prompt per wizard:
 
-Use Scintilla's multiple-selection, additional-selection-typing, and multi-paste
-facilities, not separate Python text buffers. Explicitly map commands and mouse
-gestures; high-level QScintilla selection helpers often address only the main
-selection. Define document-order clipboard joining with line separators, paste
-to every caret, and line-per-caret paste when the copied selection count matches.
-Verify those VS Code-like semantics on the installed build; defaults differ.
-One multi-caret edit is one undo action. Test Unicode, CRLF, short lines, virtual
-space, overlapping selections, and non-US keyboard input. OS-reserved bindings
-may require a user remap, never a Registry change.
+- Editor: `show_prompt('Edit command arguments:', '{file}')`.
+- Viewer: `show_prompt('View command arguments (add the read-only switch if
+  the program has one):', '{file}')`.
 
-QScintilla supplies find/replace primitives; the host supplies Panel fields,
-options, navigation, highlighting, and Replace All orchestration. Use native
-literal search with explicit case/word flags. Empty queries make no changes.
-Replace verifies the current match and document revision before changing text.
+Arguments are split with `shlex.split(posix=False)`; a missing `{file}` is
+appended as the last argument and reported in the confirmation. Cancel aborts
+without saving.
 
-Replace All captures scope/revision, preflights matches, then edits ranges in
-reverse order using one undo group. Find-all and replacement processing yield
-between batches (at most 128 matches or 8 ms before yielding). User mutation is
-temporarily disabled during Replace All. Cancel before mutation changes nothing;
-after mutation begins it stops after the current batch, reports the applied
-count, and retains one undoable partial edit. Never save implicitly. Close waits
-for the current batch/undo group to settle, then runs the dirty-state gate.
-This does not make an individual native search call preemptible.
+**Step 4 - Confirm and save.** One `OK | CANCEL` alert shows the resulting
+command line (`Edit: <exe> {file}` or `View: <exe> -ro {file}`). OK writes the
+role's two keys (`editor` + `editor_preset`, or `viewer` + `viewer_preset`) with
+`save_json` and shows `Text editor: <preset> (<basename>)` or `Text viewer: ...`
+in the status bar.
 
-Basic reading aids: line numbers, brace/current-line highlighting, optional
-folding and whitespace, wrap, font zoom, auto-indent, tabs/spaces and width.
-Status shows View/Edit, line/column, selection/caret counts, encoding, line ending,
-language, and loading/saving/error state. Lexers provide highlighting, not syntax
-validation or language-server intelligence. Theme/font changes must update lexer
-styles as well as the widget's default font.
+**Step 5 - Link (editor wizard only).** If no valid `viewer` exists and the
+chosen preset has a known read-only switch, ask `Also use <preset> as the text
+viewer (opened read-only with -ro)? YES | NO`. Yes derives and saves `viewer` +
+`viewer_preset` from the same executable; No leaves the viewer for `F3` to ask
+later. A user-defined editor skips this step because its read-only arguments
+are unknown.
 
-### File Fidelity And Saving
+**Same as editor (viewer wizard).** Offered only when `editor` is valid and
+`editor_preset` is a known preset; it reuses `editor.args[0]` with that preset's
+View arguments and jumps to Step 4. A user-defined editor is not offered as
+`Same as editor`; the user picks `User defined` and enters View arguments,
+prefilled with the editor's arguments so the common case is one Enter.
 
-Read bytes off Qt with a cancellation token and observed file identity. Detect
-BOMs before binary heuristics, accept valid UTF-8, and offer an explicit encoding
-choice for ambiguous legacy text. Never decode with silent replacement and then
-overwrite the source. Keep original encoding/BOM, per-line endings, and final
-newline state. New lines use the detected dominant EOL, defaulting to CRLF for
-new Windows documents. Conversion is explicit; opening/saving alone must not
-normalize text. Unsupported lexers do not prevent plain-text editing.
+Neither wizard launches a program. After a successful auto-triggered run the
+original command continues with the new settings; a canceled wizard returns
+silently, as the current picker does.
 
-Capture an immutable text snapshot and revision on Qt, then encode/write off Qt.
-Save to a temporary sibling and atomically commit using an appropriate Qt/Windows
-primitive with destructive direct-write fallback disabled. Preserve required
-permissions/attributes. Before commit, compare the target with its load/last-save
-baseline (identity, size, modification time, and content digest); mismatches offer
-Reload with a discard gate or Save As, not a silent overwrite. This is conflict
-detection, not a cross-process compare-and-swap guarantee; document the residual
-check-to-commit race and the primitive's Windows/network limitations.
+### Launch Behavior
 
-Initially refuse in-place saves to reparse points, multiply linked files, or
-targets whose required metadata cannot be preserved; offer Save As. Honor
-Windows read-only attributes without clearing them. Save As confirms an existing
-target and cannot overwrite a different open document's backing file. Save
-failure retains text, undo history, dirty state, and the original target. Remove
-temporary files on ordinary error/cancel paths. Set the save point only after
-successful commit; serialize saves and prevent editing during the short save
-operation to keep snapshot/save-point identity unambiguous.
+`_launch_program(url, role, pane)`:
 
-After commit, send the existing filesystem change/add notifications so both
-panes and cached metadata refresh. Update the session key only after successful
-Save As. External changes are checked on editor reactivation and before save,
-without recurring polling; coalesce checks and reject stale deliveries. Never
-auto-reload over unsaved edits. Save/Discard/Cancel is asynchronously owned by
-the editor; Cancel is the default. Destruction cannot interrupt an active commit.
+- `_validated_settings(role)` returns the role's Popen mapping or `None` when
+  the key is missing, `args` is not a non-empty list of strings, or `args[0]`
+  is not an existing file. `None` runs that role's wizard (with intro) and
+  retries once.
+- Resolve the URL as `OpenWithEditor` does now; non-`file://` schemes show the
+  existing `Editing files from <scheme> is not supported...` alert (`Viewing`
+  for `F3`). A directory shows `<name> is a folder.` and returns; a missing
+  file shows `<name> no longer exists.`.
+- Expand `{file}` with `strformat_dict_values` on a copy of the stored mapping;
+  the native path comes from `as_human_readable`. Braces in filenames are safe
+  because expansion formats the argument templates, not the path.
+- `Popen(args, cwd=dirname(path))`, no shell. `OSError` (missing executable,
+  access denied) shows `Could not start <exe>: <strerror>. Run "Configure text
+  editor" to fix it.` (`viewer` for `F3`) instead of a traceback.
+- `CreateAndEditFile` keeps its current create-then-edit flow and calls the
+  editor launch. `view_file` on a file just created by `Shift+F4` is not
+  special-cased.
 
-### Persistence
+### Settings
 
-Store defaults through existing layered JSON settings under UserSettings:
-font/size, language mappings, wrap, indentation, and search option booleans.
-Use a dedicated editor settings name and fresh snapshots with the existing
-resource lock/revision pattern; no mutable shared-cache edits before a successful
-save. Window geometry is portable local session state, clamped to current screens.
-Do not persist document contents, search/replacement strings, or file history in
-the first release. Importing the service performs no settings I/O.
+`Core Settings.json` (Windows layer):
+
+```json
+{
+  "editor_preset": "notepad++",
+  "editor": {"args": ["C:\\Program Files\\Notepad++\\notepad++.exe", "{file}"]},
+  "viewer_preset": "cudatext",
+  "viewer": {"args": ["C:\\Users\\me\\AppData\\Local\\Programs\\CudaText\\cudatext.exe", "-r", "{file}"]}
+}
+```
+
+- `editor` keeps today's Popen-mapping shape, so hand-written configurations and
+  the previous picker's output remain valid. Extra Popen keys (`cwd`, `shell`)
+  are passed through unchanged; the wizards only ever write `args`.
+- `viewer` is independent of `editor`. When it is absent or invalid, `F3` runs
+  the viewer wizard; with a valid known-preset editor the first list entry is
+  `Same as editor`, so accepting it is Enter, Enter. There is no silent
+  fallback to the editor.
+- `editor_preset` / `viewer_preset` are informational (`notepad++`,
+  `cudatext`, `textadept`, `custom`); they seed the wizard's initial selection
+  and enable `Same as editor`. A missing preset key is treated as `custom`.
+- No bundled defaults are added: an unconfigured role must trigger its wizard,
+  and a bundled path would be wrong on most machines.
+
+### Key Bindings
+
+Core `Key Bindings.json` adds `{ "keys": ["F3"], "command": "view_file" }`
+beside the existing `F4`/`Shift+F4` rows. `F3` conflicts with no bundled binding
+(only `Ctrl+F3` is used, for `sort_by_column`). The F1 shortcut dialog and the
+Command Center pick the new command up automatically.
+
+### Threading and Failure Behavior
+
+Commands run on the command worker; all dialogs are the blocking public helpers
+that already dispatch to Qt. `Popen` returns immediately; the child is not
+tracked, waited on, or killed on exit. Settings writes go through `save_json`
+under the config lock. No timers, workers, watchers, or signals are added.
 
 ## Alternatives
 
-- Inactive-pane editor: useful for adjacent browsing, but hides a transfer
-  destination and complicates pane/command ownership. Defer to a separate preview
-  placement design; do not implement both placements in this task.
-- Modal editor: easy lifetime, but prevents continued file-manager use. Prefer
-  non-modal; only save/discard and file-choice prompts block their own editor.
-- Main-window Panel for the editor: matches Favorites' physical location but
-  separates controls from a movable document and competes for the single dock.
-  Reuse the components locally without altering the existing docking contract.
-- Separate viewer and editor implementations: duplicates decoding, search, and
-  themes. Prefer one component with explicit mode gates.
-- Editor plug-in or raw QScintilla public API: rejected by the host-service
-  requirement and lifetime/API coupling. Keep a small additive service facade.
-- Native regex on Qt: available but not safely interruptible for arbitrary
-  patterns. Defer rather than moving a Qt widget to a worker or writing a regex
-  engine. Regex inclusion requires a separately reviewed execution strategy.
+- **Built-in QScintilla viewer/editor (previous revision)**: rejected by the
+  user. It added a bundled dependency, save/encoding fidelity, dirty-close and
+  exit gates, multi-caret mapping, and a large test surface for a file manager
+  whose users already have a preferred editor.
+- **Keep only the current F4 picker and let users hand-edit `viewer` in JSON**:
+  smallest change, but `F3` would be unusable until the user discovers the
+  setting and knows each editor's read-only switch. Presets encode that once.
+- **A `fman.ui` Panel/QuickList wizard**: nicer than chained dialogs, but the
+  wizard runs once and the existing blocking helpers already cover a list, a
+  file dialog, two prompts, and a confirmation without touching the host.
+- **Registry-based detection (App Paths, uninstall keys)**: more reliable for
+  installed Notepad++, but the repository policy avoids Registry dependence and
+  two of the three editors are typically portable. Fixed locations plus `PATH`
+  plus Browse is enough.
+- **One wizard configuring both roles from one program** (previous revision):
+  fewer commands, but forces viewer = editor and asks a user-defined editor two
+  argument questions in a row. Rejected by the user in favor of two role-specific
+  wizards that can guide toward a feature-rich editor and a fast read-only
+  viewer; the editor wizard's final link question keeps the one-program case to
+  a single extra Yes.
+- **One wizard with a "different viewer?" fork**: fewer palette entries than two
+  wizards, but reconfiguring only the viewer would replay the editor steps.
+- **`View = Edit` for user-defined viewers without a prompt**: simpler, but
+  programs with a read-only switch (for example Vim `-R`, EmEditor `/r`) would
+  lose the feature. The viewer wizard asks one argument line, prefilled with
+  `{file}` (or the editor's arguments), so the simple path stays one Enter.
+- **Silent `F3` fallback to the editor when no viewer is configured**: kept
+  `F3` working for old configurations, but hid that a viewer exists at all.
+  With a viewer wizard whose first entry is `Same as editor`, running it is
+  just as quick and leaves an explicit setting behind.
+- **Track the editor process to reload the pane on exit**: not needed on
+  Windows because panes reload on application activation, and single-instance
+  editors return immediately anyway.
+- **Binary sniff on `F3`/`F4` with a fallback to the default application**:
+  considered for images and other non-text files; rejected by the user. It
+  would second-guess an explicit view/edit request, duplicate `Open with...`,
+  and add a setting nobody asked for. Both commands stay text-oriented.
 
 ## Runtime Effects
 
-- Unused path: lazy QScintilla/lexer imports and EditorService initialization;
-  no editor workers, timers, file scans, settings reads, or signal subscriptions.
-- All widgets, QsciDocument objects, and Scintilla messages stay on Qt. Use the
-  existing bounded shared work facility for file/settings work, with at most one
-  I/O operation per document and no unbounded queue. Busy slots produce a retryable
-  state. Workers carry plain snapshots/tokens, never widgets or document pointers.
-- Proposed initial limits: 8 open document windows, 16 MiB source bytes, 32 MiB
-  decoded UTF-8 per load, 1 MiB per line, 2,000 highlighted matches, and 10,000
-  preflight Replace All matches. Exceeding load/replace limits refuses the
-  operation before mutation; match counts above the highlight cap show a lower
-  bound. These are initial policy values to measure and review, not benchmarks.
-- Disable highlighting/folding above 2 MiB or 16 KiB lines. Incremental find uses
-  one 150 ms single-shot debounce only while its Panel is active and the document
-  is at most 1 MiB; larger documents search on explicit Enter/Next. Cancel pending
-  debounce/highlight work when the Panel closes. No permanent polling timer.
-- Steady-state work is text layout/lexing/undo plus event-driven status updates.
-  Memory includes the text, Scintilla metadata, undo history, and bounded in-flight
-  copies/results. Undo and subsequent edits can grow memory beyond load limits;
-  do not advertise a hard process-memory bound or silently truncate undo.
-- File I/O is on demand: open, explicit save, settings changes, and coalesced
-  activation checks. No editor-specific subprocesses. Cancellation releases a
-  worker slot only after the actual call ends; blocked network/filesystem calls
-  may outlive cancellation but cannot publish stale UI or start a canceled save.
-- Save can be canceled before commit. Once commit starts, finish and report its
-  outcome before closing. Shutdown must not terminate a writer mid-commit.
+- Startup: registers four commands and one binding; no settings read, detection,
+  or I/O until `F3`, `F4`, `Shift+F4`, or a wizard runs.
+- Launch: one `load_json` (cached), one `os.path.isfile` on the executable, one
+  `Popen` without waiting. The child process is independent of RoyiFileManager.
+- Wizard: at most a handful of `os.path.isfile`/`shutil.which` probes plus the
+  dialogs; one `save_json` write on confirmation (two when the editor wizard
+  also saves the viewer).
+- No workers, timers, watchers, recurring signals, or persistent state beyond the
+  four JSON keys. Cancellation is the user closing a dialog.
+- Disabled path: with no configuration, `F3`/`F4` open their wizard; canceling
+  it leaves no state behind.
 
 ## Tests
 
-The following are required implementation checks, not results from this design
-pass. Add focused modules to the existing
-[unit tests](../src/unittest/python/fman_unittest) and
-[Qt integration tests](../src/integrationtest/python/fman_integrationtest), reusing
-the [shared QApplication harness](../src/integrationtest/python/fman_integrationtest/test_qt.py).
-No new environment or Python package installation is part of this task.
-
-1. Unit: language selection; URL identity/mode conflicts; UTF-8/UTF-16 BOM and
-   explicit legacy encoding; binary/extensionless/empty files; mixed EOL/final
-   newline round trips; size limits; read-only/link/metadata restrictions; failed
-   writes, cancellation, external modification, and Save As collisions.
-2. Qt: F3 mutation blocking through every input path; F4 promotion; shared
-   command/button states; all multi-caret bindings, Unicode clipboard/paste and
-   grouped undo; Find/Replace/Go to Line forms; partial Replace All cancellation;
-   invalid/empty queries; Panel close versus document close; focus/shortcut
-   isolation; theme/DPI changes; no clipped controls at minimum window size.
-3. Integration: service called from Qt and command workers; subscriber unload;
-   repeated opens and late load/check/save results; pane close/navigation;
-   saturated worker slots; Save/Discard/Cancel and canceled application exit;
-   post-save pane notifications; external-editor command compatibility.
-4. Performance: generated 1/2/16 MiB files, 16 KiB/1 MiB lines, and match-limit
-   boundaries. Record load/search/replace/save latency, peak memory, and Qt
-   heartbeat delays. Budget: no avoidable >100 ms UI stalls on the agreed Windows
-   test machine; lower limits or revise execution before approval if unmet.
-   Verify no editor-specific recurring work before first use and after last close.
-5. Native/frozen smoke: 100/150/200% DPI, narrow/wide windows, second monitor,
-   Alt+Tab, clipboard between editors/external apps, UTF-16 and non-ASCII files,
-   permission/locked/UNC targets, dirty exit, and working highlighting in the ZIP.
-   Installed QScintilla APIs/DLLs/lexers must be probed and packaged explicitly;
-   manifest presence alone does not prove import or runtime behavior.
-
-Planned focused commands, from the repository root in the existing environment:
+Focused commands from the repository root with the `build.py test` environment
+(`PYTHONPATH` including `src/main/resources/base/Plugins/Core`,
+`QT_QPA_PLATFORM=offscreen`):
 
 ```powershell
-$roots = @('src/main/python', 'src/unittest/python', 'src/integrationtest/python', 'src/main/resources/base/Plugins/Core', 'src/main/resources/base/Plugins/Favorites', 'src/main/resources/base/Plugins/SearchFileFuzzy')
-$env:PYTHONPATH = ($roots | ForEach-Object { (Resolve-Path $_).Path }) -join [IO.Path]::PathSeparator
-$env:PYTHONUTF8 = '1'
-$env:QT_QPA_PLATFORM = 'offscreen'
-python -m unittest fman_unittest.test_text_editor
-python -m unittest fman_integrationtest.impl.test_text_editor
-python -m unittest core.tests.commands.test___init__ fman_unittest.test_ui_elements fman_unittest.test_portable fman_unittest.test_release_support
-python -m unittest fman_integrationtest.test_qt
+python -m unittest core.tests.test_text_editor
+python -m unittest core.tests.commands.test___init__
+python -m unittest fman_unittest.impl.test_shortcuts
 ```
 
-`test_text_editor` modules are proposed additions. Run the narrowest new test
-immediately after the first implementation edit; run the affected existing
-regressions after shared changes. Check each exit code; do not mask earlier
-failures with later successes. Do not run the full `python build.py test` suite
-without explicit user instruction.
+Unit tests in `core/tests/test_text_editor.py` (pure Python, temp directories,
+stub UI recording the dialog sequence):
 
-Native validation uses `Remove-Item Env:QT_QPA_PLATFORM -ErrorAction SilentlyContinue`
-then `python build.py run` for the procedures above. Packaging validation uses
-`python build.py freeze`, `python build.py package`, and repeats the smoke checks
-from the extracted ZIP with isolated UserSettings. Record exact artifact paths,
-commands, outcomes, and any approved skips during implementation.
+- Each preset derives the documented Edit/View `args` from a given executable
+  path; `{file}` appears exactly once in each.
+- Detection honors candidate order, skips missing files, uses `shutil.which`
+  last, and returns `None` when nothing exists (environment patched).
+- Per-role list content and order: editor list has no `Same as editor`; viewer
+  list has it first only when `editor` is valid and `editor_preset` is known;
+  descriptions match the role table; initial highlight follows the saved preset.
+- Intro alert text per role and per missing/invalid state; skipped when run
+  from the Command Center.
+- User-defined argument parsing: quoted paths with spaces, missing `{file}`
+  appended, `shlex` errors reported; viewer prompt prefilled with the editor's
+  arguments when the editor is user-defined.
+- Editor wizard link step: offered only when `viewer` is invalid and the preset
+  has a read-only switch; Yes writes `viewer` + `viewer_preset`; No writes
+  nothing for the viewer; skipped for user-defined editors.
+- `Same as editor` writes the editor executable with the preset's View
+  arguments without opening Locate or Arguments.
+- Settings validation: missing keys, non-list `args`, non-string entries, empty
+  list, executable not a file; legacy `{"args": [exe, "{file}"]}` accepted;
+  extra Popen keys preserved; missing `*_preset` treated as `custom`.
+- `{file}` expansion with a path containing braces, spaces, and non-ASCII.
+
+Command tests in `core/tests/commands/test___init__.py` (existing `StubUI`
+pattern with patched `show_*`, `load_json`, `save_json`, `Popen`):
+
+- `view_file` with a valid `viewer` launches `Popen` with the expanded args and
+  `cwd`; with only `editor` it runs the viewer wizard, not the editor.
+- `F3`/`F4` on a directory, a non-`file://` URL, or a missing file alert and do
+  not launch or start a wizard.
+- Unconfigured settings run the matching role's wizard; cancel at each dialog
+  leaves settings untouched and does not launch; success continues the
+  original command once.
+- Wizard preset path: detected executable accepted, rejected then browsed, and
+  saved JSON matches the preset table; the role's `*_preset` written.
+- Wizard user-defined path: one prompt per role, defaults, confirmation text.
+- `Popen` raising `OSError` shows the actionable alert naming the right
+  configure command, no traceback.
+- `create_and_edit_file` still creates the file and then launches the editor
+  through the shared helper (existing tests keep passing).
+- Command identifiers/aliases: `view_file`, `configure_text_editor`,
+  `configure_text_viewer`, and the unchanged legacy names.
+
+Shortcut regression: the `F3` binding is listed by `collect_shortcuts` for the
+Core `Key Bindings.json` and does not collide with any bundled binding.
+
+Manual checks (native run, each installed editor when available): `F3` opens
+read-only and `F4` writable in Notepad++, CudaText, and Textadept; editor and
+viewer set to different programs; `Same as editor`; the editor wizard's link
+question; a user-defined viewer with and without a read-only switch; a file
+with spaces and non-ASCII in its path; both configure commands rerun after a
+valid configuration; uninstalling the viewer and pressing `F3` reruns the viewer
+wizard with the `Could not find` intro.
 
 ## Implementation Steps
 
-1. Review placement, Panel lifetime, initial limits/file scope, regex deferral,
-   and service contract. Probe installed QScintilla multi-selection/search/clipboard
-   behavior and Windows save metadata before finalizing those contracts.
-2. Implement pure document identity, decoding/encoding, conflict/save helpers,
-   and focused unit tests. No windows or global shortcuts in this step.
-3. Add lazy host service and View window with local Panel, highlighting, read-only
-   enforcement, request lifecycle, and Qt integration tests.
-4. Add Edit mode, transactional save/Save As, dirty close/application-exit gates,
-   filesystem notifications, and failure/race regressions.
-5. Add shared editor-local command dispatch, multi-carets, Panel Find/Replace and
-   Go to Line, then focused keyboard, cancellation, and responsiveness checks.
-6. Wire new Core commands/default bindings while preserving legacy external
-   commands; update [PlugIn.md](../PlugIn.md), [README.md](../README.md), and
-   [CHANGELOG.md](../CHANGELOG.md) for the implemented API/workflow change.
-7. Validate source and frozen delivery, record results and implementation metadata,
-   and only then move this canonical task to Done and update the index.
+1. Spike on the machine with the three editors installed: confirm Notepad++
+   `-ro`, CudaText `-r`, and Textadept `-r` open read-only (including the
+   single-instance case with the editor already running). If Textadept rejects
+   `-r`, test `<file> -e "buffer.read_only = true"`. Record results in this
+   document and adjust the preset table before implementing step 2.
+2. Add `core/text_editor.py` with presets, role guidance, detection, derivation,
+   validation, expansion, and `run_wizard(role, ui, settings)`; add
+   `core/tests/test_text_editor.py` and run it.
+3. Replace `_get_editor()` with `_validated_settings(role)`/`_launch_program()`;
+   add `ViewFile`, `ConfigureTextEditor`, `ConfigureTextViewer`; keep
+   `OpenWithEditor`/`CreateAndEditFile` identifiers. Run
+   `core.tests.commands.test___init__`.
+4. Add the `F3` binding to Core `Key Bindings.json`; run the shortcut tests.
+5. Update the Core README/[README.md](../README.md) feature list (`F3` view, `F4`
+   edit, `Configure text editor`, `Configure text viewer`),
+   [CHANGELOG.md](../CHANGELOG.md), and remove the TextEditor entry from Plan.md
+   pending on completion.
+6. Manual checks above; record results and move this document to Done.
 
 ## Acceptance Criteria
 
-- Reviewed design resolves the proposed defaults; no application work is claimed
-  complete by creating this document.
-- F3 safely views text, F4 enables editing/saving, and unsupported inputs fail
-  clearly without executing files or affecting directory state.
-- Plug-ins call a documented host service without owning or receiving widgets;
-  unloading a caller does not lose a document or invoke stale callbacks.
-- Commands and fields use the existing Panel concept/components; no modal
-  Find/Replace UI, pane replacement, or competing main-window dock is introduced.
-- Panel close never closes a document; editor input never invokes pane actions.
-- Highlighting, clipboard, and listed multi-caret actions behave as specified in
-  native Windows and frozen tests, with Unicode-safe edits and coherent undo.
-- Save preserves text fidelity, refuses unsafe/conflicting targets, reports
-  failures without clearing dirty state, and refreshes affected file panes.
-- No close, reload, repeated open, or shutdown silently discards unsaved changes.
-- Work/results remain bounded and stale-safe; unused editor has no feature work.
-- Required focused tests and source/frozen checks pass, or explicit user-approved
-  deferrals are recorded before completion. Public API compatibility is retained.
+- With nothing configured, `F4` opens the editor wizard and `F3` opens the
+  viewer wizard; each intro states what the role is for (editing features
+  versus fast read-only viewing) and each preset row carries a role-specific
+  description.
+- Choosing Notepad++, CudaText, or Textadept in either wizard requires at most
+  confirming a detected path or browsing to one; the role's command is saved
+  without typing arguments.
+- The editor wizard offers to reuse the chosen preset as the viewer when no
+  viewer exists; the viewer wizard offers `Same as editor` when the editor is a
+  known preset. Editor and viewer can be different programs.
+- `F3` opens the file read-only in the three presets; `F4` opens it writable.
+- The user-defined preset asks one argument line per wizard and validates the
+  `{file}` placeholder.
+- Existing `editor` settings from the old picker keep working for `F4`; `F3`
+  with no viewer runs the viewer wizard rather than failing or silently
+  reusing the editor.
+- Directories, non-local URLs, missing files, and a missing executable produce
+  short alerts naming the relevant configure command, never tracebacks, and
+  never launch anything else.
+- No Registry access, no bundled executable paths, no background work.
+- The listed focused tests pass; manual checks are recorded or explicitly left
+  pending.
 
 ## Reviewers
 
@@ -427,3 +476,64 @@ commands, outcomes, and any approved skips during implementation.
   inheritance limitation); decide editor window parenting (recommend parentless
   top-level); define the concrete non-UTF-8 fallback rule; record Python `re`
   on the immutable snapshot as the intended regex path.
+
+### 2026_09_14 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Claude Fable 5.1
+- Effort: High
+- Context Window: 1M
+- Outcome: Replaced the built-in QScintilla editor service with an external
+  editor wizard at the user's direction. Reviewed the current `F4` picker
+  (`OpenWithEditor._get_editor`, `Core Settings.json` `editor` Popen mapping,
+  native open dialog, no viewer/validation) and the `Open with...` app picker.
+  Verified read-only switches against upstream documentation: Notepad++ `-ro`,
+  CudaText `-r`, Textadept via `-e "buffer.read_only = true"` (no native
+  switch; ordering to be confirmed in step 1). Presets, user-defined prompts,
+  `viewer`/`editor_preset` settings, `F3` binding, and Core-only ownership are
+  proposed; the earlier records describe the superseded design. Plan revision
+  only; no implementation or runtime validation.
+
+### 2026_09_14 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Claude Fable 5.1
+- Effort: Low
+- Context Window: 1M
+- Outcome: Textadept View preset changed to `-r {file}` per user direction; the
+  `-e` Lua route is retained as the spike fallback because the 13.1 manual does
+  not document `-r`. Confirmed with the user that `F4` keeps one editor for all
+  file types; per-extension editors stay excluded.
+
+### 2026_09_14 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Claude Fable 5.1
+- Effort: Low
+- Context Window: 1M
+- Outcome: User decided `F3`/`F4` remain text-oriented with no binary or
+  file-type detection; non-text files are handled by `Open with...`. Recorded
+  in Scope exclusions and Alternatives.
+
+### 2026_09_14 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Claude Fable 5.1
+- Effort: High
+- Context Window: 1M
+- Outcome: Split the single wizard into `configure_text_editor` and
+  `configure_text_viewer` per user direction (option B). Each wizard carries
+  role guidance: intro alert when auto-triggered, role-specific preset
+  descriptions, and list order recommending feature-rich editors versus fast
+  read-only viewers. Added `viewer_preset`, `Same as editor`, the editor
+  wizard's link question, one argument prompt per role, and replaced the silent
+  `F3` fallback with the viewer wizard. Tests and acceptance criteria updated.
+  Plan revision only.

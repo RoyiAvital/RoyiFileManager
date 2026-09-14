@@ -40,6 +40,668 @@ class SortedFileSystemModelIT(SortedFileSystemModelAT, QtIT):
 class RunInThreadIT(RunInThreadAT, QtIT):
 	pass
 
+class SearchFileContentIT(QtIT):
+	def test_root_follows_invoking_pane_and_fields_align(self):
+		def check():
+			from fman import DirectoryPane, Window
+			from fman.ui import UiOwner
+			from fman.url import as_url
+			from fman.impl.ui.facade import _hosts
+			from fman.impl.widgets import MainWindow
+			from search_file_content import DEFAULTS, SearchSession
+			from PyQt5.QtCore import QPoint, pyqtSignal
+			from PyQt5.QtGui import QPalette
+			from PyQt5.QtWidgets import QWidget
+			from pathlib import Path
+			from types import SimpleNamespace
+			from unittest.mock import Mock, patch
+			class PaneWidget(QWidget):
+				location_changed = pyqtSignal(object)
+				def get_location(self):
+					return self.location
+			plugin_root = Path(__file__).parents[3] / 'main/resources/base/Plugins/SearchFileContent'
+			main = MainWindow(Mock(), [], Mock(), Mock(), Mock(), 'null://')
+			main.setStyleSheet((plugin_root.parents[1] / 'styles.qss').read_text())
+			window = Window(main, Mock())
+			widgets = [PaneWidget(main), PaneWidget(main)]
+			panes = [DirectoryPane(window, widget, Mock()) for widget in widgets]
+			window._panes = panes
+			main.show()
+			main.activateWindow()
+			try:
+				for index, hint in enumerate(('Left pane', 'Right pane')):
+					for widget in widgets:
+						widget.location = as_url('C:\\initial')
+					owner = UiOwner(resource_root=str(plugin_root))
+					session = SearchSession(owner, panes[index], 'C:\\initial', dict(DEFAULTS))
+					try:
+						host = _hosts[session.panel._key()]
+						stop = host.controls['stop'][1]
+						stop.ensurePolished()
+						self.assertTrue(stop.isEnabled())
+						stop.click()
+						self.assertIsNone(session.runner)
+						self.assertEqual('C:\\initial', session.panel.snapshot()['root'])
+						indicator, icon_name = host.icon_labels[0]
+						self.assertEqual(hint, indicator.toolTip())
+						self.assertIn(hint.split()[0].lower(), icon_name)
+						self.assertGreaterEqual(indicator.pixmap().width(), 20)
+						self.assertEqual('glob', session.panel.snapshot()['name_mode'])
+						self.assertEqual('literal', session.panel.snapshot()['content_mode'])
+						for name in ('name_mode', 'content_mode'):
+							buttons = host.controls[name][1].group.buttons()
+							self.assertEqual(3, len(buttons))
+							self.assertEqual(1, sum(button.isChecked() for button in buttons))
+						host.form.setStyleSheet('QLabel { font-size: 16px; }')
+						for width in (640, 960, 1440):
+							main.resize(width, 600)
+							QApplication.processEvents()
+							self.assertEqual(width, main.width())
+							fields = [host.controls[name][1] for name in ('name', 'content')]
+							self.assertEqual(fields[0].mapTo(host.form, QPoint()).x(), fields[1].mapTo(host.form, QPoint()).x())
+							self.assertEqual(fields[0].width(), fields[1].width())
+							self.assertTrue(all(80 <= field.width() <= 480 for field in fields))
+							for record, wrapper, label in host.form.fields:
+								self.assertGreaterEqual(label.width(), label.fontMetrics().horizontalAdvance(label.text()))
+							modes = [host.controls[name][1] for name in ('name_mode', 'content_mode')]
+							buttons = [host.controls[name][1] for name in ('recursive', 'search', 'stop')]
+							control_left = modes[0].mapTo(host.form, QPoint()).x()
+							self.assertEqual(control_left, modes[1].mapTo(host.form, QPoint()).x())
+							self.assertEqual(control_left, buttons[0].mapTo(host.form, QPoint()).x())
+							for row in [mode.group.buttons() for mode in modes] + [buttons]:
+								self.assertTrue(all(button.width() == button.height() == 28 for button in row))
+								self.assertEqual([control_left + 31 * column for column in range(3)],
+									[button.mapTo(host.form, QPoint()).x() for button in row])
+							centers = [button.mapTo(host.form, button.rect().center()).y() for button in buttons]
+							self.assertLessEqual(max(centers) - min(centers), 1)
+							self.assertLessEqual(buttons[-1].mapTo(host.form, buttons[-1].rect().topRight()).x(), host.form.width())
+						widgets[1 - index].location = as_url('C:\\other')
+						widgets[1 - index].location_changed.emit(widgets[1 - index])
+						self.assertEqual('C:\\initial', session.root)
+						widgets[index].location = as_url('C:\\next')
+						widgets[index].location_changed.emit(widgets[index])
+						self.assertEqual('C:\\next', session.root)
+						session.panel.update(values={'content': 'cuda'})
+						with patch('search_file_content.Runner') as runner:
+							session.action('search', session.panel.snapshot())
+							self.assertTrue(stop.isEnabled())
+							self.assertEqual('#ff5252', stop.palette().color(QPalette.Active, QPalette.ButtonText).name())
+							self.assertEqual(255, stop.palette().color(QPalette.Active, QPalette.ButtonText).alpha())
+							self.assertEqual('C:\\next', runner.call_args.args[0].root)
+							widgets[index].location = as_url('C:\\later')
+							widgets[index].location_changed.emit(widgets[index])
+							self.assertEqual('C:\\next', session.root)
+							hit = SimpleNamespace(relative_path='file.cmd', snippet='cuda', path='C:\\next\\file.cmd', line=1, column=1, spans=())
+							result = SimpleNamespace(rows=(hit,), status='Complete', reason='', validated=True,
+								progress=SimpleNamespace(files=1, elapsed=0))
+							session.completed(session.generation, result)
+							self.assertTrue(stop.isEnabled())
+							self.assertEqual('C:\\next', host.table_window.schema.base)
+							self.assertIs(panes[index], host.table_window.pane)
+							session.table.close()
+						self.assertEqual('C:\\later', session.root)
+						widgets[index].location = 'zip://archive'
+						widgets[index].location_changed.emit(widgets[index])
+						self.assertIsNone(session.root)
+						self.assertFalse(host.controls['search'][1].isEnabled())
+						widgets[index].location = as_url('C:\\back')
+						widgets[index].location_changed.emit(widgets[index])
+						self.assertTrue(host.controls['search'][1].isEnabled())
+					finally:
+						owner.invalidate()
+					self.assertEqual(0, widgets[index].receivers(widgets[index].location_changed))
+			finally:
+				main.close()
+				main.deleteLater()
+		self.run_in_app(check)
+
+	def test_inactive_window_keeps_form_locked_until_results_close(self):
+		from fman import DirectoryPane, Window
+		from fman.ui import UiOwner
+		from fman.impl.ui.facade import _hosts
+		from fman.impl.widgets import MainWindow
+		from search_file_content import DEFAULTS, SearchSession
+		from PyQt5.QtWidgets import QWidget
+		from pathlib import Path
+		from tempfile import TemporaryDirectory
+		from unittest.mock import Mock
+		plugin_root = Path(__file__).parents[3] / 'main/resources/base/Plugins/SearchFileContent'
+		for present in (False, True):
+			with self.subTest(present=present), TemporaryDirectory() as root:
+				Path(root, 'report.txt').write_text('needle', encoding='utf-8')
+				owner = UiOwner(resource_root=str(plugin_root))
+				def prepare():
+					main = MainWindow(Mock(), [], Mock(), Mock(), Mock(), 'null://')
+					pane = DirectoryPane(Window(main, Mock()), QWidget(main), Mock())
+					from fman.url import as_url
+					pane.get_path = lambda: as_url(root)
+					pane.on_path_changed = Mock(return_value=lambda: None)
+					main.show()
+					session = SearchSession(owner, pane, root, dict(DEFAULTS))
+					other = QWidget()
+					other.show()
+					other.activateWindow()
+					QApplication.processEvents()
+					self.assertIs(other, QApplication.activeWindow())
+					return main, other, session
+				main, other, session = self.run_in_app(prepare)
+				finished = Event()
+				completed = session.completed
+				def observed(*args):
+					try:
+						completed(*args)
+					finally:
+						finished.set()
+				session.completed = observed
+				try:
+					session.panel.update(values={'content': 'needle'})
+					self.run_in_app(session.action, 'search', session.panel.snapshot())
+					self.assertTrue(finished.wait(10))
+					def check():
+						host = _hosts[session.panel._key()]
+						window = host.table_window
+						self.assertTrue(window.pending)
+						self.assertFalse(window.isVisible())
+						self.assertIsNone(session.runner)
+						for name in ('name', 'content', 'name_mode', 'content_mode', 'recursive', 'search'):
+							self.assertFalse(host.controls[name][1].isEnabled(), name)
+						self.assertTrue(host.controls['stop'][1].isEnabled())
+						generation = session.generation
+						session.action('search', session.panel.snapshot())
+						self.assertEqual(generation, session.generation)
+						if present:
+							main.activateWindow()
+							for turn in range(3):
+								QApplication.processEvents()
+							self.assertTrue(window.isVisible())
+							self.assertFalse(window.pending)
+							self.assertFalse(host.controls['search'][1].isEnabled())
+						window.close()
+						self.assertTrue(session.panel.is_open)
+						self.assertTrue(host.controls['search'][1].isEnabled())
+						self.assertIsNone(session.table)
+					self.run_in_app(check)
+				finally:
+					owner.invalidate()
+					self.run_in_app(other.close)
+					self.run_in_app(other.deleteLater)
+					self.run_in_app(main.close)
+					self.run_in_app(main.deleteLater)
+
+	def test_real_search_panel_table_and_close(self):
+		from fman import DirectoryPane, Window
+		from fman.ui import UiOwner
+		from fman.impl.ui.facade import _hosts
+		from fman.impl.widgets import MainWindow
+		from search_file_content import DEFAULTS, SearchSession
+		from PyQt5.QtWidgets import QWidget
+		from pathlib import Path
+		from tempfile import TemporaryDirectory
+		from unittest.mock import Mock
+		plugin_root = Path(__file__).parents[3] / 'main/resources/base/Plugins/SearchFileContent'
+		owner = UiOwner(resource_root=str(plugin_root))
+		with TemporaryDirectory() as root:
+			Path(root, 'report.txt').write_text('first\nneedle here\n', encoding='utf-8')
+			def prepare():
+				main = MainWindow(Mock(), [], Mock(), Mock(), Mock(), 'null://')
+				pane = DirectoryPane(Window(main, Mock()), QWidget(main), Mock())
+				from fman.url import as_url
+				pane.get_path = lambda: as_url(root)
+				pane.on_path_changed = Mock(return_value=lambda: None)
+				main.resize(900, 600)
+				main.show()
+				main.activateWindow()
+				QApplication.processEvents()
+				session = SearchSession(owner, pane, root, dict(DEFAULTS))
+				return main, session
+			main, session = self.run_in_app(prepare)
+			finished = Event()
+			completed = session.completed
+			def observed(*args):
+				try:
+					completed(*args)
+				finally:
+					finished.set()
+			session.completed = observed
+			try:
+				def start():
+					host = _hosts[session.panel._key()]
+					self.assertFalse(host.isVisible())
+					self.assertFalse(host.activity_timer.isActive())
+					for control, name in host.icon_controls:
+						self.assertFalse(control.icon().isNull(), name)
+					self.assertIsNone(host.table_window)
+					session.panel.update(values={'name': 'report', 'name_mode': 'literal', 'content': '*needle*', 'content_mode': 'glob'})
+					session.action('search', session.panel.snapshot())
+					self.assertTrue(host.activity_timer.isActive())
+					self.assertFalse(host.controls['search'][1].isEnabled())
+				self.run_in_app(start)
+				self.assertTrue(finished.wait(10))
+				self.assertIsNotNone(session.table)
+				self.assertTrue(session.table.is_open)
+				self.assertEqual(('report.txt', 'needle here'), session.table.current_cell[0].cells)
+				self.assertEqual(2, session.table.current_cell[0].value.line)
+				self.assertIsNone(session.runner)
+				previous = session.table
+				finished.clear()
+				session.panel.update(values={'content': '(', 'content_mode': 'regex'})
+				self.run_in_app(session.action, 'search', session.panel.snapshot())
+				self.assertIs(previous, session.table)
+				self.assertTrue(previous.is_open)
+				self.assertFalse(finished.is_set())
+				session.table.close()
+				self.assertTrue(session.panel.is_open)
+				self.run_in_app(session.action, 'search', session.panel.snapshot())
+				self.assertTrue(finished.wait(10))
+				self.assertIsNone(session.table)
+				session.panel.update(values={'content': 'needle', 'content_mode': 'literal'})
+				finished.clear()
+				def cancel():
+					session.action('search', session.panel.snapshot())
+					session.panel.close()
+				self.run_in_app(cancel)
+				self.assertTrue(finished.wait(10))
+				self.assertIsNone(session.table)
+				self.assertTrue(session.panel.cancelled.is_set())
+			finally:
+				owner.invalidate()
+				self.run_in_app(main.close)
+				self.run_in_app(main.deleteLater)
+
+
+class TableIT(QtIT):
+	def test_choice_exclusivity_callbacks_and_atomic_updates(self):
+		def check():
+			from fman import DirectoryPane, Window
+			from fman.ui import Choice, TextField, UiOwner, show_panel
+			from fman.impl.ui.facade import _hosts
+			from fman.impl.widgets import MainWindow
+			from PyQt5.QtWidgets import QWidget
+			from pathlib import Path
+			from unittest.mock import Mock
+			owner = UiOwner(resource_root=str(Path(__file__).parents[3] / 'main/resources/base/Plugins/SearchFileContent'))
+			main = MainWindow(Mock(), [], Mock(), Mock(), Mock(), 'null://')
+			pane = DirectoryPane(Window(main, Mock()), QWidget(main), Mock())
+			calls = []
+			options = (('literal', 'icons/search.svg', 'Literal'), ('glob', 'icons/square.svg', 'Glob'), ('regex', 'icons/regex.svg', 'RegEx'))
+			try:
+				panel = show_panel(owner=owner, pane=pane,
+					rows=((TextField('query', 'Query'), Choice('mode', 'Mode', options, 'glob')),), on_change=calls.append)
+				control = _hosts[panel._key()].controls['mode'][1]
+				self.assertEqual('glob', panel.snapshot()['mode'])
+				control.group.button(1).click()
+				self.assertEqual([], calls)
+				control.group.button(2).click()
+				self.assertEqual(1, len(calls))
+				self.assertEqual('regex', calls[-1]['mode'])
+				self.assertEqual(1, sum(button.isChecked() for button in control.group.buttons()))
+				panel.update(values={'mode': 'literal'})
+				self.assertEqual('literal', panel.snapshot()['mode'])
+				self.assertEqual(1, len(calls))
+				with self.assertRaises(ValueError):
+					panel.update(values={'query': 'must not change', 'mode': 'unknown'})
+				self.assertEqual('', panel.snapshot()['query'])
+				panel.update(enabled={'mode': False})
+				self.assertTrue(all(not button.isEnabled() for button in control.group.buttons()))
+			finally:
+				owner.invalidate()
+				main.close()
+				main.deleteLater()
+		self.run_in_app(check)
+
+	def test_custom_menu_stale_action_and_atomic_refresh(self):
+		def check():
+			from fman.ui import TableAction, TableRow, UiOwner, show_table
+			from fman.impl.ui.facade import _hosts
+			from PyQt5.QtCore import QPoint, QThread
+			from PyQt5.QtWidgets import QWidget
+			from unittest.mock import patch
+			main, owner, calls = QWidget(), UiOwner(), []
+			rows = [TableRow('one', ('One', 'Two', 'Three'))]
+			main.show()
+			main.activateWindow()
+			QApplication.processEvents()
+			try:
+				with patch('fman._get_ui', return_value=main):
+					handle = show_table(owner=owner, get_rows=lambda: rows, num_columns=3,
+						columns_header=('A', 'B', 'C'), modal=False,
+						get_menu=lambda row, column: (TableAction('inspect', 'Inspect',
+							lambda row, column: calls.append((row.id, column, QThread.currentThread()))),))
+				window = next(host for host in _hosts.values() if host.owner is owner)
+				window.open_menu(*handle.current_cell, QPoint(10, 10))
+				action = window.menu.actions()[0]
+				action.trigger()
+				self.assertEqual([('one', 0, QApplication.instance().thread())], calls)
+				window.table.view.setCurrentIndex(window.table.model.index(0, 1))
+				window.table.view.setCurrentIndex(window.table.model.index(0, 0))
+				action.trigger()
+				self.assertEqual(1, len(calls))
+				rows[:] = [TableRow('one', ('Replacement', 'Two', 'Three'))]
+				handle.refresh()
+				action.trigger()
+				self.assertEqual(1, len(calls))
+				rows.append(rows[0])
+				with self.assertRaises(ValueError):
+					handle.refresh()
+				self.assertEqual('Replacement', handle.current_cell[0].cells[0])
+			finally:
+				owner.invalidate()
+				main.close()
+				main.deleteLater()
+		self.run_in_app(check)
+
+	def test_real_navigation_adapter_modal_and_modeless(self):
+		from fman.ui import TableRow, UiOwner, show_table
+		from fman.impl.navigation import current_request
+		from fman.impl.ui.facade import _hosts
+		from fman.url import as_url
+		from PyQt5.QtWidgets import QWidget
+		from pathlib import Path
+		from tempfile import TemporaryDirectory
+		from unittest.mock import Mock
+		for modal in (False, True):
+			with self.subTest(modal=modal), TemporaryDirectory() as root:
+				path = Path(root, 'file.txt')
+				path.write_text('content', encoding='utf-8')
+				owner, finished, calls = UiOwner(), Event(), []
+				def dispatch(command, args):
+					calls.append((command, args))
+					request = current_request()
+					self.assertIsNotNone(request)
+					request.started = True
+					request.finish('success')
+				def prepare():
+					main = QWidget()
+					pane = Mock()
+					pane.window._widget = main
+					pane.on_closed.return_value = lambda: None
+					pane.run_command.side_effect = dispatch
+					main.show()
+					main.activateWindow()
+					QApplication.processEvents()
+					handle = show_table(owner=owner, pane=pane, get_rows=lambda: (
+						TableRow('one', ('file.txt', root, 'Plain')),), num_columns=3,
+						columns_header=('File', 'Folder', 'Text'), file_path_column=0,
+						folder_path_column=1, base_path=root, modal=modal)
+					window = next(host for host in _hosts.values() if host.owner is owner)
+					window.disposed.connect(finished.set)
+					window.busy_changed.connect(lambda busy: None if busy else finished.set())
+					column = 0 if modal else 1
+					window.table.view.setCurrentIndex(window.table.model.index(0, column))
+					window.activate_cell(*window.table.current_cell)
+					self.assertTrue(window.busy)
+					return main, handle, window
+				main, handle, window = self.run_in_app(prepare)
+				try:
+					self.assertTrue(finished.wait(3))
+					self.run_in_app(lambda: None)
+					self.assertEqual([('open_directory', {'url': as_url(str(path) if modal else root)})], calls)
+					self.assertEqual(not modal, handle.is_open)
+					if handle.is_open:
+						self.assertFalse(self.run_in_app(lambda: window.busy))
+				finally:
+					owner.invalidate()
+					self.run_in_app(main.close)
+					self.run_in_app(main.deleteLater)
+
+	def test_large_snapshot_projection_timing(self):
+		from time import perf_counter
+		from fman.impl.ui.table import Table
+		from fman.impl.ui.table_data import TableRow, TableSchema
+		ready = Event()
+		rows = tuple(TableRow(str(index), ('folder/file-%05d.txt' % index,
+			'A long matching text snippet ' * 16)) for index in range(10000))
+		def prepare():
+			started = perf_counter()
+			schema = TableSchema(2, ('File Path', 'Snippet'))
+			widget = Table(schema, schema.snapshot(lambda: rows))
+			construction = perf_counter() - started
+			widget.state_changed.connect(lambda: ready.set() if widget.model.matches else None)
+			started = perf_counter()
+			widget.query.setText('fl9')
+			return widget, construction, started
+		widget, construction, started = self.run_in_app(prepare)
+		try:
+			self.assertTrue(ready.wait(10))
+			elapsed = perf_counter() - started
+			print('Table 10000 rows: snapshot/construction %.3f s; fuzzy %.3f s' % (construction, elapsed))
+			self.assertGreater(self.run_in_app(widget.model.rowCount), 0)
+		finally:
+			self.run_in_app(widget.dispose)
+			self.run_in_app(widget.deleteLater)
+
+	def test_directory_pane_styles_unchanged(self):
+		def check():
+			from pathlib import Path
+			from fman.impl.ui.table import Table
+			from fman.impl.ui.table_data import TableRow, TableSchema
+			from PyQt5.QtGui import QColor, QPalette, QStandardItem, QStandardItemModel
+			from PyQt5.QtWidgets import QTableView
+			styles = Path(__file__).parents[3] / 'main/resources/base/styles.qss'
+			for base in ('#ffffff', '#272822'):
+				pane = QTableView()
+				palette = pane.palette()
+				palette.setColor(QPalette.Base, QColor(base))
+				pane.setPalette(palette)
+				pane.setStyleSheet(styles.read_text(encoding='utf-8'))
+				model = QStandardItemModel(pane)
+				model.appendRow([QStandardItem('File'), QStandardItem('Size')])
+				pane.setModel(model)
+				pane.setCurrentIndex(model.index(0, 0))
+				pane.show()
+				QApplication.processEvents()
+				before = pane.grab().toImage()
+				table = Table(TableSchema(2, ('One', 'Two')), (TableRow('row', ('Path', 'Text')),))
+				table.setStyleSheet(styles.read_text(encoding='utf-8'))
+				self.assertEqual(before, pane.grab().toImage())
+				table.dispose()
+				table.deleteLater()
+				pane.close()
+				pane.deleteLater()
+		self.run_in_app(check)
+
+	def test_deferred_table_menu_and_owner_unload(self):
+		def check():
+			from fman.ui import TableRow, UiOwner, show_table
+			from fman.impl.ui.facade import _hosts
+			from PyQt5.QtCore import QPoint
+			from PyQt5.QtWidgets import QDialog, QWidget
+			from unittest.mock import Mock, patch
+			main = QWidget()
+			main.show()
+			main.activateWindow()
+			QApplication.processEvents()
+			blocker = QDialog(main)
+			blocker.setWindowModality(Qt.WindowModal)
+			blocker.open()
+			owner, details, closed = UiOwner(), Mock(return_value='Details'), Mock()
+			try:
+				with patch('fman._get_ui', return_value=main):
+					handle = show_table(owner=owner, get_rows=lambda: (TableRow('one', ('C:\\folder\\file.txt', 'Plain')),),
+						num_columns=2, columns_header=('Path', 'Text'), file_path_column=0,
+						get_details=details, on_closed=closed)
+				window = next(host for host in _hosts.values() if host.owner is owner)
+				self.assertTrue(window.pending)
+				self.assertFalse(window.isVisible())
+				blocker.close()
+				main.activateWindow()
+				for turn in range(3):
+					QApplication.processEvents()
+				self.assertTrue(window.isVisible())
+				self.assertFalse(window.pending)
+				row, column = handle.current_cell
+				window.open_menu(row, column, QPoint(10, 10))
+				self.assertEqual(['Copy Path', 'Go To'], [action.text() for action in window.menu.actions()])
+				self.assertFalse(window.menu.actions()[1].isEnabled())
+				window.menu.actions()[0].trigger()
+				self.assertEqual('C:\\folder\\file.txt', QApplication.clipboard().text())
+				window.close_menu()
+				before = details.call_count
+				owner.invalidate()
+				QApplication.processEvents()
+				self.assertFalse(handle.is_open)
+				self.assertEqual(before, details.call_count)
+				closed.assert_not_called()
+			finally:
+				owner.invalidate()
+				main.close()
+				main.deleteLater()
+		self.run_in_app(check)
+
+	def test_facade_panel_modeless_refresh_and_disposal(self):
+		from fman import DirectoryPane, Window
+		from fman.ui import Action, TableRow, TextField, UiOwner, show_panel, show_table
+		from fman.impl.widgets import MainWindow
+		from PyQt5.QtWidgets import QWidget
+		from unittest.mock import Mock
+		def prepare():
+			main = MainWindow(Mock(), [], Mock(), Mock(), Mock(), 'null://')
+			pane = DirectoryPane(Window(main, Mock()), QWidget(main), Mock())
+			main.show()
+			main.activateWindow()
+			QApplication.processEvents()
+			return main, pane
+		main, pane = self.run_in_app(prepare)
+		owner = UiOwner()
+		changes = []
+		rows = [TableRow('source', ('old.txt', 'new.txt'))]
+		try:
+			panel = show_panel(owner=owner, pane=pane,
+				rows=((TextField('pattern', 'Name'), Action('apply', 'Apply')),),
+				on_change=lambda values: changes.append(values))
+			panel.update(values={'pattern': 'replacement'})
+			self.assertEqual('replacement', panel.snapshot()['pattern'])
+			self.assertEqual([], changes)
+			table = show_table(owner=owner, panel=panel, get_rows=lambda: tuple(rows),
+				num_columns=2, columns_header=('Current', 'Proposed'), modal=False)
+			self.assertTrue(table.is_open)
+			self.assertFalse(isinstance(table, QWidget))
+			rows[:] = [TableRow('source', ('old.txt', 'other.txt'))]
+			table.refresh()
+			self.assertEqual('other.txt', table.current_cell[0].cells[1])
+			table.close()
+			self.assertTrue(panel.is_open)
+			self.assertFalse(table.is_open)
+			with self.assertRaises(RuntimeError):
+				table.refresh()
+			panel.set_activity_status('Searching')
+			self.assertIsNotNone(self.run_in_app(lambda: main.findChild(QWidget, 'plugin-activity-status')))
+			panel.close()
+			self.assertTrue(panel.cancelled.is_set())
+			self.assertFalse(panel.is_open)
+		finally:
+			owner.invalidate()
+			self.run_in_app(main.close)
+			self.run_in_app(main.deleteLater)
+
+	def test_modeless_panel_focus_and_status_error_cleanup(self):
+		def check():
+			from fman import DirectoryPane, Window
+			from fman.ui import Action, TableRow, TextField, Toggle, UiOwner, show_panel, show_table
+			from fman.impl.ui.facade import _hosts
+			from fman.impl.widgets import MainWindow
+			from PyQt5.QtTest import QTest
+			from PyQt5.QtWidgets import QWidget
+			from pathlib import Path
+			from unittest.mock import Mock
+			main = MainWindow(Mock(), [], Mock(), Mock(), Mock(), 'null://')
+			pane = DirectoryPane(Window(main, Mock()), QWidget(main), Mock())
+			root = Path(__file__).parents[3] / 'main/resources/base/Plugins/SearchFileContent'
+			owner = UiOwner(resource_root=str(root))
+			main.show()
+			main.activateWindow()
+			QApplication.processEvents()
+			try:
+				panel = show_panel(owner=owner, pane=pane, rows=((TextField('name', 'Name'), Action('apply', 'Apply')),))
+				table = show_table(owner=owner, panel=panel, modal=False, get_rows=lambda: (TableRow('one', ('Original', 'Proposed')),),
+					num_columns=2, columns_header=('Original', 'Proposed'))
+				host = _hosts[panel._key()]
+				window = host.table_window
+				window.activateWindow()
+				window.table.view.setFocus()
+				QApplication.processEvents()
+				QTest.keyClick(window.table.view, Qt.Key_Tab)
+				QApplication.processEvents()
+				self.assertTrue(main._panel_dock.isAncestorOf(QApplication.focusWidget()))
+				host.focus_from_panel()
+				QApplication.processEvents()
+				self.assertIs(window.table.query, QApplication.focusWidget())
+				def broken():
+					raise ValueError('status failed')
+				panel.set_activity_status(get_text=broken)
+				self.assertFalse(host.activity_timer.isActive())
+				self.assertEqual('status failed', host.status.content)
+				panel.close()
+				self.assertFalse(table.is_open)
+				with self.assertRaises(ValueError):
+					show_panel(owner=owner, pane=pane, rows=((Toggle('bad', '../outside.svg', 'Bad'),),))
+				self.assertFalse(any(item.owner is owner for item in _hosts.values()))
+			finally:
+				owner.invalidate()
+				main.close()
+				main.deleteLater()
+		self.run_in_app(check)
+
+	def test_fuzzy_sort_refresh_and_current_cell(self):
+		def check():
+			from fman.impl.ui.table import Table
+			from fman.impl.ui.table_data import TableRow, TableSchema
+			rows = (TableRow('first', ('zebra', 'blue')), TableRow('second', ('alpha', 'green')))
+			table = Table(TableSchema(2, ('Name', 'Color')), rows)
+			try:
+				self.assertEqual((rows[0], 0), table.current_cell)
+				table.view.setCurrentIndex(table.model.index(1, 1))
+				table.sort_by(0)
+				self.assertEqual((rows[1], 1), table.current_cell)
+				table.query.setText('gn')
+				QApplication.processEvents()
+				self.assertEqual([rows[1]], list(table.model.rows))
+				table.query.setText('no matching value')
+				QApplication.processEvents()
+				self.assertIsNone(table.current_cell)
+				table.query.clear()
+				table.replace((TableRow('second', ('alpha', 'proposed')),))
+				self.assertEqual('second', table.current_cell[0].id)
+				self.assertEqual('proposed', table.model.rows[0].cells[1])
+				for filename in ('CudaText.cmd', 'Cud\u00e1Text.cmd'):
+					table.replace((TableRow('script', (filename, 'text')),))
+					table.query.setText('cmd')
+					QApplication.processEvents()
+					self.assertEqual((9, 10, 11), tuple(table.model.index(0, 0).data(Qt.UserRole + 1)))
+			finally:
+				table.dispose()
+				table.deleteLater()
+		self.run_in_app(check)
+
+	def test_buttonless_cell_specific_activation(self):
+		def check():
+			from fman.impl.ui.table import Table
+			from fman.impl.ui.table_data import TableRow, TableSchema
+			from PyQt5.QtTest import QTest
+			from PyQt5.QtWidgets import QAbstractButton
+			table = Table(TableSchema(2, ('Path', 'Text')), (TableRow('row', ('C:\\file', 'text')),))
+			table.resize(500, 240)
+			table.show()
+			QApplication.processEvents()
+			calls = []
+			table.view.cell_activated.connect(lambda row, column: calls.append((row.id, column)))
+			try:
+				self.assertFalse(any(button.isVisible() for button in table.findChildren(QAbstractButton)))
+				index = table.model.index(0, 1)
+				position = table.view.visualRect(index).center()
+				QTest.mouseClick(table.view.viewport(), Qt.LeftButton, pos=position)
+				self.assertEqual([], calls)
+				self.assertEqual(1, table.current_cell[1])
+				QTest.mouseDClick(table.view.viewport(), Qt.LeftButton, pos=position)
+				self.assertEqual([('row', 1)], calls)
+				QTest.keyClick(table.query, Qt.Key_Return, Qt.ControlModifier)
+				self.assertEqual(1, len(calls))
+			finally:
+				table.dispose()
+				table.close()
+				table.deleteLater()
+		self.run_in_app(check)
+
 class OutputTextBoxIT(QtIT):
 	def test_title_parameter_layout_and_digest_only_copy(self):
 		def check():
@@ -457,6 +1119,29 @@ class PublicUiIT(QtIT):
 		for construct in constructors:
 			with self.assertRaisesRegex(RuntimeError, 'UiController.build'):
 				construct()
+
+	def test_pane_path_callback_thread_and_unsubscribe(self):
+		from fman import DirectoryPane
+		from PyQt5 import sip
+		from PyQt5.QtCore import QThread, pyqtSignal
+		from PyQt5.QtWidgets import QWidget
+		from unittest.mock import Mock
+		class PaneWidget(QWidget):
+			location_changed = pyqtSignal(object)
+		widget = self.run_in_app(PaneWidget)
+		pane = DirectoryPane(None, widget, Mock())
+		calls = []
+		unsubscribe = pane.on_path_changed(lambda: calls.append(QThread.currentThread()))
+		self.run_in_app(widget.location_changed.emit, widget)
+		self.assertEqual([QApplication.instance().thread()], calls)
+		unsubscribe()
+		unsubscribe()
+		self.run_in_app(widget.location_changed.emit, widget)
+		self.assertEqual(1, len(calls))
+		self.run_in_app(sip.delete, widget)
+		unsubscribe()
+		with self.assertRaises(TypeError):
+			pane.on_path_changed(None)
 
 	def test_navigation_timeout_covers_blocked_precheck(self):
 		from fman.ui import navigate

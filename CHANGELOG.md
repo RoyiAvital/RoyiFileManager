@@ -9,9 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
 
+## [0.4.0] - 2026-09-14
+
+API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
+
+### Added
+
+- Added Search File Content on <kbd>Alt</kbd>+<kbd>F7</kbd>, based on [`ripgrep`](https://github.com/burntsushi/ripgrep).  
+  File name and content patterns support Literal, Glob and RegEx modes.
+- Added a table UI component (`fman.ui.show_table`).  
+  Displays multi column data with optional file path and folder path actions.
+- Added a docked panel UI component (`fman.ui.show_panel`) for plug in forms,
+  with text fields, icon controls and status feedback.
+- Added disposable `DirectoryPane.on_path_changed` subscriptions for pane bound
+  tools, delivered on the UI thread without polling.
+
+### Changed
+
+- Shared fuzzy matching now prefers contiguous matches, so a query such as
+  `cmd` highlights the whole extension in `CudaText.cmd` instead of an earlier `C`.
+
 ### Fixed
 
-- Fixed a test-suite timing issue that could produce a misleading
+- Fixed a test suite timing issue that could produce a misleading
   permission error traceback during successful test runs.
 
 ## [0.3.1] - 2026-09-13

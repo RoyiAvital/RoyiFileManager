@@ -17,6 +17,28 @@ release_notes = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(release_notes)
 
 
+class RipgrepPackagingTest(TestCase):
+	def test_spec_includes_conda_executable_and_notices_directly(self):
+		from types import SimpleNamespace
+		from unittest.mock import Mock
+		from PyInstaller.utils.hooks import conda_support
+		specification = ROOT / 'RoyiFileManager.spec'
+		code = compile(specification.read_text(encoding='utf-8'), str(specification), 'exec')
+		namespace = {name: Mock() for name in ('Analysis', 'PYZ', 'EXE', 'COLLECT')}
+		package = SimpleNamespace(raw={'link': {'source': 'C:\\cache\\ripgrep'}})
+		with patch('PyInstaller.utils.hooks.collect_all', return_value=([], [], [])), \
+				patch.object(conda_support, 'distribution', return_value=package), \
+				patch('sys.prefix', 'C:\\conda'):
+			exec(code, namespace)
+		inputs = namespace['Analysis'].call_args.kwargs
+		self.assertIn(('C:\\conda\\bin\\rg.exe', 'resources/Plugins/SearchFileContent/bin'), inputs['binaries'])
+		self.assertIn(('C:\\cache\\ripgrep\\info\\licenses', 'resources/Plugins/SearchFileContent/licenses'), inputs['datas'])
+		self.assertFalse(hasattr(build, '_ripgrep_payload'))
+
+	def test_build_adds_search_plugin_pythonpath(self):
+		self.assertIn('SearchFileContent', build._environment()['PYTHONPATH'])
+
+
 class SevenZipVerificationTest(TestCase):
 	def test_versioned_urls_and_hashes_are_pinned(self):
 		self.assertEqual('26.03', build.SEVEN_ZIP_VERSION)

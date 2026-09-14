@@ -84,6 +84,16 @@ QuickList QLineEdit {
 	padding: 0;
 }
 
+#plugin-panel-dock QPushButton[panelAction="stop"],
+#plugin-panel-dock QToolButton[panelAction="stop"] {
+	color: #ff5252;
+}
+
+#plugin-panel-dock QPushButton[panelAction="stop"]:disabled,
+#plugin-panel-dock QToolButton[panelAction="stop"]:disabled {
+	color: rgba(255, 82, 82, 96);
+}
+
 #plugin-panel-dock Panel {
 	border-top: none;
 }
@@ -132,6 +142,34 @@ QTableView::item:selected {
 
 QTableView::item:focus {
 	background-color: #49483e;
+}
+
+#results-table-view {
+	background-color: palette(base);
+	alternate-background-color: palette(alternate-base);
+	color: palette(text);
+}
+
+#results-table-view::item, #results-table-view::item:has-children, #results-table-view::item:open {
+	color: palette(text);
+	padding: 0;
+}
+
+#results-table-view::item:selected, #results-table-view::item:focus {
+	background-color: palette(highlight);
+	color: palette(highlighted-text);
+}
+
+#results-table-view QHeaderView::section {
+	background: palette(button);
+	color: palette(button-text);
+	border: 1px solid palette(mid);
+	padding: 5px;
+}
+
+#results-table QLineEdit {
+	padding: 5px;
+	border: 1px solid palette(mid);
 }
 
 QTableView #editor {

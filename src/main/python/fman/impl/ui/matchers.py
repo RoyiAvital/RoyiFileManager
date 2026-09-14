@@ -16,6 +16,9 @@ def basename_starts_with(path, query):
 
 
 def contains_chars(text, query):
+	contiguous = contains_substring(text, query)
+	if contiguous is not None:
+		return contiguous
 	indices = []
 	position = 0
 	for char in query:

@@ -34,7 +34,9 @@ class PluginApiCompatibilityTest(TestCase):
 			'ListItem', 'QuickList', 'Panel', 'IconButton', 'TextButton',
 			'DropDown', 'JsonSettings', 'UiController', 'UiOwner', 'Resource',
 			'settings_resource', 'matchers', 'ToolWindow', 'PaneToolWindow',
-			'NavigationHandle', 'navigate', 'OutputTextBox'
+			'NavigationHandle', 'navigate', 'OutputTextBox', 'TableRow', 'TableAction',
+			'TextField', 'Toggle', 'Label', 'Action', 'TableHandle', 'PanelHandle',
+			'show_table', 'show_panel'
 		}
 		self.assertEqual(expected, set(fman.ui.__all__))
 		self.assertFalse(hasattr(fman.ui, 'BottomPanel'))

@@ -167,7 +167,7 @@ class ExternalPlugin(Plugin):
 			for cls in self._iterate_classes(package):
 				superclasses = getmro(cls)[1:]
 				if UiController in superclasses:
-					cls.owner = UiOwner()
+					cls.owner = UiOwner(resource_root=self._path)
 					self._ui_owners.append(cls.owner)
 					continue
 				if ApplicationCommand in superclasses:

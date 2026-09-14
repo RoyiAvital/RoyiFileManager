@@ -25,11 +25,12 @@ Significant additions compared with `fman`:
 - **Docked Panel**: Allows controlling states and operations. Exposed to be used by Plug-In's.
 - **UI Components**: New building blocks that expand what plug-ins can do. [Plug-in UI guide](Plan/UIElements.md#plug-in-api).
 - **Fuzzy File Search**: Find files in the current folder or recursively using fuzzy or regular matching.
+- **File Content Search**: Press <kbd>Alt</kbd>+<kbd>F7</kbd> for a [`ripgrep`](https://github.com/burntsushi/ripgrep) based file content search. See [File Content Search Usage](src/main/resources/base/Plugins/SearchFileContent/README.md).
 - **Extended Status Bar**: Press <kbd>Cmd</kbd>+<kbd>S</kbd> to cycle through disabled, active-pane, and per-pane file statistics.
 - **Sync Pane Location**: Send the inactive pane to the active pane's current folder from the Command Center.
 - **Favorites**: Press <kbd>Ctrl</kbd>+<kbd>B</kbd> for a fully features Favorites Manager, built entirely with the plug-in APIs.
 - **New Empty File**: Press <kbd>Cmd</kbd>+<kbd>N</kbd> to create an empty file without opening an editor.
-- **File Hash**: Press <kbd>Ctrl</kbd>+<kbd>H</kbd> for centered checksum output; use Calculate File Hash By to pick an algorithm in QuickSearch, then view the result. [Usage and settings](src/main/resources/base/Plugins/CalculateFileHash/README.md).
+- **File Hash**: Press <kbd>Ctrl</kbd>+<kbd>H</kbd> for centered checksum output; use Calculate File Hash By to pick an algorithm in QuickSearch, then view the result. See [File Hash Calculation Usage](src/main/resources/base/Plugins/CalculateFileHash/README.md).
 
 ## Development
 
@@ -62,6 +63,11 @@ python build.py package
 `run`, `test`, and `freeze` download the pinned x64 `7za.exe` from the official
 7-Zip distribution when it is not already present under the Core plug-in.
 These commands therefore require internet access on their first run.
+
+Content search uses conda-forge's installed `bin/rg.exe` from the active Python
+prefix. PyInstaller bundles it and the package's license notices directly, with
+no custom downloads, version/hash verification or integrity manifest. Packaged
+searches use the bundled executable, not a system `rg` or Python installation.
 
 `freeze` creates a PyInstaller onedir build. `package` produces
 `target/RoyiFileManager-<version>-windows-x86_64.zip` with an empty

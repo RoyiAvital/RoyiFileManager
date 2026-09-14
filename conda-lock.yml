@@ -13,7 +13,7 @@
 version: 1
 metadata:
   content_hash:
-    win-64: b800a4e290464df6a37fd387ddd80ec14a46bf3b6bd49fd527bf1446925ac9a6
+    win-64: 216a362e920be41af3b82140ed16e65b1f66b89ec4fc17c3a0e5ee6ee8fe4079
   channels:
   - url: conda-forge
     used_env_vars: []
@@ -1679,6 +1679,20 @@ package:
   hash:
     md5: 66de8645e324fda0ea6ef28c2f99a2ab
     sha256: c0b815e72bb3f08b67d60d5e02251bbb0164905b5f72942ff5b6d2a339640630
+  category: main
+  optional: false
+- name: ripgrep
+  version: 15.2.0
+  manager: conda
+  platform: win-64
+  dependencies:
+    ucrt: '>=10.0.20348.0'
+    vc: '>=14.3,<15'
+    vc14_runtime: '>=14.44.35208'
+  url: https://conda.anaconda.org/conda-forge/win-64/ripgrep-15.2.0-h18a1a76_1.conda
+  hash:
+    md5: 0877fdee03ef0995c35a904c71a66078
+    sha256: 616a84f58a6aa296607e33f60aa7b97c866ec8fc1217bca8013949fa62689aae
   category: main
   optional: false
 - name: ruamel.yaml

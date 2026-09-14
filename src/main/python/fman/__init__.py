@@ -80,6 +80,27 @@ class DirectoryPane:
 
 	def get_commands(self):
 		return self._command_registry.get_commands()
+	def on_path_changed(self, callback):
+		from fman.impl.util.qt.thread import run_in_main_thread
+		if not callable(callback):
+			raise TypeError('The pane-path callback must be callable.')
+		@run_in_main_thread
+		def register():
+			active_callback = callback
+			def changed(*args):
+				if active_callback is not None:
+					active_callback()
+			self._widget.location_changed.connect(changed)
+			@run_in_main_thread
+			def unsubscribe():
+				nonlocal active_callback
+				active_callback = None
+				try:
+					self._widget.location_changed.disconnect(changed)
+				except (RuntimeError, TypeError):
+					pass
+			return unsubscribe
+		return register()
 	def on_closed(self, callback):
 		from fman.impl.util.qt.thread import run_in_main_thread
 		if not callable(callback):

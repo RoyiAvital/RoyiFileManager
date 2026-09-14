@@ -10,4 +10,5 @@ dependencies:
   - send2trash
   - tinycss
   - requests
+  - ripgrep
   - conda-lock
