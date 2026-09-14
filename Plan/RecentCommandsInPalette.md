@@ -235,3 +235,80 @@ and confirm the block persists.
   executed from the palette; shortcut-triggered commands are out of scope for
   simplicity. Both match the designed text; no section changes required.
   Design approved for implementation.
+
+  ### 2026_09_14 - GitHub Copilot
+
+  - Role: Reviewer
+  - Activity: Review
+  - Agent: GitHub Copilot
+  - Model: GPT-6 Astra
+  - Effort: Medium
+  - Context Window: Not exposed by host
+  - Outcome: Requires revisions before implementation. Verified the public config
+    forwarding path, palette matching, separate command registries and Qt callback
+    dispatch. Persistence recovery, context-sensitive pruning, threading, command
+    identity and load-time bounds need the changes below. No application code changed.
+
+  #### Findings
+
+  1. **P1: History failures can prevent the palette from opening.**
+    [Config.load_json](../src/main/python/fman/impl/plugins/config.py#L22)
+    supplies the default only when loading returns None. Malformed JSON raises
+    `JSONDecodeError`; JSON `null` raises `TypeError` in the file loader. A valid
+    root list remains a list in the cache, so replacing a local variable with a
+    dict does not repair the object saved on quit. The differential writer also
+    rejects replacing a stored list with a dict. Define an explicit recoverable
+    session-only fallback for unreadable/wrong-root-type history, or an approved
+    repair mechanism; do not promise in-place type conversion. Test real Config
+    behavior, read errors and quit/restart, not only mocked `load_json` values.
+
+  2. **P2: Display filtering must not delete temporarily hidden history.**
+    [_get_all_commands](../src/main/resources/base/Plugins/Core/core/commands/__init__.py#L1248)
+    already removes commands hidden for the invoking pane. Pruning against its
+    index would permanently forget a local-only command merely because the user
+    opens the palette in an archive or another unsupported context. Skip hidden
+    entries for display without deleting them; only prune commands absent from
+    the unfiltered registries. Add a visible -> hidden -> visible regression
+    across two pane contexts that preserves the shared MRU entry.
+
+  3. **P2: The single-command-thread assumption is incorrect.**
+    [show_quicksearch](../src/main/python/fman/impl/widgets.py#L443) marshals to
+    the Qt thread, where [Quicksearch._update_items](../src/main/python/fman/impl/quicksearch.py#L107)
+    invokes the provider synchronously on initialization and text changes.
+    Initial cursor lookup and recording also call the proposed helpers from
+    command threads. Config's lock protects loading, not mutations of the returned
+    list. Specify synchronized snapshot/update ownership; keep disk loading off
+    the Qt callback and avoid holding a lock while opening the modal. Cover
+    concurrent recording/pruning and actual callback thread affinity, and correct
+    the Runtime Effects section accordingly.
+
+  4. **P2: A name-only index conflates pane and application commands.**
+    The [registries](../src/main/python/fman/impl/plugins/command_registry.py#L19)
+    have independent namespaces. The existing palette can display both commands
+    with the same name; indexing by name collapses them, and name-based exclusion
+    can hide one or pin the wrong command. Persist and compare a plain scoped
+    identity such as `(kind, name)`, without recording arguments or changing the
+    public API. Test duplicate names with distinct aliases and execution targets,
+    including the promised unchanged output when history is empty.
+
+  5. **P2: Normalize valid history on load, not just after execution.**
+    A list of strings currently passes validation regardless of length or
+    duplicates. Step 2 would pin every entry, violating the three-row bound before
+    the next execution; duplicate names can also produce duplicate recent rows.
+    Deduplicate in MRU order, discard empty/invalid identifiers and cap to three
+    before display. Specify a sensible identifier length bound and test oversized
+    lists and repeated entries without executing a command first.
+
+  #### Review Validation
+
+  - Ran `python -` with in-memory `Config` and `CommandPalette` probes using
+    `unittest.mock`; no application settings or source files were written.
+  - Mocked file contents `{`, `null` and `[]` respectively produced
+    `JSONDecodeError`, `TypeError` and a cached list. A local dict replacement did
+    not update that cache; differential list-to-dict saving raised `ValueError`.
+  - A pane command and application command both named `same_name` produced two
+    existing palette rows but only one name-index entry. A registered hidden
+    command was absent from the display index.
+  - Thread dispatch verified from the decorated host entry point and synchronous
+    Quicksearch provider invocation. Concurrency and proposed MRU behavior have
+    not been executed because the feature is not implemented. No test suite run.

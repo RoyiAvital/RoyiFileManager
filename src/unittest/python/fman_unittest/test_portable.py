@@ -35,7 +35,7 @@ class PluginApiCompatibilityTest(TestCase):
 			'DropDown', 'JsonSettings', 'UiController', 'UiOwner', 'Resource',
 			'settings_resource', 'matchers', 'ToolWindow', 'PaneToolWindow',
 			'NavigationHandle', 'navigate', 'OutputTextBox', 'TableRow', 'TableAction',
-			'TextField', 'Toggle', 'Label', 'Action', 'TableHandle', 'PanelHandle',
+			'TextField', 'Toggle', 'Choice', 'Label', 'Action', 'TableHandle', 'PanelHandle',
 			'show_table', 'show_panel'
 		}
 		self.assertEqual(expected, set(fman.ui.__all__))
