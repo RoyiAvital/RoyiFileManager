@@ -22,7 +22,7 @@ Your context window: 272K.
 ## Reviewer
 
 ```
-# Features Development GPT-6 Astra
+# Features Review Claude Fable 5.1
 
 This project is a file manager based on `fman` (https://github.com/mherrmann/fman).
 
