@@ -271,8 +271,15 @@ class DirectoryPaneListener:
 	def on_location_bar_clicked(self):
 		pass
 
-def load_json(name, default=None, save_on_quit=False):
-	return _get_plugin_support().load_json(name, default, save_on_quit)
+def load_json(name, default=None, save_on_quit=False, *, preserve_on_reload=False):
+	"""Load merged JSON; optionally retain the cached value across plug-in reloads.
+
+	RoyiFileManager's preserve_on_reload option keeps in-memory state until exit
+	or an explicit save_json replacement. Ordinary settings continue to reload.
+	"""
+	return _get_plugin_support().load_json(
+		name, default, save_on_quit, preserve_on_reload=preserve_on_reload
+	)
 
 def save_json(name, value=None):
 	return _get_plugin_support().save_json(name, value)

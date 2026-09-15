@@ -23,6 +23,7 @@ Repository-wide contribution and task-lifecycle requirements are defined in
 Significant additions compared with `fman`:
 
 - **Docked Panel**: Allows controlling states and operations. Exposed to be used by Plug-In's.
+- **Recent Commands**: <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> pins the last three commands run from the palette, marked **Recent**. Results follow the query; history is shared across panes, survives plug-in reloads and is saved on exit.
 - **UI Components**: New building blocks that expand what plug-ins can do. [Plug-in UI guide](Plan/UIElements.md#plug-in-api).
 - **Fuzzy File Search**: Find files in the current folder or recursively using fuzzy or regular matching.
 - **File Content Search**: Press <kbd>Alt</kbd>+<kbd>F7</kbd> for a [`ripgrep`](https://github.com/burntsushi/ripgrep) based file content search. See [File Content Search Usage](src/main/resources/base/Plugins/SearchFileContent/README.md).

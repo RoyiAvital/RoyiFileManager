@@ -40,6 +40,76 @@ class SortedFileSystemModelIT(SortedFileSystemModelAT, QtIT):
 class RunInThreadIT(RunInThreadAT, QtIT):
 	pass
 
+class CommandPaletteRecentIT(QtIT):
+	def test_history_thread_affinity_and_other_provider_isolation(self):
+		from core.commands import CommandPalette, _COMMAND_PALETTE_HISTORY
+		from fman import QuicksearchItem
+		from fman.ui import Resource
+		from fman.impl.quicksearch import Quicksearch
+		from fman.impl.theme import Theme
+		from PyQt5.QtCore import QThread, QTimer
+		from pathlib import Path
+		from unittest.mock import Mock, patch
+		app = QApplication.instance()
+		pane = Mock()
+		pane.get_commands.return_value = ['copy', 'files']
+		pane.is_command_visible.return_value = True
+		pane.get_command_aliases.side_effect = {'copy': ['Copy'], 'files': ['Find files']}.__getitem__
+		document = {'recent': [{'kind': 'pane', 'name': 'files'}]}
+		loads = []
+		def load(name, **kwargs):
+			if name == _COMMAND_PALETTE_HISTORY:
+				self.assertNotEqual(app.thread(), QThread.currentThread())
+				loads.append(name)
+				return document
+			return []
+		palette = CommandPalette(pane)
+		def show_on_qt(provider, **kwargs):
+			self.assertEqual(app.thread(), QThread.currentThread())
+			root = Path(__file__).parents[3] / 'main/resources/base'
+			theme = Theme(Mock(), [])
+			theme.load(str(root / 'Plugins/Core/Theme.css'))
+			css = theme.get_quicksearch_item_css()
+			dialog = Quicksearch(None, app, css, provider, **kwargs)
+			errors = []
+			def inspect():
+				try:
+					self.assertEqual('Find files', dialog._curr_items[0].title)
+					self.assertEqual('Recent', dialog._curr_items[0].hint)
+					dialog._query.setText('copy')
+					self.assertEqual(['Copy'], [item.title for item in dialog._curr_items])
+					self.assertEqual('', dialog._curr_items[0].hint)
+					dialog._query.setText('file')
+					self.assertEqual('Recent', dialog._curr_items[0].hint)
+					plain_item = QuicksearchItem('value', 'Unrelated picker', hint='Original hint')
+					plain = Quicksearch(None, app, css, lambda query: [plain_item])
+					try:
+						plain._update_items('')
+						self.assertEqual([plain_item], plain._curr_items)
+						self.assertEqual('Original hint', plain._curr_items[0].hint)
+					finally:
+						plain.deleteLater()
+				except BaseException as error:
+					errors.append(error)
+				finally:
+					dialog.reject()
+			QTimer.singleShot(0, inspect)
+			try:
+				result = dialog.exec()
+				if errors:
+					raise errors[0]
+				return result
+			finally:
+				dialog.deleteLater()
+		with patch('core.commands.load_json', side_effect=load), \
+			patch('core.commands.get_application_commands', return_value=[]), \
+			patch('fman.ui.settings_resource', return_value=Resource()), \
+			patch('core.commands.show_quicksearch', side_effect=lambda *args, **kwargs:
+				self.run_in_app(show_on_qt, *args, **kwargs)):
+			palette()
+		self.assertEqual(2, len(loads))
+		pane.run_command.assert_not_called()
+
 class SearchFileContentIT(QtIT):
 	def test_root_follows_invoking_pane_and_fields_align(self):
 		def check():
@@ -86,6 +156,12 @@ class SearchFileContentIT(QtIT):
 						self.assertEqual(hint, indicator.toolTip())
 						self.assertIn(hint.split()[0].lower(), icon_name)
 						self.assertGreaterEqual(indicator.pixmap().width(), 20)
+						image = indicator.pixmap().toImage()
+						self.assertEqual(image.width(), image.height())
+						left_alpha = image.pixelColor(image.width() // 4, image.height() // 2).alpha()
+						right_alpha = image.pixelColor(3 * image.width() // 4, image.height() // 2).alpha()
+						self.assertEqual((255, 0) if index == 0 else (0, 255), (left_alpha, right_alpha))
+						self.assertEqual(255, image.pixelColor(image.width() // 10, image.height() // 10).alpha())
 						self.assertEqual('glob', session.panel.snapshot()['name_mode'])
 						self.assertEqual('literal', session.panel.snapshot()['content_mode'])
 						for name in ('name_mode', 'content_mode'):

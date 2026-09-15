@@ -1,6 +1,7 @@
 # Recent Commands in Command Palette
 
-Status: Implemented and validated on 2026-09-15 after visual preview approval.
+Status: Implemented on 2026-09-15; reload retention corrected and validated on
+2026-09-16 after user approval of opt-in Config support.
 
 ## Task
 
@@ -27,7 +28,8 @@ Included:
   pane commands and application commands use a scoped `(kind, name)` identity.
 - The MRU list is shared by all panes and windows of the process and persists
   across restarts in `Command Palette History.json` under `UserSettings`,
-  using `load_json(..., save_on_quit=True)` like `Visited Paths.json`.
+  using `load_json(..., save_on_quit=True, preserve_on_reload=True)`.
+  Unsaved history survives plug-in loads/unloads and interrupted config reloads.
 - Unregistered commands are pruned when the palette opens. Temporarily hidden
   commands are omitted from display without deleting their history.
 
@@ -48,8 +50,8 @@ and the existing last-query/last-command cursor restoration.
 
 Ownership stays inside the Core plug-in, in
 [core/commands/__init__.py](../src/main/resources/base/Plugins/Core/core/commands/__init__.py).
-The host (`fman/__init__.py`, `fman.impl.quicksearch`, `command_registry`) is
-not changed.
+The 2026-09-16 reload fix adds opt-in Config retention and public `load_json`
+forwarding with user approval. QuickSearch and command registries are unchanged.
 
 ### Data
 
@@ -58,7 +60,9 @@ not changed.
   `fman.ui.settings_resource('Command Palette History.json')`. Loading, pruning
   and recording run under that lock on the existing command thread.
 - Load with `default={'recent': []}` before registering save-on-quit. Only valid
-  dict roots are registered. Catch `OSError`, `ValueError` and `TypeError`;
+  dict roots are registered with `preserve_on_reload=True`. Config retains those
+  cached values through any plug-in directory add/remove without rereading them.
+  Ordinary settings use the existing reload path. Catch `OSError`, `ValueError` and `TypeError`;
   unreadable or wrong-root history uses a session-only dict held by the named
   resource. Do not attempt to repair or overwrite the bad file.
 - Entries are `{'kind': 'pane'|'application', 'name': <identifier>}`. Inspect at
@@ -94,9 +98,10 @@ query/selection, not history.
   callbacks on Qt; these read only the captured tuple. Do not hold the history
   lock across the modal or command execution. No workers or timers are added.
 - Bad history cannot block opening. Save failures follow Config's existing
-  quit-time handling. Valid history uses its ordinary cached save-on-quit path;
-  external configuration edits/reloads and competing processes retain host
-  last-writer semantics, not a new cross-process merge guarantee.
+  quit-time handling. Valid history uses cached save-on-quit and survives reloads
+  even if the palette is not reopened before exit. History file edits are read
+  next launch, not on plug-in reload; explicit `save_json` still replaces cached
+  state. Cross-process writes retain host last-writer semantics.
 - A `DirectoryPaneListener.on_command` rewrite changes the executed command
   after recording; the palette records the name the user selected.
 
@@ -105,8 +110,9 @@ query/selection, not history.
 The palette uses only public API: `show_quicksearch`, `QuicksearchItem`,
 `load_json`, `pane.get_commands`, `pane.is_command_visible`,
 `pane.get_command_aliases`, `pane.run_command`, `get_application_commands`,
-`get_application_command_aliases`, `run_application_command`. None of these
-signatures change. The additional public `settings_resource` API supplies the
+`get_application_command_aliases`, `run_application_command`. `load_json` gains
+an optional keyword-only `preserve_on_reload=False`; all existing calls remain
+compatible and retain their default behavior. The public `settings_resource` API supplies the
 reload-stable lock and fallback. Other QuickSearch providers are not wrapped or
 modified. The only new settings artifact is `Command Palette History.json`.
 
@@ -127,6 +133,11 @@ modified. The only new settings artifact is `Command Palette History.json`.
 - Boosting recent commands within the ranking instead of pinning: subtler but
   invisible to the user and harder to test; the request is an explicit top
   block. Rejected.
+- Wrapping only Core's reload/install/remove commands to restore history:
+  misses other plug-ins calling the public load/unload API. Rejected in favor
+  of opt-in Config retention at the actual cache-reload boundary.
+- Changing all save-on-quit settings to retain memory across reloads: would
+  change existing settings refresh behavior. Rejected; retention defaults off.
 
 ## Runtime Effects
 
@@ -139,6 +150,9 @@ modified. The only new settings artifact is `Command Palette History.json`.
   normalization inspects at most 256 entries off Qt.
 - I/O: one small write at application quit through the existing
   `Config.on_quit` save-on-quit path; no writes during the session.
+- Config retention: one filename in a set after opt-in; cache reload carries
+  retained values forward before reading ordinary settings. No new threads,
+  signals, timers or writes. With no opted-in names, normal settings still reload.
 - Cancellation: not applicable; no long-running work.
 - Disabled/no-op path: not applicable; the feature has no toggle. With an
   empty history the palette output is byte-for-byte the current output.
@@ -148,7 +162,7 @@ modified. The only new settings artifact is `Command Palette History.json`.
 Focused commands from the repository root:
 
 ```powershell
-python -c "import build, subprocess, sys; environment = dict(build._environment(), QT_QPA_PLATFORM='offscreen'); sys.exit(subprocess.call([sys.executable, '-X', 'faulthandler', '-m', 'unittest', 'core.tests.commands.test___init__', 'fman_integrationtest.test_qt.CommandPaletteRecentIT', '-q'], env=environment))"
+python -c "import build, subprocess, sys; environment = dict(build._environment(), QT_QPA_PLATFORM='offscreen'); sys.exit(subprocess.call([sys.executable, '-X', 'faulthandler', '-m', 'unittest', 'fman_integrationtest.impl.plugins.test_config', 'core.tests.commands.test___init__', 'fman_integrationtest.test_qt.CommandPaletteRecentIT', '-q'], env=environment))"
 python -c "import build, subprocess, sys; sys.exit(subprocess.call([sys.executable, '-X', 'faulthandler', '-m', 'fman_integrationtest.recent_commands_smoke'], env=build._environment()))"
 ```
 
@@ -179,7 +193,9 @@ use real Config fixtures and a `Mock` pane whose `get_commands`, `is_command_vis
 - Oversized/repeated entries are bounded before any execution. Concurrent
   recording/pruning uses the same named lock; no updates are lost or duplicated.
 - Quit/restart round-trip, zero session writes, and reload-stable named resource
-  synchronization/fallback. Configuration reload follows the host cache policy.
+  synchronization/fallback. Saved-A -> record-B -> reload -> quit without reopening
+  retains B. Default-path settings, explicit save replacement, missing/failed loads,
+  and unrelated reload errors have real Config regression coverage.
 - Cursor restoration: with `_last_cmd_name` set and empty last query, the
   initial item index is 0; with a non-empty last query it still resolves to
   the last command's position.
@@ -188,7 +204,9 @@ use real Config fixtures and a `Mock` pane whose `get_commands`, `is_command_vis
 
 The native smoke performs the manual workflow with temporary UserSettings:
 run three harmless pane commands from the real palette, reopen, confirm the
-block and filtering, exit and restart. It also verifies a non-palette command
+block and filtering, exit and restart. On the second launch, update history,
+run real Reload Plugins and quit without reopening the palette; a third launch
+checks the unsaved entry survived. It also verifies a non-palette command
 is not recorded and the Sort By Column picker has unchanged hints. Screenshots
 and bundled hint widths are checked at 100%, 150% and 200% scaling.
 
@@ -215,6 +233,9 @@ and bundled hint widths are checked at 100%, 150% and 200% scaling.
   command moves it to the top.
 - The block survives an application restart via `Command Palette History.json`
   under `UserSettings`; no writes occur during the session.
+- Unsaved history survives all plug-in directory add/remove paths and remains
+  available if another settings file interrupts reload; exit persists it even
+  without reopening the palette. Ordinary settings still reload as before.
 - Missing commands are pruned. Hidden commands do not appear but remain in history.
 - Unreadable/wrong-root history never blocks opening or overwrites the bad file;
   that fallback lasts for the process and does not promise restart persistence.
@@ -224,8 +245,9 @@ and bundled hint widths are checked at 100%, 150% and 200% scaling.
 - With an empty history the palette output and cursor restoration are
   unchanged from the current release.
 - `python -m unittest core.tests.commands.test___init__` passes.
-- No file under `src/main/python/fman` changes; the public `fman` API is
-  untouched.
+- Host changes are limited to Config retention and its `load_json` forwarding;
+  existing public calls remain compatible. Shared QuickSearch widgets, command
+  registries and other picker behavior are unchanged.
 
 ## Reviewers
 
@@ -401,6 +423,128 @@ and bundled hint widths are checked at 100%, 150% and 200% scaling.
   edits are authorized; arbitrary oversized alias rendering retains the existing
   widget limitation, with bundled labels and multiple shortcuts checked here.
 
+### 2026_09_15 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Claude Fable 5.1
+- Effort: High
+- Context Window: 1M
+- Outcome: Implementation review; approved. Verified against the code that all
+  five earlier findings are resolved: recoverable loading with a session-only
+  fallback that never registers a bad root for save-on-quit, pruning against
+  the unfiltered pane/application registries with hidden commands retained,
+  history captured on the command thread before `show_quicksearch` and only the
+  immutable `self._recent` tuple read in the Qt callback, `(kind, name)`
+  identities carried by `CommandPaletteItem.identity`, and bounded
+  normalization (256 inspected, 3 retained, deduplicated, trimmed names).
+  Confirmed `Config._reload_cache` keeps the cached dict identity across plug-in
+  reloads because save-on-quit is registered, so the in-place `recent`
+  replacement survives `ReloadPlugins`. Reran the documented focused command:
+  81 tests, OK. Corrected a hyphen in the changelog entry. Non-blocking
+  follow-ups:
+  - [ ] Move the session-only fallback dict off the host-owned `Resource`
+    instance (currently a private attribute that works only because
+    `Resource` has no `__slots__`) into a Core-owned holder that still
+    survives Core reloads.
+  - [ ] Decide whether pruning should be permanent: a command whose plug-in
+    fails to load on one start is dropped from saved history at the next
+    palette open and does not return when the plug-in loads again.
+  - [ ] Reset `_last_cmd_kind` together with `_last_cmd_name` on cancel;
+    harmless today because `_last_cmd_name` gates cursor restoration.
+  - [ ] Provenance: the implementer and two preceding review records use
+    `Not exposed by host` for Model and Context Window although a developer
+    signature was assigned in PRROMPT.md; records are append-only, so this is
+    noted for future records rather than rewritten.
+
+### 2026_09_16 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Medium
+- Context Window: 272K
+- Outcome: Reviewed Fable 5.1's approval and follow-ups. Normal palette behavior
+  remains covered, but the claim that dictionary identity preserves unsaved
+  history through plug-in reloads is too strong. Reproduced the missing case;
+  no application or test files changed. Attribution follows the Developer
+  convention in [PRROMPT.md](../PRROMPT.md), not independent host verification.
+
+#### Reload Clarification
+
+- **P2:** [Config._reload_cache](../src/main/python/fman/impl/plugins/config.py#L68)
+  keeps a dict's identity but clears and replaces its contents when an on-disk
+  dict exists. With saved history `copy`, recording `paste` gives
+  `[paste, copy]`; adding a plug-in config directory restores `[copy]`.
+  The next quit can therefore save history without the session's newer entry.
+- [The existing reload test](../src/main/resources/base/Plugins/Core/core/tests/commands/test___init__.py#L91)
+  calls `on_quit()` before reloading, so it tests already-saved state rather than
+  retention of unsaved changes. Add the saved-A -> record-B -> reload regression
+  before treating reload persistence as guaranteed. The design's host-reload
+  caveat remains applicable; Fable's stronger approval statement does not.
+- Validation: ran a `python -c` probe through `build._environment()` using real
+  Config and `_recent_commands`, with `mock_open` supplying the saved JSON and
+  an isolated Resource. Asserted before `(('pane', 'paste'), ('pane', 'copy'))`,
+  after `(('pane', 'copy'),)`, and identical dict objects. No real settings I/O.
+  An initial shell-quoted JSON fixture failed before the reload; generating JSON
+  with `json.dumps` fixed the probe. No test suite rerun was needed for this review.
+
+Reproduction from the repository root:
+
+```powershell
+$probe = @'
+import json
+from unittest.mock import mock_open, patch
+from core.commands import _recent_commands, _COMMAND_PALETTE_HISTORY
+from fman.impl.plugins.config import Config
+from fman.ui import Resource
+config = Config('Windows')
+config.add_dir('fixture')
+disk = json.dumps(dict(recent=[dict(kind='pane', name='copy')]))
+with patch('builtins.open', mock_open(read_data=disk)), patch('core.commands.load_json', side_effect=config.load_json), patch('fman.ui.settings_resource', return_value=Resource()):
+    assert _recent_commands() == (('pane', 'copy'),)
+    document = config.load_json(_COMMAND_PALETTE_HISTORY)
+    assert _recent_commands(executed=('pane', 'paste')) == (('pane', 'paste'), ('pane', 'copy'))
+    config.add_dir('another_plugin')
+    assert _recent_commands() == (('pane', 'copy'),)
+    assert document is config.load_json(_COMMAND_PALETTE_HISTORY)
+    print('Confirmed: unsaved history lost; dict identity preserved.')
+'@
+python -c "import build, subprocess, sys; sys.exit(subprocess.call([sys.executable, '-c', sys.argv[1]], env=build._environment()))" $probe
+```
+
+#### Follow-up Assessment
+
+- Resource ownership: valid maintainability concern, not a current runtime
+  failure. A Core-owned replacement must preserve shared state and locking under
+  the actual plug-in unload lifecycle, not only `importlib.reload`.
+- Pruning: permanent removal is the current explicit design, not an accidental
+  implementation mismatch. Retaining temporarily unavailable plug-in commands
+  would be a deliberate policy change; recommend skipping them without deleting
+  history if recovery after a failed plug-in load is preferred.
+- Cancel state: resetting `_last_cmd_kind` is harmless cleanup. The empty
+  `_last_cmd_name` already prevents an incorrect cursor restoration.
+- Provenance: preserve historical records. Future records can use the assigned
+  Developer attribution convention where host metadata is unavailable.
+
+### 2026_09_16 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: High
+- Context Window: 272K
+- Outcome: User authorized a simple shared fix covering all plug-in operations.
+  Approved opt-in `load_json(..., preserve_on_reload=True)` retention in Config;
+  default callers retain existing reload semantics. Palette history opts in only
+  after root validation. The failing saved-A -> record-B -> reload -> quit test
+  proves the defect without reopening the palette. Require opt-in/default-path,
+  API forwarding, failed-load, native reload and restart regressions. Preserve
+  pruning policy; Resource fallback ownership remains a non-blocking follow-up.
+
 ## Implementer
 
 ### 2026_09_15 - GitHub Copilot
@@ -418,7 +562,25 @@ and bundled hint widths are checked at 100%, 150% and 200% scaling.
   Passed 81 focused tests and native record/restart runs at three scale factors.
   No shared host or public API implementation files changed.
 
+### 2026_09_16 - GitHub Copilot
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: High
+- Context Window: 272K
+- Outcome: Fixed unsaved history loss with the approved opt-in Config retention
+  and backward-compatible `load_json` keyword. Retained values survive directory
+  changes and unrelated reload failures without disk I/O; default settings still
+  refresh. Reset scoped cursor state on cancel. Passed 119 focused tests and
+  nine native record/reload/restart runs across three scales. Updated API docs,
+  README and the Unreleased feature entry; pruning and Resource fallback policy
+  remain unchanged.
+
 ## Validation Results
+
+### 2026_09_15 - Initial Implementation
 
 - Both commands in Tests passed. The combined Core command module and focused
   Qt run passed 81 tests, including 26 new history/palette unit tests and one new
@@ -446,3 +608,30 @@ and bundled hint widths are checked at 100%, 150% and 200% scaling.
   was run. Arbitrarily long third-party aliases/custom fonts retain the shared
   widget's existing title/hint layout limitation; no host renderer change was
   made. Multi-process writes and external config reloads retain host semantics.
+
+### 2026_09_16 - Reload Retention
+
+- Ran the two current commands in Tests. Config + Core command + Qt palette tests:
+  **119 passed**. Native Windows smoke: record -> real Reload Plugins -> immediate
+  quit -> restart passed at 100%, 150% and 200% (nine application runs).
+- Red/green regression command:
+
+  ```powershell
+  python -c "import build, subprocess, sys; sys.exit(subprocess.call([sys.executable, '-m', 'unittest', 'core.tests.commands.test___init__.CommandPaletteHistoryTest.test_unsaved_history_survives_plugin_reload_and_quit', '-v'], env=build._environment()))"
+  ```
+
+  Failed before the fix (Paste lost, only Copy saved), then passed. History file
+  bytes remain unchanged until quit. No palette reopening is needed to restore it.
+- Added Config coverage for default dictionary/list reload behavior, opt-in
+  retention with no reload I/O or implicit writes, explicit `save_json`
+  replacement, missing/failed loads, interrupted reloads, lists/scalars and public
+  API forwarding. Existing positional `load_json` calls remain valid.
+- The cancelled palette now resets `_last_cmd_kind` together with query/name;
+  the scoped cursor regression checks all three fields.
+- Editor diagnostics found no errors in changed Python files. Offscreen font
+  and `propagateSizeHints` warnings are unchanged. No installs, environment
+  changes, full suite, freeze, packaging or release-note validation were run.
+- Pruning policy remains unchanged. The Resource fallback holder remains a
+  non-blocking ownership follow-up; no new lifetime abstraction was introduced.
+  Retained history ignores external file edits until restart; save-on-quit still
+  has the host's cross-process and failure semantics.

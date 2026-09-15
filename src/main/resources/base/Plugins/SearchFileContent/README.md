@@ -1,7 +1,7 @@
 # Search File Content
 
 Press **Alt+F7** in a local folder, or use **Search File Content** in the command
-palette. The Panel stays tied to that pane. A pane icon identifies it; hover for
+palette. The Panel stays tied to that pane. A half-filled square marks it; hover for
 "Left pane" or "Right pane". Its folder follows that pane while idle. Changing
 the other pane has no effect.
 An active search and its results keep their captured root until results close,
@@ -92,4 +92,4 @@ There are no custom downloads, version/hash checks, integrity manifests or
 registry writes. Missing executables surface through normal process/build errors.
 
 The implementation uses only public `fman` APIs and Qt-free `fman.ui` services.
-Icons are pinned [Lucide assets](icons/README.md).
+See [icon sources and pane symbols](icons/README.md).

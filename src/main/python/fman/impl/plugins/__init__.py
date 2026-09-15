@@ -33,8 +33,10 @@ class PluginSupport:
 			message = 'Plugin %r is not loaded.' % plugin_path
 			raise ValueError(message) from None
 		plugin.unload()
-	def load_json(self, name, default=None, save_on_quit=False):
-		return self._config.load_json(name, default, save_on_quit)
+	def load_json(self, name, default=None, save_on_quit=False, *, preserve_on_reload=False):
+		return self._config.load_json(
+			name, default, save_on_quit, preserve_on_reload=preserve_on_reload
+		)
 	def save_json(self, name, value=None):
 		self._config.save_json(name, value)
 	def get_sanitized_key_bindings(self):

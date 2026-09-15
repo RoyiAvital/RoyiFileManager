@@ -2,7 +2,8 @@ from core.commands import CreateAndEditFile, History, Move, NewEmptyFile, \
 	ResetWindowGeometry, \
 	SyncPaneLocation, \
 	_from_human_readable, \
-	get_dest_suggestion, _find_extension_start, _get_shortcuts_for_command
+	get_dest_suggestion, _find_extension_start, _get_shortcuts_for_command, \
+	_recent_commands, _COMMAND_PALETTE_HISTORY, CommandPalette, CommandPaletteItem
 from core.tests import StubUI
 from core.util import filenotfounderror
 from fman import OK, YES, NO, PLATFORM
@@ -14,6 +15,273 @@ from unittest.mock import call, Mock, patch
 import json
 import os
 import os.path
+
+class CommandPaletteHistoryTest(TestCase):
+	def setUp(self):
+		from fman.impl.plugins.config import Config
+		from fman.ui import Resource
+		from pathlib import Path
+		from tempfile import TemporaryDirectory
+		self.temporary = TemporaryDirectory()
+		self.addCleanup(self.temporary.cleanup)
+		self.root = Path(self.temporary.name)
+		self.config = Config('Windows')
+		self.config.add_dir(str(self.root))
+		self.history_path = self.root / 'Command Palette History (Windows).json'
+		self.resource = Resource()
+		self.load_patch = patch('core.commands.load_json', side_effect=self.config.load_json)
+		self.load_patch.start()
+		self.addCleanup(self.load_patch.stop)
+		resource_patch = patch('fman.ui.settings_resource', return_value=self.resource)
+		resource_patch.start()
+		self.addCleanup(resource_patch.stop)
+	def test_record_eviction_and_dict_identity(self):
+		document = self.config.load_json(_COMMAND_PALETTE_HISTORY, default={'other': True})
+		for name in ('first', 'second', 'third', 'fourth', 'second'):
+			_recent_commands(executed=('pane', name))
+		self.assertEqual((('pane', 'second'), ('pane', 'fourth'), ('pane', 'third')), _recent_commands())
+		self.assertIs(document, self.config.load_json(_COMMAND_PALETTE_HISTORY))
+		self.assertTrue(document['other'])
+		self.assertFalse(self.history_path.exists())
+	def test_quit_restart_round_trip_without_session_writes(self):
+		from fman.impl.plugins.config import Config
+		_recent_commands(executed=('application', 'quit'))
+		self.assertEqual([], list(self.root.iterdir()))
+		self.config.on_quit()
+		restarted = Config('Windows')
+		restarted.add_dir(str(self.root))
+		with patch('core.commands.load_json', side_effect=restarted.load_json):
+			self.assertEqual((('application', 'quit'),), _recent_commands())
+	def test_invalid_files_use_shared_fallback_without_overwriting(self):
+		from fman.impl.plugins.config import Config
+		for contents in ('{', 'null', '[]', '42', '"history"'):
+			with self.subTest(contents=contents):
+				self.history_path.write_text(contents, encoding='utf-8')
+				config = Config('Windows')
+				config.add_dir(str(self.root))
+				with patch('core.commands.load_json', side_effect=config.load_json):
+					_recent_commands(executed=('pane', 'copy'))
+					self.assertEqual((('pane', 'copy'),), _recent_commands())
+				self.assertNotIn(_COMMAND_PALETTE_HISTORY, config._save_on_quit)
+				config.on_quit()
+				self.assertEqual(contents, self.history_path.read_text(encoding='utf-8'))
+	def test_read_errors_use_fallback(self):
+		with patch('core.commands.load_json', side_effect=PermissionError):
+			self.assertEqual((('pane', 'copy'),), _recent_commands(executed=('pane', 'copy')))
+			self.assertEqual((('pane', 'copy'),), _recent_commands())
+	def test_fallback_survives_command_module_reload(self):
+		from subprocess import run
+		from textwrap import dedent
+		import sys
+		script = dedent('''\
+			import core.commands as commands
+			from fman.ui import settings_resource
+			from importlib import reload
+			from unittest.mock import patch
+			resource = settings_resource(commands._COMMAND_PALETTE_HISTORY)
+			with patch('core.commands.load_json', side_effect=PermissionError):
+				commands._recent_commands(executed=('pane', 'copy'))
+			reload(commands)
+			assert settings_resource(commands._COMMAND_PALETTE_HISTORY) is resource
+			with patch('core.commands.load_json', side_effect=PermissionError):
+				assert commands._recent_commands() == (('pane', 'copy'),)
+		''')
+		result = run([sys.executable, '-c', script], capture_output=True, text=True)
+		self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+	def test_valid_history_retains_dict_on_config_reload(self):
+		_recent_commands(executed=('pane', 'copy'))
+		self.config.on_quit()
+		document = self.config.load_json(_COMMAND_PALETTE_HISTORY)
+		self.config.add_dir(str(self.root / 'another_plugin'))
+		self.assertIs(document, self.config.load_json(_COMMAND_PALETTE_HISTORY))
+		self.assertEqual((('pane', 'copy'),), _recent_commands())
+	def test_unsaved_history_survives_plugin_reload_and_quit(self):
+		from core.commands import ReloadPlugins
+		_recent_commands(executed=('pane', 'copy'))
+		self.config.on_quit()
+		before = self.history_path.read_bytes()
+		_recent_commands(executed=('pane', 'paste'))
+		plugin = str(self.root)
+		with patch('core.commands._get_plugins', return_value=[plugin]), \
+			patch('core.commands.PreservePanePaths'), \
+			patch('core.commands.unload_plugin', side_effect=self.config.remove_dir), \
+			patch('core.commands.load_plugin', side_effect=self.config.add_dir), \
+			patch('core.commands.show_status_message'):
+			ReloadPlugins(Mock())()
+		self.assertEqual(before, self.history_path.read_bytes())
+		self.config.on_quit()
+		self.assertEqual([
+			{'kind': 'pane', 'name': 'paste'}, {'kind': 'pane', 'name': 'copy'}
+		], json.loads(self.history_path.read_text(encoding='utf-8'))['recent'])
+	def test_normalize_before_display_and_preserve_scopes(self):
+		entries = [None, 'legacy', {}, {'kind': 'pane', 'name': ''},
+			{'kind': 'pane', 'name': ' '}, {'kind': [], 'name': 'bad'},
+			{'kind': 'pane', 'name': 'x' * 257}]
+		entries += [{'kind': 'pane', 'name': 'same'}] * 10
+		entries += [{'kind': 'application', 'name': 'same'},
+			{'kind': 'pane', 'name': 'third'}, {'kind': 'pane', 'name': 'fourth'}]
+		self.history_path.write_text(json.dumps({'recent': entries}), encoding='utf-8')
+		self.assertEqual((('pane', 'same'), ('application', 'same'), ('pane', 'third')), _recent_commands())
+	def test_bounds_input_scan(self):
+		self.history_path.write_text(json.dumps({'recent': [None] * 256 + [
+			{'kind': 'pane', 'name': 'beyond_bound'}]}), encoding='utf-8')
+		self.assertEqual((), _recent_commands())
+	def test_wrong_recent_value_resets_in_valid_dict(self):
+		for value in (None, 'text', {}, 3):
+			with self.subTest(value=value):
+				document = self.config.load_json(_COMMAND_PALETTE_HISTORY, default={})
+				document['recent'] = value
+				self.assertEqual((), _recent_commands())
+				self.assertEqual([], document['recent'])
+	def test_prune_missing_registry_entries(self):
+		_recent_commands(executed=('pane', 'missing'))
+		_recent_commands(executed=('pane', 'hidden_but_registered'))
+		self.assertEqual((('pane', 'hidden_but_registered'),),
+			_recent_commands(registered={('pane', 'hidden_but_registered')}))
+	def test_concurrent_record_and_prune(self):
+		from concurrent.futures import ThreadPoolExecutor
+		identities = tuple(('pane', name) for name in ('first', 'second', 'third'))
+		with ThreadPoolExecutor(max_workers=4) as workers:
+			futures = [workers.submit(_recent_commands, registered=set(identities), executed=identity)
+				for identity in identities for repeat in range(20)]
+			for future in futures:
+				self.assertLessEqual(len(future.result()), 3)
+		self.assertEqual(set(identities), set(_recent_commands()))
+
+class CommandPaletteRecentTest(TestCase):
+	def setUp(self):
+		from fman.ui import Resource
+		self.document = {'recent': []}
+		self.bindings = [{'keys': ['Ctrl+A'], 'command': 'alpha'}]
+		self.pane = Mock()
+		self.aliases = {'alpha': ['Alpha'], 'beta': ['Beta'], 'files': ['Find files', 'Search files']}
+		self.app_aliases = {'exit': ['Exit']}
+		self.pane.get_commands.side_effect = lambda: list(self.aliases)
+		self.pane.is_command_visible.return_value = True
+		self.pane.get_command_aliases.side_effect = self.aliases.__getitem__
+		patches = [
+			patch('core.commands.load_json', side_effect=lambda name, **kwargs:
+				self.bindings if name == 'Key Bindings.json' else self.document),
+			patch('core.commands.get_application_commands', side_effect=lambda: list(self.app_aliases)),
+			patch('core.commands.get_application_command_aliases', side_effect=self.app_aliases.__getitem__),
+			patch('fman.ui.settings_resource', return_value=Resource())
+		]
+		for patcher in patches:
+			patcher.start()
+			self.addCleanup(patcher.stop)
+		self.palette = CommandPalette(self.pane)
+	def seed(self, *identities):
+		self.document['recent'] = [{'kind': kind, 'name': name} for kind, name in identities]
+	def open(self, query='', result=None):
+		items = []
+		def show(provider, **kwargs):
+			items.extend(provider(query))
+			return result
+		with patch('core.commands.show_quicksearch', side_effect=show):
+			self.palette()
+		return items
+	def test_empty_history_preserves_titles_order_hints_and_highlights(self):
+		items = self.open()
+		self.assertEqual(['Beta', 'Exit', 'Alpha', 'Find files'], [item.title for item in items])
+		self.assertEqual(['', '', 'Ctrl+A', ''], [item.hint for item in items])
+		self.assertTrue(all(not item.highlight for item in items))
+	def test_pinned_items_have_hints_and_no_duplicates(self):
+		self.seed(('pane', 'alpha'), ('pane', 'files'))
+		items = self.open()
+		self.assertEqual(['Alpha', 'Find files', 'Beta', 'Exit'], [item.title for item in items])
+		self.assertEqual(['Ctrl+A \u00b7 Recent', 'Recent', '', ''], [item.hint for item in items])
+	def test_multiple_shortcuts_retain_original_order(self):
+		self.bindings.append({'keys': ['Alt+A'], 'command': 'alpha'})
+		self.seed(('pane', 'alpha'))
+		self.assertEqual('Ctrl+A, Alt+A \u00b7 Recent', self.open()[0].hint)
+	def test_nonmatching_recent_omitted_and_matching_alias_highlight_preserved(self):
+		baseline = list(self.palette._suggest_commands('search'))
+		self.seed(('pane', 'alpha'), ('pane', 'files'))
+		items = self.open('search')
+		self.assertEqual(['Search files'], [item.title for item in items])
+		self.assertEqual(baseline[0].highlight, items[0].highlight)
+		self.assertEqual('Recent', items[0].hint)
+	def test_tier_and_alias_precedence_unchanged(self):
+		self.aliases.update({'contiguous': ['Amazing Bee'], 'fuzzy': ['Aardvark']})
+		baseline = list(self.palette._suggest_commands('ab'))
+		self.seed(('pane', 'alpha'))
+		items = self.open('ab')
+		self.assertEqual([(item.title, item.highlight) for item in baseline],
+			[(item.title, item.highlight) for item in items])
+	def test_records_before_execution_and_retains_query(self):
+		command = CommandPaletteItem(self.pane.run_command, 'files')
+		self.pane.run_command.side_effect = lambda name: self.assertEqual((('pane', 'files'),), _recent_commands())
+		self.open(result=('file', command))
+		self.pane.run_command.assert_called_once_with('files')
+		self.assertEqual('file', self.palette._last_query)
+	def test_cancelling_or_accepting_no_match_does_not_record(self):
+		self.seed(('pane', 'alpha'))
+		for result in (None, ('not found', None)):
+			self.open(result=result)
+			self.assertEqual((('pane', 'alpha'),), _recent_commands())
+		self.pane.run_command.assert_not_called()
+	def test_hidden_history_survives_pane_context_change(self):
+		self.seed(('pane', 'alpha'))
+		self.pane.is_command_visible.side_effect = lambda name: name != 'alpha'
+		self.assertNotIn('Alpha', [item.title for item in self.open()])
+		self.assertEqual((('pane', 'alpha'),), _recent_commands())
+		self.pane.is_command_visible.side_effect = None
+		self.palette = CommandPalette(self.pane)
+		self.assertEqual('Alpha', self.open()[0].title)
+	def test_missing_commands_are_pruned(self):
+		self.seed(('pane', 'missing'), ('pane', 'alpha'))
+		self.open()
+		self.assertEqual((('pane', 'alpha'),), _recent_commands())
+	def test_duplicate_names_keep_both_rows_and_correct_dispatch(self):
+		self.app_aliases['alpha'] = ['Application Alpha']
+		self.seed(('application', 'alpha'))
+		with patch('core.commands.run_application_command') as run:
+			items = self.open()
+			self.assertEqual('Application Alpha', items[0].title)
+			self.assertIn('Alpha', [item.title for item in items])
+			self.open(result=('', items[0].value))
+			run.assert_called_once_with('alpha')
+		self.pane.run_command.assert_not_called()
+		self.assertEqual((('application', 'alpha'),), _recent_commands())
+	def test_empty_history_keeps_duplicate_names(self):
+		self.app_aliases['alpha'] = ['Application Alpha']
+		items = self.open()
+		self.assertEqual(2, sum(item.value.name == 'alpha' for item in items))
+	def test_cursor_restoration_uses_scoped_identity(self):
+		self.app_aliases['alpha'] = ['Application Alpha']
+		self.seed(('pane', 'alpha'), ('application', 'alpha'))
+		self.palette._last_cmd_name = 'alpha'
+		self.palette._last_cmd_kind = 'application'
+		self.palette._last_query = 'alpha'
+		with patch('core.commands.show_quicksearch', return_value=None) as show:
+			self.palette()
+		self.assertEqual(1, show.call_args.kwargs['item'])
+		self.assertEqual('alpha', show.call_args.kwargs['query'])
+		self.assertEqual('', self.palette._last_query)
+		self.assertEqual('', self.palette._last_cmd_name)
+		self.assertEqual('pane', self.palette._last_cmd_kind)
+	def test_empty_query_restores_most_recent_at_zero(self):
+		self.seed(('pane', 'files'))
+		self.palette._last_cmd_name = 'files'
+		with patch('core.commands.show_quicksearch', return_value=None) as show:
+			self.palette()
+		self.assertEqual(0, show.call_args.kwargs['item'])
+	def test_provider_does_not_load_history(self):
+		self.seed(('pane', 'alpha'))
+		def show(provider, **kwargs):
+			with patch('core.commands._recent_commands', side_effect=AssertionError('History on Qt')):
+				self.assertTrue(list(provider('')))
+				self.assertTrue(list(provider('a')))
+		with patch('core.commands.show_quicksearch', side_effect=show):
+			self.palette()
+	def test_snapshot_stable_during_other_pane_recording(self):
+		self.seed(('pane', 'alpha'))
+		def show(provider, **kwargs):
+			_recent_commands(executed=('pane', 'beta'))
+			self.assertEqual('Alpha', list(provider(''))[0].title)
+		with patch('core.commands.show_quicksearch', side_effect=show):
+			self.palette()
+		self.assertEqual('Beta', self.open()[0].title)
 
 class NewEmptyFileTest(TestCase):
 	def test_has_command_center_identifier_and_aliases(self):

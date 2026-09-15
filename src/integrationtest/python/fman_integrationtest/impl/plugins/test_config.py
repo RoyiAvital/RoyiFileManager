@@ -5,6 +5,7 @@ from os.path import join, exists
 from shutil import rmtree, copy
 from tempfile import mkdtemp
 from unittest import TestCase
+from unittest.mock import patch
 
 import json
 
@@ -36,6 +37,107 @@ class ConfigTest(TestCase):
 		config = Config(PLATFORM)
 		config.add_dir(self._dir_1)
 		self.assertEqual(value, config.load_json('Nonexistent.json'))
+	def test_preserve_on_reload_leaves_ordinary_settings_unchanged(self):
+		self._config.add_dir(self._dir_1)
+		self._config.save_json('History.json', {'recent': ['copy']})
+		history = self._config.load_json('History.json', save_on_quit=True, preserve_on_reload=True)
+		ordinary = self._config.load_json('Test.json', save_on_quit=True)
+		history['recent'].insert(0, 'paste')
+		ordinary.append(99)
+		self._config.add_dir(self._dir_2)
+		self.assertIs(history, self._config.load_json('History.json'))
+		self.assertEqual({'recent': ['paste', 'copy']}, history)
+		self.assertIs(ordinary, self._config.load_json('Test.json'))
+		self.assertEqual([2, 1], ordinary)
+		self._config.remove_dir(self._dir_2)
+		self.assertEqual([1], ordinary)
+		self.assertEqual({'recent': ['paste', 'copy']}, history)
+	def test_default_dict_reload_still_restores_disk_contents(self):
+		self._config.add_dir(self._dir_1)
+		self._config.save_json('History.json', {'recent': ['copy']})
+		history = self._config.load_json('History.json', save_on_quit=True)
+		history['recent'].insert(0, 'paste')
+		self._config.add_dir(self._dir_2)
+		self.assertIs(history, self._config.load_json('History.json'))
+		self.assertEqual({'recent': ['copy']}, history)
+	def test_retained_value_has_no_reload_io_or_implicit_write(self):
+		self._config.add_dir(self._dir_1)
+		self._config.save_json('History.json', {'recent': ['copy']})
+		history = self._config.load_json('History.json', preserve_on_reload=True)
+		history['recent'].insert(0, 'paste')
+		with patch('fman.impl.plugins.config.load_json', side_effect=AssertionError('Reload I/O')):
+			self._config.remove_dir(self._dir_1)
+			self._config.add_dir(self._dir_1)
+		self.assertIs(history, self._config.load_json('History.json'))
+		self._config.on_quit()
+		restarted = Config(PLATFORM)
+		restarted.add_dir(self._dir_1)
+		self.assertEqual({'recent': ['copy']}, restarted.load_json('History.json'))
+	def test_retained_value_saves_latest_state_after_directory_reload(self):
+		self._config.add_dir(self._dir_1)
+		self._config.save_json('History.json', {'recent': ['copy']})
+		history = self._config.load_json('History.json', save_on_quit=True, preserve_on_reload=True)
+		history['recent'].insert(0, 'paste')
+		self._config.remove_dir(self._dir_1)
+		self._config.add_dir(self._dir_1)
+		self._config.on_quit()
+		restarted = Config(PLATFORM)
+		restarted.add_dir(self._dir_1)
+		self.assertEqual(history, restarted.load_json('History.json'))
+	def test_explicit_save_replaces_retained_value(self):
+		self._config.add_dir(self._dir_1)
+		self._config.load_json('History.json', default={}, preserve_on_reload=True)
+		replacement = {'recent': ['new']}
+		self._config.save_json('History.json', replacement)
+		self._config.add_dir(self._dir_2)
+		self.assertIs(replacement, self._config.load_json('History.json'))
+	def test_missing_value_does_not_prevent_future_load(self):
+		self.assertIsNone(self._config.load_json('Test.json', preserve_on_reload=True))
+		self._config.add_dir(self._dir_1)
+		self.assertEqual([1], self._config.load_json('Test.json'))
+	def test_failed_load_is_not_retained(self):
+		with patch('fman.impl.plugins.config.load_json', side_effect=ValueError):
+			with self.assertRaises(ValueError):
+				self._config.load_json('Test.json', preserve_on_reload=True)
+		self._config.add_dir(self._dir_1)
+		value = self._config.load_json('Test.json')
+		self._config.add_dir(self._dir_2)
+		self.assertEqual([2, 1], value)
+	def test_retained_history_survives_another_settings_reload_failure(self):
+		self._config.add_dir(self._dir_1)
+		self._config.load_json('Test.json')
+		history = self._config.load_json('History.json', default={'recent': ['copy']},
+			save_on_quit=True, preserve_on_reload=True)
+		history['recent'].insert(0, 'paste')
+		with patch('fman.impl.plugins.config.load_json', side_effect=ValueError('Invalid other settings')):
+			with self.assertRaises(ValueError):
+				self._config.add_dir(self._dir_2)
+			self.assertIs(history, self._config.load_json('History.json'))
+		self._config.on_quit()
+		restarted = Config(PLATFORM)
+		restarted.add_dir(self._dir_2)
+		self.assertEqual({'recent': ['paste', 'copy']}, restarted.load_json('History.json'))
+	def test_retention_supports_lists_and_scalars(self):
+		for value in ([1, 2], 'text', 0, False):
+			with self.subTest(value=value):
+				config = Config(PLATFORM)
+				config.load_json('History.json', default=value, preserve_on_reload=True)
+				config.add_dir(self._dir_1)
+				config.remove_dir(self._dir_1)
+				self.assertIs(value, config.load_json('History.json'))
+	def test_public_api_forwards_retention_and_preserves_positional_calls(self):
+		from fman import load_json as public_load_json
+		from fman.impl.plugins import PluginSupport
+		support = PluginSupport(None, None, None, None, self._config)
+		with patch('fman._get_plugin_support', return_value=support):
+			self._config.add_dir(self._dir_1)
+			ordinary = public_load_json('Test.json', None, True)
+			history = public_load_json('History.json', {'recent': []}, True, preserve_on_reload=True)
+			history['recent'].append('copy')
+			self._config.add_dir(self._dir_2)
+			self.assertEqual([2, 1], ordinary)
+			self.assertIs(history, public_load_json('History.json'))
+			self.assertEqual({'recent': ['copy']}, history)
 	def setUp(self):
 		super().setUp()
 		self._dir_1 = mkdtemp()

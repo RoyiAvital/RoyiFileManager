@@ -249,7 +249,7 @@ Do not manipulate Qt widgets from notification threads.
 
 | Function | Contract |
 | --- | --- |
-| `load_json(name, default=None, save_on_quit=False)` | Load merged configuration by filename. Return `default` when no value exists. Can return a shared cached mutable object. |
+| `load_json(name, default=None, save_on_quit=False, *, preserve_on_reload=False)` | Load merged configuration by filename. Return `default` when no value exists. Can return a shared cached mutable object. |
 | `save_json(name, value=None)` | Persist a differential override; omitted/`None` value uses the cached value. Save completes before replacing the cache. |
 
 Names are shared across loaded plug-ins, not automatically package-namespaced.
@@ -269,6 +269,15 @@ Use a shared `settings_resource(name).lock` for multi-step read/modify/write
 transactions shared by commands and UI. `save_on_quit=True` schedules cached
 values for persistence at shutdown; explicit saving is preferable for completed
 user actions. `JsonSettings` supplies asynchronous control bindings.
+
+`preserve_on_reload=True` is an opt-in RoyiFileManager extension for session-owned
+data such as command history. It retains both the cached object's identity and
+contents across plug-in loads/unloads, even if another settings reload fails.
+It does not save data; combine it with `save_on_quit=True` for exit-time persistence.
+Once retained, file edits and new configuration layers are not read for that name
+until the next process starts. Explicit `save_json` can still replace its cached
+value. Missing values without a default and failed loads are not retained.
+Leave this option off for ordinary settings that should refresh on plug-in reload.
 
 ### Constants
 

@@ -10,6 +10,7 @@ class Config:
 		self._plugin_dirs = []
 		self._cache = {}
 		self._save_on_quit = set()
+		self._preserve_on_reload = set()
 		self._lock = RLock()
 	def add_dir(self, dir_path):
 		with self._lock:
@@ -19,7 +20,7 @@ class Config:
 		with self._lock:
 			self._plugin_dirs.remove(dir_path)
 			self._reload_cache()
-	def load_json(self, json_name, default=None, save_on_quit=False):
+	def load_json(self, json_name, default=None, save_on_quit=False, *, preserve_on_reload=False):
 		with self._lock:
 			if json_name in self._cache:
 				result = self._cache[json_name]
@@ -31,6 +32,8 @@ class Config:
 					self._cache[json_name] = result
 			if save_on_quit and result is not None:
 				self._save_on_quit.add(json_name)
+			if preserve_on_reload and result is not None:
+				self._preserve_on_reload.add(json_name)
 			return result
 	def save_json(self, json_name, value=None):
 		with self._lock:
@@ -67,8 +70,13 @@ class Config:
 					continue
 	def _reload_cache(self):
 		old_cache = self._cache
-		self._cache = {}
+		self._cache = {
+			name: value for name, value in old_cache.items()
+			if name in self._preserve_on_reload
+		}
 		for json_name, old in old_cache.items():
+			if json_name in self._preserve_on_reload:
+				continue
 			new = self.load_json(json_name)
 			if isinstance(old, dict) and isinstance(new, dict):
 				old.clear()

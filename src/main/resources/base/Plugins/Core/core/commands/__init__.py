@@ -1190,6 +1190,47 @@ def _get_volumes_url():
 	else:
 		raise NotImplementedError(PLATFORM)
 
+_RECENT_COMMANDS_LIMIT = 3
+_COMMAND_PALETTE_HISTORY = 'Command Palette History.json'
+
+def _recent_commands(registered=None, executed=None):
+	from fman.ui import settings_resource
+	resource = settings_resource(_COMMAND_PALETTE_HISTORY)
+	with resource.lock:
+		try:
+			document = load_json(_COMMAND_PALETTE_HISTORY, default={'recent': []})
+			if isinstance(document, dict):
+				document = load_json(
+					_COMMAND_PALETTE_HISTORY, save_on_quit=True, preserve_on_reload=True
+				)
+		except (OSError, ValueError, TypeError):
+			document = None
+		if not isinstance(document, dict):
+			if not hasattr(resource, '_command_palette_fallback'):
+				resource._command_palette_fallback = {'recent': []}
+			document = resource._command_palette_fallback
+		entries = document.get('recent', [])
+		entries = entries[:256] if isinstance(entries, list) else []
+		if executed is not None:
+			entries.insert(0, {'kind': executed[0], 'name': executed[1]})
+		recent = []
+		for entry in entries:
+			if not isinstance(entry, dict):
+				continue
+			kind, name = entry.get('kind'), entry.get('name')
+			if kind not in ('pane', 'application') or not isinstance(name, str):
+				continue
+			if not name.strip() or name != name.strip() or len(name) > 256:
+				continue
+			identity = kind, name
+			if identity in recent or registered is not None and identity not in registered:
+				continue
+			recent.append(identity)
+			if len(recent) == _RECENT_COMMANDS_LIMIT:
+				break
+		document['recent'] = [{'kind': kind, 'name': name} for kind, name in recent]
+		return tuple(recent)
+
 class CommandPalette(DirectoryPaneCommand):
 
 	_MATCHERS = (contains_chars_after_separator(' '), contains_chars)
@@ -1198,14 +1239,19 @@ class CommandPalette(DirectoryPaneCommand):
 		super().__init__(*args, **kwargs)
 		self._last_query = ''
 		self._last_cmd_name = ''
+		self._last_cmd_kind = 'pane'
+		self._recent = ()
 	def __call__(self):
+		registered = {('pane', name) for name in self.pane.get_commands()}
+		registered.update(('application', name) for name in get_application_commands())
+		self._recent = _recent_commands(registered=registered)
 		if self._last_cmd_name:
 			initial_suggestions = [
-				quicksearch_item.value.name
+				quicksearch_item.value.identity
 				for quicksearch_item in self._suggest_commands(self._last_query)
 			]
 			try:
-				initial_item = initial_suggestions.index(self._last_cmd_name)
+				initial_item = initial_suggestions.index((self._last_cmd_kind, self._last_cmd_name))
 			except ValueError:
 				initial_item = 0
 		else:
@@ -1218,9 +1264,12 @@ class CommandPalette(DirectoryPaneCommand):
 			if command:
 				self._last_query = query
 				self._last_cmd_name = command.name
+				self._last_cmd_kind = command.kind
+				_recent_commands(executed=command.identity)
 				command()
 		else:
 			self._last_query = self._last_cmd_name = ''
+			self._last_cmd_kind = 'pane'
 	def _suggest_commands(self, query):
 		result = [[] for _ in self._MATCHERS]
 		key_bindings = load_json('Key Bindings.json')
@@ -1244,7 +1293,17 @@ class CommandPalette(DirectoryPaneCommand):
 					break
 		for results in result:
 			results.sort(key=lambda item: (len(item.title), item.title))
-		return chain.from_iterable(result)
+		ranked = list(chain.from_iterable(result))
+		if not self._recent:
+			return ranked
+		by_identity = {item.value.identity: item for item in ranked}
+		recent_items = []
+		for identity in self._recent:
+			item = by_identity.pop(identity, None)
+			if item is not None:
+				hint = item.hint + ' \u00b7 Recent' if item.hint else 'Recent'
+				recent_items.append(QuicksearchItem(item.value, item.title, item.highlight, hint))
+		return recent_items + [item for item in ranked if item.value.identity in by_identity]
 	def _get_all_commands(self):
 		result = []
 		for cmd_name in self.pane.get_commands():
@@ -1255,7 +1314,7 @@ class CommandPalette(DirectoryPaneCommand):
 			result.append((cmd_name, aliases, command))
 		for cmd_name in get_application_commands():
 			aliases = get_application_command_aliases(cmd_name)
-			command = CommandPaletteItem(run_application_command, cmd_name)
+			command = CommandPaletteItem(run_application_command, cmd_name, 'application')
 			result.append((cmd_name, aliases, command))
 		return result
 
@@ -1290,9 +1349,13 @@ _KEY_SYMBOLS_MAC = {
 }
 
 class CommandPaletteItem:
-	def __init__(self, run_fn, cmd_name):
+	def __init__(self, run_fn, cmd_name, kind='pane'):
 		self._run_fn = run_fn
 		self.name = cmd_name
+		self.kind = kind
+	@property
+	def identity(self):
+		return self.kind, self.name
 	def __call__(self):
 		self._run_fn(self.name)
 

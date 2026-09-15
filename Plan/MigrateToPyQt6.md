@@ -1,12 +1,44 @@
 # Migrate to PyQt6
 
+Status: Deferred. Implement only together with, or immediately before, the
+QuickLook feature (see [Gains and Trigger](#gains-and-trigger)).
+
 ## Task
 
 Move the application, bundled plug-ins, tests and packaging from PyQt 5.15 to
 PyQt 6 while preserving the public `fman` Python plug-in API. Motivation: Qt 5
 is out of upstream support, conda-forge's PyQt 5 builds lag new Python
-releases, Qt 6 has native fractional high-DPI scaling, and the
-[TODO](../TODO.md) item `Move to PyQt6` is open.
+releases, and the [TODO](../TODO.md) item `Move to PyQt6` is open. The
+concrete functional driver is QuickLook, below.
+
+### Gains and Trigger
+
+Assessment on this codebase (2026_09_15):
+
+- Performance: neutral. Hot paths (model worker, sorting, diff, Python
+  delegates, `run_in_main_thread` round trips) are Python-bound; PyQt6 enum
+  objects add a small cost in `data()` hot paths that the module-level
+  constant binding already in use absorbs. See Runtime Effects.
+- High-DPI: not a Qt 6 exclusive. Qt 5.14+ supports
+  `AA_EnableHighDpiScaling` plus the `PassThrough` rounding policy today; that
+  improvement can ship as a separate small Qt 5 task.
+- Maintenance: open-source Qt 5.15 is end of life; Qt 6 receives the Windows
+  font, IME, DPI and dark-mode fixes. Real but not urgent while conda-forge
+  ships `pyqt 5.15` for the pinned Python.
+- **QuickLook (the trigger):** the TODO items `Quick View`/`QuickLook-Win`
+  need PDF, video and Markdown previews. PyQt6 bundles `QtPdf` and
+  `QtPdfWidgets` (6.4+) and a FFmpeg-backed `QtMultimedia` with working
+  Windows video playback; PyQt5 offers neither in a usable form, so a Qt 5
+  QuickLook would need external viewers or extra native dependencies.
+  `QTextDocument.setMarkdown` exists in both (Qt 5.14+).
+
+Recommendation (accepted by the user): do not migrate for its own sake. Start
+this task only when the QuickLook plan is approved and depends on `QtPdf` or
+`QtMultimedia`; run it as the first implementation step of that feature so the
+binding switch is validated before the viewer code is written. Other triggers
+that would also justify starting it: a Python upgrade without a conda-forge
+PyQt5 build, or a Windows rendering defect fixed only in Qt 6. Until then the
+plan stays as the ready procedure.
 
 ## Scope
 
@@ -372,3 +404,17 @@ Manual checks (record in Validation Results):
   current fonts-only scaling; user accepted the `PassThrough` recommendation.
   Recorded the decision, the explicit policy call, the widened 125/175 %
   audit and the opt-out fallback rule.
+
+### 2026_09_15 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Claude Fable 5.1
+- Effort: High
+- Context Window: 1M
+- Outcome: Assessed the gains: performance neutral, high-DPI achievable on
+  Qt 5, maintenance benefit real but not urgent, QuickLook (`QtPdf`,
+  `QtMultimedia`) the only concrete functional driver. Marked the task
+  Deferred; recommended and user accepted implementing it only with the
+  QuickLook feature.

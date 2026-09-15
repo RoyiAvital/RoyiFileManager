@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
 
+## [0.4.1] - 2026-09-16
+
+API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
+
+### Added
+
+- The Command Palette pins its three most recent matching commands, marked
+  `Recent` beside their shortcuts. Palette only history is shared across panes
+  and saved on exit, retaining unsaved entries through plug-in reloads.
+- Added opt-in `load_json(..., preserve_on_reload=True)` for session-owned JSON
+  data. Existing calls and ordinary settings reload behavior remain unchanged.
+
+### Changed
+
+- Search File Content uses scalable half filled square pane indicators matching
+  the original StatusBarExtended symbols.
+
 ## [0.4.0] - 2026-09-14
 
 API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.

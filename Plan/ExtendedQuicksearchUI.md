@@ -1,358 +1,418 @@
 # Extended Quicksearch UI
 
+Status: Design; grammar decided (Everything syntax on new `Ctrl+E` commands,
+fuzzy retained on `Ctrl+F`). Open items 2-5 under Decision remain.
+
 ## Task
 
-Add a backward-compatible extended Quicksearch API that supports simple,
-declarative controls. Keep the current Quicksearch variant unchanged for all
-existing callers.
+Add a second file-search mode to SearchFileFuzzy whose behaviour is configured
+explicitly in the query text: substring, case sensitivity, wildcards, regular
+expressions and metadata filters (modification/creation date, size), following
+the Everything search syntax. Quicksearch cannot host controls, so the plug-in's
+`get_items(query)` parses the grammar from the typed text and dispatches to the
+matching matcher. The host is unchanged.
 
-Use the extended variant in `SearchFileFuzzy` to display:
+The existing fuzzy search stays as it is, on its existing commands and
+shortcuts, because most search surfaces in the application (Command Palette,
+Go To, Favorites) are fuzzy and users expect `Ctrl+F` to behave that way. The
+Everything-style search is an addition with its own commands and shortcuts, so
+each dialog has exactly one matching model and neither grammar leaks into the
+other.
 
-- A `Mode` drop-down with `Fuzzy` and `Regular` choices.
-- A `Case sensitive` checkbox.
-
-Unicode awareness stays a JSON-only setting (`unicode_aware`); it is a
-developer knob, not a per-search choice, and keeping it out of the dialog
-halves the variant cache and the test matrix.
-
-Changing a control refreshes the current results without rebuilding the file
-index. Search settings are saved in `SearchFileFuzzy.json` and restored the
-next time the dialog opens. Defaults are fuzzy, case-insensitive, and
-Unicode-aware matching.
+Motivation: today the only knobs are the `mode` JSON default and a per-binding
+`mode` argument; there is no case-sensitive, wildcard, regex or date/size
+filename search and no way to express one while the dialog is open.
 
 ## Scope
 
-This task adds declarative checkbox and choice controls to Quicksearch and uses
-them for SearchFileFuzzy mode and case sensitivity. It preserves all existing
-Quicksearch callback arguments, return values, geometry, and plug-in callers.
-Unicode awareness remains JSON-only; arbitrary caller-owned Qt widgets and a
-general form-building API are explicitly excluded.
+Included:
+
+- Two new SearchFileFuzzy commands sharing the existing index walk:
+
+  | Command id | Alias | Windows binding |
+  | --- | --- | --- |
+  | `search_files_in_current_folder_everything` | Search files in current folder (Everything syntax) | `Ctrl+E` |
+  | `search_files_recursively_everything` | Search files recursively (Everything syntax) | `Ctrl+Shift+E` |
+
+  `search_files_in_current_folder` (`Ctrl+F`) and `search_files_recursively`
+  (`Ctrl+Shift+F`) keep their identifiers, aliases, bindings and fuzzy
+  behaviour. Separate commands, not `args`, so the Command Palette shows four
+  rows with the correct title and shortcut for each.
+- The Everything grammar subset, parsed and matched in plug-in code with the
+  standard library only; highlighting; a hint row for invalid or incomplete
+  queries; a visible mode indicator in the dialog.
+- Index metadata the grammar needs (size, modification and creation time for
+  `file://` entries), collected during the existing `os.scandir` walk and
+  shared by both modes.
+- README syntax table naming Everything as the reference; tests.
+
+Excluded:
+
+- Any change to `show_quicksearch`, `QuicksearchItem`, the Quicksearch widget,
+  the pane filter bar or other pickers (Command Palette, Go To, Favorites,
+  Open With, hash picker).
+- fzf syntax, a `fuzzy:` modifier inside the Everything grammar, or any other
+  mixing of the two models; bundling or depending on fzf, Everything, `pfzy`,
+  `luqum`, `everything-sdk` or any other package.
+- Content search (Search File Content keeps its Panel controls).
+
+Compatibility: preserves the public `fman` plug-in API from fman 1.7.5. The
+existing command identifiers, aliases, bindings and the `mode`/`query`
+arguments are unchanged; `mode` gains the value `everything`, and the two new
+commands are additive.
+
+## Current Tools
+
+Two ways exist today to find a file by name from a pane. They overlap in the
+current folder but are different mechanisms.
+
+**Start typing (pane filter)** — host code,
+[FilterBar](../src/main/python/fman/impl/widgets.py#L236). Any printable key
+opens a small box at the bottom-right of the pane; `Escape` closes it,
+`Backspace` edits. Rows that do not match are hidden in place; the cursor
+jumps to the first row whose name starts with the text. The predicate is a
+case-insensitive `re.I` substring with `*` as a wildcard on the file name.
+
+**`Ctrl+F` / `Ctrl+Shift+F` (SearchFileFuzzy)** — plug-in,
+[search_file_fuzzy](../src/main/resources/base/Plugins/SearchFileFuzzy/search_file_fuzzy/__init__.py).
+Builds an index of the folder (or subtree) once, opens the modal Quicksearch,
+and its `get_items` ranks entries with the plug-in's `Matcher`. Selecting a
+result places the cursor on the file, navigating to its folder if needed.
+
+| | Start typing (pane filter) | `Ctrl+F` (current folder) | `Ctrl+Shift+F` (recursive) |
+| --- | --- | --- | --- |
+| Where it lives | Host `FilterBar` | Plug-in, `show_quicksearch` | Plug-in, `show_quicksearch` |
+| Scope | Current folder | Current folder | Whole subtree, up to `max_recursive_entries` (50,000) |
+| Targets | Files **and** folders, any scheme | Files only | Files only |
+| Matching | Case-insensitive substring, `*` wildcard | Fuzzy (NFKC, casefold, camel-case tokens, ranked) or substring via `mode` | Same |
+| Case sensitive / wildcards / regex | No / `*` only / no | No / no / no | No / no / no |
+| Result | Pane stays filtered; act on rows directly | Cursor jumps to one file; dialog closes | Cursor jumps to one file in its folder |
+| Hidden files | Follows pane state | `include_hidden` setting (default true) | Same |
+| Configuration | None | `SearchFileFuzzy.json` `mode`; per-binding `mode` argument | Same |
+
+In the current folder `Ctrl+F` adds only fuzzy ranking over the built-in filter
+and loses folders and in-place operation; the recursive variant is the real
+addition. Substring, case-sensitive, wildcard, regex and date/size filtering
+exist in neither, which is what this task adds on the new `Ctrl+E` commands.
+
 
 ## Design
 
-Extend the existing Quicksearch implementation through immutable public
-descriptors and one shared controls-aware dialog path. The public legacy API is
-a compatibility wrapper over the extended result. Control values are copied
-into read-only mappings, callbacks remain on the Qt thread, and filesystem
-indexing remains outside the dialog.
+### Constraints Common to Both Syntaxes
 
-## Public API
+- **Dispatch point.** `get_items(query)` runs synchronously on the Qt thread
+  for every keystroke ([quicksearch.py](../src/main/python/fman/impl/quicksearch.py#L107)).
+  The index is built once before the dialog opens; a keystroke may only parse
+  and scan. Budget: about 30 ms for 50,000 entries. Precompute per-entry
+  casefolded name and relative path at index time; matchers are single loops
+  over tuples; unranked modes stop at `max_results`.
+- **No package.** The parser is hand-written (expected 100-250 lines plus
+  tests). Only `re`, `fnmatch.translate`, `datetime` and `shlex`-style
+  tokenizing from the standard library. Every grammar element needs its own
+  unit tests; there is no upstream implementation to lean on.
+- **Highlights.** Positions index the displayed title (relative path with
+  backslashes). Substring and regex give exact spans; wildcards give spans via
+  a translated regex with groups; fuzzy gives subsequence positions.
+- **Errors while typing.** A half-typed `regex:[a` or `dm:2024-` must not
+  raise on the Qt thread. Yield one `QuicksearchItem(None, 'Invalid ...',
+  description=<reason>)`; selecting it does nothing because its value is
+  `None`. Never show a traceback dialog for a query.
+- **Regex safety.** Python `re` cannot be interrupted; a pathological pattern
+  over 50,000 paths of up to 260 characters can freeze the UI for seconds.
+  Mitigations: cap pattern length (256), compile once per keystroke, match
+  the relative path only, and document the residual risk. No timeout exists
+  without a third-party engine.
+- **Metadata.** On Windows `entry.stat(follow_symlinks=False)` from
+  `os.scandir` supplies `st_size`, `st_mtime_ns` and `st_ctime_ns` (creation)
+  from the directory listing without extra syscalls; the fman-index path for
+  other schemes would need `fs.query` per entry and is out of scope: metadata
+  terms on non-`file://` roots produce the hint row.
+- **Ordering.** Ranked results (fuzzy) require a full scan; unranked results
+  return the first `max_results` in index order (breadth-first), as today's
+  `regular` mode does. The chosen syntax must state which applies.
 
-Preserve the current API and result contract:
+### Option A: fzf Extended-Search Syntax
 
-```python
-show_quicksearch(
-    get_items, get_tab_completion = None, query = '', item = 0,
-)
-```
+| Term | Meaning |
+| --- | --- |
+| `report pdf` | fuzzy match of each term, AND, ranked |
+| `'report` | exact substring |
+| `^src`, `.py$` | prefix / suffix anchors |
+| `!tmp` | negation |
+| `a \| b` | OR |
+| `'two\ words` | escaped space inside a term |
+| case | smart-case: insensitive unless the term contains an uppercase letter |
 
-It continues to call `get_items(query)` and return `(query, value)` or `None`.
-Existing plug-ins require no source changes.
+Pitfalls:
 
-Add a second API:
+- **No regular expressions and no metadata filters.** Adding `regex:` or
+  `dm:` would be a private extension; the grammar is then no longer fzf.
+- **Marker collisions.** `'`, `^`, `$` and `!` are legal in Windows filenames
+  (`Don't panic.txt`, `$RECYCLE.BIN`, `!important.txt`). A leading `'` or `!`
+  silently changes mode; escaping rules must be documented and tested.
+- **Smart-case is implicit.** Users cannot force case-insensitive matching of
+  an uppercase term without lowering it; the behaviour surprises people who
+  do not know Vim/ripgrep conventions.
+- **Scoring.** fzf's ranking (Smith-Waterman-like with boundary bonuses) has
+  no Python package; either port it or keep the current scorer in
+  [matcher.py](../src/main/resources/base/Plugins/SearchFileFuzzy/search_file_fuzzy/matcher.py),
+  which then only resembles fzf. Fuzzy AND over several terms scans the whole
+  index per keystroke; the pure-Python subsequence matcher measured 19-103 ms
+  for 75,000 paths ([TODO](../TODO.md)), so multi-term queries sit at the
+  edge of the budget.
+- **Audience.** Familiar to terminal users; not a Windows file-manager idiom.
 
-```python
-show_quicksearch_extended(
-    get_items, controls=(), get_tab_completion=None, query='', item=0,
-    on_controls_changed=None
-)
-```
+### Option B: Everything Syntax (Subset)
 
-The extended callback receives the query and current control values:
+| Term | Meaning |
+| --- | --- |
+| `report pdf` | case-insensitive substring per term, AND, unranked |
+| `a \| b`, `!tmp`, `< >` | OR, NOT, grouping |
+| `"annual report"` | phrase with spaces |
+| `*.py`, `img_??.jpg` | wildcards; whole-name match when a term contains one |
+| `case:Report`, `nocase:` | per-term case control |
+| `regex:rep.*\.pdf$` | regular expression (Python `re` flavour) |
+| `ext:pdf;txt` | extension list |
+| `path:src\core`, `file:` | scope modifiers (`folder:` moot: files only) |
+| `size:>1mb`, `size:1kb..10mb`, `size:empty` | size filters |
+| `dm:today`, `dm:lastweek`, `dm:2024-06`, `dm:>=2024-01-01`, `dm:a..b`, `dc:` | modified / created date filters |
+| `wholeword:` | whole-word match |
 
-```python
-def get_items(query, values):
-    mode = values['mode']
-    case_sensitive = values['case_sensitive']
-```
+Pitfalls:
 
-`values` is a read-only mapping (`types.MappingProxyType`) from descriptor
-name to the current *value* (the choice value, not its label; `bool` for
-checkboxes).
+- **Grammar size.** Dates (`today`, `yesterday`, `thisweek`, `lastmonth`,
+  `last3days`, `YYYY`, `YYYY-MM`, `YYYY-MM-DD`, comparisons, ranges) and sizes
+  (units, `empty`, ranges) are most of the parser and the test matrix. The
+  supported subset must be enumerated; unknown Everything functions
+  (`dupe:`, `attrib:`, `content:`, `parent:`) must be rejected with the hint
+  row rather than silently matching nothing.
+- **Semantic divergences to document.** Everything matches the *filename*
+  unless a term contains `\`; our index displays the relative path and
+  today's substring mode matches the path. Everything's regex flavour is
+  PCRE-like; ours is Python `re`. Everything sorts results by name/path with
+  its own index; we return the first `max_results` in walk order unless a
+  sort rule is added.
+- **Wildcard whole-name default.** `rep*` does not match `Annual Report.pdf`
+  in Everything, but `rep*` in the pane filter does. Either follow Everything
+  (consistent with the reference) or the pane filter (consistent with the
+  app); document the choice.
+- **No fuzzy matching.** Camel-case and subsequence matching (`pow sh` ->
+  `PowerShell`) disappear unless kept as a non-standard `fuzzy:` modifier,
+  which breaks the single-syntax rule.
+- **Marker collisions are minimal.** `:`, `"`, `|`, `<`, `>` cannot appear in
+  Windows filenames; only `!` can, and only its leading position matters.
+- **Metadata cost.** Two integers per entry (about 1.6 MB for 50,000 entries)
+  and the `stat` call per `scandir` entry, which is free on Windows but is a
+  real syscall on other filesystems.
 
-`on_controls_changed(values)` is the persistence hook. It is called on the Qt
-thread whenever a control changes, *before* the result refresh, and is
-independent of `get_items` so that query callbacks stay side-effect free.
-`SearchFileFuzzy` uses it to call `save_json`. Exceptions raised by either
-callback are reported through the normal plug-in error handler and do not
-close the dialog.
+### Decision
 
-Return `QuicksearchResult(query, value, controls)` when accepted and `None`
-when cancelled. `QuicksearchResult` is a `NamedTuple`, so both attribute
-access and unpacking work; `controls` is the same read-only mapping type as
-`values`. The legacy `show_quicksearch` wrapper returns `result[:2]`.
+**Everything syntax**, on dedicated commands. Reasons: `regex:` subsumes every
+other matching mode, `dm:`/`dc:`/`size:` add filters fzf cannot express, and
+its markers (`:`, `"`, `|`, `<`, `>`) cannot collide with Windows filenames.
+fzf's grammar has no regex or metadata and its markers (`'`, `^`, `$`, `!`)
+are legal filename characters.
 
-Controls are public immutable data descriptors (frozen dataclasses or
-`NamedTuple`s), not caller-created Qt widgets. `checked` and `value` are the
-*initial* values only:
+Fuzzy matching is neither dropped nor folded into the grammar as a `fuzzy:`
+modifier: without ranking a fuzzy term is just a permissive filter, and with
+ranking it cannot be mixed cleanly with AND/OR/NOT terms. It stays a separate
+mode on the existing commands. `Ctrl+E` was chosen over `Alt+F` because
+`Alt+Shift` is Windows' input-language toggle and `Ctrl+E` is the search
+shortcut in Everything and Explorer; `Ctrl+E` / `Ctrl+Shift+E` are unbound in
+every bundled `Key Bindings*.json`.
 
-```python
-QuicksearchCheckbox(
-    name='case_sensitive', label='&Case sensitive', checked=False
-)
+Because the two dialogs look identical, the Everything dialog shows its mode:
+an empty query yields one leading hint row `Everything syntax` with a short
+description of the markers (`"phrase"  *.ext  !not  case:  regex:  ext:  size:
+dm:`); its value is `None` so selecting it does nothing. The fuzzy dialog is
+unchanged.
 
-QuicksearchChoice(
-    name='mode', label='&Mode',
-    choices=(('fuzzy', 'Fuzzy'), ('regular', 'Regular')),
-    value='fuzzy'
-)
-```
+Open items still to settle, each to be recorded here:
 
-Labels may contain a `&` mnemonic; Qt turns it into `Alt+<letter>`, which
-gives every control a deterministic keyboard path regardless of Tab handling.
+1. Wildcard semantics: whole-name (Everything) or substring (pane filter).
+2. Default match target: filename (Everything) or relative path (today).
+3. The exact date and size subset, and the `regex:` length cap.
+4. Result ordering: walk order with `max_results` cut, or a sort by path.
 
-Initially support both `QuicksearchCheckbox` and `QuicksearchChoice`, because
-`SearchFileFuzzy` has immediate uses for both. Future controls can implement the
-same descriptor protocol without changing the dialog contract.
+Settled: `mode` keeps `fuzzy` and `regular` and gains `everything`; the JSON
+default stays `fuzzy` so the unchanged commands behave as today.
 
-Validate descriptors before opening the dialog:
+### Long-Term Path: Natural-Language Front End (Royi)
 
-- Names are unique, non-empty `str` identifiers (they become JSON keys).
-- A choice has at least one entry, choice values are unique, and the initial
-  value exists.
-- Labels and values contain plain serializable data.
-- Unsupported descriptors raise `TypeError` before creating Qt widgets.
+Royi's long-term direction: a small local language model with structured
+output, wrapped so the user describes what they are looking for in free
+language and the model emits an Everything-syntax query that this search then
+runs. Example request: *"a file edited last week in Word and was pretty heavy
+with 20 images"*.
 
-Do not allow plug-ins to supply arbitrary `QWidget` objects. Declarative
-controls preserve Qt thread ownership, consistent styling, keyboard behavior,
-accessibility, and API stability.
+Analysis:
 
-## Shared Implementation
+- The formal grammar decided above is what makes this feasible: it is a small,
+  enumerated, documented target for the model, and the parser validates every
+  generated query (unknown modifier -> hint row, never a crash).
+- The wrapper is a thin command: free-text prompt -> model -> Everything string
+  -> `_search(pane, recursive, mode='everything', query=<string>)`. The `query`
+  argument already seeds the dialog, so the user sees the generated string, can
+  edit it and gets live results. No host change.
+- The model should emit a **structured filter object** (JSON: name terms,
+  extensions, modified/created, size, negations), and plug-in code renders it to
+  the grammar. Schema validation removes hallucinated modifiers; the same
+  renderer can produce a human-readable explanation. Emit relative dates
+  (`dm:lastweek`) so the grammar resolves "now" and the model never needs the
+  current date.
+- The example splits into two kinds of constraints:
 
-There must be one Quicksearch implementation. Do not create separate regular
-and extended dialog classes or duplicate the query field, result model,
-filtering, sizing, keyboard handling, or acceptance logic.
+  | Constraint | Expressible by this task | Grammar |
+  | --- | --- | --- |
+  | edited last week | yes | `dm:lastweek` |
+  | Word document | yes | `ext:docx;doc;docm` |
+  | pretty heavy | yes, with a threshold | `size:>5mb` |
+  | about 20 images inside | **no**; needs content inspection | future `meta:` hook |
 
-Refactor the existing `Quicksearch` constructor to accept an optional sequence
-of validated descriptors. When controls exist, it creates a reusable
-`QuicksearchControls` child responsible for:
+  Counting images means opening each `.docx` (a ZIP) and counting
+  `word/media/*`. That is a **content/metadata provider**, not a grammar
+  feature: it runs off-thread over candidates already narrowed by the cheap
+  filters, with per-format inspectors, caching, cancellation and scope limits.
+  It is a separate future task; the grammar may later gain a generic
+  `meta:<provider>:<expr>` term for it.
+- Constraints: a local model means a runtime (llama.cpp/ONNX bindings) and
+  weights of hundreds of MB to GBs, a packaging and licensing decision against
+  the portable-ZIP, no-new-packages posture; an opt-in user-run local server
+  over HTTP avoids bundling but is a service dependency. Either way it must be
+  optional and off by default with no background work when disabled
+  ([AGENTS.md](../AGENTS.md)). Inference takes seconds on CPU and runs as bounded
+  background work with cancellation, never on the Qt thread. The generated
+  query is always shown and editable, for trust and to teach the grammar.
 
-- Mapping descriptors to native Qt widgets.
-- Holding the current values.
-- Emitting one `values_changed` signal.
-- Returning an immutable final values mapping.
-
-When the sequence is empty, no controls container is created and the current
-dialog geometry remains unchanged. There is a single constructor path;
-`controls=()` must produce a layout identical to today's dialog.
-
-Both public functions delegate to one internal implementation in `MainWindow`:
-
-```python
-def _show_quicksearch(
-    self, get_items, get_tab_completion, query, item, controls
-):
-    ...
-```
-
-`show_quicksearch` passes no controls and converts the shared result back to the
-legacy tuple. `show_quicksearch_extended` returns the complete result. This
-keeps layout, styling, threading, and behavior synchronized between variants.
-
-## UI Behavior
-
-Place controls in one compact horizontal row between the query field and the
-result list. Use native `QCheckBox` and `QComboBox` widgets with visible labels,
-accessible names, and standard focus indicators. The row gets the object name
-`controls-container` so themes can style it like `query-container` and
-`items-container`.
-
-Keep initial focus in the query field. Existing result navigation (`Up`,
-`Down`, `PageUp`, `PageDown`), `Enter`, `Escape`, and the quit shortcut remain
-unchanged while the query field has focus.
-
-Tab handling is caller dependent and must be documented as such: the query
-field consumes `Tab` only when `get_tab_completion` returns a completion (as
-today, e.g. `GoTo`); otherwise `Tab`/`Shift+Tab` follow Qt focus traversal
-and reach the controls (the result list has `NoFocus`). Mnemonics (`Alt+C`,
-`Alt+M`) are the deterministic way to reach a control in every dialog.
-
-While a control has focus, `Enter` accepts the current result item and
-`Escape` cancels, exactly as from the query field. Implement this in
-`Quicksearch.keyPressEvent` (or an event filter on the controls row) because
-`returnPressed` and the key filter currently live on the `LineEdit` only.
-`Space` toggles a checkbox and `Up`/`Down` change a combo box natively.
-
-A query or control change goes through one refresh path. Add a 0 ms
-single-shot `QTimer` in front of `_update_items` so a query edit and a control
-change in the same event-loop turn produce exactly one refresh; today
-`textChanged` calls `_update_items` synchronously. A control change resets
-the cursor to item 0, like `_on_text_changed` does. Do not recreate the dialog
-or replace its list model.
-
-Control callbacks run on the Qt thread. Filesystem indexing stays outside the
-dialog. Building a new normalized variant for 50k entries costs about 0.2 s
-on the Qt thread on the first toggle; either accept this (state it in the
-README) or precompute the other variants in a background thread right after
-the dialog opens, since they do not depend on the query.
+Constraints on this task so the path stays open: keep the grammar subset
+formal and enumerated (already true), and have the parser expose its AST so a
+renderer can produce grammar text from a structured object. The model, the
+content providers and any online service are excluded from this task.
 
 ## Alternatives
 
-- A second extended dialog class was rejected because it would duplicate and
-  eventually diverge from legacy Quicksearch behavior.
-- Caller-supplied `QWidget` controls were rejected because they expose thread
-  ownership, styling, accessibility, and lifetime hazards as public API.
-- Replacing `show_quicksearch` was rejected because it would break existing
-  plug-ins. A second API with a shared internal implementation preserves
-  compatibility.
-- Putting Unicode awareness in the dialog was rejected for the first version
-  because it is a developer setting and would double cache variants and tests.
+- **Controls row inside Quicksearch** (checkbox/choice descriptors passed to
+  a `show_quicksearch_extended` host API). Rejected: [UIElements](UIElements.md)
+  keeps the modal picker free of controls, and the goal is reachable without
+  host changes.
+- **Panel + Table** like Search File Content. Rejected: two surfaces for a
+  one-keystroke picker; slower interaction than the modal Quicksearch.
+- **Mixing fzf and Everything**, or a `fuzzy:` modifier inside the Everything
+  grammar. Rejected by the user: one syntax per dialog, one reference to
+  point at; fuzzy without ranking adds little and with ranking mixes badly
+  with filter terms.
+- **Fuzzy in the pane filter bar instead of a command.** Rejected: the inline
+  filter cannot rank, so subsequence matching only makes it less selective;
+  it is also host code shared by every scheme.
+- **`Alt+F` / `Alt+Shift+F` for the second mode.** Rejected: `Alt+Shift` is
+  the Windows input-language toggle.
+- **Four bindings with `args` on the two existing commands.** Rejected: the
+  Command Palette lists commands, so both modes would collapse into one row
+  per scope with an ambiguous shortcut hint and no way to pick the mode.
+- **Packages** (`iterfzf`/`pyfzf` spawn the fzf binary; `pfzy` is a scorer
+  without syntax; `luqum` parses Lucene, not either grammar;
+  `everything-sdk` requires a running Everything). Rejected: repository
+  policy against new packages, and none implements the needed grammar.
 
 ## Runtime Effects
 
-- Legacy Quicksearch calls create no controls container and retain their
-  current runtime behavior.
-- Extended dialogs add only a compact row of native Qt controls and a 0 ms
-  coalescing timer while open.
-- Control changes never traverse the filesystem again; they reuse the command's
-  existing index.
-- Normalized matcher variants are cached for the dialog lifetime. At most two
-  variants are reachable from the UI while Unicode awareness is fixed.
-- The first switch to an uncached normalization variant may cost about 0.2 s
-  for 50,000 entries; background precomputation is the fallback if profiling
-  shows unacceptable UI latency.
-
-## `SearchFileFuzzy` Settings
-
-Extend `SearchFileFuzzy.json`:
-
-```json
-{
-  "mode": "fuzzy",
-  "case_sensitive": false,
-  "unicode_aware": true,
-  "max_recursive_entries": 50000,
-  "max_results": 100,
-  "include_hidden": true
-}
-```
-
-Semantics:
-
-- With `case_sensitive: false`, use Unicode `casefold()` when Unicode awareness
-  is enabled and `lower()` otherwise.
-- With `case_sensitive: true`, preserve case during comparison.
-- With `unicode_aware: true`, apply NFKC normalization, retain Unicode letters
-  and digits, and split camel case using Unicode character properties
-  (`(?<=[^\W\d_])(?=[A-Z])`, i.e. any letter followed by an upper-case
-  letter).
-- With `unicode_aware: false`, skip NFKC normalization and casefolding, but
-  never delete non-ASCII characters. Separators are still `[\W_]+` (already
-  Unicode-safe); camel case is split with the ASCII rule
-  `(?<=[a-z0-9])(?=[A-Z])`. Matching remains literal at the code-point level.
-
-Case sensitivity and Unicode awareness are independent. Test all four
-combinations. Disabling Unicode awareness must never restore the earlier bug
-that removed accented or non-Latin names.
-
-The mode drop-down and the checkbox supply the matcher options; `unicode_aware`
-comes from the JSON file. Build the filesystem index once per command
-invocation. Changing controls creates or reuses a matcher over that same index
-and never scans the filesystem again. Cache normalized candidate forms lazily
-by `(case_sensitive, unicode_aware)` for the dialog lifetime; at most four
-variants can exist, and with `unicode_aware` fixed per invocation only two are
-reachable from the UI.
-
-Persist changed controls immediately from `on_controls_changed` with
-`save_json`, including changes made before cancelling the dialog. `save_json`
-without a `value` writes the object cached by `load_json`, whereas
-`_get_settings` returns a merged *copy*; therefore either mutate the cached
-dict or pass `value=` explicitly. `Config.save_json` writes a differential
-against the bundled plug-in JSON, so only changed keys appear in
-`UserSettings/Plugins/User/Settings/SearchFileFuzzy.json`. Existing command
-arguments such as `mode='regular'` provide the initial value for that
-invocation but do not alter the saved default unless the user changes a
-control.
-
-## Implementation Steps
-
-1. Add immutable `QuicksearchCheckbox`, `QuicksearchChoice`, and
-   `QuicksearchResult` types to the public `fman` API and list them in
-   `test_portable.py` next to `show_quicksearch`.
-2. Refactor Quicksearch and `MainWindow` around one controls-aware private
-   implementation while preserving the legacy wrapper and return type.
-3. Add descriptor validation and the optional `QuicksearchControls` row with
-   the `controls-container` object name; add `.quicksearch-controls`,
-   `Quicksearch QCheckBox`, and `Quicksearch QComboBox` selectors to
-   `theme.py` and defaults to Core's `Theme.css` and `Theme (Windows).css`.
-4. Route query and control changes through one 0 ms-coalesced refresh path;
-   handle `Enter`/`Escape` from focused controls.
-5. Extend `SearchFileFuzzy` configuration and matcher behavior with
-   `case_sensitive` and the JSON-only `unicode_aware`.
-6. Add the mode choice and the case checkbox without rebuilding the filesystem
-   index; persist via `on_controls_changed`.
-7. Update `test_search_file_fuzzy.py` to patch `show_quicksearch_extended` and
-   call `get_items(query, values)`.
-8. Update API documentation and the plug-in README, and add a changelog entry.
+- Startup: none.
+- Per invocation: the existing index walk plus two integers per entry when
+  metadata is collected (about 1.6 MB at 50,000 entries).
+- Per keystroke on Qt: parse (well under 1 ms) plus one scan of the index:
+  substring 5-15 ms, wildcard/regex 15-50 ms, fuzzy 20-100 ms at 50,000
+  entries. No timers, workers or I/O.
+- Cancellation: not applicable; nothing outlives the keystroke.
+- No-op path: the fuzzy commands are unchanged; an Everything query without
+  markers is a plain AND of substrings and costs the same as today's
+  `regular` mode.
 
 ## Tests
 
-Required final command from the repository root:
+Focused commands:
 
 ```powershell
-python build.py test
+$env:PYTHONPATH="src/main/python;src/unittest/python;src/integrationtest/python;src/main/resources/base/Plugins/Core;src/main/resources/base/Plugins/SearchFileFuzzy"
+$env:QT_QPA_PLATFORM="offscreen"
+python -m unittest fman_unittest.test_search_file_fuzzy
 ```
 
-Public API tests:
+- Parser: one test per grammar element, escaping, phrases, precedence,
+  unknown modifiers, partial input at every prefix of representative queries
+  (never raises).
+- Matcher: each mode with highlight positions mapped to the backslash title;
+  case handling; wildcard whole-name vs substring per decision.
+- Metadata: size and date parsing edge cases (`today` across midnight, month
+  ends, ranges, comparisons), `file://` only, hint row on other schemes.
+- Regex: invalid pattern -> hint row; pattern over the cap -> hint row.
+- Performance: synthetic 50,000-entry index; substring, wildcard and simple
+  regex each under 50 ms on the development machine.
+- Existing `SearchCommandTest` with patched `show_quicksearch` proves the
+  index is built once and `get_items` never touches the filesystem; the
+  fuzzy commands' results are byte-for-byte unchanged.
+- Commands: the two new identifiers register, carry the stated aliases and
+  `Ctrl+E`/`Ctrl+Shift+E` bindings, and the empty-query hint row is present
+  only in the Everything dialog.
+- Manual: real folder, all documented examples from the README, all four
+  palette rows with correct shortcut hints, 100 % and 150 % scaling for
+  hint-row rendering.
 
-- Existing Quicksearch callers receive the same callback arguments and return
-  values as before.
-- Regular Quicksearch has no controls row and retains its current geometry.
-- Extended results contain an immutable controls mapping and support both
-  attribute access and unpacking.
-- Invalid, duplicate, empty-choice, and unsupported descriptors fail before
-  dialog creation.
-- `on_controls_changed` is called before the refresh with the new values; an
-  exception in it does not close the dialog.
+## Implementation Steps
 
-Qt integration tests:
-
-- Checkbox and choice initial values render correctly.
-- Mouse, keyboard, and mnemonic (`Alt+C`) changes refresh results exactly
-  once; a query edit and a control change in the same event-loop turn refresh
-  once and reset the cursor to item 0.
-- `Tab` reaches the controls when no completion is available and completes
-  the query when `get_tab_completion` returns a value.
-- `Enter` and `Escape` work from a focused control.
-- Accept and cancel return the documented result types.
-- The controls row is styled by the theme selectors (no native-looking
-  widgets on the dark panel).
-
-SearchFileFuzzy tests:
-
-- Fuzzy and regular selection changes results without rebuilding the index.
-- Case-sensitive matching distinguishes `Report.txt` from `report.txt`.
-- Case-insensitive Unicode matching handles French and Spanish names.
-- Unicode-aware matching handles NFKC-equivalent forms.
-- Unicode-disabled matching is literal but preserves non-ASCII text.
-- All four case/Unicode combinations produce deterministic rankings.
-- Changed controls persist (only changed keys in the user JSON) and are
-  restored on the next invocation; `mode='regular'` as a command argument does
-  not change the saved default.
+1. Settle the four remaining Decision items and record them in this document.
+2. Extend `SearchEntry` with size, modified and created times from `scandir`.
+3. Add `search_file_fuzzy/query.py`: tokenizer, grammar, validation, hint
+   reasons; unit tests first.
+4. Add the `everything` mode to `_search`/`Matcher`: parse, select matcher,
+   compute highlights, emit the mode hint row and error rows; keep index
+   construction and the fuzzy/regular paths unchanged.
+5. Add the two `_everything` commands, aliases and `Ctrl+E`/`Ctrl+Shift+E`
+   bindings.
+6. Docs: README syntax table naming Everything, command table, CHANGELOG
+   entry.
+7. Performance test and manual checks.
 
 ## Acceptance Criteria
 
-- Existing Quicksearch plug-ins remain source- and behavior-compatible.
-- Regular and extended Quicksearch share all dialog and model logic; the
-  `Quicksearch` class has a single constructor path and `controls=()` yields
-  today's layout.
-- Extended Quicksearch supports native checkboxes and drop-down choices through
-  declarative public descriptors, each reachable by mnemonic.
-- SearchFileFuzzy exposes mode and case sensitivity in the dialog and persists
-  them; Unicode awareness remains a JSON setting.
-- Matching controls never trigger another filesystem traversal.
-- Accessibility, keyboard navigation (including `Enter`/`Escape` from a
-  control), threading, and existing Quicksearch behavior remain intact.
+- `Ctrl+F` / `Ctrl+Shift+F` and their palette rows behave exactly as before.
+- `Ctrl+E` / `Ctrl+Shift+E` open the Everything dialog with the mode hint row;
+  plain text is an AND of case-insensitive substrings.
+- Every grammar element in the README works and has a test.
+- Invalid or partial queries never raise; the hint row explains why.
+- The Command Palette shows four search rows, each with its own shortcut.
+- No file under `src/main/python/fman` changes.
+- Substring, wildcard and simple regex queries over 50,000 entries stay under
+  50 ms on the development machine.
+- Metadata filters are correct for local files and show the hint row elsewhere.
 
 ## Reviewers
 
-### 2026_09_12 - GitHub Copilot
+### 2026_09_16 - GitHub Copilot
 
 - Role: Reviewer
 - Activity: Design
 - Agent: GitHub Copilot
-- Model: GPT-5.6 Sol
+- Model: Claude Fable 5.1
 - Effort: High
-- Context window: Not exposed by host
-- Outcome: Initial backward-compatible API and SearchFileFuzzy integration
-  design created.
+- Context Window: 1M
+- Outcome: Designed explicit text-query configuration for SearchFileFuzzy with
+  two candidate grammars, fzf and Everything, each with its table and pitfalls
+  (Qt-thread budget, hand-written parser, filename marker collisions, regex
+  safety, metadata cost, semantic divergences). Decision pending; user leans
+  toward Everything for `regex:` and date/size filters. Six open items listed.
+
+### 2026_09_16 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Claude Fable 5.1
+- Effort: High
+- Context Window: 1M
+- Outcome: User decided: Everything syntax on two new additive commands
+  (`..._everything`, `Ctrl+E` / `Ctrl+Shift+E`); fuzzy retained unchanged on
+  the existing commands and shortcuts; no `fuzzy:` modifier; no change to the
+  pane filter. Recorded the shortcut rationale (`Alt+Shift` layout toggle),
+  the palette-row reason for separate commands, and the in-dialog mode hint.
+  Four open items remain (wildcards, match target, date/size subset and regex
+  cap, ordering).
