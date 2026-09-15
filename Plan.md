@@ -5,6 +5,7 @@
 - [Directory Size](Plan/DirectorySize.md)
 - [Extended Quicksearch UI](Plan/ExtendedQuicksearchUI.md)
 - [Flat View](Plan/FlatView.md)
+- [Migrate to PyQt6](Plan/MigrateToPyQt6.md)
 - [Process Pane](Plan/ProcessPane.md)
 - [Recent Commands in Command Palette](Plan/RecentCommandsInPalette.md)
 - [Text Editor Service](Plan/TextEditor.md)

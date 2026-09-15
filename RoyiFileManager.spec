@@ -1,4 +1,4 @@
-from PyInstaller.utils.hooks import collect_all, conda_support
+from PyInstaller.utils.hooks import collect_all
 from pathlib import Path
 import os
 import sys
@@ -7,15 +7,12 @@ import sys
 winpty_datas, winpty_binaries, winpty_imports = collect_all('winpty')
 send2trash_datas, send2trash_binaries, send2trash_imports = \
 	collect_all('send2trash')
-ripgrep = conda_support.distribution('ripgrep')
-ripgrep_licenses = Path(ripgrep.raw['link']['source']) / 'info' / 'licenses'
 
 datas = [
 	('src/main/resources/base', 'resources'),
 	('src/build/settings/base.json', 'resources/build-settings'),
 	('src/main/resources/windows', 'resources'),
-	('src/main/icons/Icon.ico', 'resources'),
-	(str(ripgrep_licenses), 'resources/Plugins/SearchFileContent/licenses')
+	('src/main/icons/Icon.ico', 'resources')
 ] + winpty_datas + send2trash_datas
 binaries = winpty_binaries + send2trash_binaries + [
 	(str(Path(sys.prefix) / 'bin' / 'rg.exe'), 'resources/Plugins/SearchFileContent/bin')

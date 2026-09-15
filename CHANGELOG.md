@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
 
+### Fixed
+
+- Windows release builds now bundle ripgrep's license notices from repository
+  resources instead of depending on a conda package-cache directory that may be
+  absent after CI environment restoration.
+
 ## [0.4.0] - 2026-09-14
 
 API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.

@@ -65,9 +65,12 @@ python build.py package
 These commands therefore require internet access on their first run.
 
 Content search uses conda-forge's installed `bin/rg.exe` from the active Python
-prefix. PyInstaller bundles it and the package's license notices directly, with
-no custom downloads, version/hash verification or integrity manifest. Packaged
-searches use the bundled executable, not a system `rg` or Python installation.
+prefix. PyInstaller bundles it with the notices under
+[SearchFileContent/licenses](src/main/resources/base/Plugins/SearchFileContent/licenses),
+without requiring the conda package cache. Refresh these notices when updating
+ripgrep in the lock file. There are no custom downloads, version/hash checks or
+integrity manifests. Packaged searches use the bundled executable, not a system
+`rg` or Python installation.
 
 `freeze` creates a PyInstaller onedir build. `package` produces
 `target/RoyiFileManager-<version>-windows-x86_64.zip` with an empty
@@ -117,6 +120,18 @@ changelog check can be previewed locally:
 
 ```powershell
 python .github/scripts/release_notes.py --version X.Y.Z
+```
+
+### Retrying a Failed Release
+
+In case of a failure of the GitHub Action, assuming fix is applied run:
+
+```powershell
+git add -A
+git commit -m "Fix release build for vX.Y.Z"
+git push --force origin HEAD
+git tag --force -a vX.Y.Z -m "RoyiFileManager vX.Y.Z"
+git push --force origin vX.Y.Z
 ```
 
 ## Miscellaneous Scripts

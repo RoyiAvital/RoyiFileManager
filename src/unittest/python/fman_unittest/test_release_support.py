@@ -18,21 +18,28 @@ SPEC.loader.exec_module(release_notes)
 
 
 class RipgrepPackagingTest(TestCase):
-	def test_spec_includes_conda_executable_and_notices_directly(self):
+	def test_spec_includes_conda_executable_and_notices_without_package_cache(self):
 		from types import SimpleNamespace
 		from unittest.mock import Mock
+		from PyInstaller.building.utils import format_binaries_and_datas
 		from PyInstaller.utils.hooks import conda_support
 		specification = ROOT / 'RoyiFileManager.spec'
 		code = compile(specification.read_text(encoding='utf-8'), str(specification), 'exec')
 		namespace = {name: Mock() for name in ('Analysis', 'PYZ', 'EXE', 'COLLECT')}
-		package = SimpleNamespace(raw={'link': {'source': 'C:\\cache\\ripgrep'}})
-		with patch('PyInstaller.utils.hooks.collect_all', return_value=([], [], [])), \
-				patch.object(conda_support, 'distribution', return_value=package), \
-				patch('sys.prefix', 'C:\\conda'):
-			exec(code, namespace)
-		inputs = namespace['Analysis'].call_args.kwargs
+		with TemporaryDirectory() as directory:
+			cache = Path(directory) / 'missing-package-cache'
+			package = SimpleNamespace(raw={'link': {'source': str(cache)}})
+			with patch('PyInstaller.utils.hooks.collect_all', return_value=([], [], [])), \
+					patch.object(conda_support, 'distribution', return_value=package), \
+					patch('sys.prefix', 'C:\\conda'):
+				exec(code, namespace)
+			inputs = namespace['Analysis'].call_args.kwargs
+			collected = format_binaries_and_datas(inputs['datas'], workingdir=str(ROOT))
+			self.assertFalse(cache.exists())
 		self.assertIn(('C:\\conda\\bin\\rg.exe', 'resources/Plugins/SearchFileContent/bin'), inputs['binaries'])
-		self.assertIn(('C:\\cache\\ripgrep\\info\\licenses', 'resources/Plugins/SearchFileContent/licenses'), inputs['datas'])
+		notices = {Path(destination).as_posix() for destination, source in collected}
+		for name in ('LICENSE-MIT', 'THIRDPARTY.yml'):
+			self.assertIn('resources/Plugins/SearchFileContent/licenses/' + name, notices)
 		self.assertFalse(hasattr(build, '_ripgrep_payload'))
 
 	def test_build_adds_search_plugin_pythonpath(self):

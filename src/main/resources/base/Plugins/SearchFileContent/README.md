@@ -82,8 +82,12 @@ keys are omitted so defaults cannot mask old user settings during migration.
 `windows-1252`. Limits may be lowered, not raised above the defaults.
 
 Source execution uses conda-forge's installed `bin/rg.exe` under `sys.prefix`.
-PyInstaller includes that executable and the package-cache license notices as
-ordinary binary/data inputs. Frozen execution uses only the bundled executable.
+PyInstaller includes that executable and the notices in [licenses](licenses)
+as ordinary binary/data inputs, without requiring the conda package cache.
+The notices are unchanged copies of `info/licenses/LICENSE-MIT` and
+`info/licenses/THIRDPARTY.yml` from conda-forge's win-64
+`ripgrep 15.2.0 h18a1a76_1`, matching `conda-lock.yml`. Refresh both files when
+updating the locked ripgrep package. Frozen execution uses only the bundled executable.
 There are no custom downloads, version/hash checks, integrity manifests or
 registry writes. Missing executables surface through normal process/build errors.
 
