@@ -4,6 +4,7 @@
 
 - [Directory Size](Plan/DirectorySize.md)
 - [Extended Quicksearch UI](Plan/ExtendedQuicksearchUI.md)
+- [Filter Bar Improvements 001](Plan/FilterBarImprovements001.md)
 - [Flat View](Plan/FlatView.md)
 - [Migrate to PyQt6](Plan/MigrateToPyQt6.md)
 - [Process Pane](Plan/ProcessPane.md)
@@ -13,6 +14,7 @@
 
 ## Completed
 
+- [Archive Transfers](Done/ArchiveTransfers.md)
 - [Assigned Model Signatures](Done/AssignedModelSignatures.md)
 - [Calculate File Hash](Done/CalculateFileHash.md)
 - [Concise README Features](Done/ConciseReadmeFeatures.md)

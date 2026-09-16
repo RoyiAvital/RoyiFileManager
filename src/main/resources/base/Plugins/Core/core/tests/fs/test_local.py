@@ -7,10 +7,26 @@ from pathlib import Path
 from stat import S_IWRITE
 from tempfile import TemporaryDirectory
 from unittest import TestCase, skipIf, skipUnless
+from unittest.mock import patch
 
 import os
 
 class LocalFileSystemTest(TestCase):
+	@skipUnless(PLATFORM == 'Windows', 'Windows non-replacing directory rename')
+	def test_directory_rename_conflict_emits_no_notifications(self):
+		with TemporaryDirectory() as directory:
+			source = Path(directory, 'source')
+			destination = Path(directory, 'Destination')
+			source.mkdir()
+			destination.mkdir()
+			with patch.object(self._fs, 'notify_file_added') as added, \
+				patch.object(self._fs, 'notify_file_removed') as removed:
+				with self.assertRaises(FileExistsError):
+					self._fs._rename(as_url(source), as_url(Path(directory, 'destination')))
+				added.assert_not_called()
+				removed.assert_not_called()
+			self.assertTrue(source.is_dir())
+			self.assertTrue(destination.is_dir())
 	def test_mkdir_root(self):
 		with self.assertRaises(FileExistsError):
 			self._fs.mkdir('C:' if PLATFORM == 'Windows' else '/')

@@ -1,15 +1,22 @@
 from collections import namedtuple, deque
+from codecs import getincrementaldecoder
+from contextlib import contextmanager
 from core.os_ import is_arch, is_mac
+from core.fileoperations import ArchiveUpdateError
 from core.util import filenotfounderror
 from datetime import datetime
+from errno import EIO
 from fman import PLATFORM, load_json, Task
 from fman.fs import FileSystem
 from fman.url import as_url, splitscheme, as_human_readable, basename
+from hashlib import sha256
 from io import UnsupportedOperation, FileIO, BufferedReader, TextIOWrapper
 from os.path import join, dirname
 from pathlib import PurePosixPath, Path
+from queue import Queue, Empty, Full
 from subprocess import Popen, PIPE, DEVNULL, CalledProcessError
 from tempfile import TemporaryDirectory
+from threading import Event, Thread
 
 import fman.fs
 import os
@@ -135,6 +142,8 @@ class _7ZipFileSystem(FileSystem):
 				return [Rename(self, src_zip, src_pth_in_zip, dst_pth_in_zip)]
 			else:
 				return [MoveBetweenArchives(self, src_url, dst_url)]
+		elif src_scheme == self.scheme and dst_scheme == 'file://':
+			return [MoveOutOfArchive(self, src_url, dst_url)]
 		else:
 			result = list(self.prepare_copy(src_url, dst_url))
 			title = 'Cleaning up ' + basename(src_url)
@@ -186,7 +195,7 @@ class _7ZipFileSystem(FileSystem):
 					return getattr(info, attr)
 				return folder_default
 		return self.cache.query(path, attr, compute_value)
-	def _preserve_empty_parent(self, zip_path, path_in_zip):
+	def _preserve_empty_parent(self, zip_path, path_in_zip, restore=None):
 		# 7-Zip deletes empty directories that remain after an operation. For
 		# instance, when deleting the last file from a directory, or when moving
 		# it out of the directory. We don't want this to happen. The present
@@ -203,7 +212,10 @@ class _7ZipFileSystem(FileSystem):
 				if not exc_val:
 					if cm._parent_wasdir_before:
 						if not self.exists(parent_fullpath):
-							self.makedirs(parent_fullpath)
+							if restore is None:
+								self.makedirs(parent_fullpath)
+							else:
+								restore(parent)
 		return CM()
 	def _split(self, path):
 		for suffix in self._suffixes:
@@ -272,38 +284,52 @@ class _7ZipFileSystem(FileSystem):
 				)
 
 class _7zipTaskWithProgress(Task):
-	def run_7zip_with_progress(self, args, **kwargs):
-		with _7zip(args, pty=True, **kwargs) as process:
-			for line in process.stdout_lines:
-				try:
-					self.check_canceled()
-				except Task.Canceled:
-					process.kill()
-					raise
-				# The \r appears on Windows only:
-				match = re.match('\r? *(\\d\\d?)% ', line)
-				if match:
-					percent = int(match.group(1))
-					# At least on Linux, 7za shows progress going from 0 to
-					# 100% twice. The second pass is much faster - maybe
-					# some kind of verification? Only show the first round:
-					if percent > self.get_progress():
-						self.set_progress(percent)
+	def run_7zip_with_progress(
+		self, args, pty=True, allow_warning=True, cancellable=True,
+		progress_limit=100, check_before=True, **kwargs
+	):
+		if check_before:
+			self.check_canceled()
+		def check():
+			if cancellable:
+				self.check_canceled()
+			elif self._dialog.was_canceled():
+				self.set_text('Canceling after archive update finishes...')
+		with _7zip(args, pty=pty, allow_warning=allow_warning, **kwargs) as process:
+			lines = process.stdout_lines if pty else process.progress_records(check)
+			try:
+				for line in lines:
+					try:
+						check()
+					except Task.Canceled:
+						process.kill()
+						raise
+					match = re.match(r'\s*(\d{1,3})%(?:\s|$)', line)
+					if match:
+						percent = min(progress_limit, int(match.group(1)))
+						if percent > self.get_progress():
+							self.set_progress(percent)
+			finally:
+				lines.close()
 
 class AddToArchive(_7zipTaskWithProgress):
-	def __init__(self, zip_fs, fman_fs, src_ospath, zip_path, path_in_zip):
+	def __init__(self, zip_fs, fman_fs, src_ospath, zip_path, path_in_zip, for_move=False):
 		if not path_in_zip:
 			raise ValueError(
 				'Must specify the destination path inside the archive'
 			)
-		super().__init__('Packing ' + os.path.basename(src_ospath), size=100)
+		super().__init__('Packing ' + os.path.basename(src_ospath), size=200 if for_move else 100)
+		self._for_move = for_move
 		self._zip_fs = zip_fs
 		self._fman_fs = fman_fs
 		self._src_ospath = src_ospath
 		self._zip_path = zip_path
 		self._path_in_zip = path_in_zip
 	def __call__(self):
-		with TemporaryDirectory() as tmp_dir:
+		expected_digest = _tree_digest(Path(self._src_ospath), self.check_canceled) \
+			if self._for_move else None
+		temporary = _transfer_temp_directory(self) if self._for_move else TemporaryDirectory()
+		with temporary as tmp_dir:
 			dest = Path(tmp_dir, *self._path_in_zip.split('/'))
 			dest.parent.mkdir(parents=True, exist_ok=True)
 			src = Path(self._src_ospath)
@@ -314,40 +340,196 @@ class AddToArchive(_7zipTaskWithProgress):
 				# We need to incur the cost of physically copying the file:
 				self._fman_fs.copy(as_url(src), as_url(dest))
 			args = ['a', self._zip_path, self._path_in_zip]
+			if self._for_move:
+				args[-1] = '-i!' + self._path_in_zip
 			if PLATFORM != 'Windows':
 				args.insert(1, '-l')
-			self.run_7zip_with_progress(args, cwd=tmp_dir)
+			if self._for_move:
+				try:
+					self.run_7zip_with_progress(
+						args + ['-bsp1', '-bse1', '-spd'], cwd=tmp_dir,
+						pty=False, allow_warning=False, cancellable=False,
+						progress_limit=99
+					)
+				except _7zipError as error:
+					raise OSError(EIO, str(error)) from error
+				self.check_canceled()
+				self.set_progress(100)
+				self.set_text('Verifying ' + os.path.basename(self._zip_path))
+				with _transfer_temp_directory(self) as verification_dir:
+					verification = Extract(
+						self._fman_fs, self._zip_path, self._path_in_zip,
+						str(Path(verification_dir, 'output')), expected_digest=expected_digest
+					)
+					self.run(verification)
+			else:
+				self.run_7zip_with_progress(args, cwd=tmp_dir)
 			dest_path = self._zip_path + '/' + self._path_in_zip
 			self._zip_fs.notify_file_added(dest_path)
 
-class Extract(Task):
-	def __init__(self, fman_fs, zip_path, path_in_zip, dst_ospath):
-		super().__init__('Extracting ' + _basename(zip_path, path_in_zip))
+class Extract(_7zipTaskWithProgress):
+	def __init__(self, fman_fs, zip_path, path_in_zip, dst_ospath,
+		verify_output=False, expected_digest=None):
+		super().__init__('Extracting ' + _basename(zip_path, path_in_zip), size=100)
 		self._fman_fs = fman_fs
 		self._zip_path = zip_path
 		self._path_in_zip = path_in_zip
 		self._dst_ospath = dst_ospath
+		self._verify_output = verify_output
+		self._expected_digest = expected_digest
 	def __call__(self):
+		self.check_canceled()
+		if Path(self._dst_ospath).exists() and os.path.samefile(self._zip_path, self._dst_ospath):
+			raise OSError(EIO, 'Cannot extract over the source archive')
 		# Create temp dir next to dst_path to ensure Path.replace(...) works
 		# because it's on the same file system.
 		tmp_dir = _create_temp_dir_next_to(self._dst_ospath)
 		try:
-			args = ['x', self._zip_path, '-o' + tmp_dir.name]
+			args = ['x', '-bsp1', '-bse1', '-y', '-spd', self._zip_path,
+				'-o' + tmp_dir.name]
 			if self._path_in_zip:
-				args.insert(2, self._path_in_zip)
-			_run_7zip(args)
+				args.append('-i!' + self._path_in_zip)
+			try:
+				self.run_7zip_with_progress(
+					args, pty=False, allow_warning=False, progress_limit=99
+				)
+			except _7zipError as error:
+				raise OSError(EIO, str(error)) from error
+			output = Path(tmp_dir.name, self._path_in_zip)
+			if not output.resolve().is_relative_to(Path(tmp_dir.name).resolve()):
+				raise OSError(EIO, 'Archive output escapes its temporary directory')
+			if not output.exists():
+				raise filenotfounderror(str(output))
+			digest = None
+			if self._verify_output or self._expected_digest is not None:
+				digest = _tree_digest(output, self.check_canceled)
+				if self._expected_digest is not None and digest != self._expected_digest:
+					raise OSError(EIO, 'Destination archive contents failed verification')
+			self.check_canceled()
 			# Use fman.fs.move(...) so fman's file:// caches are notified of the
 			# new file:
 			self._fman_fs.move(
 				join(as_url(tmp_dir.name), self._path_in_zip),
 				as_url(self._dst_ospath)
 			)
+			if self._verify_output:
+				self.set_text('Verifying ' + os.path.basename(self._dst_ospath))
+				if _tree_digest(Path(self._dst_ospath), self.check_canceled) != digest:
+					raise OSError(EIO, 'Extracted output failed verification; source retained')
+			self.set_progress(self.get_size())
 		finally:
+			_cleanup_extraction(self, tmp_dir)
+
+def _cleanup_extraction(task, temporary):
+	primary_error = sys.exc_info()[1]
+	for attempt in range(3):
+		try:
+			temporary.cleanup()
+			return
+		except FileNotFoundError:
+			return
+		except OSError as error:
+			if attempt < 2:
+				Event().wait(.05)
+				continue
+			message = 'Could not remove temporary output: ' + temporary.name
+			if primary_error is None:
+				raise OSError(error.errno, message) from error
+			primary_error.add_note(message)
 			try:
-				tmp_dir.cleanup()
-			except FileNotFoundError:
-				# This happens when path_in_zip = ''
+				task.show_alert(message)
+			except Exception:
 				pass
+
+@contextmanager
+def _transfer_temp_directory(task):
+	temporary = TemporaryDirectory()
+	try:
+		yield temporary.name
+	finally:
+		_cleanup_extraction(task, temporary)
+
+def _tree_digest(path, check):
+	check()
+	if path.is_symlink() or path.is_junction():
+		raise OSError(EIO, 'Cannot verify archive transfer containing links: ' + str(path))
+	digest = sha256()
+	if path.is_dir():
+		digest.update(b'directory\0')
+		for child in sorted(path.iterdir(), key=lambda entry: entry.name):
+			digest.update(child.name.encode('utf-8', 'surrogatepass') + b'\0')
+			digest.update(_tree_digest(child, check))
+	else:
+		digest.update(b'file\0')
+		with path.open('rb') as stream:
+			while True:
+				check()
+				chunk = stream.read(1024 * 1024)
+				if not chunk:
+					break
+				digest.update(chunk)
+	return digest.digest()
+
+def _archive_state(path, check):
+	before = Path(path).stat()
+	digest = _tree_digest(Path(path), check)
+	after = Path(path).stat()
+	identity = lambda value: (value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns)
+	if identity(before) != identity(after):
+		raise OSError(EIO, 'Archive changed during transfer; source retained')
+	return identity(after), digest
+
+class UpdateArchive(_7zipTaskWithProgress):
+	def __init__(self, archive_fs, source_url, expected_state):
+		super().__init__('Updating ' + basename(source_url), size=100)
+		self._fs = archive_fs
+		self._source_url = source_url
+		self._expected_state = expected_state
+	def __call__(self):
+		zip_path, path_in_zip = self._fs._split(splitscheme(self._source_url)[1])
+		if not path_in_zip:
+			raise UnsupportedOperation('Moving the archive root is not supported; copy its contents')
+		if _archive_state(zip_path, self.check_canceled) != self._expected_state:
+			raise OSError(EIO, 'Source archive changed during transfer; source retained')
+		self.check_canceled()
+		try:
+			with self._fs._preserve_empty_parent(zip_path, path_in_zip,
+				restore=lambda parent: self._restore_parent(zip_path, parent)):
+				self.run_7zip_with_progress(
+					['d', '-bsp1', '-bse1', '-spd', zip_path, '-i!' + path_in_zip],
+					pty=False, allow_warning=False, cancellable=False, progress_limit=99
+				)
+			self._fs.notify_file_removed(splitscheme(self._source_url)[1])
+		except (OSError, CalledProcessError) as error:
+			raise ArchiveUpdateError(EIO,
+				'Source removal failed; copied output was retained. Inspect ' + zip_path) from error
+		self.set_progress(100)
+		self.check_canceled()
+	def _restore_parent(self, zip_path, parent):
+		with _transfer_temp_directory(self) as directory:
+			Path(directory, parent).mkdir(parents=True)
+			self.run_7zip_with_progress(
+				['a', '-bsp1', '-bse1', '-spd', zip_path, '-i!' + parent],
+				cwd=directory, pty=False, allow_warning=False, cancellable=False,
+				progress_limit=99, check_before=False
+			)
+		self._fs.notify_file_added(zip_path + '/' + parent)
+
+class MoveOutOfArchive(Task):
+	def __init__(self, archive_fs, source_url, destination_url):
+		super().__init__('Moving ' + basename(source_url), size=200)
+		self._fs = archive_fs
+		self._source_url = source_url
+		self._destination_url = destination_url
+	def __call__(self):
+		zip_path, path_in_zip = self._fs._split(splitscheme(self._source_url)[1])
+		if not path_in_zip:
+			raise UnsupportedOperation('Moving the archive root is not supported; copy its contents')
+		state = _archive_state(zip_path, self.check_canceled)
+		self.run(Extract(self._fs._fs, zip_path, path_in_zip,
+			as_human_readable(self._destination_url), verify_output=True))
+		self.check_canceled()
+		self.run(UpdateArchive(self._fs, self._source_url, state))
 
 class CopyBetweenArchives(Task):
 	def __init__(
@@ -363,7 +545,7 @@ class CopyBetweenArchives(Task):
 		self._dst_zip_path = dst_zip_path
 		self._path_in_dst_zip = path_in_dst_zip
 	def __call__(self):
-		with TemporaryDirectory() as tmp_dir:
+		with _transfer_temp_directory(self) as tmp_dir:
 			src_basename = self._path_in_src_zip.rsplit('/', 1)[-1]
 			# Give temp dir the same name as the source file; This leads to the
 			# correct name being displayed in the progress dialog:
@@ -394,20 +576,29 @@ class Rename(_7zipTaskWithProgress):
 
 class MoveBetweenArchives(Task):
 	def __init__(self, fs, src_url, dst_url):
-		super().__init__('Moving ' + basename(src_url), size=200)
+		super().__init__('Moving ' + basename(src_url), size=400)
 		self._fs = fs
 		self._src_url = src_url
 		self._dst_url = dst_url
 	def __call__(self):
 		self.set_text('Preparing...')
-		with TemporaryDirectory() as tmp_dir:
+		source_archive, source_path = self._fs._split(splitscheme(self._src_url)[1])
+		destination_archive, destination_path = self._fs._split(splitscheme(self._dst_url)[1])
+		if Path(destination_archive).exists() and os.path.samefile(source_archive, destination_archive):
+			raise OSError(EIO, 'Source and destination refer to the same archive')
+		if not source_path:
+			raise UnsupportedOperation('Moving the archive root is not supported; copy its contents')
+		state = _archive_state(source_archive, self.check_canceled)
+		with _transfer_temp_directory(self) as tmp_dir:
 			# Give temp dir the same name as the source file; This leads to the
 			# correct name being displayed in the progress dialog:
 			tmp_url = as_url(os.path.join(tmp_dir, basename(self._src_url)))
-			tasks = list(self._fs.prepare_move(self._src_url, tmp_url))
-			tasks.extend(self._fs.prepare_move(tmp_url, self._dst_url))
-			for task in tasks:
-				self.run(task)
+			self.run(Extract(self._fs._fs, source_archive, source_path,
+				as_human_readable(tmp_url)))
+			self.run(AddToArchive(self._fs, self._fs._fs, as_human_readable(tmp_url),
+				destination_archive, destination_path, for_move=True))
+			self.check_canceled()
+			self.run(UpdateArchive(self._fs, self._src_url, state))
 
 def _basename(zip_path, path_in_zip):
 	sep = ('/' if path_in_zip else '')
@@ -426,12 +617,13 @@ class _7zip:
 
 	_7ZIP_WARNING = 1
 
-	def __init__(self, args, cwd=None, pty=False, kill=False):
+	def __init__(self, args, cwd=None, pty=False, kill=False, allow_warning=True):
 		self._args = args
 		self._cwd = cwd
 		self._pty = pty
 		self._kill = kill
 		self._killed = False
+		self._allow_warning = allow_warning
 		self._process = None
 		self._stdout_lines = deque(maxlen=100)
 	def __enter__(self):
@@ -451,6 +643,59 @@ class _7zip:
 		self._process.kill()
 	def wait(self):
 		return self._process.wait()
+	def progress_records(self, check):
+		chunks = Queue(maxsize=16)
+		stopped = Event()
+		done = Event()
+		errors = []
+		def read():
+			try:
+				for chunk in self._process.output_chunks():
+					while not stopped.is_set():
+						try:
+							chunks.put(chunk, timeout=.1)
+							break
+						except Full:
+							pass
+					if stopped.is_set():
+						break
+			except Exception as error:
+				errors.append(error)
+			finally:
+				done.set()
+		reader = Thread(target=read, name='7zip-output')
+		reader.start()
+		buffer = ''
+		try:
+			while not done.is_set() or not chunks.empty():
+				check()
+				try:
+					chunk = chunks.get(timeout=.1)
+				except Empty:
+					continue
+				for character in chunk:
+					if character in '\r\n\b':
+						if buffer:
+							self._stdout_lines.append(buffer)
+							yield buffer
+							buffer = ''
+					elif len(buffer) < 4096:
+						buffer += character
+			if buffer:
+				self._stdout_lines.append(buffer)
+				yield buffer
+			while self._process.poll() is None:
+				check()
+				stopped.wait(.1)
+			check()
+			if errors:
+				raise errors[0]
+		finally:
+			stopped.set()
+			if self._process.poll() is None:
+				self.kill()
+			self.wait()
+			reader.join()
 	def __exit__(self, exc_type, exc_val, exc_tb):
 		try:
 			if self._kill:
@@ -458,8 +703,8 @@ class _7zip:
 				self._process.wait()
 			else:
 				exit_code = self._process.wait()
-				if exit_code and not self._killed and \
-					exit_code != self._7ZIP_WARNING:
+				if exit_code and not self._killed and exc_type is None and \
+					not (self._allow_warning and exit_code == self._7ZIP_WARNING):
 					raise _7zipError(
 						exit_code, self._args, ''.join(self._stdout_lines)
 					)
@@ -489,6 +734,18 @@ class Popen7Zip:
 		self._process.kill()
 	def wait(self):
 		return self._process.wait()
+	def poll(self):
+		return self._process.poll()
+	def output_chunks(self):
+		decoder = getincrementaldecoder(self.stdout.encoding)(errors='replace')
+		while True:
+			chunk = self.stdout.buffer.read1(4096)
+			if not chunk:
+				break
+			yield decoder.decode(chunk)
+		tail = decoder.decode(b'', final=True)
+		if tail:
+			yield tail
 
 class Popen7ZipWindows(Popen7Zip):
 	def __init__(self, args, cwd):

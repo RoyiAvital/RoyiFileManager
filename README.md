@@ -32,6 +32,25 @@ Significant additions compared with `fman`:
 - **Favorites**: Press <kbd>Ctrl</kbd>+<kbd>B</kbd> for a fully features Favorites Manager, built entirely with the plug-in APIs.
 - **New Empty File**: Press <kbd>Cmd</kbd>+<kbd>N</kbd> to create an empty file without opening an editor.
 - **File Hash**: Press <kbd>Ctrl</kbd>+<kbd>H</kbd> for centered checksum output; use Calculate File Hash By to pick an algorithm in QuickSearch, then view the result. See [File Hash Calculation Usage](src/main/resources/base/Plugins/CalculateFileHash/README.md).
+- **Archive Transfers**: Extraction progress and cancellation, with verified output before source deletion when moving out of or between archives.
+
+### Archive Transfers
+
+Enter an archive as a folder, select items, then use the existing Copy or Move
+workflow. Extraction reports 7-Zip progress when available. Cancel stops
+extraction and removes unfinished staging; completed items remain.
+
+Moving out of or between archives verifies file contents before removing source
+entries. Cross-archive Move re-extracts the destination for verification. These
+checks deliberately add reads, temporary space, and time. During an archive
+update, Cancel waits for that update and empty-parent restoration to finish.
+Source-update failure stops the operation and retains the copied output.
+
+Avoid editing either archive or the destination concurrently. Change detection
+does not lock files or guarantee recovery from crashes or storage failure.
+Verified Moves reject symbolic links, junctions, and the archive root itself;
+select its contents instead. Local-to-archive Move and same-archive rename keep
+their existing behavior. The separate `Unpack archive` command remains pending.
 
 ## Development
 
@@ -129,10 +148,10 @@ In case of a failure of the GitHub Action, assuming fix is applied run:
 
 ```powershell
 git add -A
-git commit -m "Fix release build for vX.Y.Z"
-git push --force origin HEAD
-git tag --force -a vX.Y.Z -m "RoyiFileManager vX.Y.Z"
-git push --force origin vX.Y.Z
+git commit -m "Release vX.Y.Z"
+git push origin main
+git tag -f -a vX.Y.Z -m "RoyiFileManager vX.Y.Z"
+git push --force origin refs/tags/vX.Y.Z
 ```
 
 ## Miscellaneous Scripts

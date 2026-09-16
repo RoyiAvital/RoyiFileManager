@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
 
+## [0.4.2] - 2026-09-16
+
+API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
+
+### Changed
+
+- Archive extraction reports 7-Zip progress, supports cancellation during quiet
+  process phases, and cleans staged output after process teardown.
+- Moving out of or between archives verifies copied contents before source
+  deletion. Cross-archive Move verifies by re-extracting the destination;
+  additional hashing and I/O prioritize correctness over speed. Cancellation
+  waits for active archive updates to finish.
+
+### Fixed
+
+- Failed, canceled, or warning-producing extraction cannot trigger dependent
+  source deletion. Source-update failure retains copied output and stops the
+  operation, including after a prior Continue-all choice.
+- Archive-to-archive Move no longer deletes the source before destination
+  packing succeeds. Detected source changes and same-file archive aliases stop
+  the transfer before deletion.
+- Windows directory publication refuses late destination conflicts and emits
+  filesystem notifications only after success.
+
 ## [0.4.1] - 2026-09-16
 
 API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.

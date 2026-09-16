@@ -153,7 +153,10 @@ class LocalFileSystem(FileSystem):
 		os_src_path = self._url_to_os_path(src_path)
 		dst_path = splitscheme(dst_url)[1]
 		os_dst_path = self._url_to_os_path(dst_path)
-		Path(os_src_path).replace(os_dst_path)
+		if PLATFORM == 'Windows' and Path(os_src_path).is_dir():
+			os.rename(os_src_path, os_dst_path)
+		else:
+			Path(os_src_path).replace(os_dst_path)
 		self.notify_file_removed(src_path)
 		self.notify_file_added(dst_path)
 	def move_to_trash(self, path):

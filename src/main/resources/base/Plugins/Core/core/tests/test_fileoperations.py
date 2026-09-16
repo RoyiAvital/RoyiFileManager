@@ -1,14 +1,43 @@
-from core.fileoperations import CopyFiles, MoveFiles
+from core.fileoperations import CopyFiles, MoveFiles, ArchiveUpdateError
 from core.tests import StubFS, SYMLINKS_SUPPORTED
-from fman import YES, NO, OK, YES_TO_ALL, NO_TO_ALL, ABORT, PLATFORM
+from fman import YES, NO, OK, YES_TO_ALL, NO_TO_ALL, ABORT, PLATFORM, Task
 from fman.url import join, dirname, as_url, as_human_readable
 from os.path import exists
 from tempfile import TemporaryDirectory
 from unittest import TestCase, skipIf, skipUnless
+from unittest.mock import Mock, patch
 
 import os
 import os.path
 import stat
+
+class ArchiveTransferErrorTest(TestCase):
+	def test_update_failure_stops_even_after_ignore_all(self):
+		operation = MoveFiles(['zip://source.zip/item'], 'file:///destination')
+		operation._ignore_exceptions = True
+		later = Mock()
+		operation._tasks = [Task('Update', fn=Mock(side_effect=ArchiveUpdateError(5, 'retained'))),
+			Task('Later', fn=later)]
+		with patch.object(operation, '_gather_files', return_value=True), \
+			patch.object(operation, 'show_alert', return_value=OK) as alert:
+			operation()
+			alert.assert_called_once()
+		later.assert_not_called()
+	def test_continue_skips_failed_composite_not_just_extraction(self):
+		operation = MoveFiles(['zip://source.zip/item'], 'file:///destination')
+		deleted = Mock()
+		later = Mock()
+		class Composite(Task):
+			def __call__(self):
+				self.run(Task('Extract', fn=Mock(side_effect=OSError(5, 'failed'))))
+				deleted()
+		operation._tasks = [Composite('Move', size=200), Task('Later', fn=later)]
+		with patch.object(operation, '_gather_files', return_value=True), \
+			patch.object(operation, 'show_alert', return_value=YES) as alert:
+			operation()
+			alert.assert_called_once()
+		deleted.assert_not_called()
+		later.assert_called_once()
 
 class FileTreeOperationAT:
 

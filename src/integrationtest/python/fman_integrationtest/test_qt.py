@@ -40,6 +40,57 @@ class SortedFileSystemModelIT(SortedFileSystemModelAT, QtIT):
 class RunInThreadIT(RunInThreadAT, QtIT):
 	pass
 
+class ArchiveTransferIT(QtIT):
+	def test_quiet_transfer_cancel_keeps_dialog_modeless(self):
+		from core.fs.zip import _7zipTaskWithProgress
+		from core.tests.fs.test_zip import FakePipeProcess
+		from fman import Task
+		from fman.impl.widgets import ProgressDialog
+		from PyQt5.QtCore import QThread, QTimer
+		from PyQt5.QtGui import QPalette
+		from PyQt5.QtWidgets import QWidget
+		from unittest.mock import patch
+		process = FakePipeProcess(quiet=True)
+		started = Event()
+		original = process.output_chunks
+		def output():
+			started.set()
+			yield from original()
+		process.output_chunks = output
+		observed = []
+		def create():
+			parent = QWidget()
+			parent.show()
+			dialog = ProgressDialog(parent, 'Archive transfer', 100, QPalette())
+			dialog.forceShow()
+			timer = QTimer(dialog)
+			def cancel():
+				if started.is_set():
+					observed.append((dialog.isModal(), parent.isEnabled(),
+						QApplication.activeModalWidget(), QThread.currentThread()))
+					dialog.request_cancel()
+					timer.stop()
+			timer.timeout.connect(cancel)
+			timer.start(10)
+			return parent, dialog, timer
+		parent, dialog, timer = self.run_in_app(create)
+		task = _7zipTaskWithProgress('Extracting', size=100)
+		task._dialog = dialog
+		try:
+			with patch('core.fs.zip.Popen7ZipWindows', return_value=process):
+				with self.assertRaises(Task.Canceled):
+					task.run_7zip_with_progress(['x'], pty=False)
+			self.assertTrue(process.killed)
+			self.assertTrue(process.waited)
+			self.assertEqual([(False, True, None, QApplication.instance().thread())], observed)
+		finally:
+			def close():
+				timer.stop()
+				dialog.cancel()
+				parent.close()
+				parent.deleteLater()
+			self.run_in_app(close)
+
 class CommandPaletteRecentIT(QtIT):
 	def test_history_thread_affinity_and_other_provider_isolation(self):
 		from core.commands import CommandPalette, _COMMAND_PALETTE_HISTORY

@@ -1,19 +1,343 @@
 from errno import ENOENT
-from core.fs.zip import ZipFileSystem, _7zip, _get_7zip_args_windows
+from core.fs.zip import ZipFileSystem, _7zip, _get_7zip_args_windows, \
+	_7zipError, _7zipTaskWithProgress, Extract, _cleanup_extraction, \
+	_tree_digest, UpdateArchive, Run7ZipViaWinpty, Run7ZipViaPty, \
+	SevenZipFileSystem, TarFileSystem, Popen7Zip, _transfer_temp_directory
+from core.fs.zip import Popen7ZipWindows, _run_7zip
+from core.fileoperations import ArchiveUpdateError
 from core.tests import StubFS
+from contextlib import contextmanager
 from datetime import date
 from fman.url import as_url, join, as_human_readable, splitscheme
+from fman import Task
 from os import listdir
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from threading import Event, enumerate as enumerate_threads
+from io import BytesIO
+from time import monotonic
 from unicodedata import normalize
 from unittest import TestCase
+from unittest.mock import Mock, patch
 from zipfile import ZipFile, ZipInfo
 
 import os
 import os.path
+import sys
+
+class FakePipeProcess:
+	def __init__(self, chunks=(), exit_code=0, quiet=False):
+		self.chunks = chunks
+		self.exit_code = exit_code
+		self.quiet = quiet
+		self.finished = Event()
+		self.stdout = Mock()
+		self.killed = False
+		self.waited = False
+	def output_chunks(self):
+		if self.quiet:
+			self.finished.wait(5)
+		yield from self.chunks
+		if not self.quiet:
+			self.finished.set()
+	def poll(self):
+		return self.exit_code if self.finished.is_set() else None
+	def kill(self):
+		self.killed = True
+		self.finished.set()
+	def wait(self):
+		if not self.finished.wait(5):
+			raise AssertionError('Process not terminated')
+		self.waited = True
+		return self.exit_code
+
+class ArchiveProcessTest(TestCase):
+	def test_outer_cleanup_preserves_mandatory_stop(self):
+		temporary = Mock()
+		temporary.name = 'temporary-output'
+		temporary.cleanup.side_effect = PermissionError('locked')
+		error = ArchiveUpdateError(5, 'update failed')
+		with patch('core.fs.zip.TemporaryDirectory', return_value=temporary):
+			with self.assertRaises(ArchiveUpdateError) as caught:
+				with _transfer_temp_directory(Mock()):
+					raise error
+		self.assertIs(error, caught.exception)
+		self.assertEqual(3, temporary.cleanup.call_count)
+	def test_real_quiet_child_is_terminated(self):
+		children = []
+		ready = Event()
+		def spawn(args, cwd):
+			code = "from threading import Event; print('READY', flush=True); Event().wait(30)"
+			process = Popen7Zip(['-c', code], cwd,
+				None, encoding='utf-8')
+			children.append(process)
+			return process
+		def check():
+			if ready.is_set():
+				raise Task.Canceled()
+		with patch('core.fs.zip._7ZIP_BINARY', sys.executable), \
+			patch('core.fs.zip.Popen7ZipWindows', side_effect=spawn):
+			with self.assertRaises(Task.Canceled):
+				with _7zip([]) as command:
+					for record in command.progress_records(check):
+						if record == 'READY':
+							ready.set()
+		self.assertTrue(ready.is_set())
+		self.assertIsNotNone(children[0].poll())
+		self.assertTrue(children[0].stdout.closed)
+	def test_cancel_after_eof_before_exit(self):
+		class EarlyEof(FakePipeProcess):
+			def output_chunks(self):
+				return iter(())
+		process = EarlyEof()
+		checks = []
+		def check():
+			checks.append(True)
+			if len(checks) >= 2:
+				raise Task.Canceled()
+		with patch('core.fs.zip.Popen7ZipWindows', return_value=process):
+			with self.assertRaises(Task.Canceled):
+				with _7zip(['x']) as command:
+					list(command.progress_records(check))
+		self.assertTrue(process.killed)
+		self.assertTrue(process.waited)
+	def test_cancel_during_mutation_does_not_kill_child(self):
+		task = _7zipTaskWithProgress('Updating', size=100)
+		class CancelOutput(FakePipeProcess):
+			def output_chunks(self):
+				task._dialog._was_canceled = True
+				yield from super().output_chunks()
+		process = CancelOutput(['10% item\r', '100% item\n'])
+		with patch('core.fs.zip.Popen7ZipWindows', return_value=process), \
+			patch.object(task, 'set_text') as set_text:
+			task.run_7zip_with_progress(['d'], pty=False, cancellable=False)
+			self.assertTrue(any('Canceling after' in call.args[0] for call in set_text.call_args_list))
+		self.assertFalse(process.killed)
+		self.assertEqual(100, task.get_progress())
+	def test_progress_is_monotonic_and_capped(self):
+		task = _7zipTaskWithProgress('Extracting', size=100)
+		process = FakePipeProcess(['0%\r50% item\r20% item\r100% item\n'])
+		with patch('core.fs.zip.Popen7ZipWindows', return_value=process), \
+			patch.object(task, 'set_progress', wraps=task.set_progress) as set_progress:
+			task.run_7zip_with_progress(['x'], pty=False, progress_limit=99)
+			self.assertEqual([50, 99], [call.args[0] for call in set_progress.call_args_list])
+	def test_existing_pty_readers(self):
+		process = Mock()
+		process.read.side_effect = ['\x1b[0m 10% file\r', EOFError()]
+		self.assertEqual([' 10% file\r'], list(Run7ZipViaWinpty.Stdout(process)))
+		reader = object.__new__(Run7ZipViaPty.Stdout)
+		reader._encoding = 'utf-8'
+		reader._source = BytesIO(b' 10% file\b\b\b\b\b\b\b\b\b 20% file\n')
+		self.assertIn(' 10% file', list(reader))
+	def test_verification_failure_does_not_publish(self):
+		with TemporaryDirectory() as directory:
+			filesystem = Mock()
+			task = Extract(filesystem, 'source.zip', '', str(Path(directory, 'out')),
+				expected_digest=b'wrong')
+			with patch.object(task, 'run_7zip_with_progress'):
+				with self.assertRaisesRegex(OSError, 'failed verification'):
+					task()
+			filesystem.move.assert_not_called()
+			self.assertEqual([], list(Path(directory).iterdir()))
+	def test_extract_cancel_and_warning_do_not_publish(self):
+		for error in (Task.Canceled(), _7zipError(1, ['x'], 'warning')):
+			with self.subTest(error=type(error).__name__), TemporaryDirectory() as directory:
+				filesystem = Mock()
+				task = Extract(filesystem, 'source.zip', '', str(Path(directory, 'out')))
+				with patch.object(task, 'run_7zip_with_progress', side_effect=error):
+					with self.assertRaises((Task.Canceled, OSError)):
+						task()
+				filesystem.move.assert_not_called()
+				self.assertEqual([], list(Path(directory).iterdir()))
+	def test_cancel_before_publication(self):
+		with TemporaryDirectory() as directory:
+			task = Extract(Mock(), 'source.zip', '', str(Path(directory, 'out')))
+			def cancel(*args, **kwargs):
+				task._dialog._was_canceled = True
+			with patch.object(task, 'run_7zip_with_progress', side_effect=cancel):
+				with self.assertRaises(Task.Canceled):
+					task()
+			task._fman_fs.move.assert_not_called()
+			self.assertEqual([], list(Path(directory).iterdir()))
+	def test_cleanup_failure_preserves_cancellation(self):
+		task = Mock()
+		temporary = Mock(name='temporary')
+		temporary.name = 'temporary-output'
+		temporary.cleanup.side_effect = PermissionError('locked')
+		error = Task.Canceled()
+		with self.assertRaises(Task.Canceled) as caught:
+			try:
+				raise error
+			finally:
+				_cleanup_extraction(task, temporary)
+		self.assertIs(error, caught.exception)
+		self.assertEqual(3, temporary.cleanup.call_count)
+		task.show_alert.assert_called_once()
+	def test_split_records_and_bounded_diagnostics(self):
+		process = FakePipeProcess([' 1', '0% file\b\b 20%', ' file\r',
+			' 100% done\n', 'x' * 10000 + '\n'] * 120)
+		with patch('core.fs.zip.Popen7ZipWindows', return_value=process):
+			with _7zip(['x'], allow_warning=False) as command:
+				records = list(command.progress_records(lambda: None))
+			self.assertIn(' 10% file', records)
+			self.assertIn(' 20% file', records)
+			self.assertLessEqual(max(map(len, records)), 4096)
+			self.assertEqual(100, len(command._stdout_lines))
+		self.assertFalse(process.killed)
+		self.assertTrue(process.waited)
+		process.stdout.close.assert_called_once()
+	def test_cancel_quiet_process_reaps_and_joins(self):
+		process = FakePipeProcess(quiet=True)
+		checks = []
+		def check():
+			checks.append(True)
+			if len(checks) == 2:
+				raise Task.Canceled()
+		with patch('core.fs.zip.Popen7ZipWindows', return_value=process):
+			with self.assertRaises(Task.Canceled):
+				with _7zip(['x']) as command:
+					list(command.progress_records(check))
+		self.assertTrue(process.killed)
+		self.assertTrue(process.waited)
+		self.assertFalse(any(thread.name == '7zip-output' for thread in enumerate_threads()))
+		process.stdout.close.assert_called_once()
+	def test_warning_policy_is_explicit(self):
+		for allow_warning in (True, False):
+			process = FakePipeProcess(exit_code=1)
+			with self.subTest(allow_warning=allow_warning), \
+				patch('core.fs.zip.Popen7ZipWindows', return_value=process):
+				def run():
+					with _7zip(['x'], allow_warning=allow_warning) as command:
+						list(command.progress_records(lambda: None))
+				if allow_warning:
+					run()
+				else:
+					with self.assertRaises(_7zipError):
+						run()
 
 class SevenZipExecutableTest(TestCase):
+	def test_cancel_real_extraction_cleans_staging(self):
+		with TemporaryDirectory() as directory:
+			archive = Path(directory, 'cancel.zip')
+			with ZipFile(archive, 'w') as writer:
+				writer.writestr('payload.bin', b'x' * (16 * 1024 * 1024))
+			task = Extract(StubFS(), str(archive), '', str(Path(directory, 'out')))
+			children = []
+			def spawn(args, cwd):
+				process = Popen7ZipWindows(args, cwd)
+				children.append(process)
+				original = process.output_chunks
+				def output():
+					for chunk in original():
+						task._dialog._was_canceled = True
+						yield chunk
+				process.output_chunks = output
+				return process
+			with patch('core.fs.zip.Popen7ZipWindows', side_effect=spawn):
+				with self.assertRaises(Task.Canceled):
+					task()
+			self.assertEqual(['cancel.zip'], os.listdir(directory))
+			self.assertIsNotNone(children[0].poll())
+			self.assertTrue(children[0].stdout.closed)
+	def test_copy_verification_timing(self):
+		with TemporaryDirectory() as directory:
+			root = Path(directory)
+			archive = root / 'timing.zip'
+			with ZipFile(archive, 'w') as writer:
+				writer.writestr('payload.bin', b'x' * (8 * 1024 * 1024))
+			started = monotonic()
+			_run_7zip(['x', str(archive), '-o' + str(root / 'baseline')])
+			baseline = monotonic() - started
+			started = monotonic()
+			Extract(StubFS(), str(archive), '', str(root / 'verified'), verify_output=True)()
+			verified = monotonic() - started
+			self.assertEqual(_tree_digest(root / 'baseline', lambda: None),
+				_tree_digest(root / 'verified', lambda: None))
+			print('8 MiB baseline extraction %.3fs; staged/verified extraction %.3fs' % (baseline, verified))
+	def test_multi_item_move_verification_cost(self):
+		with TemporaryDirectory() as directory:
+			root = Path(directory)
+			archive = root / 'timing.zip'
+			output = root / 'output'
+			output.mkdir()
+			payload = b'x' * (3 * 1024 * 1024)
+			retained = b'y' * (4 * 1024 * 1024)
+			names = ['item-%02d.bin' % number for number in range(20)]
+			with ZipFile(archive, 'w') as writer:
+				for name in names:
+					writer.writestr(name, payload)
+				writer.writestr('retained.bin', retained)
+			filesystem = ZipFileSystem(StubFS(), {'.zip'})
+			original_open = Path.open
+			read_bytes = {'archive': 0, 'output': 0}
+			@contextmanager
+			def counted_open(path, *args, **kwargs):
+				with original_open(path, *args, **kwargs) as stream:
+					def read(*read_args):
+						data = stream.read(*read_args)
+						kind = 'archive' if path == archive else 'output'
+						read_bytes[kind] += len(data)
+						return data
+					proxy = Mock(wraps=stream)
+					proxy.read.side_effect = read
+					yield proxy
+			def measured_digest(path, check):
+				with patch.object(Path, 'open', counted_open):
+					return _tree_digest(path, check)
+			samples = []
+			print('20-item Move, 64 MiB stored ZIP payload; Python hash-read bytes only')
+			for name in names:
+				read_bytes.update(archive=0, output=0)
+				archive_size = archive.stat().st_size
+				started = monotonic()
+				with patch('core.fs.zip._tree_digest', side_effect=measured_digest):
+					filesystem.move(as_url(archive, 'zip://') + '/' + name, as_url(output / name))
+				elapsed = monotonic() - started
+				self.assertEqual(2 * archive_size, read_bytes['archive'])
+				self.assertEqual(2 * len(payload), read_bytes['output'])
+				self.assertEqual(payload, (output / name).read_bytes())
+				samples.append((elapsed, read_bytes['archive'], read_bytes['output']))
+				print('%s %.3fs archive=%d output=%d' % (name, *samples[-1]))
+			with ZipFile(archive) as reader:
+				self.assertEqual(['retained.bin'], reader.namelist())
+				self.assertEqual(retained, reader.read('retained.bin'))
+			self.assertEqual(set(names), {path.name for path in output.iterdir()})
+			self.assertEqual({'timing.zip', 'output'}, {path.name for path in root.iterdir()})
+			print('Total %.3fs archive=%d output=%d' % (
+				sum(sample[0] for sample in samples),
+				sum(sample[1] for sample in samples),
+				sum(sample[2] for sample in samples)
+			))
+	def test_real_7z_and_tar_extraction(self):
+		for suffix, filesystem_type in (('.7z', SevenZipFileSystem), ('.tar', TarFileSystem)):
+			with self.subTest(suffix=suffix), TemporaryDirectory() as directory:
+				root = Path(directory)
+				source = root / 'source'
+				(source / 'empty').mkdir(parents=True)
+				(source / 'data.txt').write_text('verified payload')
+				archive = root / ('archive' + suffix)
+				with _7zip(['a', '-bsp1', str(archive), 'source'], cwd=directory,
+					allow_warning=False) as command:
+					list(command.progress_records(lambda: None))
+				filesystem = filesystem_type(StubFS(), {suffix})
+				output = root / 'out'
+				started = monotonic()
+				filesystem.copy(as_url(archive, filesystem.scheme), as_url(output))
+				self.assertEqual(_tree_digest(source, lambda: None),
+					_tree_digest(output / 'source', lambda: None))
+				print(suffix, 'extraction seconds:', round(monotonic() - started, 3))
+	def test_extract_pipe_progress(self):
+		with TemporaryDirectory() as directory:
+			archive = Path(directory, 'progress.zip')
+			with ZipFile(archive, 'w') as writer:
+				writer.writestr('payload.bin', b'x' * (16 * 1024 * 1024))
+			output = Path(directory, 'output')
+			with _7zip(['x', '-bsp1', '-y', str(archive), '-o' + str(output)],
+				allow_warning=False) as command:
+				records = list(command.progress_records(lambda: None))
+			self.assertTrue(any('%' in record for record in records), records)
+			self.assertEqual(16 * 1024 * 1024, (output / 'payload.bin').stat().st_size)
+			print('7-Zip pipe progress:', [record for record in records if '%' in record])
 	def test_windows_output_encoding_is_utf8(self):
 		self.assertEqual(
 			['-sccUTF-8', 'l', 'archive.zip'],
@@ -34,6 +358,130 @@ class SevenZipExecutableTest(TestCase):
 				self.assertEqual(b'7za works', zip_file.read('smoke-test.txt'))
 
 class ZipFileSystemTest(TestCase):
+	def test_move_rejects_source_rewrite_with_unchanged_stat(self):
+		with TemporaryDirectory() as directory:
+			archive = Path(directory, 'source.zip')
+			output = Path(directory, 'output')
+			entry = ZipInfo('item.txt')
+			with ZipFile(archive, 'w') as writer:
+				writer.writestr(entry, b'original')
+			before = archive.stat()
+			original = Extract.__call__
+			def extract(task):
+				original(task)
+				with ZipFile(archive, 'w') as writer:
+					writer.writestr(entry, b'changed!')
+				os.utime(archive, ns=(before.st_atime_ns, before.st_mtime_ns))
+				after = archive.stat()
+				for field in ('st_dev', 'st_ino', 'st_size', 'st_mtime_ns'):
+					self.assertEqual(getattr(before, field), getattr(after, field), field)
+			with patch.object(Extract, '__call__', extract):
+				with self.assertRaisesRegex(OSError, 'Source archive changed'):
+					self._fs.move(as_url(archive, 'zip://') + '/item.txt', as_url(output))
+			self.assertEqual(b'original', output.read_bytes())
+			with ZipFile(archive) as reader:
+				self.assertEqual(b'changed!', reader.read('item.txt'))
+	def test_move_rejects_changed_published_output(self):
+		with TemporaryDirectory() as directory:
+			output = Path(directory, 'output')
+			before = Path(self._zip).read_bytes()
+			original = self._fs._fs.move
+			def publish(source, destination):
+				original(source, destination)
+				if destination == as_url(output):
+					output.write_bytes(b'changed after publication')
+			with patch.object(self._fs._fs, 'move', side_effect=publish):
+				with self.assertRaisesRegex(OSError, 'Extracted output failed verification'):
+					self._fs.move(self._url('ZipFileTest/file.txt'), as_url(output))
+			self.assertEqual(before, Path(self._zip).read_bytes())
+			self.assertEqual(b'changed after publication', output.read_bytes())
+	def test_cancel_after_deletion_finishes_empty_parent_restoration(self):
+		with TemporaryDirectory() as directory:
+			path = 'ZipFileTest/Directory/Subdirectory/file 3.txt'
+			root = self._fs.prepare_move(self._url(path), as_url(Path(directory, 'out')))[0]
+			original = _7zipTaskWithProgress.run_7zip_with_progress
+			def run(task, args, **kwargs):
+				result = original(task, args, **kwargs)
+				if isinstance(task, UpdateArchive) and args[0] == 'd':
+					root._dialog._was_canceled = True
+				return result
+			with patch.object(_7zipTaskWithProgress, 'run_7zip_with_progress', run):
+				with self.assertRaises(Task.Canceled):
+					root()
+			self.assertTrue(Path(directory, 'out').exists())
+			self.assertFalse(self._fs.exists(self._path(path)))
+			self.assertTrue(self._fs.is_dir(self._path('ZipFileTest/Directory/Subdirectory')))
+	def test_move_literal_at_prefixed_entry(self):
+		with ZipFile(self._zip, 'a') as writer:
+			writer.writestr('@input.txt', 'literal entry')
+		with TemporaryDirectory() as directory:
+			archive = Path(directory, 'destination.zip')
+			self._fs.move(self._url('@input.txt'), as_url(archive, 'zip://') + '/@output.txt')
+			with ZipFile(archive) as reader:
+				self.assertEqual(b'literal entry', reader.read('@output.txt'))
+			with ZipFile(self._zip) as reader:
+				self.assertNotIn('@input.txt', reader.namelist())
+	def test_extract_cannot_overwrite_source_archive(self):
+		before = Path(self._zip).read_bytes()
+		with self.assertRaisesRegex(OSError, 'source archive'):
+			self._fs.copy(self._url('ZipFileTest/file.txt'), as_url(self._zip))
+		self.assertEqual(before, Path(self._zip).read_bytes())
+	def test_extract_late_directory_conflict_retains_existing(self):
+		with TemporaryDirectory() as directory:
+			destination = Path(directory, 'Output')
+			task = self._fs.prepare_copy(self._url('ZipFileTest/Directory'), as_url(destination))[0]
+			run = task.run_7zip_with_progress
+			def race(*args, **kwargs):
+				run(*args, **kwargs)
+				destination.mkdir()
+				(destination / 'keep.txt').write_text('keep')
+			with patch.object(task, 'run_7zip_with_progress', side_effect=race):
+				with self.assertRaises(OSError):
+					task()
+			self.assertEqual(['keep.txt'], os.listdir(destination))
+			self.assertEqual(['Output'], os.listdir(directory))
+	def test_move_between_archive_aliases_is_rejected(self):
+		with TemporaryDirectory() as directory:
+			alias = Path(directory, 'alias.zip')
+			os.link(self._zip, alias)
+			before = Path(self._zip).read_bytes()
+			with self.assertRaisesRegex(OSError, 'same archive'):
+				self._fs.move(self._url('ZipFileTest/file.txt'), as_url(alias, 'zip://') + '/new.txt')
+			self.assertEqual(before, Path(self._zip).read_bytes())
+	def test_move_between_archives_verification_failure_retains_source(self):
+		before = Path(self._zip).read_bytes()
+		original = Extract.__call__
+		def extract(task):
+			if task._expected_digest is not None:
+				raise OSError('verification failed')
+			return original(task)
+		with TemporaryDirectory() as directory, patch.object(Extract, '__call__', extract):
+			destination = as_url(Path(directory, 'out.zip'), 'zip://') + '/item.txt'
+			with self.assertRaisesRegex(OSError, 'verification failed'):
+				self._fs.move(self._url('ZipFileTest/file.txt'), destination)
+			self.assertEqual(before, Path(self._zip).read_bytes())
+	def test_move_between_archives_directory_and_empty_directory(self):
+		for path in ('ZipFileTest/Directory', 'ZipFileTest/Empty directory'):
+			with self.subTest(path=path), TemporaryDirectory() as directory:
+				expected = self._get_zip_contents(path_in_zip=path)
+				archive = Path(directory, 'out.zip')
+				self._fs.move(self._url(path), as_url(archive, 'zip://') + '/moved')
+				self.assertEqual(expected, self._get_zip_contents(str(archive), 'moved'))
+				self.assertFalse(self._fs.exists(self._path(path)))
+	def test_move_directory_named_like_verification_output(self):
+		path = 'ZipFileTest/Directory'
+		expected = self._get_zip_contents(path_in_zip=path)
+		with TemporaryDirectory() as directory:
+			archive = Path(directory, 'out.zip')
+			self._fs.move(self._url(path), as_url(archive, 'zip://') + '/verified-output')
+			self.assertEqual(expected, self._get_zip_contents(str(archive), 'verified-output'))
+			self.assertFalse(self._fs.exists(self._path(path)))
+	def test_move_preparation_counts_one_root_with_fixed_budget(self):
+		with TemporaryDirectory() as directory:
+			prepared = self._fs.prepare_move(self._url('ZipFileTest/file.txt'), as_url(Path(directory, 'out')))
+			self.assertEqual([200], [task.get_size() for task in prepared])
+			bridge = self._fs.prepare_move(self._url('ZipFileTest/file.txt'), as_url(Path(directory, 'out.zip'), 'zip://') + '/out')
+			self.assertEqual([400], [task.get_size() for task in bridge])
 	def test_read_file_info_with_fractional_modified_time(self):
 		file_info = self._fs._read_file_info(iter((
 			'Path = file.txt\n',
@@ -290,6 +738,25 @@ class ZipFileSystemTest(TestCase):
 		self.test_move_file_between_archives(
 			self._fs.copy, self._get_from_dir_dict
 		)
+	def test_failed_destination_packing_keeps_source(self):
+		before = Path(self._zip).read_bytes()
+		for error in (OSError('failed'), Task.Canceled()):
+			with self.subTest(error=type(error).__name__), TemporaryDirectory() as directory:
+				destination = as_url(Path(directory, 'destination.zip'), 'zip://') + '/item.txt'
+				with patch('core.fs.zip.AddToArchive.__call__', side_effect=error):
+					with self.assertRaises((OSError, Task.Canceled)):
+						self._fs.move(self._url('ZipFileTest/file.txt'), destination)
+				self.assertEqual(before, Path(self._zip).read_bytes())
+	def test_move_source_change_keeps_source(self):
+		with TemporaryDirectory() as directory:
+			def change_source(*args, **kwargs):
+				with ZipFile(self._zip, 'a') as writer:
+					writer.writestr('new.txt', 'added while extracting')
+			with patch('core.fs.zip.Extract.__call__', side_effect=change_source):
+				with self.assertRaisesRegex(OSError, 'changed during transfer'):
+					self._fs.move(self._url('ZipFileTest/file.txt'), as_url(Path(directory, 'out')))
+			with ZipFile(self._zip) as archive:
+				self.assertIn('ZipFileTest/file.txt', archive.namelist())
 	def test_size_bytes_file(self):
 		file_path = 'ZipFileTest/Directory/Subdirectory/file 3.txt'
 		file_contents = self._get_zip_contents(path_in_zip=file_path)

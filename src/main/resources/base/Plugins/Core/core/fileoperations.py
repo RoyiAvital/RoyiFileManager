@@ -6,6 +6,9 @@ from os.path import pardir
 
 import fman.fs
 
+class ArchiveUpdateError(OSError):
+	pass
+
 class FileTreeOperation(Task):
 	def __init__(
 		self, descr_verb, files, dest_dir, dest_name=None, fs=fman.fs
@@ -46,6 +49,9 @@ class FileTreeOperation(Task):
 			progress_before = self.get_progress()
 			try:
 				self.run(task)
+			except ArchiveUpdateError as error:
+				self.show_alert(str(error), OK, OK)
+				break
 			except (OSError, IOError) as e:
 				title = task.get_title()
 				message = 'Error ' + (title[0].lower() + title[1:])

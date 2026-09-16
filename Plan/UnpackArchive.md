@@ -2,291 +2,216 @@
 
 ## Task
 
-Add a bundled plug-in named `UnpackArchive` with a Command Center command
-`Unpack Archive`. The command extracts one chosen local archive into a sibling
-directory whose name is the archive filename without its recognized suffix.
-For example, `Reports.zip` is unpacked into `Reports/`.
+Add the command `Unpack archive`: unpack one chosen archive into a new folder
+in the current pane's directory, named after the archive without its recognized
+suffix. For example, `Reports.zip` produces `Reports/` and keeps `Reports.zip`.
 
-The behavior is inspired by
-[thomas-haslwanter/fman_unzip](https://github.com/thomas-haslwanter/fman_unzip),
-but uses RoyiFileManager's existing archive filesystems and bundled `7za.exe`
-instead of Python's `zipfile`. No default keyboard shortcut is added.
+This is task (1). Shared extraction progress and cancellation belong to task
+(2), [Archive Transfers](../Done/ArchiveTransfers.md), whose implementation and
+focused checks are complete. This command remains pending; this document
+replaces the old design.
 
 ## Scope
 
 Included:
 
-- One `DirectoryPaneCommand`, `UnpackArchive`, with command identifier
-  `unpack_archive` and aliases `Unpack archive` and `Extract archive`.
-- Exactly one chosen local archive per invocation. Selection follows
-  `get_chosen_files()`, so the file under the cursor is used when there is no
-  explicit selection.
-- Archive formats configured in Core's `archive_handlers` mapping. Bundled
-  defaults are `.zip`, `.zipx`, `.jar`, `.xpi`, `.7z`, and `.tar`; user-added
-  handlers are honored when their filesystem scheme is registered.
-- A destination beside the archive, named by removing the longest matching
-  configured suffix case-insensitively.
-- Background extraction through `submit_task`, `fman.fs.prepare_copy`, and the
-  existing archive filesystem task. On success, place the cursor on the new
-  directory and show a short status message.
-- Progress and cancellation for Core archive extraction.
-- Command Center access only. Do not add a key binding or context-menu entry.
+- One Core `DirectoryPaneCommand`, `UnpackArchive`, identified by
+  `unpack_archive` and discoverable as `Unpack archive` in the Command Center.
+- Exactly one chosen local archive. Use `get_chosen_files()`, including its
+  cursor fallback when nothing is explicitly selected.
+- The archive must be a file directly inside the invoking pane's captured local
+  directory. Its new destination is inside that same directory.
+- Core's configured `archive_handlers`; bundled suffixes are `.zip`, `.zipx`,
+  `.jar`, `.xpi`, `.7z`, and `.tar`. Use the longest case-insensitive suffix
+  match and a registered filesystem backend.
+- Existing task/progress UI, concise errors, completion status, and best-effort
+  cursor placement on the new folder without changing focus or navigation.
 
-Excluded:
+Excluded: a destination chooser or companion destination command, multiple
+archives, merging/overwriting existing output, removing the source archive,
+password prompts, new formats, nested/non-local archive extraction, and new
+shortcuts or context-menu entries. Users extract elsewhere by entering the
+archive and using the existing Copy workflow.
 
-- Multiple archives in one invocation, destination prompting, merging into or
-  overwriting an existing destination, password prompting, deleting archives
-  after extraction, and adding new archive formats.
-- Extracting non-local archive URLs. Core archive backends currently require an
-  operating-system path for the containing archive.
-- A second 7-Zip process wrapper or direct use of Python `zipfile`.
-- Changes to the public `fman` plug-in API.
-
-Compatibility: preserves the public `fman` plug-in API from fman 1.7.5. The
-plug-in can be removed without affecting Core. The Core extraction change is
-internal, additive, and applies equally to existing drag, copy, and move
-extraction workflows.
+API compatibility: preserves the public `fman` plug-in API from fman 1.7.5.
+This is an addition to the bundled Core plug-in, not a new public API or a
+separate plug-in package. No build-path or packaging changes are needed.
 
 ## Design
 
-### Plug-in Layout
+### Ownership And Data Flow
 
-`src/main/resources/base/Plugins/UnpackArchive/`:
+Place the command and a small composite task beside `Pack` in
+[Core commands](../src/main/resources/base/Plugins/Core/core/commands/__init__.py).
+Reuse Core's archive-handler lookup. If returning the matched suffix requires
+a private helper, preserve existing callers' behavior and return types. Keep
+filename derivation pure and separate from filesystem validation.
 
-- `unpack_archive/__init__.py` - command, archive recognition, destination
-  derivation, and composite extraction task.
-- `README.md` - supported behavior, formats, destination rule, and conflict
-  handling.
+1. Capture the invoking pane's directory and chosen URL through existing pane
+   APIs. Validate exactly one direct-child local file and valid handler settings.
+2. Remove the longest matching configured suffix. Reject an empty name, `.` or
+   `..`; form the archive-root URL and the local destination URL.
+3. Reject any existing destination entry, including a file, directory, or
+   dangling link. Honor Windows case-insensitive conflicts. Never auto-number,
+   merge, overwrite, or remove existing output.
+4. Submit the composite task. On the command worker, prepare the whole archive
+   with `fman.fs.prepare_copy(archive_root_url, destination_url)`, materialize
+   the prepared tasks, and set the parent size to their summed sizes before
+   `Task.run` delegates progress and cancellation to each child.
+5. Set an explicit success flag only after all children finish successfully.
+   `submit_task` swallowing `Task.Canceled` must not imply success.
+6. Show a short completion status. If the original pane still exists and shows
+   the captured directory, attempt cursor placement without stealing focus.
+   Missing/filtered/not-yet-loaded rows are a best-effort miss, not extraction
+   failure. Do not navigate the pane back if the user moved elsewhere.
 
-There is no settings or key-bindings file. Packaging needs no dedicated spec
-entry because the complete base resources tree is already bundled. Add the
-plug-in package to `build.py`'s test `PYTHONPATH`.
+Keep the command available like `Pack`; validate selection on invocation rather
+than adding an I/O-performing palette visibility hook. This also avoids cursor
+and selection disagreeing about command visibility.
 
-### Archive Recognition
+### Backend Contract And Failures
 
-A pure helper loads `Core Settings.json`, validates `archive_handlers` as a
-mapping of non-empty suffix strings to non-empty scheme strings, and sorts
-entries by descending suffix length. The longest case-insensitive suffix match
-wins, matching Core's `Pack` and archive-open behavior.
+The command never runs 7-Zip or implements extraction itself. Task (2) owns the
+Core backend's progress, cancellation, temporary output, process lifetime, and
+non-overwriting directory publication. Preflight is not race protection: a
+destination created while extraction runs must survive unchanged, and the
+command must report the conflict without success feedback.
 
-The helper accepts only a `file://` URL and returns:
+Map expected missing-source, unsupported/unavailable-handler, malformed-archive,
+permission, and process errors to concise existing alerts. Report a destination
+conflict when the backend identifies one; do not mislabel every PermissionError
+as a conflict. Unexpected programming errors use normal plug-in reporting.
 
-- the archive root URL formed by replacing `file://` with the configured
-  archive scheme while preserving the path; and
-- the sibling `file://` destination formed from the filename with the matched
-  suffix removed.
+Configured custom archive backends still use their registered `prepare_copy`
+implementation and its directory-copy contract; progress/cancellation quality
+depends on that backend. Do not claim Core's new guarantees for arbitrary
+third-party filesystems. Unsupported configurations fail without source mutation.
 
-Reject a non-local URL, directory, missing file, unsupported suffix, invalid
-handler mapping, empty destination name (for example a file named only
-`.zip`), or more than one chosen item with a clear alert and no mutation.
+Cancellation before publication leaves no final folder. After the short publish
+commit, a completed folder is not rolled back. Cleanup failures preserve the
+primary result and report leftover temporary output, as specified in task (2).
 
-This duplicates only the small suffix-selection rule rather than importing
-Core's private `_get_handler_for_archive`. The dependency on the
-`archive_handlers` settings shape is intentional bundled-plug-in coupling and
-is covered by focused tests.
+Core's existing archive-path splitter can misidentify an archive when a parent
+directory contains an archive suffix, such as `backup.zip.old/Reports.zip`.
+Correcting that parser is outside these two tasks. Cover the failure with a
+concise alert and no false success; document the limitation until fixed.
 
-### Destination And Conflicts
+### Threading And Persistence
 
-The destination must not exist when extraction begins. If it already exists,
-show `Destination already exists: <path>` and return. Do not merge, overwrite,
-delete, or rename existing content. This matches Core's whole-directory copy
-contract and avoids ambiguous partial results.
+Normal command dispatch already runs on a worker. Task execution stays on that
+worker; UI calls use existing marshaling, and widgets/models stay on Qt. Capture
+plain URLs before background work and do not read a changing pane as a target.
 
-A race that creates the destination after the preflight check is handled by the
-extraction task's `FileExistsError` path and produces the same alert. Core's
-archive extraction first writes to a temporary directory beside the destination
-and moves it into place only after successful extraction, so failed and canceled
-operations do not expose a partially populated destination.
-
-### Command And Task Flow
-
-`UnpackArchive(DirectoryPaneCommand)`:
-
-1. Read `get_chosen_files()` and require exactly one URL.
-2. Validate that the URL is local, exists, is not a directory, and has a
-   configured archive handler.
-3. Derive the archive root and destination URLs.
-4. Reject an existing destination.
-5. Submit `_UnpackArchiveTask(archive_url, destination_url)`.
-6. If the task reports success, place the cursor at the destination (ignore
-   `ValueError` when filtered or hidden) and show
-   `Unpacked <archive> to <directory>.` for three seconds.
-
-`is_visible()` performs no filesystem I/O. It returns true only when the file
-under the cursor is a local URL whose basename has a configured archive suffix.
-Invocation still performs authoritative validation because selection and the
-filesystem may change after visibility is computed.
-
-`_UnpackArchiveTask(Task)` calls `prepare_copy(archive_root_url,
-destination_url)` inside the task, runs each returned subtask with `self.run`,
-and sets `succeeded = True` only after all subtasks complete. Expected
-`FileExistsError`, `FileNotFoundError`, `OSError`, `NotImplementedError`,
-`UnsupportedOperation`, and `subprocess.CalledProcessError` failures are shown
-through the task's alert mechanism and leave `succeeded = False`. Unexpected
-programming errors continue to propagate to the normal plug-in error handler.
-
-### Core Extraction Cancellation
-
-Core's `core.fs.zip.Extract` currently calls blocking `_run_7zip` and has no
-cancellation checkpoints, although archive extraction can be long-running.
-Change it to subclass `_7zipTaskWithProgress`, use a task size of 100, and call
-`run_7zip_with_progress`. That existing helper parses 7-Zip progress, checks the
-progress dialog's cancellation state, kills the child process, and raises
-`Task.Canceled`. Keep the current temporary-directory cleanup and final
-`fman.fs.move` notification behavior unchanged.
-
-The composite plug-in task delegates its progress dialog to the Core extraction
-subtask through `Task.run`. Cancellation prevents the final move, cleans the
-temporary directory, and leaves any pre-existing filesystem state untouched.
-
-### Threading And Failure Behavior
-
-The command runs on the normal command worker. Archive inspection and
-extraction run in the submitted task; no Qt widget or model is accessed from a
-new thread. `show_alert`, `show_status_message`, and `place_cursor_at` use the
-existing thread-safe command APIs.
-
-There is no persistent worker, timer, cache, listener, or startup I/O. Expected
-bad archives, missing sources, unsupported operations, permission errors,
-destination races, and 7-Zip process failures produce concise alerts instead of
-plug-in tracebacks.
+No persistent state, settings file, watcher, listener, timer, or dedicated worker
+is added by the command. Core continues to own archive process execution.
 
 ## Alternatives
 
-- **Copy the reference plug-in's `zipfile.extractall` implementation** -
-  rejected because it supports ZIP only, assumes a four-character suffix,
-  bypasses Core progress and filesystem notifications, has no cancellation,
-  and historically permits unsafe archive paths on older Python versions.
-- **Run bundled `7za.exe` directly from the plug-in** - rejected because Core
-  already owns binary discovery, archive scheme configuration, temporary
-  extraction, notifications, and process error handling.
-- **Import Core's private `_get_handler_for_archive` or `Extract` directly** -
-  rejected in favor of the public configuration and filesystem/task APIs. The
-  only Core code change improves the owning extraction abstraction.
-- **Merge into an existing destination like `ZipFile.extractall`** - rejected
-  because overwrite semantics and partial failures are unclear. A future task
-  can add an explicit conflict policy.
-- **Prompt for an arbitrary destination** - rejected for the first version;
-  deterministic sibling extraction is the defining behavior of the reference
-  plug-in.
-- **Add a shortcut matching the reference plug-in's `Shift+U`** - rejected at
-  the user's request. The command remains available from the Command Center.
+- Separate `UnpackArchive` plug-in: unnecessary packaging and handler-rule
+  duplication. Core already owns the neighboring archive commands and settings.
+- Destination prompt or second command: rejected. Existing archive-as-folder
+  copying already supports arbitrary destinations.
+- Merge into an existing folder: rejected for this command's deterministic
+  new-folder workflow; ordinary Copy retains its existing conflict choices.
+- Direct `7za.exe` or Python `zipfile` use: duplicates/bypasses the filesystem
+  backend and its progress, cancellation, notifications, and format support.
 
 ## Runtime Effects
 
-- Startup: registers one directory-pane command. There are no settings reads,
-  filesystem probes, workers, timers, or recurring signals at startup.
-- Disabled/no-op path: removing the plug-in removes all behavior. Unsupported
-  selections return after bounded validation and start no task.
-- Invocation: a few filesystem metadata queries, then one existing Core archive
-  extraction process. Disk and CPU cost scale with compressed and extracted
-  archive size.
-- Memory: bounded by Core and 7-Zip streaming behavior; the plug-in does not
-  load archive contents into Python memory.
-- Process use: one bundled `7za.exe` child during extraction.
-- Cancellation: the existing progress dialog cancels and kills 7-Zip through
-  the hardened Core extraction task. Temporary output is cleaned and never
-  moved to the final destination.
-- I/O: source archive reads, temporary writes beside the destination, and one
-  final same-filesystem move on success.
+- Startup/unused path: one additional command registration, no feature-specific
+  scans, settings reads, filesystem I/O, workers, timers, or recurring signals.
+- Invocation: read existing cached Core settings (normal loader I/O on a cache
+  miss), bounded selection validation and filesystem metadata checks, then one
+  Core extraction. Invalid input starts no extraction process.
+- CPU/disk cost scales with archive extraction; no duplicate archive scan or
+  Python buffering of contents is added by the command. Prepared-task metadata
+  is small for Core's single whole-archive task.
+- The backend reads the archive, stages output beside the destination, and
+  publishes on the same filesystem. Temporary siblings can be visible.
+- Existing command worker and backend process/reader lifetime follow task (2).
+  No persistent resources remain after success, failure, or cancellation.
+- No new persistence or Registry writes. No separately configurable enable
+  toggle is introduced; when unused this command performs no work.
 
 ## Tests
 
-Focused commands from the repository root with the test environment configured
-by `build.py`:
+Add a focused `core.tests.commands.test_unpack_archive` module beside existing
+Core command tests, and `UnpackArchiveIT` in the existing
+`fman_integrationtest.test_qt` harness. These test IDs are planned, not yet
+implemented. Required checks:
+
+- Registration as `unpack_archive`, Command Center discoverability, and no new
+  shortcut or context-menu registration.
+- Cursor fallback, explicit selection overriding the cursor, zero/multiple
+  chosen items, non-local/nested URLs, missing files, directories, malformed
+  handler settings, and unavailable backends.
+- `Reports.zip`, uppercase suffixes, spaces, `.zipx`, and longest-match custom
+  suffixes such as `.tar.gz`; reject empty/dot/dot-dot output names.
+- Existing files/directories/dangling links and Windows case variants are
+  unchanged; late destination conflicts also produce no success feedback.
+- Prepared task sizes are summed before running children; cancellation and
+  preparation/extraction errors never set the success flag or delete the archive.
+- Success status and best-effort cursor behavior when the pane stays, navigates
+  elsewhere, closes, filters the output, or has not received its model update.
+- Existing Pack/archive-open handler lookup behavior is preserved if its private
+  implementation changes. Parent paths containing archive suffixes fail cleanly.
+- Qt integration through the registered command and real Core backend: ZIP
+  extraction creates the exact tree, retains the archive, updates the pane, and
+  refuses reinvocation onto existing output. No worker touches Qt directly.
+
+Focused commands from the repository root:
 
 ```powershell
-python -m unittest fman_unittest.test_unpack_archive
-python -m unittest fman_integrationtest.impl.plugins.test_unpack_archive_plugin
-python -m unittest core.tests.fs.test_zip
+python -c "import build, subprocess, sys; sys.exit(subprocess.call([sys.executable, '-X', 'faulthandler', '-m', 'unittest', 'core.tests.commands.test_unpack_archive', 'core.tests.commands.test___init__', '-v'], env=build._environment()))"
+python -c "import build, subprocess, sys; sys.exit(subprocess.call([sys.executable, '-X', 'faulthandler', '-m', 'unittest', 'fman_integrationtest.test_qt.UnpackArchiveIT', '-v'], env=dict(build._environment(), QT_QPA_PLATFORM='offscreen')))"
 ```
 
-Unit tests in `src/unittest/python/fman_unittest/test_unpack_archive.py`:
+Manual: invoke the command on ZIP, 7Z, and TAR; inspect names, contents, retained
+sources, status, and pane behavior. Cancel a large extraction, then retry with a
+conflict and a malformed archive. Verify the source never changes. Performance:
+compare with copying the same whole archive through the existing backend; the
+command should add only validation/dispatch, not another extraction or scan.
 
-- Command identifier and aliases; no bundled key-bindings file.
-- Longest, case-insensitive configured suffix matching, including `.zipx` and a
-  test mapping containing both `.gz` and `.tar.gz`.
-- Destination derivation for `Reports.zip`, `archive.tar`, spaces, and uppercase
-  suffixes.
-- No chosen item, multiple items, non-local URL, directory, missing source,
-  unsupported suffix, malformed handler settings, and empty destination name
-  each alert and never submit a task.
-- Existing destination alerts and neither calls `prepare_copy` nor mutates it.
-- Successful extraction submits one task, runs all prepared subtasks, places the
-  cursor, and shows the success status.
-- Cancellation and expected preparation/extraction errors do not place the
-  cursor or show success; a destination race is reported.
-- `is_visible` is pure and depends only on the cursor URL and configured suffix.
-
-Core tests in `core.tests.fs.test_zip`:
-
-- Whole-archive extraction still produces the expected tree.
-- `Extract` reports increasing progress from representative 7-Zip output.
-- Canceling the extraction task kills the process, skips the final move, and
-  removes temporary output.
-- Successful extraction retains the existing final move and cache notification
-  behavior.
-
-Integration test in
-`src/integrationtest/python/fman_integrationtest/impl/plugins/test_unpack_archive_plugin.py`:
-
-- The bundled plug-in loads and registers `unpack_archive` with its aliases.
-- Loading adds no default key binding.
-- A temporary real ZIP is unpacked through the registered Core archive
-  filesystem into the suffix-free sibling directory with expected contents.
-- Reinvocation with the destination present leaves it unchanged and reports the
-  conflict.
-
-Manual checks:
-
-- Unpack one `.zip`, `.7z`, and `.tar`; verify destination naming, contents,
-  cursor placement, and status text.
-- Cancel a large archive and verify there is no final or temporary extraction
-  directory.
-- Try a malformed archive and an existing destination; verify concise alerts
-  and no traceback or content mutation.
-- Confirm no shortcut invokes the command and it remains available in the
-  Command Center.
-
-The complete `python build.py test` suite is not run automatically; run it only
-when explicitly requested under repository policy.
+Run the narrowest new command test immediately after its first code edit, then
+the focused command and Qt checks. Reuse task (2)'s backend regression results
+when its code is unchanged. Do not run the full suite, clean, or freeze unless
+explicitly requested.
 
 ## Implementation Steps
 
-1. Harden `core.fs.zip.Extract` with existing progress and cancellation support,
-   preserving temporary extraction and notification behavior; add focused Core
-   tests and run them immediately.
-2. Add `Plugins/UnpackArchive/unpack_archive/__init__.py` with pure archive
-   recognition/destination helpers, `UnpackArchive`, and the composite task.
-3. Add the plug-in README. Do not add key bindings, context menus, or settings.
-4. Add the package path to `build.py`'s test `PYTHONPATH` and add focused unit
-   tests.
-5. Add the plug-in loading and real-archive integration test.
-6. Update the main README's concise Features list and `CHANGELOG.md` without
-   adding implementation detail to the README.
-7. Run the focused test commands, manual checks where available, diagnostics,
-   and `git diff --check`; record exact results and any release-only checks.
-8. Add implementation provenance, move this document to `Done/UnpackArchive.md`,
-   and move its link from Pending to Completed in `Plan.md`.
+1. Review the replacement design and complete the Core backend guarantees and
+   focused validations specified by task (2).
+2. Add naming/validation helpers and the command with focused Core command
+   tests; run the narrowest relevant check immediately.
+3. Add composite task sizing, outcome handling, and guarded completion feedback;
+   verify failures, cancellation, and existing handler consumers.
+4. Add the real registered-command Qt integration case and run manual checks.
+5. When implemented, update the main README with the command, destination rule,
+   conflict/cancellation behavior, and known path limitation; add an application
+   CHANGELOG entry. No separate plug-in README or build-path registration.
+6. Record exact validation results and implementation provenance, then move
+   this canonical document to `Done/` and its index entry to Completed.
 
 ## Acceptance Criteria
 
-- `Unpack Archive` appears in the Command Center with no default shortcut or
-  context-menu entry.
-- Exactly one chosen supported local archive extracts into a suffix-free sibling
-  directory using Core's configured archive handler and bundled 7-Zip.
-- Existing destinations and invalid selections are never modified and produce a
-  clear alert.
-- Successful extraction leaves a complete destination, places the cursor on it,
-  and reports success.
-- Cancellation terminates extraction, cleans temporary output, and never
-  publishes a partial destination.
-- Bad archives and expected filesystem/process failures produce an alert rather
-  than a plug-in traceback.
-- No background work or startup I/O exists when the command is unused.
-- The public `fman` plug-in API remains compatible with fman 1.7.5.
+- `Unpack archive` creates the suffix-free new folder inside the invoking pane's
+  captured directory, preserves the source archive, and extracts the expected tree.
+- Invalid input, existing output, and destination races do not modify existing
+  entries or produce false success. Expected errors have concise alerts.
+- Core extraction progress/cancellation uses task (2), not a command-specific
+  implementation. Cancellation before publication produces no final folder.
+- Completion does not steal focus or undo later pane navigation; cursor placement
+  is explicitly best effort.
+- No destination prompt/second command, shortcut, context-menu entry, idle work,
+  packaging change, or public API break is introduced.
+- Focused tests pass and required manual/performance outcomes are recorded;
+  unavailable checks remain explicitly outstanding rather than claimed as passed.
 
 ## Reviewers
+
+Historical records below are preserved verbatim for provenance. Their old
+design recommendations and approval do not apply to this replacement; the
+2026_09_16 replacement review at the end records the new scope.
 
 ### 2026_09_13 - GitHub Copilot
 
@@ -388,3 +313,63 @@ Clarifications (no design change):
 - [ ] Note in the README that the temporary `<name><random>.tmp` directory
       appears beside the destination during extraction (pre-existing Core
       behaviour) and disappears on completion or cancel.
+
+### 2026_09_16 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Medium
+- Context Window: Not exposed by host
+- Outcome: Compared the plan with the current repository. Still pending: Core
+  already provides archive browsing and extraction, but no UnpackArchive plug-in
+  or dedicated tests exist. No application code changed. The preceding design
+  corrections remain prerequisites, not implemented behavior.
+
+#### Current Capability Comparison
+
+- Existing: configured ZIP/ZIPX/JAR/XPI/7Z/TAR handlers, archive opening in a
+  pane, copy/drag extraction and archive packing. `prepare_copy` already returns
+  an `Extract` task for archive-to-local copies, including the entire archive.
+- Existing: extraction into a temporary sibling directory, followed by the
+  normal filesystem move and cache notifications. This is reusable machinery,
+  not the planned one-command suffix-free destination workflow.
+- Missing: `unpack_archive` registration, selection validation, automatic
+  sibling naming, dedicated conflict/error alerts, completion status and cursor
+  placement, plug-in documentation and test-path registration.
+- Missing: extraction progress and cancellation. `Extract` still derives from
+  `Task`, has default size zero and calls blocking `_run_7zip`; the progress
+  helper exists for packing/renaming but is not used by extraction.
+- Still relevant: composite task sizing, Windows destination-race handling,
+  temporary cleanup/cancellation guarantees, cursor synchronization and matching
+  selection/visibility rules. `_split` still uses the first suffix occurrence;
+  directories such as `backup.zip.old` remain problematic.
+- Update before implementation: the progress-output review refers to 7-Zip
+  25.x, while `build.py` now pins 26.03. Validate extraction progress against
+  that version. `_Pack` preallocates `len(files) * 100`; it does not dynamically
+  sum prepared task sizes as the earlier review wording suggests.
+
+#### Comparison Validation
+
+```powershell
+python -c "import build, subprocess, sys; sys.exit(subprocess.call([sys.executable, '-X', 'faulthandler', '-m', 'unittest', 'core.tests.fs.test_zip.ZipFileSystemTest.test_extract_entire_zip', 'core.tests.fs.test_zip.ZipFileSystemTest.test_extract_subdir', 'core.tests.fs.test_zip.ZipFileSystemTest.test_extract_empty_directory', 'core.tests.fs.test_zip.ZipFileSystemTest.test_extract_file', '-v'], env=build._environment()))"
+```
+
+All four existing real-ZIP extraction tests passed. This verifies existing
+whole-archive, subfolder, empty-directory and single-file extraction, not the
+unimplemented command or cancellation guarantees. No full suite, build,
+downloads, 7Z/TAR extraction or native cancellation checks were run.
+
+### 2026_09_16 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Medium
+- Context Window: Not exposed by host
+- Outcome: Replaced the operative design with task (1), a Core `Unpack archive`
+  command creating a new suffix-free folder in the current pane. Moved shared
+  progress/cancellation design to task (2), Archive Transfers. No destination
+  command or application implementation added; replacement awaits review.
