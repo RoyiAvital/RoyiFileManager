@@ -8,6 +8,7 @@ import subprocess
 import sys
 from tempfile import TemporaryDirectory
 import time
+from urllib.error import HTTPError
 from urllib.request import urlopen
 from zipfile import ZIP_DEFLATED, ZipFile
 
@@ -37,6 +38,7 @@ SEVEN_ZIP_EXTRACTOR_SHA256 = \
 SEVEN_ZIP_BINARY_SHA256 = \
 	'edbee35370e14030e4c785cf88200f42dc651c1eb4217c1e3963c38a12f099b0'
 DOWNLOAD_SETTLE_SECONDS = 0.25
+DOWNLOAD_RETRY_DELAYS = (1, 2, 4)
 
 
 def _require_windows():
@@ -65,19 +67,29 @@ def _verify_sha256(path, expected, description):
 
 
 def _download(url, destination, expected_sha256):
-	verified = False
-	try:
-		with urlopen(url, timeout=120) as response, \
-				destination.open('wb') as output:
-			shutil.copyfileobj(response, output)
-			output.flush()
-			os.fsync(output.fileno())
-		time.sleep(DOWNLOAD_SETTLE_SECONDS)
-		_verify_sha256(destination, expected_sha256, url)
-		verified = True
-	finally:
-		if not verified:
-			destination.unlink(missing_ok=True)
+	for attempt in range(len(DOWNLOAD_RETRY_DELAYS) + 1):
+		verified = False
+		try:
+			with urlopen(url, timeout=120) as response, \
+					destination.open('wb') as output:
+				shutil.copyfileobj(response, output)
+				output.flush()
+				os.fsync(output.fileno())
+			time.sleep(DOWNLOAD_SETTLE_SECONDS)
+			_verify_sha256(destination, expected_sha256, url)
+			verified = True
+			return
+		except HTTPError as error:
+			error.close()
+			if error.code not in (408, 429, 500, 502, 503, 504) or \
+					attempt == len(DOWNLOAD_RETRY_DELAYS):
+				raise
+			delay = DOWNLOAD_RETRY_DELAYS[attempt]
+			print(f'HTTP {error.code} downloading {url}; retrying in {delay}s...')
+		finally:
+			if not verified:
+				destination.unlink(missing_ok=True)
+		time.sleep(delay)
 
 
 def _ensure_7za(destination=SEVEN_ZIP_PATH):

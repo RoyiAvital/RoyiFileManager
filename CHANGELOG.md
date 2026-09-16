@@ -32,6 +32,8 @@ API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
   the transfer before deletion.
 - Windows directory publication refuses late destination conflicts and emits
   filesystem notifications only after success.
+- Builds retry transient HTTP failures when downloading the pinned 7-Zip
+  tools, with bounded backoff and unchanged SHA-256 verification.
 
 ## [0.4.1] - 2026-09-16
 

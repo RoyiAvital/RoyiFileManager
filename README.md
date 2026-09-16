@@ -83,6 +83,10 @@ python build.py package
 `run`, `test`, and `freeze` download the pinned x64 `7za.exe` from the official
 7-Zip distribution when it is not already present under the Core plug-in.
 These commands therefore require internet access on their first run.
+Transient HTTP download failures are retried three times, after 1, 2, and 4
+seconds. SHA-256 checks remain mandatory; permanent HTTP errors and hash
+mismatches fail the build. A persistent server outage still requires a later
+retry of the failed workflow.
 
 Content search uses conda-forge's installed `bin/rg.exe` from the active Python
 prefix. PyInstaller bundles it with the notices under
