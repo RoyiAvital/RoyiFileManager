@@ -9,11 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
 
-### Added
-
 ## [0.4.3] - 2026-09-16
 
 API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
+
+### Added
 
 - `Unpack archive` extracts one local archive into a new suffix-free folder in
   the invoking pane, with existing progress/Cancel and no destination chooser.
