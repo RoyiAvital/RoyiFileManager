@@ -91,6 +91,116 @@ class ArchiveTransferIT(QtIT):
 				parent.deleteLater()
 			self.run_in_app(close)
 
+class UnpackArchiveIT(QtIT):
+	def test_registered_command_updates_pane_and_refuses_existing_output(self):
+		from core import Name, Size, Modified
+		from core.commands import UnpackArchive
+		from core.fs.local import LocalFileSystem
+		from core.fs.zip import ZipFileSystem
+		from fman import DirectoryPane
+		from fman.impl.plugins.builtin import NullFileSystem, NullColumn
+		from fman.impl.plugins.command_registry import PaneCommandRegistry
+		from fman.impl.plugins.mother_fs import MotherFileSystem
+		from fman.impl.plugins.plugin import FileSystemWrapper, Plugin
+		from fman.impl.widgets import DirectoryPaneWidget, ProgressDialog
+		from fman.url import as_url
+		from pathlib import Path
+		from PyQt5.QtCore import QThread
+		from PyQt5.QtGui import QIcon, QPalette
+		from PyQt5.QtWidgets import QWidget
+		from tempfile import TemporaryDirectory
+		from unittest.mock import Mock, patch
+		from zipfile import ZipFile
+		with TemporaryDirectory() as temporary:
+			root = Path(temporary)
+			archive = root / 'Reports.zip'
+			with ZipFile(archive, 'w') as writer:
+				writer.writestr('nested/file.txt', b'payload')
+				writer.writestr('empty/', b'')
+			original = archive.read_bytes()
+			errors = Mock()
+			finished = Event()
+			callbacks = Mock()
+			callbacks.after_command.side_effect = lambda *args: finished.set()
+			filesystem = MotherFileSystem(Mock(get_icon=Mock(return_value=QIcon())))
+			for backend in (LocalFileSystem(), NullFileSystem(), ZipFileSystem(filesystem, {'.zip'})):
+				filesystem.add_child(backend.scheme, FileSystemWrapper(backend, filesystem, errors))
+			for column in (Name(filesystem), Size(filesystem), Modified(filesystem), NullColumn()):
+				filesystem.register_column(column.get_qualified_name(), column)
+			def create():
+				parent = QWidget()
+				registry = PaneCommandRegistry(errors, callbacks)
+				plugin = Plugin(errors, Mock(), registry, Mock(), filesystem, Mock())
+				plugin._register_directory_pane_command(UnpackArchive)
+				widget = DirectoryPaneWidget(filesystem, 'null://', parent, Mock())
+				pane = DirectoryPane(Mock(), widget, registry)
+				parent.show()
+				return parent, widget, pane, registry
+			parent, widget, pane, registry = self.run_in_app(create)
+			dialogs = []
+			threads = []
+			def create_dialog(title, size):
+				self.assertEqual(QApplication.instance().thread(), QThread.currentThread())
+				dialog = ProgressDialog(parent, title, size, QPalette())
+				dialogs.append(dialog)
+				return dialog
+			def prepare(*args):
+				threads.append(QThread.currentThread())
+				return filesystem.prepare_copy(*args)
+			ui = Mock()
+			ui.create_progress_dialog.side_effect = lambda *args: self.run_in_app(create_dialog, *args)
+			loaded = Event()
+			try:
+				widget.set_location(as_url(root), callback=loaded.set)
+				self.assertTrue(loaded.wait(5), 'Pane did not load')
+				pane.place_cursor_at(as_url(archive))
+				self.assertEqual(as_url(archive), pane.get_file_under_cursor())
+				self.assertIn('unpack_archive', registry.get_commands())
+				self.assertEqual(('Unpack archive',), registry.get_command_aliases('unpack_archive'))
+				with patch('core.commands.load_json', return_value={'archive_handlers': {'.zip': 'zip://'}}), \
+					patch('core.commands.samefile', side_effect=filesystem.samefile), \
+					patch('core.commands.is_dir', side_effect=filesystem.is_dir), \
+					patch('core.commands.prepare_copy', side_effect=prepare), \
+					patch('fman.fs.notify_file_added', side_effect=filesystem.notify_file_added), \
+					patch('fman._get_ui', return_value=ui), \
+					patch('core.commands.show_alert') as alert, \
+					patch('core.commands.show_status_message') as status:
+					self.run_in_app(pane.run_command, 'unpack_archive')
+					self.assertTrue(finished.wait(10), 'Command did not finish')
+					self.assertEqual(b'payload', (root / 'Reports/nested/file.txt').read_bytes())
+					self.assertTrue((root / 'Reports/empty').is_dir())
+					self.assertEqual(original, archive.read_bytes())
+					self.assertEqual(1, len(dialogs))
+					self.assertTrue(all(thread != QApplication.instance().thread() for thread in threads))
+					def check_model():
+						model = widget._model
+						self.assertGreaterEqual(model.rowCount(), 2)
+						self.assertEqual(as_url(root), model.get_location())
+					self.run_in_app(check_model)
+					status.assert_called_once_with('Unpacked Reports', timeout_secs=5)
+					alert.assert_not_called()
+					pane.place_cursor_at(as_url(root / 'Reports'))
+					self.assertEqual(as_url(root / 'Reports'), pane.get_file_under_cursor())
+					pane.place_cursor_at(as_url(archive))
+					finished.clear()
+					self.run_in_app(pane.run_command, 'unpack_archive')
+					self.assertTrue(finished.wait(5), 'Conflict command did not finish')
+					alert.assert_called_once_with('Destination already exists: Reports')
+					self.assertEqual(1, len(dialogs))
+					self.assertEqual(1, status.call_count)
+					errors.report.assert_not_called()
+			finally:
+				def close():
+					model = widget._model.sourceModel()
+					model.shutdown()
+					for dialog in dialogs:
+						dialog.cancel()
+					parent.close()
+					parent.deleteLater()
+					return model
+				model = self.run_in_app(close)
+				model._worker._thread.join(2)
+
 class CommandPaletteRecentIT(QtIT):
 	def test_history_thread_affinity_and_other_provider_isolation(self):
 		from core.commands import CommandPalette, _COMMAND_PALETTE_HISTORY

@@ -22,35 +22,18 @@ Repository-wide contribution and task-lifecycle requirements are defined in
 
 Significant additions compared with `fman`:
 
-- **Docked Panel**: Allows controlling states and operations. Exposed to be used by Plug-In's.
-- **Recent Commands**: <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> pins the last three commands run from the palette, marked **Recent**. Results follow the query; history is shared across panes, survives plug-in reloads and is saved on exit.
-- **UI Components**: New building blocks that expand what plug-ins can do. [Plug-in UI guide](Plan/UIElements.md#plug-in-api).
 - **Fuzzy File Search**: Find files in the current folder or recursively using fuzzy or regular matching.
 - **File Content Search**: Press <kbd>Alt</kbd>+<kbd>F7</kbd> for a [`ripgrep`](https://github.com/burntsushi/ripgrep) based file content search. See [File Content Search Usage](src/main/resources/base/Plugins/SearchFileContent/README.md).
+- **UI Components**: New building blocks that expand what plug-ins can do. [Plug-in UI guide](Plan/UIElements.md#plug-in-api).
+- **Docked Panel**: Allows controlling states and operations. Exposed to be used by Plug-In's.
+- **Favorites**: Press <kbd>Ctrl</kbd>+<kbd>B</kbd> for a fully features Favorites Manager, built entirely with the plug-in APIs.
+- **Recent Commands**: <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> pins the last three commands run from the palette.
 - **Extended Status Bar**: Press <kbd>Cmd</kbd>+<kbd>S</kbd> to cycle through disabled, active-pane, and per-pane file statistics.
 - **Sync Pane Location**: Send the inactive pane to the active pane's current folder from the Command Center.
-- **Favorites**: Press <kbd>Ctrl</kbd>+<kbd>B</kbd> for a fully features Favorites Manager, built entirely with the plug-in APIs.
-- **New Empty File**: Press <kbd>Cmd</kbd>+<kbd>N</kbd> to create an empty file without opening an editor.
 - **File Hash**: Press <kbd>Ctrl</kbd>+<kbd>H</kbd> for centered checksum output; use Calculate File Hash By to pick an algorithm in QuickSearch, then view the result. See [File Hash Calculation Usage](src/main/resources/base/Plugins/CalculateFileHash/README.md).
-- **Archive Transfers**: Extraction progress and cancellation, with verified output before source deletion when moving out of or between archives.
-
-### Archive Transfers
-
-Enter an archive as a folder, select items, then use the existing Copy or Move
-workflow. Extraction reports 7-Zip progress when available. Cancel stops
-extraction and removes unfinished staging; completed items remain.
-
-Moving out of or between archives verifies file contents before removing source
-entries. Cross-archive Move re-extracts the destination for verification. These
-checks deliberately add reads, temporary space, and time. During an archive
-update, Cancel waits for that update and empty-parent restoration to finish.
-Source-update failure stops the operation and retains the copied output.
-
-Avoid editing either archive or the destination concurrently. Change detection
-does not lock files or guarantee recovery from crashes or storage failure.
-Verified Moves reject symbolic links, junctions, and the archive root itself;
-select its contents instead. Local-to-archive Move and same-archive rename keep
-their existing behavior. The separate `Unpack archive` command remains pending.
+- **New Empty File**: Press <kbd>Cmd</kbd>+<kbd>N</kbd> to create an empty file without opening an editor.
+- **Archive Transfers**: Extraction progress and cancellation, with verified output before source deletion when moving out of or between archives. See [Archive Transfers Usage](src/main/resources/base/Plugins/Core/README.md#archive-transfers).
+- **Unpack Archive**: Works like `Extract Here` in `7-Zip` / `WinRar`. See [Unpack Archive Usage](src/main/resources/base/Plugins/Core/README.md#unpack-archive).
 
 ## Development
 

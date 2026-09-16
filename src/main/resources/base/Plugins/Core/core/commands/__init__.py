@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from core.commands.util import get_program_files, get_program_files_x86, \
 	is_hidden
 from core.fileoperations import CopyFiles, MoveFiles
@@ -1728,6 +1729,94 @@ def _get_local_filepaths(urls):
 			result.append(path)
 	return result
 
+class UnpackArchive(DirectoryPaneCommand):
+	aliases = ('Unpack archive',)
+	def __call__(self):
+		directory = self.pane.get_path()
+		chosen = self.get_chosen_files()
+		if len(chosen) != 1:
+			show_alert('Choose exactly one archive to unpack.')
+			return
+		source = chosen[0]
+		try:
+			if splitscheme(directory)[0] != 'file://' or splitscheme(source)[0] != 'file://':
+				raise ValueError('Unpack requires a local archive in the current folder.')
+			if not samefile(dirname(source), directory) or is_dir(source):
+				raise ValueError('Choose an archive file directly inside the current folder.')
+			settings = load_json('Core Settings.json', default={})
+			handlers = settings.get('archive_handlers') if isinstance(settings, Mapping) else None
+			name, scheme = _unpack_archive_name(basename(source), handlers)
+			destination = join(directory, name)
+			if os.path.lexists(as_human_readable(destination)):
+				show_alert('Destination already exists: ' + name)
+				return
+			task = _UnpackArchive(source, scheme + splitscheme(source)[1], destination)
+			try:
+				submit_task(task)
+			except OSError as error:
+				show_alert(_unpack_error_text(error, destination))
+				return
+		except (OSError, ValueError) as error:
+			show_alert(str(error))
+			return
+		if task.succeeded:
+			show_status_message('Unpacked ' + name, timeout_secs=5)
+			try:
+				if self.pane.get_path() == directory:
+					self.pane.place_cursor_at(destination)
+			except (OSError, RuntimeError, ValueError):
+				pass
+
+def _unpack_archive_name(file_name, handlers):
+	if not isinstance(handlers, Mapping) or any(
+		not isinstance(suffix, str) or not suffix.startswith('.') or len(suffix) < 2 or
+		suffix != suffix.lower() or not isinstance(scheme, str) or
+		not scheme.endswith('://') or len(scheme) <= 3
+		for suffix, scheme in handlers.items()
+	):
+		raise ValueError('Invalid archive_handlers in Core Settings.json.')
+	match = _get_archive_handler(file_name, handlers)
+	if match is None:
+		raise ValueError('This archive format is not supported.')
+	suffix, scheme = match
+	name = file_name[:-len(suffix)]
+	if name in ('', '.', '..'):
+		raise ValueError('The archive name does not produce a valid folder name.')
+	return name, scheme
+
+class _UnpackArchive(Task):
+	def __init__(self, source, archive, destination):
+		super().__init__('Unpacking ' + basename(source), size=0)
+		self._source = source
+		self._archive = archive
+		self._destination = destination
+		self.succeeded = False
+	def __call__(self):
+		from core.fs.zip import Extract
+		self.check_canceled()
+		children = list(prepare_copy(self._archive, self._destination))
+		if len(children) != 1 or type(children[0]) is not Extract:
+			raise UnsupportedOperation('This archive handler does not support safe Unpack.')
+		children[0].require_new_directory(
+			as_human_readable(self._source), as_human_readable(self._destination)
+		)
+		self.set_size(sum(child.get_size() for child in children))
+		for child in children:
+			self.check_canceled()
+			self.run(child)
+		self.succeeded = True
+
+def _unpack_error_text(error, destination):
+	path = as_human_readable(destination)
+	if isinstance(error, (FileExistsError, PermissionError)) and error.filename2 and \
+		os.path.normcase(os.path.normpath(error.filename2)) == os.path.normcase(os.path.normpath(path)):
+		try:
+			if os.path.lexists(path):
+				return 'Destination already exists: ' + basename(destination)
+		except OSError:
+			pass
+	return str(error)
+
 class Pack(DirectoryPaneCommand):
 
 	aliases = 'Pack to archive (.zip, .7z, .tar)', 'Compress...'
@@ -1782,14 +1871,20 @@ class _Pack(Task):
 				self.run(task)
 
 def _get_handler_for_archive(file_name):
-	settings = load_json('Core Settings.json', default={})
+	match = _get_archive_handler(file_name)
+	return match[1] if match else None
+
+def _get_archive_handler(file_name, handlers=None):
+	if handlers is None:
+		settings = load_json('Core Settings.json', default={})
+		handlers = settings.get('archive_handlers', {})
 	archive_types = sorted(
-		settings.get('archive_handlers', {}).items(),
+		handlers.items(),
 		key=lambda tpl: -len(tpl[0])
 	)
 	for suffix, scheme in archive_types:
 		if file_name.lower().endswith(suffix):
-			return scheme
+			return suffix, scheme
 
 class ArchiveOpenListener(DirectoryPaneListener):
 	def on_command(self, command_name, args):

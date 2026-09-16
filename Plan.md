@@ -10,7 +10,6 @@
 - [Process Pane](Plan/ProcessPane.md)
 - [Text Editor Service](Plan/TextEditor.md)
 - [UI Elements](Plan/UIElements.md)
-- [Unpack Archive](Plan/UnpackArchive.md)
 
 ## Completed
 
@@ -34,3 +33,4 @@
 - [Status Bar Active Indicator](Done/StatusBarActiveIndicator.md)
 - [Status Bar Worker Results](Done/StatusBarWorkerResults.md)
 - [Sync Pane Location](Done/SyncPaneLocation.md)
+- [Unpack Archive](Done/UnpackArchive.md)

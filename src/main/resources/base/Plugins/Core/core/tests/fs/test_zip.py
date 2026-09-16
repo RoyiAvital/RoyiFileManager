@@ -3,6 +3,7 @@ from core.fs.zip import ZipFileSystem, _7zip, _get_7zip_args_windows, \
 	_7zipError, _7zipTaskWithProgress, Extract, _cleanup_extraction, \
 	_tree_digest, UpdateArchive, Run7ZipViaWinpty, Run7ZipViaPty, \
 	SevenZipFileSystem, TarFileSystem, Popen7Zip, _transfer_temp_directory
+from core.fs.zip import _unpack_manifest
 from core.fs.zip import Popen7ZipWindows, _run_7zip
 from core.fileoperations import ArchiveUpdateError
 from core.tests import StubFS
@@ -51,7 +52,265 @@ class FakePipeProcess:
 		self.waited = True
 		return self.exit_code
 
+class UnpackExtractionTest(TestCase):
+	def setUp(self):
+		temporary = TemporaryDirectory()
+		self.addCleanup(temporary.cleanup)
+		self.root = Path(temporary.name)
+		self.archive = self.root / 'Reports.zip'
+		self.output = self.root / 'Reports'
+		self.notification = patch('fman.fs.notify_file_added').start()
+		self.addCleanup(patch.stopall)
+	def create_task(self, entries):
+		with ZipFile(self.archive, 'w') as writer:
+			for name, contents in entries:
+				writer.writestr(name, contents)
+		self.original = self.archive.read_bytes()
+		task = Extract(StubFS(), str(self.archive), '', str(self.output))
+		task.require_new_directory(self.archive)
+		return task
+	def assert_rejected(self, task):
+		with self.assertRaises(OSError):
+			task()
+		self.assertFalse(self.output.exists())
+		self.assertEqual(self.original, self.archive.read_bytes())
+		self.assertEqual([self.archive], list(self.root.iterdir()))
+		self.notification.assert_not_called()
+	def test_exact_tree_and_retained_source(self):
+		task = self.create_task([('empty/', b''), ('nested/file.txt', b'payload')])
+		task()
+		self.assertEqual(b'payload', (self.output / 'nested/file.txt').read_bytes())
+		self.assertEqual([], list((self.output / 'empty').iterdir()))
+		self.assertEqual(self.original, self.archive.read_bytes())
+		self.assertEqual({self.archive, self.output}, set(self.root.iterdir()))
+		self.notification.assert_called_once_with(as_url(self.output))
+	def test_colliding_entries_never_publish(self):
+		for names in (('report.txt', 'REPORT.TXT'), ('same', 'same'), ('folder', 'folder/file'), ('a/file', 'A/other'),
+			('report.txt', '../report.txt'), ('report.txt_', 'report.txt.'), ('_NUL.txt', 'NUL.txt')):
+			with self.subTest(names=names):
+				self.assert_rejected(self.create_task([(name, b'bytes') for name in names]))
+	def test_names_that_7zip_may_rewrite_are_rejected(self):
+		for name in ('../outside', '/absolute', 'C:/absolute', 'file:stream', 'NUL.txt', 'trailing.', 'a//b'):
+			with self.subTest(name=name):
+				task = self.create_task([(name, b'bytes')])
+				with patch.object(task, 'run_7zip_with_progress') as extract:
+					self.assert_rejected(task)
+				extract.assert_not_called()
+	def test_late_file_and_directory_survive(self):
+		for directory in (False, True):
+			with self.subTest(directory=directory):
+				task = self.create_task([('file', b'new')])
+				original_run = task.run_7zip_with_progress
+				def extract(*args, **kwargs):
+					original_run(*args, **kwargs)
+					if directory:
+						self.output.mkdir()
+					else:
+						self.output.write_bytes(b'existing')
+				with patch.object(task, 'run_7zip_with_progress', side_effect=extract):
+					with self.assertRaises(OSError):
+						task()
+				self.assertEqual(self.original, self.archive.read_bytes())
+				self.notification.assert_not_called()
+				if directory:
+					self.assertEqual([], list(self.output.iterdir()))
+					self.output.rmdir()
+				else:
+					self.assertEqual(b'existing', self.output.read_bytes())
+					self.output.unlink()
+	def test_cancellation_before_publication_cleans_staging(self):
+		task = self.create_task([('file', b'bytes')])
+		original_run = task.run_7zip_with_progress
+		def extract(*args, **kwargs):
+			original_run(*args, **kwargs)
+			task.check_canceled = Mock(side_effect=Task.Canceled)
+		with patch.object(task, 'run_7zip_with_progress', side_effect=extract):
+			with self.assertRaises(Task.Canceled):
+				task()
+		self.assertEqual([self.archive], list(self.root.iterdir()))
+		self.assertEqual(self.original, self.archive.read_bytes())
+		self.notification.assert_not_called()
+	def test_malformed_listing_fails_closed(self):
+		for records in (['unexpected'], ['Folder = +'], ['Path = file', 'Folder = -', 'Folder = +']):
+			with self.subTest(records=records), self.assertRaises(OSError):
+				_unpack_manifest(records, lambda: None)
+	def test_manifest_has_no_entry_depth_or_field_limits(self):
+		def records():
+			for index in range(100001):
+				yield 'Path = file' + str(index)
+				yield 'Folder = -'
+				yield 'Size = 0'
+		self.assertEqual(100001, len(_unpack_manifest(records(), lambda: None)))
+		deep = '/'.join(['folder'] * 129)
+		self.assertEqual((deep, True), _unpack_manifest(['Path = ' + deep, 'Folder = +'], lambda: None)[deep])
+		self.assertEqual({'file': ('file', False)}, _unpack_manifest(
+			['Path = file'] + ['Field%d = value' % index for index in range(65)], lambda: None))
+	def test_manifest_ignores_non_naming_metadata(self):
+		for metadata in ('Encrypted = +', 'Symbolic Link = target', 'Hard Link = target', 'Mode = lrwxrwxrwx', 'Size = unknown'):
+			with self.subTest(metadata=metadata):
+				self.assertEqual({'file': ('file', False)}, _unpack_manifest(['Path = file', metadata], lambda: None))
+	def test_empty_archive(self):
+		task = self.create_task([])
+		task()
+		self.assertEqual([], list(self.output.iterdir()))
+	def test_native_7z_and_tar(self):
+		with TemporaryDirectory() as fixture:
+			Path(fixture, 'file.txt').write_bytes(b'payload')
+			Path(fixture, 'empty').mkdir()
+			for extension, backend_type in (('7z', SevenZipFileSystem), ('tar', TarFileSystem)):
+				with self.subTest(extension=extension):
+					archive = self.root / ('sample.' + extension)
+					output = self.root / extension
+					_run_7zip(['a', str(archive), 'file.txt', 'empty'], cwd=fixture)
+					original = archive.read_bytes()
+					backend = backend_type(StubFS(), {'.' + extension})
+					archive_url = backend.scheme + splitscheme(as_url(archive))[1]
+					task, = backend.prepare_copy(archive_url, as_url(output))
+					task.require_new_directory(archive, output)
+					task()
+					self.assertEqual(b'payload', (output / 'file.txt').read_bytes())
+					self.assertTrue((output / 'empty').is_dir())
+					self.assertEqual(original, archive.read_bytes())
+	def test_overlapping_suffix_does_not_extract_wrong_source(self):
+		self.create_task([('file', b'payload')])
+		selected = self.root / 'Reports.zipx'
+		selected.write_bytes(self.original)
+		backend = ZipFileSystem(StubFS(), ('.zip', '.zipx'))
+		archive_url = backend.scheme + splitscheme(as_url(selected))[1]
+		task, = backend.prepare_copy(archive_url, as_url(self.output))
+		with self.assertRaisesRegex(OSError, 'selected archive root'):
+			task.require_new_directory(selected, self.output)
+		self.assertEqual(self.original, selected.read_bytes())
+		self.assertEqual(self.original, self.archive.read_bytes())
+		self.assertFalse(self.output.exists())
+	def test_tar_symlink_uses_7zip_behavior(self):
+		from tarfile import open as open_tar, TarInfo, SYMTYPE
+		archive = self.root / 'linked.tar'
+		with open_tar(archive, 'w') as writer:
+			file_info = TarInfo('file')
+			file_info.size = 7
+			writer.addfile(file_info, BytesIO(b'payload'))
+			link_info = TarInfo('link')
+			link_info.type = SYMTYPE
+			link_info.linkname = 'file'
+			writer.addfile(link_info)
+		original = archive.read_bytes()
+		task = Extract(StubFS(), str(archive), '', str(self.output))
+		task.require_new_directory(archive)
+		try:
+			task()
+		except OSError as error:
+			if isinstance(error.__cause__, _7zipError) and 'privilege' in str(error).lower():
+				self.skipTest('7-Zip symlink creation requires Windows privilege')
+			raise
+		self.assertEqual(b'payload', (self.output / 'file').read_bytes())
+		self.assertEqual(original, archive.read_bytes())
+	def test_corrupt_archive_retained_without_output(self):
+		task = self.create_task([('file', b'payload')])
+		self.original = b'not an archive'
+		self.archive.write_bytes(self.original)
+		self.assert_rejected(task)
+	def test_encrypted_archive_retained_without_prompt(self):
+		with TemporaryDirectory() as fixture:
+			Path(fixture, 'file.txt').write_bytes(b'payload')
+			_run_7zip(['a', '-pfixture', str(self.archive), 'file.txt'], cwd=fixture)
+		self.original = self.archive.read_bytes()
+		task = Extract(StubFS(), str(self.archive), '', str(self.output))
+		task.require_new_directory(self.archive)
+		with patch.object(task, 'run_7zip_with_progress', wraps=task.run_7zip_with_progress) as extract:
+			self.assert_rejected(task)
+		extract.assert_called_once()
+	def test_output_root_must_remain_a_directory(self):
+		task = self.create_task([('file', b'payload')])
+		def replace_output(args, **kwargs):
+			output = Path(next(argument[2:] for argument in args if argument.startswith('-o')))
+			output.rmdir()
+			output.write_bytes(b'not a directory')
+		with patch.object(task, 'run_7zip_with_progress', side_effect=replace_output):
+			self.assert_rejected(task)
+	def test_no_archive_copy_or_output_rescan(self):
+		task = self.create_task([('file', b'payload')])
+		with patch('core.fs.zip.open', create=True, side_effect=AssertionError('Archive copy')), \
+			patch.object(Path, 'open', side_effect=AssertionError('Snapshot or verification read')), \
+			patch.object(Path, 'iterdir', side_effect=AssertionError('Output rescan')):
+			task()
+		self.assertEqual(b'payload', (self.output / 'file').read_bytes())
+		self.assertEqual(self.original, self.archive.read_bytes())
+	def test_source_stat_change_prevents_publication(self):
+		task = self.create_task([('file', b'payload')])
+		original_run = task.run_7zip_with_progress
+		def change_source(*args, **kwargs):
+			original_run(*args, **kwargs)
+			self.archive.write_bytes(b'external change')
+		with patch.object(task, 'run_7zip_with_progress', side_effect=change_source):
+			with self.assertRaisesRegex(OSError, 'Archive changed while being read'):
+				task()
+		self.assertEqual(b'external change', self.archive.read_bytes())
+		self.assertEqual([self.archive], list(self.root.iterdir()))
+		self.notification.assert_not_called()
+	def test_dangling_destination_symlink_is_retained(self):
+		task = self.create_task([('file', b'payload')])
+		try:
+			self.output.symlink_to(self.root / 'missing', target_is_directory=True)
+		except OSError:
+			self.skipTest('Windows symlink privilege unavailable')
+		with self.assertRaises(FileExistsError):
+			task()
+		self.assertTrue(self.output.is_symlink())
+		self.assertEqual(self.original, self.archive.read_bytes())
+	def test_preflight_and_late_dangling_junction_survive(self):
+		from subprocess import run
+		for late in (False, True):
+			with self.subTest(late=late):
+				task = self.create_task([('file', b'payload')])
+				target = self.root / 'junction-target'
+				target.mkdir()
+				def create_junction():
+					result = run(['cmd.exe', '/c', 'mklink', '/J', str(self.output), str(target)], capture_output=True)
+					if result.returncode:
+						self.skipTest('Junction creation unavailable: ' + repr(result.stderr))
+					target.rmdir()
+				if late:
+					original_run = task.run_7zip_with_progress
+					def extract(*args, **kwargs):
+						original_run(*args, **kwargs)
+						create_junction()
+					with patch.object(task, 'run_7zip_with_progress', side_effect=extract):
+						with self.assertRaises(OSError):
+							task()
+				else:
+					create_junction()
+					with self.assertRaises(OSError):
+						task()
+				self.assertTrue(self.output.is_junction())
+				self.assertEqual(self.original, self.archive.read_bytes())
+				self.output.rmdir()
+
 class ArchiveProcessTest(TestCase):
+	def test_unpack_rejects_wrong_archive_or_member(self):
+		with TemporaryDirectory() as directory:
+			selected = Path(directory, 'selected.zip')
+			other = Path(directory, 'other.zip')
+			selected.touch()
+			other.touch()
+			for archive, member in ((other, ''), (selected, 'member')):
+				with self.subTest(archive=archive.name, member=member):
+					task = Extract(Mock(), str(archive), member, str(Path(directory, 'out')))
+					with self.assertRaisesRegex(OSError, 'selected archive root'):
+						task.require_new_directory(selected)
+	def test_unpack_existing_output_never_extracts(self):
+		with TemporaryDirectory() as directory:
+			archive = Path(directory, 'source.zip')
+			archive.touch()
+			output = Path(directory, 'out')
+			output.mkdir()
+			task = Extract(Mock(), str(archive), '', str(output))
+			task.require_new_directory(archive)
+			with patch.object(task, 'run_7zip_with_progress') as extract:
+				with self.assertRaises(FileExistsError):
+					task()
+			extract.assert_not_called()
+			self.assertTrue(output.is_dir())
 	def test_outer_cleanup_preserves_mandatory_stop(self):
 		temporary = Mock()
 		temporary.name = 'temporary-output'
@@ -185,6 +444,17 @@ class ArchiveProcessTest(TestCase):
 			self.assertEqual(100, len(command._stdout_lines))
 		self.assertFalse(process.killed)
 		self.assertTrue(process.waited)
+		process.stdout.close.assert_called_once()
+	def test_listing_preserves_long_names_and_bounded_diagnostics(self):
+		prefix = 'segment/' * 600
+		paths = [prefix + 'first', prefix + 'second']
+		text = ''.join('Path = ' + path + '\nFolder = -\n' for path in paths)
+		process = FakePipeProcess([text[index:index + 4096] for index in range(0, len(text), 4096)])
+		with patch('core.fs.zip.Popen7ZipWindows', return_value=process):
+			with _7zip(['l'], allow_warning=False) as command:
+				manifest = _unpack_manifest(command.progress_records(lambda: None, truncate=False), lambda: None)
+			self.assertTrue(all(path in manifest for path in paths))
+			self.assertLessEqual(max(map(len, command._stdout_lines)), 4096)
 		process.stdout.close.assert_called_once()
 	def test_cancel_quiet_process_reaps_and_joins(self):
 		process = FakePipeProcess(quiet=True)

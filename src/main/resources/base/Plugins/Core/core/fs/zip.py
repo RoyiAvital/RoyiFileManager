@@ -5,7 +5,7 @@ from core.os_ import is_arch, is_mac
 from core.fileoperations import ArchiveUpdateError
 from core.util import filenotfounderror
 from datetime import datetime
-from errno import EIO
+from errno import EEXIST, EIO
 from fman import PLATFORM, load_json, Task
 from fman.fs import FileSystem
 from fman.url import as_url, splitscheme, as_human_readable, basename
@@ -377,8 +377,18 @@ class Extract(_7zipTaskWithProgress):
 		self._dst_ospath = dst_ospath
 		self._verify_output = verify_output
 		self._expected_digest = expected_digest
+		self._new_directory = False
+	def require_new_directory(self, archive_path, destination=None):
+		if self._path_in_zip or not os.path.samefile(archive_path, self._zip_path):
+			raise OSError(EIO, 'Cannot safely identify the selected archive root')
+		if destination is not None and os.path.normcase(os.path.normpath(destination)) != \
+			os.path.normcase(os.path.normpath(self._dst_ospath)):
+			raise OSError(EIO, 'Archive handler selected a different destination')
+		self._new_directory = True
 	def __call__(self):
 		self.check_canceled()
+		if self._new_directory:
+			return self._unpack_new_directory()
 		if Path(self._dst_ospath).exists() and os.path.samefile(self._zip_path, self._dst_ospath):
 			raise OSError(EIO, 'Cannot extract over the source archive')
 		# Create temp dir next to dst_path to ensure Path.replace(...) works
@@ -419,6 +429,83 @@ class Extract(_7zipTaskWithProgress):
 			self.set_progress(self.get_size())
 		finally:
 			_cleanup_extraction(self, tmp_dir)
+	def _unpack_new_directory(self):
+		if PLATFORM != 'Windows':
+			raise UnsupportedOperation('Safe Unpack publication requires Windows')
+		if os.path.lexists(self._dst_ospath):
+			raise FileExistsError(EEXIST, 'Destination already exists', None, None, self._dst_ospath)
+		temporary = _create_temp_dir_next_to(self._dst_ospath)
+		try:
+			before = os.stat(self._zip_path)
+			self.set_text('Checking archive entries')
+			with _7zip(['l', '-slt', '-ba', '-bse1', self._zip_path], allow_warning=False) as process:
+				records = process.progress_records(self.check_canceled, truncate=False)
+				try:
+					_unpack_manifest(records, self.check_canceled)
+				finally:
+					records.close()
+			output = Path(temporary.name, 'contents')
+			output.mkdir()
+			self.set_text('Extracting ' + os.path.basename(self._zip_path))
+			self.run_7zip_with_progress(
+				['x', '-bsp1', '-bse1', '-y', '-spd', self._zip_path, '-o' + str(output)],
+				pty=False, allow_warning=False, progress_limit=99
+			)
+			after = os.stat(self._zip_path)
+			if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
+				raise OSError(EIO, 'Archive changed while being read')
+			if output.is_symlink() or output.is_junction() or not output.is_dir():
+				raise OSError(EIO, 'Archive output is not an ordinary directory')
+			self.check_canceled()
+			os.rename(output, self._dst_ospath)
+			fman.fs.notify_file_added(as_url(self._dst_ospath))
+			self.set_progress(self.get_size())
+		except _7zipError as error:
+			raise OSError(EIO, str(error)) from error
+		finally:
+			_cleanup_extraction(self, temporary)
+
+def _unpack_manifest(records, check):
+	manifest = {}
+	explicit = set()
+	fields = {}
+	def finish():
+		if not fields:
+			return
+		path = fields['Path'].replace('\\', '/')
+		parts = path.split('/')
+		for part in parts:
+			if not part or part in ('.', '..') or part.endswith(('.', ' ')) or \
+				any(ord(character) < 32 or character in '<>:"|?*' for character in part) or \
+				re.fullmatch(r'(?i:CON|PRN|AUX|NUL|CONIN\$|CONOUT\$|COM[1-9\u00b9\u00b2\u00b3]|LPT[1-9\u00b9\u00b2\u00b3])', part.split('.')[0]):
+				raise OSError(EIO, 'Archive entry name may be changed by extraction: ' + path)
+		attributes = fields.get('Attributes', '')
+		mode = fields.get('Mode', '')
+		is_directory = fields.get('Folder') == '+' or attributes.startswith('D') or mode.startswith('d')
+		key = path.casefold()
+		if key in explicit:
+			raise OSError(EIO, 'Colliding archive entries: ' + path)
+		explicit.add(key)
+		for count in range(1, len(parts) + 1):
+			name = '/'.join(parts[:count])
+			entry = (name, count < len(parts) or is_directory)
+			previous = manifest.setdefault(name.casefold(), entry)
+			if previous != entry:
+				raise OSError(EIO, 'Colliding archive entries: ' + path)
+	for record in records:
+		check()
+		if ' = ' not in record:
+			raise OSError(EIO, 'Ambiguous archive listing')
+		name, value = record.split(' = ', 1)
+		if name == 'Path':
+			finish()
+			fields = {}
+		elif not fields or name in fields:
+			raise OSError(EIO, 'Ambiguous archive listing')
+		if name in ('Path', 'Folder', 'Attributes', 'Mode'):
+			fields[name] = value
+	finish()
+	return manifest
 
 def _cleanup_extraction(task, temporary):
 	primary_error = sys.exc_info()[1]
@@ -643,7 +730,7 @@ class _7zip:
 		self._process.kill()
 	def wait(self):
 		return self._process.wait()
-	def progress_records(self, check):
+	def progress_records(self, check, truncate=True):
 		chunks = Queue(maxsize=16)
 		stopped = Event()
 		done = Event()
@@ -676,13 +763,13 @@ class _7zip:
 				for character in chunk:
 					if character in '\r\n\b':
 						if buffer:
-							self._stdout_lines.append(buffer)
+							self._stdout_lines.append(buffer[:4096])
 							yield buffer
 							buffer = ''
-					elif len(buffer) < 4096:
+					elif not truncate or len(buffer) < 4096:
 						buffer += character
 			if buffer:
-				self._stdout_lines.append(buffer)
+				self._stdout_lines.append(buffer[:4096])
 				yield buffer
 			while self._process.poll() is None:
 				check()
