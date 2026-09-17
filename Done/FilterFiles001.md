@@ -1,4 +1,4 @@
-# Filter Bar Improvements 001
+# Filter Files 001
 
 ## Task
 
@@ -27,7 +27,7 @@ rows that match, and nothing tells the user how many rows the filter kept.
 Included. Items 1-4 are implemented purely as changes to how `text` is
 compiled into a matcher; item 5 adds one status-bar message while a filter is
 active. Multiple-term AND matching is a separate, deferred task in
-[FilterBarImprovements002](../Plan/FilterBarImprovements002.md).
+[FilterFiles002](../Plan/FilterFiles002.md).
 
 1. **Glob characters**: `?` matches one character; `[abc]`, `[a-z]`, `[!x]`
    match one character from a set. `*` keeps its meaning. Matching remains a
@@ -59,7 +59,7 @@ active. Multiple-term AND matching is a separate, deferred task in
 Excluded:
 
 - Multiple-term AND matching and Space key routing; these belong to
-  [FilterBarImprovements002](../Plan/FilterBarImprovements002.md). `rep*2024` remains
+  [FilterFiles002](../Plan/FilterFiles002.md). `rep*2024` remains
   the ordered matching spelling; spaces remain literal matcher input.
 - Regular expressions, fuzzy matching, smart case, date/size filters,
   persisting the filter across navigation, folder-only/file-only
@@ -583,7 +583,7 @@ navigation.
 - Effort: Medium
 - Context Window: Not exposed by host
 - Outcome: Split optional multiple-term AND behavior into
-  [FilterBarImprovements002](../Plan/FilterBarImprovements002.md) at the user's request.
+  [FilterFiles002](../Plan/FilterFiles002.md) at the user's request.
   Removed it from the operative scope, design, tests, implementation steps and
   acceptance criteria of 001. Preserved historical reviews above. This split
   does not approve implementation of 002 or change application behavior.

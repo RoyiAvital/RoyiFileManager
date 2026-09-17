@@ -1,10 +1,10 @@
-# Filter Bar Improvements 002
+# Filter Files 002
 
 ## Task
 
 Add **Multiple terms (AND)** to the pane filter: `rep 2024` requires every
 space-separated term to match the basename, in any order. This is the optional
-feature extracted from [FilterBarImprovements001](../Done/FilterBarImprovements001.md).
+feature extracted from [FilterFiles001](../Done/FilterFiles001.md).
 
 Status: deferred. 001 is complete; obtain explicit user confirmation
 before implementation. Creating this task is not approval to change Space.

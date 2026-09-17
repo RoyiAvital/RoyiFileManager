@@ -709,7 +709,7 @@ behavior and are unchanged for this documentation/test-only follow-up.
   for a private Core type but worth moving to `core.fs` if it grows.
   Corrected the `Plan.md` regression noted in Validation Results: the
   `Pane Filter Patterns` entry was stale after that task's rename and now
-  points to `Plan/FilterBarImprovements001.md`. Completion in `Done/` and
+  points to [FilterFiles001](FilterFiles001.md). Completion in `Done/` and
   the CHANGELOG/README entries are consistent with the implemented change.
 
 #### Follow Up Tasks

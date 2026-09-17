@@ -71,7 +71,7 @@ opens a small box at the bottom-right of the pane; `Escape` closes it,
 `Backspace` edits. Rows that do not match are hidden in place; the cursor
 jumps to the first row whose name starts with the text. The predicate is a
 case-insensitive substring with `*` as a wildcard on the file name
-([Filter Bar Improvements 001](FilterBarImprovements001.md) extends it).
+([Filter Files 001](../Done/FilterFiles001.md) extends it).
 
 **`Ctrl+F` / `Ctrl+Shift+F` (SearchFileFuzzy)** — plug-in,
 [search_file_fuzzy](../src/main/resources/base/Plugins/SearchFileFuzzy/search_file_fuzzy/__init__.py).
