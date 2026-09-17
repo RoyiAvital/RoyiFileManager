@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
 
+## [0.5.0] - 2026-09-17
+
+API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
+
 ### Added
 
 - Pane filters (Files Filter) support `?`, bracket classes, leading `^` / trailing `$`
@@ -17,6 +21,21 @@ API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
   exponential wildcard backtracking; queries are limited to 255 characters.
   The active pane shows live matched/total counts in the existing status bar,
   including after loading, file changes and navigation. Space remains selection.
+- Search File Content lists files by name when Content Pattern is empty, using
+  Glob, Literal or RegEx with the existing recursion, limits and Stop controls.
+  Binary and empty files are included without content reads; results and progress
+  report files, with empty snippets and path-only details.
+
+### Fixed
+
+- Content Glob matches anywhere in a line and highlights the matched text;
+  outer stars no longer widen the highlight. Wildcard-only patterns still match
+  whole lines, including blank lines.
+- Closing a Table after successful navigation leaves the target file current in
+  the focused pane. Ordinary close restores panel focus after its callback
+  re-enables controls, without targeting disposed or replaced panels/Tables.
+- TextField labels show their input tooltips, and Search File Content's field
+  and mode tooltips explain the matching rules.
 
 ## [0.4.4] - 2026-09-17
 

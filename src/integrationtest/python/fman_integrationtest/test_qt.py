@@ -1268,6 +1268,125 @@ class CommandPaletteRecentIT(QtIT):
 		pane.run_command.assert_not_called()
 
 class SearchFileContentIT(QtIT):
+	def test_name_only_navigation_and_escape_focus(self):
+		from core import Name, Size, Modified, OpenDirectory
+		from core.fs.local import LocalFileSystem
+		from fman import DirectoryPane, Window
+		from fman.ui import UiOwner
+		from fman.url import as_url
+		from fman.impl.plugins.builtin import NullFileSystem, NullColumn
+		from fman.impl.plugins.command_registry import PaneCommandRegistry
+		from fman.impl.plugins.mother_fs import MotherFileSystem
+		from fman.impl.plugins.plugin import FileSystemWrapper
+		from fman.impl.ui.facade import _hosts
+		from fman.impl.widgets import MainWindow
+		from search_file_content import DEFAULTS, SearchSession
+		from pathlib import Path
+		from PyQt5.QtGui import QIcon
+		from PyQt5.QtTest import QTest
+		from tempfile import TemporaryDirectory
+		from unittest.mock import Mock, patch
+		with TemporaryDirectory() as directory:
+			root = Path(directory).resolve()
+			target, other = root / 'report.txt', root / 'aaa.txt'
+			target.write_bytes(b'\x00binary')
+			other.write_bytes(b'')
+			errors = Mock()
+			filesystem = MotherFileSystem(Mock(get_icon=Mock(return_value=QIcon())))
+			for backend in (LocalFileSystem(), NullFileSystem()):
+				filesystem.add_child(backend.scheme, FileSystemWrapper(backend, filesystem, errors))
+			for column in (Name(filesystem), Size(filesystem), Modified(filesystem), NullColumn()):
+				filesystem.register_column(column.get_qualified_name(), column)
+			plugin_root = Path(__file__).parents[3] / 'main/resources/base/Plugins/SearchFileContent'
+			owner = UiOwner(resource_root=str(plugin_root))
+			def prepare():
+				main = MainWindow(QApplication.instance(), [], Mock(), Mock(), filesystem, 'null://')
+				main.set_controller(Mock())
+				widget = main.add_pane()
+				registry = PaneCommandRegistry(errors, Mock())
+				registry.register_command('open_directory', OpenDirectory)
+				window = Window(main, Mock())
+				pane = DirectoryPane(window, widget, registry)
+				window._panes = [pane]
+				main.resize(960, 600)
+				main.show()
+				main.activateWindow()
+				return main, pane
+			main, pane = self.run_in_app(prepare)
+			try:
+				loaded = Event()
+				pane.set_path(as_url(root), callback=loaded.set)
+				self.assertTrue(loaded.wait(5))
+				session = self.run_in_app(SearchSession, owner, pane, str(root), dict(DEFAULTS))
+				finished = Event()
+				complete = session.completed
+				def observed(*args):
+					try:
+						complete(*args)
+					finally:
+						finished.set()
+				session.completed = observed
+				with patch('search_file_content.Runner') as runner:
+					self.run_in_app(session.action, 'search', session.panel.snapshot())
+					runner.assert_not_called()
+				self.assertEqual('Enter a file name or content pattern.',
+					self.run_in_app(lambda: _hosts[session.panel._key()].status.content))
+				with patch('fman.fs._get_mother_fs', return_value=filesystem):
+					for action, mode, pattern in (('escape', 'glob', '*.txt;!aaa*'), ('enter', 'literal', 'report'),
+						('double', 'regex', '^report\\.txt$'), ('menu', 'glob', 'report*')):
+						with self.subTest(action=action):
+							pane.place_cursor_at(as_url(other))
+							finished.clear()
+							session.panel.update(values={'name': pattern, 'name_mode': mode, 'content': ''})
+							self.run_in_app(session.action, 'search', session.panel.snapshot())
+							self.assertTrue(finished.wait(5))
+							closed = Event()
+							def activate():
+								host = _hosts[session.panel._key()]
+								window = host.table_window
+								self.assertIsNotNone(window)
+								QApplication.processEvents()
+								self.assertTrue(window.isVisible())
+								self.assertEqual(('report.txt', ''), window.table.current_cell[0].cells)
+								self.assertIn('Complete: 1 files', window.summary.content)
+								window.disposed.connect(closed.set)
+								view = window.table.view
+								if action == 'escape':
+									QTest.keyClick(view, Qt.Key_Escape)
+								elif action == 'enter':
+									QTest.keyClick(view, Qt.Key_Return)
+								elif action == 'double':
+									position = view.visualRect(view.currentIndex()).center()
+									QTest.mouseDClick(view.viewport(), Qt.LeftButton, pos=position)
+								else:
+									window.open_menu(*window.table.current_cell, view.mapToGlobal(view.rect().center()))
+									next(item for item in window.menu.actions() if item.text() == 'Go To').trigger()
+							self.run_in_app(activate)
+							self.assertTrue(closed.wait(5), 'Results did not close after ' + action)
+							def verify():
+								QApplication.processEvents()
+								host = _hosts[session.panel._key()]
+								self.assertTrue(host.controls['name'][1].isEnabled())
+								focused = QApplication.focusWidget()
+								if action == 'escape':
+									self.assertIs(host.controls['name'][1], focused)
+								else:
+									self.assertTrue(focused is pane._widget or pane._widget.isAncestorOf(focused))
+									self.assertEqual(as_url(target), pane.get_file_under_cursor())
+							self.run_in_app(verify)
+			finally:
+				owner.invalidate()
+				def close():
+					model = pane._widget._model.sourceModel()
+					model.shutdown()
+					main.close()
+					return model
+				model = self.run_in_app(close)
+				model._worker._thread.join(5)
+				self.assertFalse(model._worker._thread.is_alive())
+				self.run_in_app(main.deleteLater)
+				errors.report.assert_not_called()
+
 	def test_root_follows_invoking_pane_and_fields_align(self):
 		def check():
 			from fman import DirectoryPane, Window
@@ -1325,6 +1444,12 @@ class SearchFileContentIT(QtIT):
 							buttons = host.controls[name][1].group.buttons()
 							self.assertEqual(3, len(buttons))
 							self.assertEqual(1, sum(button.isChecked() for button in buttons))
+							self.assertEqual(['Literal text, case-insensitive', 'Glob: * any text, ? one character, [ab] a set',
+								'Regular expression (ripgrep syntax), case-insensitive'], [button.toolTip() for button in buttons])
+						self.assertEqual('Text within the name, globs matching the whole name (*.cmd;!*.bak), or a regular expression', host.controls['name'][1].toolTip())
+						self.assertEqual('Text within the line, a glob matched anywhere in the line (Comm*der), or a regular expression; leave empty to list files by name', host.controls['content'][1].toolTip())
+						for record, wrapper, label in host.form.fields:
+							self.assertEqual(host.controls[record.id][1].toolTip(), label.toolTip())
 						host.form.setStyleSheet('QLabel { font-size: 16px; }')
 						for width in (640, 960, 1440):
 							main.resize(width, 600)
@@ -1527,6 +1652,19 @@ class SearchFileContentIT(QtIT):
 				self.run_in_app(session.action, 'search', session.panel.snapshot())
 				self.assertTrue(finished.wait(10))
 				self.assertIsNone(session.table)
+				session.panel.update(values={'name': '*.txt', 'name_mode': 'glob', 'content': ''})
+				finished.clear()
+				self.run_in_app(session.action, 'search', session.panel.snapshot())
+				self.assertTrue(finished.wait(10))
+				self.assertTrue(session.table.is_open)
+				self.assertEqual(('report.txt', ''), session.table.current_cell[0].cells)
+				self.assertEqual(0, session.table.current_cell[0].value.line)
+				def check_names():
+					host = _hosts[session.panel._key()]
+					self.assertIn('Complete: 1 files', host.table_window.summary.content)
+					self.assertEqual(str(Path(root, 'report.txt')), host.table_window.details.content)
+				self.run_in_app(check_names)
+				session.table.close()
 				session.panel.update(values={'content': 'needle', 'content_mode': 'literal'})
 				finished.clear()
 				def cancel():
@@ -1543,6 +1681,75 @@ class SearchFileContentIT(QtIT):
 
 
 class TableIT(QtIT):
+	def test_close_callback_order_and_live_focus_targets(self):
+		def check():
+			from fman import DirectoryPane, Window
+			from fman.ui import Action, TableRow, TextField, UiOwner, show_panel, show_table
+			from fman.impl.ui.facade import _hosts
+			from fman.impl.widgets import MainWindow
+			from PyQt5 import sip
+			from PyQt5.QtWidgets import QLineEdit
+			from unittest.mock import Mock, patch
+			for modal in (False, True):
+				for action in ('ordinary', 'navigate', 'close_panel', 'replace_panel', 'replace_table', 'invalidate', 'delete_pane', 'close_main'):
+					with self.subTest(modal=modal, action=action):
+						main = MainWindow(Mock(), [], Mock(), Mock(), Mock(), 'null://')
+						pane_widget = QLineEdit(main)
+						main._central_layout.addWidget(pane_widget)
+						pane = DirectoryPane(Window(main, Mock()), pane_widget, Mock())
+						owner = UiOwner()
+						main.show()
+						main.activateWindow()
+						QApplication.processEvents()
+						try:
+							panel = show_panel(owner=owner, pane=pane, rows=((TextField('name', 'Name'), Action('stop', 'Stop')),))
+							host = _hosts[panel._key()]
+							panel.update(enabled={'name': False})
+							completed = []
+							def callback():
+								completed.append(True)
+								panel.update(enabled={'name': True})
+								if action == 'close_panel':
+									panel.close()
+								elif action == 'replace_panel':
+									show_panel(owner=owner, pane=pane, rows=((TextField('new', 'Replacement'),),))
+								elif action == 'replace_table':
+									show_table(owner=owner, panel=panel, get_rows=lambda: (TableRow('new', ('Replacement',)),),
+										num_columns=1, columns_header=('New',), modal=modal)
+								elif action == 'invalidate':
+									owner.invalidate()
+								elif action == 'delete_pane':
+									sip.delete(pane_widget)
+								elif action == 'close_main':
+									main.close()
+							handle = show_table(owner=owner, panel=panel, get_rows=lambda: (TableRow('one', ('File',)),),
+								num_columns=1, columns_header=('Name',), modal=modal, on_closed=callback)
+							window = host.table_window
+							window.navigated = action != 'ordinary'
+							original_focus = host.focus_panel
+							def focus_panel():
+								self.assertEqual([True], completed)
+								self.assertTrue(host.controls['name'][1].isEnabled())
+								original_focus()
+							with patch.object(host, 'focus_panel', side_effect=focus_panel) as focus:
+								handle.close()
+								self.assertEqual([True], completed)
+								self.assertEqual(int(action == 'ordinary'), focus.call_count)
+								for turn in range(3):
+									QApplication.processEvents()
+								if action in ('ordinary', 'navigate'):
+									self.assertIs(pane_widget if action == 'navigate' else host.controls['name'][1], QApplication.focusWidget())
+								elif action == 'replace_table':
+									self.assertTrue(host.table_window.isVisible())
+									self.assertTrue(host.table_window.isAncestorOf(QApplication.focusWidget()))
+								elif action == 'replace_panel':
+									self.assertTrue(main._panel_dock.isAncestorOf(QApplication.focusWidget()))
+						finally:
+							owner.invalidate()
+							main.close()
+							main.deleteLater()
+		self.run_in_app(check)
+
 	def test_choice_exclusivity_callbacks_and_atomic_updates(self):
 		def check():
 			from fman import DirectoryPane, Window
@@ -2790,6 +2997,31 @@ class QuickListIT(QtIT):
 		self.run_in_app(check)
 
 class PanelIT(QtIT):
+	def test_textfield_tooltip_is_on_label_and_input(self):
+		def check():
+			from fman import DirectoryPane, Window
+			from fman.ui import TextField, UiOwner, show_panel
+			from fman.impl.ui.facade import _hosts
+			from fman.impl.widgets import MainWindow
+			from PyQt5.QtWidgets import QWidget
+			from unittest.mock import Mock
+			main = MainWindow(Mock(), [], Mock(), Mock(), Mock(), 'null://')
+			pane = DirectoryPane(Window(main, Mock()), QWidget(main), Mock())
+			owner = UiOwner()
+			main.show()
+			try:
+				panel = show_panel(owner=owner, pane=pane, rows=((TextField('content', 'Content Pattern', tooltip='Content matching rule'),),
+					(TextField('fallback', 'Fallback label'),)))
+				host = _hosts[panel._key()]
+				for record, wrapper, label in host.form.fields:
+					self.assertEqual(record.tooltip or record.label, label.toolTip())
+					self.assertEqual(label.toolTip(), host.controls[record.id][1].toolTip())
+			finally:
+				owner.invalidate()
+				main.close()
+				main.deleteLater()
+		self.run_in_app(check)
+
 	def test_action_widths_adapt_and_stop_at_cap(self):
 		def check():
 			from fman.ui import Panel, TextButton, DropDown

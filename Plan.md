@@ -9,7 +9,6 @@
 - [Flat View](Plan/FlatView.md)
 - [Migrate to PyQt6](Plan/MigrateToPyQt6.md)
 - [Process Pane](Plan/ProcessPane.md)
-- [Search File Content 002: File Name Only Search](Plan/SearchFileContent002.md)
 - [Text Editor Service](Plan/TextEditor.md)
 - [UI Elements](Plan/UIElements.md)
 
@@ -30,6 +29,7 @@
 - [Recent Commands in Command Palette](Done/RecentCommandsInPalette.md)
 - [Release Workflow Hardening](Done/ReleaseWorkflowHardening.md)
 - [Search File Content 001](Done/SearchFileContent001.md)
+- [Search File Content 002: File Name Only Search](Done/SearchFileContent002.md)
 - [Self-Contained ZIP Tests](Done/SelfContainedZipTests.md)
 - [Status Bar](Done/StatusBar.md)
 - [Status Bar Active Background](Done/StatusBarActiveBackground.md)

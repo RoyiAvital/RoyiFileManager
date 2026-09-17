@@ -12,6 +12,7 @@ from fman.impl.ui.table import Table
 from fman.impl.ui.table_data import Action, Choice, Label, TableAction, TableSchema, TextField, Toggle, panel_records, text
 from fman.impl.util.qt.thread import run_in_main_thread
 from fman.url import as_human_readable, as_url
+from PyQt5 import sip
 from PyQt5.QtCore import QEvent, QSize, Qt, QSignalBlocker, QTimer, pyqtSignal
 from PyQt5.QtGui import QColor, QIcon, QPainter, QPalette, QPixmap
 from PyQt5.QtSvg import QSvgRenderer
@@ -234,6 +235,7 @@ class PanelForm(QWidget):
 			layout.setContentsMargins(0, 0, 0, 0)
 			label = QLabel(record.label, widget)
 			label.setTextFormat(Qt.PlainText)
+			label.setToolTip(record.tooltip or record.label)
 			self.fields.append((record, widget, label))
 			control = QLineEdit(record.value, widget)
 			control.setMaxLength(4096)
@@ -550,6 +552,7 @@ class TableWindow(ToolWindow):
 		self.main, self.pane, self.panel_session = main, pane, panel
 		self.provider, self.schema = provider, schema
 		self.close_on_navigate = modal if close_on_navigate is None else close_on_navigate
+		self.navigated = False
 		self.get_details, self.on_activate, self.get_menu = get_details, on_activate, get_menu
 		self.on_closed = on_closed
 		self.action_generation = 0
@@ -636,6 +639,7 @@ class TableWindow(ToolWindow):
 				return
 			if outcome == 'success':
 				if self.close_on_navigate:
+					self.navigated = True
 					self.close()
 			else:
 				self.alert(message or 'Navigation did not complete.')
@@ -755,13 +759,29 @@ class TableWindow(ToolWindow):
 		self.table.dispose()
 		self.schema.resolver = None
 		panel = self.panel_session
-		if panel is not None and panel.table_window is self:
+		restore_panel = panel is not None and panel.table_window is self
+		if restore_panel:
 			panel.table_window = None
-			if panel.alive.is_set():
-				panel.focus_panel()
 		callback, self.on_closed = self.on_closed, None
 		self.provider = self.get_details = self.get_menu = self.on_activate = None
 		_finished_callback(callback, self.owner)
+		if not self.owner.active or sip.isdeleted(self.main) or not self.main.isVisible():
+			return
+		if panel is not None:
+			if not restore_panel or not panel.alive.is_set() or sip.isdeleted(panel) or panel.table_window is not None:
+				return
+			dock = self.main._panel_dock
+			if dock is None or sip.isdeleted(dock) or dock.panel is not panel.panel:
+				return
+		if QApplication.activeModalWidget() not in (None, self):
+			return
+		if self.navigated and self.pane is not None:
+			target = self.pane._widget
+			if isinstance(target, QWidget) and not sip.isdeleted(target) and target.isVisible() and target.isEnabled():
+				self.main.activateWindow()
+				target.setFocus(Qt.OtherFocusReason)
+		elif restore_panel:
+			panel.focus_panel()
 
 
 @run_in_main_thread

@@ -9,6 +9,50 @@ from search_file_content.engine import Collector, Options, Runner, command_fits,
 
 
 class SearchEngineTest(TestCase):
+	def test_name_only_options(self):
+		for mode in ('glob', 'literal', 'regex'):
+			self.assertTrue(Options('C:\\root', '', 'report', name_mode=mode).names_only)
+		self.assertFalse(Options('C:\\root', 'needle').names_only)
+		with self.assertRaisesRegex(ValueError, 'Enter a file name or content pattern'):
+			Options('C:\\root', '')
+		with self.assertRaisesRegex(ValueError, 'single line'):
+			Options('C:\\root', 'a\nb', '*.txt')
+
+	def test_name_only_lists_binary_empty_and_regular_files(self):
+		with TemporaryDirectory() as root:
+			for name, content in (('report.bin', b'\x00binary'), ('report.txt', b''), ('other.txt', b'content')):
+				Path(root, name).write_bytes(content)
+			for mode, pattern in (('glob', 'report.*'), ('literal', 'report'), ('regex', '^report\\.')):
+				with self.subTest(mode=mode):
+					runner = Runner(Options(root, '', pattern, name_mode=mode))
+					with patch.object(runner, 'content_args', side_effect=AssertionError('No content child allowed')):
+						result = runner.run()
+					self.assertEqual('Complete', result.status, result.reason)
+					self.assertEqual({'report.bin', 'report.txt'}, {hit.relative_path for hit in result.rows})
+					self.assertTrue(all((hit.line, hit.column, hit.offset, hit.snippet, hit.spans) == (0, 0, 0, '', ()) for hit in result.rows))
+					self.assertEqual(2, result.progress.files)
+					self.assertEqual(set(), runner.children)
+
+	def test_name_only_budget_fits_table_payload(self):
+		from fman.impl.ui.table_data import TableSchema
+		from fman.ui import TableRow
+		from fman.url import as_url
+		from search_file_content import Location
+		from search_file_content.engine import Limited
+		collector = Collector(Options('C:\\root', '', '*'))
+		with self.assertRaises(Limited):
+			for index in range(10000):
+				collector.accept_path(str(Path('C:\\root', *(['\u754c' * 180] * 3), 'report%04d.txt' % index)))
+		self.assertGreater(len(collector.rows), 0)
+		self.assertLess(len(collector.rows), 10000)
+		rows = tuple(TableRow('123456789:%d' % index, (hit.relative_path, hit.snippet),
+			Location(as_url(hit.path), hit.path, hit.line, hit.column, hit.spans), ((), hit.spans))
+			for index, hit in enumerate(collector.rows))
+		schema = TableSchema(2, ('File Path', 'Snippet'), file_path_column=0, base_path='C:\\root')
+		self.assertEqual(rows, schema.snapshot(lambda: rows))
+		with self.assertRaises(ValueError):
+			Collector(Options('C:\\root', '', '*')).accept_path('C:\\outside\\file.txt')
+
 	def test_pattern_mode_settings_migration(self):
 		from search_file_content import DEFAULTS, SETTINGS_NAME, settings_snapshot
 		import search_file_content
@@ -67,9 +111,9 @@ class SearchEngineTest(TestCase):
 	def test_real_engine_three_content_modes(self):
 		with TemporaryDirectory() as root:
 			Path(root, 'CudaText.cmd').write_bytes('cuda\r\necho CUDA here\r\na.b+(x){2}$\r\n\r\ncaf\u00e9\r\n'.encode('utf-8'))
-			cases = (('literal', 'cuda', (1, 2)), ('glob', 'cuda', (1,)),
+			cases = (('literal', 'cuda', (1, 2)), ('glob', 'cuda', (1, 2)),
 				('glob', '*cuda*', (1, 2)), ('regex', '^cuda$', (1,)),
-				('glob', 'a.b+(x){2}$', (3,)), ('glob', '[!x]ud[a-z]', (1,)),
+				('glob', 'a.b+(x){2}$', (3,)), ('glob', '[!x]ud[a-z]', (1, 2)),
 				('glob', 'caf?', (5,)), ('glob', '*', (1, 2, 3, 4, 5)),
 				('glob', '**c*u*d*a**', (1, 2)))
 			for mode, pattern, lines in cases:
@@ -86,6 +130,31 @@ class SearchEngineTest(TestCase):
 				result = Runner(Options(root, pattern, '*.txt', content_mode='glob')).run()
 				self.assertEqual('Complete', result.status, result.reason)
 				self.assertEqual(1, len(result.rows), value)
+
+	def test_content_glob_substring_spans_and_wildcard_only(self):
+		with TemporaryDirectory() as root:
+			Path(root, 'line.txt').write_bytes(b'echo PORTABLE EF Commander\r\n')
+			for pattern in ('Commander', '*Commander*', 'Comm*der', '?ommander', '[Cc]ommander'):
+				with self.subTest(pattern=pattern):
+					runner = Runner(Options(root, pattern, '*.txt', content_mode='glob'))
+					result = runner.run()
+					self.assertNotIn('--line-regexp', runner.content_args())
+					self.assertEqual('Complete', result.status, result.reason)
+					self.assertEqual(1, len(result.rows))
+					self.assertEqual(((17, 26),), result.rows[0].spans)
+			result = Runner(Options(root, 'EF*Commander', '*.txt', content_mode='glob')).run()
+			self.assertEqual(((14, 26),), result.rows[0].spans)
+			result = Runner(Options(root, '^Commande$', '*.txt', content_mode='regex')).run()
+			self.assertEqual((), result.rows)
+			Path(root, 'line.txt').write_bytes(b'a' * 100000 + b'\n\n')
+			for pattern in ('*', '**'):
+				with self.subTest(pattern=pattern):
+					result = Runner(Options(root, pattern, '*.txt', content_mode='glob')).run()
+					self.assertEqual('Complete', result.status, result.reason)
+					self.assertEqual((1, 2), tuple(hit.line for hit in result.rows))
+					self.assertEqual(((0, 506),), result.rows[0].spans)
+					self.assertEqual('', result.rows[1].snippet)
+					self.assertTrue(all(span == (0, 0) for span in result.rows[1].spans))
 
 	def test_real_engine_three_filename_modes(self):
 		with TemporaryDirectory() as root:
@@ -152,6 +221,10 @@ class SearchEngineTest(TestCase):
 					self.assertEqual('Complete', result.status, result.reason)
 					self.assertEqual((), result.rows)
 				self.assertFalse(Runner(Options(root, 'needle')).eligible(str(junction / 'outside.txt')))
+				for mode, name in (('glob', '*.txt'), ('literal', '.txt'), ('regex', '\\.txt$')):
+					result = Runner(Options(root, '', name, name_mode=mode)).run()
+					self.assertEqual('Complete', result.status, result.reason)
+					self.assertEqual((), result.rows)
 				result = Runner(Options(str(junction), 'needle')).run()
 				self.assertEqual('Error', result.status)
 				self.assertFalse(result.validated)

@@ -36,9 +36,13 @@ Included:
 - All three existing name modes: Glob (`*.log;!*.tmp` masks), Literal
   (case-insensitive substring of the basename), RegEx (ripgrep regex on the
   basename), exactly as they filter today.
-- Existing recursion toggle, hidden/size eligibility rules, row cap, Stop,
+- Existing recursion toggle, row cap, Stop,
   status text, Limited/Incomplete marking, and the modal results Table with
   Copy Path / Go To.
+- All name-only modes use `eligible()`: exclude dotfiles, Windows-hidden files
+  and ancestors, symlinks/junctions, nonregular and oversized files. Binary and
+  empty regular files remain eligible. Existing content-search eligibility is
+  unchanged, including positive Glob masks admitting matching hidden files.
 - Results rows show the relative path in the File Path column and an empty
   Snippet column. Enter / Go To navigates to the file as today.
 - Bug 1: content Glob semantics in the engine
@@ -56,8 +60,8 @@ Excluded:
   and pipeline are untouched.
 - Directory results: ripgrep `--files` lists files only, matching today's
   content search which never reports directories.
-- Changes to `fman`, `fman.ui`, the Table or Panel facades, packaging or the
-  ripgrep dependency.
+- Changes to public `fman` / `fman.ui` signatures or data types, packaging or
+  the ripgrep dependency. Internal Table/Panel host fixes are explicitly included.
 
 Compatibility: preserves the public `fman` plug-in API from fman 1.7.5. The
 `Options` dataclass gains no field; only its validation relaxes. Existing
@@ -65,10 +69,11 @@ Compatibility: preserves the public `fman` plug-in API from fman 1.7.5. The
 
 ## Design
 
-All changes are inside
+Application changes are inside
 [search_file_content/engine.py](../src/main/resources/base/Plugins/SearchFileContent/search_file_content/engine.py)
-and
-[search_file_content/__init__.py](../src/main/resources/base/Plugins/SearchFileContent/search_file_content/__init__.py).
+and [search_file_content/__init__.py](../src/main/resources/base/Plugins/SearchFileContent/search_file_content/__init__.py),
+plus [facade.py](../src/main/python/fman/impl/ui/facade.py) for internal Table/Panel
+focus and tooltip behavior. Plug-in code uses only public APIs.
 
 ### Mode selection
 
@@ -79,26 +84,25 @@ read-only property `names_only = not self.content`.
 
 ### Engine
 
-`Runner.run` gains one branch before the existing two:
+`Runner.run` routes name-only searches through existing enumeration:
 
 ```
-if options.names_only:
-    self.search_names_only()
-elif options.name_mode != 'glob':
-    self.search_filtered_names()      # unchanged
+if options.names_only or options.name_mode != 'glob':
+  self.search_filtered_names()
 else:
     ... single --iglob content traversal   # unchanged
 ```
 
-`search_names_only` reuses what exists:
+The enumeration and batching path reuses what exists:
 
 - **Glob mode**: one child, `rg --files --null --no-config --no-ignore
   --no-follow [--max-depth 1] [--iglob <mask>]... -- <root>`. `--files`
   honours `--iglob` and `--max-depth`, so this is the existing enumeration
   command from `search_filtered_names` plus the masks already produced by
-  `masks()`. Each NUL-terminated record is passed to `Collector.accept_path`.
-- **Literal / RegEx mode**: call the existing `search_filtered_names`
-  unchanged; it enumerates with `--files --null` and batches into
+  `masks()`. Each NUL-terminated record goes through eligibility and then
+  `Collector.accept_path`, publishing progress without waiting for enumeration
+  to finish. No content or basename-filter child is needed.
+- **Literal / RegEx mode**: enumerate with `--files --null` and batch into
   `search_batch`. In `search_batch`, after the basename filter and the
   existing `eligible()` check, when `options.names_only` call
   `Collector.accept_path(path)` for each accepted path and return instead of
@@ -114,16 +118,20 @@ Add `Collector.accept_path(path)`:
 
 - Applies the same root-containment check as `make_hit`.
 - Builds `Hit(path, relpath, line=0, column=0, offset=0, snippet='', spans=())`.
-- Charges `72 + len(path) + len(relative_path)` bytes against
-  `max_text_bytes`, increments `row_count` and `files`, and raises `Limited`
-  at `max_rows` with the existing message.
+- Charges UTF-8 bytes of the native path, `as_url(path)` and relative path,
+  plus 72 bytes reserved for the generated row ID/overhead, against
+  `max_text_bytes`. This conservatively covers the public TableRow/Location
+  payload without importing private TableSchema code into the plug-in.
+  Increments `row_count` and `files`, and raises `Limited` at `max_rows`,
+  retaining already accepted rows. Validate near-limit Unicode paths against
+  the real Table schema in tests.
 
 `max_file_lines` does not apply (one row per file).
 
 ### Progress and status
 
-`Progress.lines` already counts `len(collector.rows)`, so the status bar shows
-the file count. `SearchSession.progress_text` and the completion summary
+`Progress` is an immutable snapshot: publish after name-only collection, not
+just during name-filter child output. `SearchSession.progress_text` and completion
 change their noun from `matching lines` to `files` when `options.names_only`
 (`'%d files, %.1f s'`). No other UI change; the Panel, Table and details
 string (`path | 0:0` becomes `path`) are reused.
@@ -148,9 +156,11 @@ glob to match anywhere in the line, as the pane filter and every editor do.
 Fix, in the engine only: content Glob becomes a *substring* glob.
 
 - Remove `--line-regexp` from `content_args` for Glob mode.
-- In `content_pattern`, after `glob_to_regex`, strip a leading and a trailing
-  `.*` so `*Commander*` compiles to `Commander`; inner wildcards stay
-  (`EF*Commander` -> `EF.*Commander`).
+- Translate with substring semantics: trim outer wildcard tokens, not arbitrary
+  regex text, so `*Commander*` compiles to `Commander`; inner wildcards stay
+  (`EF*Commander` -> `EF.*Commander`). Preserve `.*` for wildcard-only `*`/`**`:
+  these match whole lines, including blank lines, without one empty submatch per
+  character. Do not increase the transport limit. Bracketed stars remain literal.
 - `Commander`, `*Commander*`, `Comm*der` and `?ommander` then all match the
   screenshot lines, and ripgrep's own submatch is the matched text, so the
   existing highlight is correct with no post-processing. Whole-line matching
@@ -161,8 +171,8 @@ File Name Glob is unchanged: `--iglob` masks are whole-basename, which is what
 
 ### Bugs 2 and 3: focus after the results window closes
 
-Both come from `TableWindow.cleanup`
-([facade.py](../src/main/python/fman/impl/ui/facade.py#L748-L764)), which runs
+Both came from `TableWindow.cleanup`
+([facade.py](../src/main/python/fman/impl/ui/facade.py)), which ran
 `panel_session.focus_panel()` unconditionally and *before* the `on_closed`
 callback.
 
@@ -182,16 +192,19 @@ Fix in `cleanup`:
 1. Record `self.navigated = True` on `go_to`'s success path before `close()`.
 2. Fire the `on_closed` callback *before* deciding focus, so the plug-in has
    re-enabled its form.
-3. If `navigated`, focus the target pane (`self.pane._widget.focus()`, the
-   call Core uses after `OpenDirectory`); otherwise `panel.focus_panel()`,
-   which now lands on the first text field.
+3. After the callback, recheck the owner and visible, live main window. A panel
+  must still be alive, own the current dock, and have no replacement Table.
+  Another active modal blocks restoration.
+4. If `navigated`, focus the still-live, visible and enabled pane widget with
+  `setFocus(Qt.OtherFocusReason)`; otherwise call `panel.focus_panel()`, which
+  now lands on the first text field. No deferred timer or public API is needed.
 
-Modeless Tables (`close_on_navigate=False`) are unaffected because they do not
-close on navigation.
+Modeless Tables with `close_on_navigate=False` retain their navigation behavior;
+ordinary closure still receives the safe callback-before-focus ordering.
 
 ### Bug 4: undiscoverable tooltip
 
-`PanelForm.create` ([facade.py](../src/main/python/fman/impl/ui/facade.py#L229-L288))
+`PanelForm.create` ([facade.py](../src/main/python/fman/impl/ui/facade.py))
 sets the `TextField` tooltip on the `QLineEdit` only; the visible
 `QLabel('Content Pattern')` has none, so hovering the label shows nothing.
 The `Choice` option tooltips are the bare words `Literal` / `Glob` / `RegEx`.
@@ -217,9 +230,9 @@ the two `TextField` tooltips are reworded for the new semantics:
   line rather than a file. Rejected.
 - Emitting directories as well (`--files` cannot; would need `os.walk`):
   rejected as out of scope and inconsistent with content search.
-- Rich Snippet (size, modified time): would need a `stat` per result and a
-  formatting decision; deferred, the column is simply empty. ripgrep `--files`
-  emits paths only and rejects `--json`, so metadata must come from `os.stat`.
+- Rich Snippet (size, modified time): would need to retain eligibility metadata
+  and define formatting; deferred, the column is simply empty. ripgrep `--files`
+  emits paths only and rejects `--json`.
 - Bug 1 via span narrowing in `make_hit` while keeping `--line-regexp`: fixes
   the highlight but not the zero-result surprise. Rejected in favour of
   substring semantics, which fixes both and removes code.
@@ -233,11 +246,10 @@ the two `TextField` tooltips are reworded for the new semantics:
 ## Runtime Effects
 
 - Unused path: none; no new settings, timers or workers.
-- Name-only Glob: one ripgrep `--files` process, no file reads. Cost is the
-  directory walk, the cheapest operation the plug-in performs.
-- Name-only Literal / RegEx: the existing enumerate-and-batch pipeline minus
-  the content child per batch, so strictly less work than today's filtered
-  content search.
+- Name-only Glob: one ripgrep `--files` process, no file-content reads. Cost is
+  directory traversal plus per-result file/ancestor metadata checks for eligibility.
+- Name-only Literal / RegEx: retains enumeration, name preflight and bounded
+  name-filter subprocesses, but omits all content children and content reads.
 - Memory: bounded by the existing 10,000-row / 16 MiB caps; rows are smaller
   than content rows (no snippet).
 - Cancellation, threading and process lifetime are the existing `Runner` /
@@ -245,12 +257,11 @@ the two `TextField` tooltips are reworded for the new semantics:
 
 ## Tests
 
-Focused commands (PYTHONPATH as in [build.py](../build.py)):
+Focused commands using [build.py](../build.py)'s environment:
 
 ```powershell
-python -m unittest fman_unittest.test_search_file_content
-python -m unittest discover -s src/integrationtest/python -p test_search_file_content_engine.py
-python -m unittest fman_integrationtest.test_qt.SearchFileContentIT fman_integrationtest.test_qt.PanelIT
+python -c "import build, subprocess, sys; sys.exit(subprocess.call([sys.executable, '-m', 'unittest', 'fman_unittest.test_search_file_content', 'fman_integrationtest.test_search_file_content_engine', '-v'], env=build._environment()))"
+python -c "import build, os, subprocess, sys; sys.exit(subprocess.call([sys.executable, '-m', 'unittest', 'fman_integrationtest.test_qt.SearchFileContentIT', 'fman_integrationtest.test_qt.TableIT', 'fman_integrationtest.test_qt.PanelIT', '-v'], env=dict(build._environment(), QT_QPA_PLATFORM='windows', QT_QPA_FONTDIR=os.path.join(os.environ['WINDIR'], 'Fonts'))))"
 ```
 
 - `Options`: empty content + name accepted; both empty rejected with the new
@@ -259,8 +270,8 @@ python -m unittest fman_integrationtest.test_qt.SearchFileContentIT fman_integra
   literal (`report`) and regex (`^rep.*\.txt$`), name-only search returns
   exactly the expected relative paths, `line == 0`, empty snippet, no file
   contents read (fixture files are binary/empty and still listed).
-- Recursion off lists the top level only; hidden files and files over
-  `max_file_bytes` follow the same rules as filtered content search.
+- Recursion off lists the top level only. All name-only modes exclude hidden,
+  oversized and nonregular files and hidden/reparse ancestors via `eligible()`.
 - Row cap: `max_rows=3` over five matches returns `Limited` with three rows.
 - Stop during enumeration returns `Stopped` and leaves no child process.
 - Preflight: names-only skips the content validation child (assert one
@@ -284,16 +295,23 @@ python -m unittest fman_integrationtest.test_qt.SearchFileContentIT fman_integra
 - Bug 4 (`PanelIT`): a `TextField` with a tooltip exposes it on both the
   `QLabel` and the `QLineEdit`; the plug-in test asserts the five tooltip
   strings above.
+- Review regressions: wildcard-only Globs on blank/long lines and their spans;
+  near-budget Unicode paths produce a usable Limited Table; hidden attributes,
+  links and oversized files in every name-only mode; nonzero progress while
+  enumeration is blocked; no surviving child after Stop or limits.
+- Shared Table: ordinary close and successful navigation, modal/modeless modes,
+  callbacks that close/replace panels, create a new Table or invalidate owners.
+  Native Qt must retain focus only on live intended targets after disposal.
 
 ## Implementation Steps
 
 1. Relax `Options` validation, add `names_only`; unit tests.
 2. Add `Collector.accept_path`; add the `names_only` short-circuit in
-   `search_batch` and the glob `--files --iglob` child in `search_names_only`;
+  `search_batch` and glob masks to the shared enumeration child;
    wire the branch in `run` and skip the content preflight child; engine tests.
 3. Adjust the status noun in `SearchSession`; extend `SearchFileContentIT`.
-4. Bug 1: drop `--line-regexp` for content Glob and strip outer `.*` in
-   `content_pattern`; engine tests.
+4. Bug 1: drop `--line-regexp` and trim outer wildcard tokens, preserving a
+  consuming wildcard-only pattern; engine tests.
 5. Bugs 2 and 3: add the `navigated` flag to `TableWindow`, run `on_closed`
    before focusing, focus the pane after navigation; `SearchFileContentIT`
    cases.
@@ -321,8 +339,9 @@ python -m unittest fman_integrationtest.test_qt.SearchFileContentIT fman_integra
   Escape, focus is on the first text field and the form is enabled.
 - Hovering the Content Pattern label or box shows its tooltip; the Glob mode
   button explains `*`, `?` and `[ab]`.
-- Focused tests pass; no file outside the SearchFileContent plug-in, its tests,
-  `fman/impl/ui/facade.py`, its README and CHANGELOG changes.
+- Focused tests pass. Application changes are confined to SearchFileContent and
+  `fman/impl/ui/facade.py`, with focused tests, usage/changelog updates and this
+  task's completion/index bookkeeping.
 
 ## Reviewers
 
@@ -481,3 +500,127 @@ python -m unittest fman_integrationtest.test_qt.SearchFileContentIT fman_integra
   - The plan's first test command was run verbatim and failed at import as noted
     above. No full suite or freeze was run; the unimplemented feature is not claimed
     to pass tests. This is a plan review, not implementation approval.
+
+### 2026_09_17 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Medium
+- Context Window: Not exposed by host
+- Outcome: Complexity assessment only. Filename-only search is low-to-moderate
+  effort because enumeration, name filtering, child cancellation and result UI
+  already exist. The combined task is moderate, with the highest regression risk
+  in shared Table close/focus ordering and callback-driven panel/owner disposal.
+  Content Glob changes require explicit wildcard-only semantics; tooltips are
+  low effort. The five preceding findings remain unresolved and should be folded
+  into the operative design before implementation, with engine and shared UI
+  changes validated independently. Name-only avoids content reads but eligibility
+  still performs file/ancestor metadata reads; Literal/RegEx retain name-filter
+  subprocesses per batch. No new idle activity is needed. Assessment grounded in
+  current Runner, Collector, SearchSession and Table/Panel host source; prior
+  runtime reproductions were not rerun. No application edits or tests in this pass.
+
+### 2026_09_17 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Medium
+- Context Window: Not exposed by host
+- Outcome: User approved implementation. Resolved the five review gaps in the
+  operative design: consuming wildcard-only Globs; UTF-8 path/URL result budgeting;
+  consistent name-only eligibility with existing content policies preserved;
+  explicit progress publication; declared shared host scope and native/reentrant
+  focus tests. Reuse enumeration and batching without new public APIs. These
+  decisions require the focused regression gates above before completion.
+
+## Implementer
+
+### 2026_09_17 - GitHub Copilot
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: High
+- Context Window: Not exposed by host
+- Outcome: Implemented filename-only enumeration in all three modes, eligibility,
+  bounded UTF-8 Table payloads, live file counts and path-only details. Content
+  Globs now use substring spans with consuming wildcard-only patterns. Shared
+  Table cleanup restores focus after callbacks with live-target/replacement
+  guards; labels and modes expose descriptive tooltips. Public APIs and settings
+  are unchanged. All focused gates passed with one expected privilege skip.
+
+### 2026_09_17 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Claude Fable 5.1
+- Effort: High
+- Context Window: 1M
+- Outcome: Implementation review; approved. Independently re-ran both focused
+  gates in one process: 51 tests, OK, one symlink-privilege skip (5.8 s,
+  offscreen). Verified against `engine.py`, `__init__.py` and
+  `fman/impl/ui/facade.py` that the design and all five GPT-6 Astra findings
+  are implemented: `Options` rejects only both-empty with the new message and
+  exposes `names_only`; `run` routes name-only through `search_filtered_names`,
+  whose `file_args` adds `--iglob` masks for Glob so one enumeration process
+  covers all three modes; `search_batch` applies `eligible()` (hidden, size,
+  nonregular, reparse ancestors) before `Collector.accept_path` and publishes
+  progress per accepted path, so counts are live and policy matches the
+  filtered content path; `accept_path` budgets UTF-8 bytes of path, URL and
+  relative path (the `Location`/`TableRow` payload the Table will count) and
+  raises `Limited` at the row cap; preflight skips the content child when
+  name-only; `glob_to_regex(substring=True)` drops `--line-regexp`, strips
+  outer `.*` and returns a consuming `.*` for wildcard-only patterns so
+  `Commander`, `*Commander*` and `Comm*der` all match with the matched text as
+  the span; `TableWindow.cleanup` runs `on_closed` first, then focuses the
+  pane when `navigated` (guarded by owner, main-window, dock, live-target and
+  active-modal checks) and otherwise `focus_panel()`, which now lands on the
+  re-enabled first field; `PanelForm.create` sets the `TextField` tooltip on
+  the label; the five tooltip strings match the design; `get_details` is
+  path-only when `line == 0`; status noun switches to files. README, plug-in
+  README and CHANGELOG (`Added` and `Fixed`) describe the change. No public
+  `fman` API change. Observations, no action required: (1) `accept_path`
+  marks `Limited` when exactly `max_rows` files exist, the same pre-existing
+  semantics as the content path. (2) Name-only Glob calls `search_batch` once
+  per enumerated path (no subprocess involved), which is fine but means
+  `eligible()` walks ancestors per file; a per-directory memo would help only
+  for very deep trees and is not needed now. (3) The `cleanup` guard chain is
+  long; it is correct, but a short comment naming the three reentrant cases
+  it protects against (panel replaced, owner invalidated, main window closed)
+  would help future edits.
+
+## Validation Results
+
+The two exact commands in **Tests** were run from the repository root:
+
+- Engine unit and real-ripgrep integration: **31 tests, 30 passed, 1 skipped**
+  (5.306 s). Windows directory-symlink creation requires a privilege unavailable
+  here; the separate junction regression passed, including all name-only modes.
+- Native Windows `SearchFileContentIT`, `TableIT` and `PanelIT`: **20 passed**
+  (2.422 s). Real binary-file search through Core navigation passed for Enter,
+  double-click and context-menu Go To; Escape restored the first enabled field.
+  Modal/modeless callbacks closing/replacing panels, replacing Tables, invalidating
+  owners, deleting panes and closing the main window passed. Both label/input
+  tooltips and all five plug-in tooltip strings were checked.
+- Review regressions passed: 100,000-character and blank-line wildcard searches,
+  Unicode rows at the 16 MiB boundary through the real Table schema, eligibility
+  and recursion in every mode, row limits, preflight process counts, live progress
+  during blocked enumeration, Stop and child-process cleanup. The existing
+  10,000-row Table gate measured 0.038 s construction and 0.010 s fuzzy filtering
+  on this run; these are local observations, not performance guarantees.
+- Editor diagnostics reported no errors in the three application files and
+  three touched test files. The public-only plug-in import regression passed.
+- PowerShell local-link checks passed for the main/plugin READMEs, changelog and
+  task document; all required task sections were present.
+- Iteration failures were corrected and rerun: a test imported the plug-in's
+  `Location` from `fman.ui`; an eligibility command used an incorrect test-class
+  selector. Neither required a public API change.
+- No full suite, clean, freeze, packaging, separate human visual inspection or
+  new large-directory benchmark was run. Existing native workflow/geometry tests
+  supply the focused UI checks; no release validation is implied.

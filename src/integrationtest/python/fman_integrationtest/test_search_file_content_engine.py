@@ -37,6 +37,102 @@ class SearchFileContentEngineTest(TestCase):
 		self.write('match.txt')
 		self.assertEqual(1, len(self.search()))
 
+	def test_name_only_modes_eligibility_recursion_and_limits(self):
+		from search_file_content.engine import Options, Runner
+		self.write('report.txt', b'')
+		self.write('skip.txt', b'')
+		self.write('nested/report.txt', b'\x00binary')
+		self.write('.report.txt', b'')
+		self.write('.hidden/report.txt', b'')
+		self.write('report-large.txt', b'x' * 11)
+		if os.name == 'nt':
+			import ctypes
+			for path in (self.write('attribute-report.txt', b''), self.write('attribute/report.txt', b'').parent):
+				original = os.stat(path).st_file_attributes
+				self.assertTrue(ctypes.windll.kernel32.SetFileAttributesW(str(path), original | 2))
+				self.addCleanup(ctypes.windll.kernel32.SetFileAttributesW, str(path), original)
+		for mode, pattern in (('glob', '*.txt;!skip*'), ('literal', 'report'), ('regex', 'report.*\\.txt$')):
+			for recursive in (False, True):
+				with self.subTest(mode=mode, recursive=recursive):
+					result = Runner(Options(str(self.root), '', pattern, name_mode=mode,
+						recursive=recursive, max_file_bytes=10, max_file_lines=1)).run()
+					self.assertEqual('Complete', result.status, result.reason)
+					expected = {'report.txt', os.path.join('nested', 'report.txt')} if recursive else {'report.txt'}
+					self.assertEqual(expected, {hit.relative_path for hit in result.rows})
+		for index in range(5):
+			self.write('report%d.txt' % index, b'')
+		for mode, pattern in (('glob', '*.txt'), ('literal', 'report'), ('regex', '^report')):
+			runner = Runner(Options(str(self.root), '', pattern, name_mode=mode, max_rows=3))
+			result = runner.run()
+			self.assertEqual('Limited', result.status, result.reason)
+			self.assertEqual(3, len(result.rows))
+			self.assertEqual(set(), runner.children)
+
+	def test_name_only_preflight_processes_and_invalid_regex(self):
+		from search_file_content.engine import Options, Runner
+		from unittest.mock import patch
+		for mode, pattern in (('glob', '*.txt'), ('literal', 'report'), ('regex', '^report')):
+			for content in ('', 'needle'):
+				with self.subTest(mode=mode, content=content):
+					runner = Runner(Options(str(self.root), content, pattern, name_mode=mode))
+					with patch('search_file_content.engine.subprocess.Popen', wraps=subprocess.Popen) as popen:
+						runner.preflight()
+					self.assertEqual(int(bool(content)) + int(mode != 'glob'), popen.call_count)
+		with patch('search_file_content.engine.subprocess.Popen', wraps=subprocess.Popen) as popen:
+			result = Runner(Options(str(self.root), '', '[', name_mode='regex')).run()
+			self.assertEqual('Error', result.status)
+			self.assertFalse(result.validated)
+			self.assertEqual(1, popen.call_count)
+			self.assertNotIn('--files', popen.call_args.args[0])
+		with patch('search_file_content.engine.subprocess.Popen') as popen:
+			with self.assertRaises(ValueError):
+				Options(str(self.root), '')
+			popen.assert_not_called()
+
+	def test_name_only_live_progress_and_stop_while_enumerating(self):
+		from search_file_content.engine import Options, Runner
+		from threading import Event, Thread
+		from unittest.mock import patch
+		for index in range(129):
+			self.write('report%d.txt' % index, b'')
+		command = [sys.executable, '-c',
+			"import os, sys; from threading import Event; "
+			"sys.stdout.buffer.write(b''.join(os.fsencode(os.path.join(sys.argv[1], 'report%d.txt' % index)) + b'\\x00' for index in range(129))); "
+			"sys.stdout.flush(); Event().wait()", str(self.root)]
+		for mode, pattern in (('glob', '*.txt'), ('literal', 'report'), ('regex', '^report')):
+			with self.subTest(mode=mode):
+				runner = Runner(Options(str(self.root), '', pattern, name_mode=mode))
+				progress, finished = Event(), Event()
+				results = []
+				original_publish = runner.publish
+				def publish(phase='Searching'):
+					original_publish(phase)
+					if runner.progress.files:
+						progress.set()
+				def run():
+					try:
+						results.append(runner.run())
+					finally:
+						finished.set()
+				with patch.object(runner, 'file_args', return_value=command), \
+						patch.object(runner, 'publish', side_effect=publish), \
+						patch('search_file_content.engine.subprocess.Popen', wraps=subprocess.Popen):
+					worker = Thread(target=run, daemon=True)
+					worker.start()
+					try:
+						self.assertTrue(progress.wait(5), 'No progress during blocked enumeration')
+						self.assertFalse(finished.is_set())
+						self.assertGreater(runner.progress.files, 0)
+						children = tuple(runner.children)
+					finally:
+						runner.stop()
+						worker.join(5)
+						self.assertFalse(worker.is_alive())
+					self.assertEqual('Stopped', results[0].status)
+					self.assertTrue(results[0].rows)
+					self.assertEqual(set(), runner.children)
+					self.assertTrue(all(child.process.poll() is not None for child in children))
+
 	def test_positive_glob_descends_nonmatching_directories(self):
 		self.write('nested/does-not-match-mask/hit.txt')
 		self.write('ignored.bin')

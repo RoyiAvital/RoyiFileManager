@@ -12,8 +12,9 @@ SETTINGS_NAME = 'SearchFileContent.json'
 DEFAULTS = {'name_mode': 'glob', 'content_mode': 'literal', 'recursive': True,
 	'encoding': 'auto', 'max_rows': 10000, 'max_text_bytes': 16 * 1024 * 1024,
 	'max_file_lines': 200, 'max_file_bytes': 50 * 1024 * 1024}
-MODE_OPTIONS = (('literal', 'icons/text.svg', 'Literal'),
-	('glob', 'icons/asterisk.svg', 'Glob'), ('regex', 'icons/regex.svg', 'RegEx'))
+MODE_OPTIONS = (('literal', 'icons/text.svg', 'Literal text, case-insensitive'),
+	('glob', 'icons/asterisk.svg', 'Glob: * any text, ? one character, [ab] a set'),
+	('regex', 'icons/regex.svg', 'Regular expression (ripgrep syntax), case-insensitive'))
 
 
 def settings_snapshot(values):
@@ -57,15 +58,16 @@ class SearchSession:
 		self.unsubscribe_path = None
 		self.settings = settings
 		self.runner = None
+		self.names_only = False
 		self.table = None
 		self.generation = 0
 		self.save_lock = Lock()
 		self.pending_settings = None
 		self.saving = False
 		self.panel = show_panel(owner=owner, pane=pane, rows=(
-			(TextField('name', 'File Name Pattern', tooltip='Literal text within a filename, filename globs (*.cmd), or a regular expression', max_width=480),
+			(TextField('name', 'File Name Pattern', tooltip='Text within the name, globs matching the whole name (*.cmd;!*.bak), or a regular expression', max_width=480),
 				Choice('name_mode', 'File name mode', MODE_OPTIONS, settings['name_mode'])),
-			(TextField('content', 'Content Pattern', tooltip='Literal text within a line, a whole-line glob (*cuda*), or a regular expression', max_width=480),
+			(TextField('content', 'Content Pattern', tooltip='Text within the line, a glob matched anywhere in the line (Comm*der), or a regular expression; leave empty to list files by name', max_width=480),
 				Choice('content_mode', 'Content mode', MODE_OPTIONS, settings['content_mode'])),
 			(Label('root', self.root_text(), 'icons/panel-' + pane_side + '.svg', pane_side.title() + ' pane'),
 				Toggle('recursive', 'icons/folder-tree.svg', 'Recursive', settings['recursive'], 'Search subfolders'),
@@ -150,6 +152,7 @@ class SearchSession:
 		generation = self.generation
 		runner = Runner(options, self.panel.cancelled)
 		self.runner = runner
+		self.names_only = options.names_only
 		self.panel.update(enabled={key: False for key in ('name', 'content', 'name_mode', 'content_mode', 'recursive', 'search')})
 		self.panel.set_activity_status('Validating', get_text=lambda: self.progress_text(runner))
 		if not runner.start(lambda result: self.completed(generation, result)):
@@ -159,6 +162,8 @@ class SearchSession:
 
 	def progress_text(self, runner):
 		progress = runner.progress
+		if runner.options.names_only:
+			return '%s: %d files, %.1f s' % (progress.phase, progress.files, monotonic() - runner.started)
 		return '%s: %d matching lines, %d files, %.1f s' % (
 			progress.phase, progress.lines, progress.files, monotonic() - runner.started)
 
@@ -175,8 +180,11 @@ class SearchSession:
 		if generation != self.generation or not self.owner.active or self.panel.cancelled.is_set():
 			return
 		progress = result.progress
-		summary = '%s: %d matching lines, %d files, %.1f s' % (
-			result.status, len(result.rows), progress.files, progress.elapsed)
+		if self.names_only:
+			summary = '%s: %d files, %.1f s' % (result.status, len(result.rows), progress.elapsed)
+		else:
+			summary = '%s: %d matching lines, %d files, %.1f s' % (
+				result.status, len(result.rows), progress.files, progress.elapsed)
 		if result.reason:
 			summary += ' - ' + result.reason
 		try:
@@ -192,7 +200,8 @@ class SearchSession:
 					file_path_column=0, base_path=self.root, modal=True,
 					summary=self.root + ' | ' + summary,
 					on_closed=lambda: self.results_closed(generation),
-					get_details=lambda row, column: '%s | %d:%d' % (row.value.path, row.value.line, row.value.column))
+					get_details=lambda row, column: '%s | %d:%d' % (row.value.path, row.value.line, row.value.column)
+						if row.value.line else row.value.path)
 			self.runner = None
 			if self.table is None or not self.table.is_open:
 				self.enable_form()

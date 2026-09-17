@@ -1,6 +1,7 @@
 import base64
 from dataclasses import dataclass
 from functools import cached_property
+from fman.url import as_url
 import json
 import os
 from pathlib import Path
@@ -39,8 +40,10 @@ class Options:
 			value = getattr(self, name)
 			if not isinstance(value, str) or '\x00' in value or len(value) > 32768:
 				raise ValueError('Invalid %s.' % name)
-		if not self.content or '\n' in self.content or '\r' in self.content:
-			raise ValueError('Content Pattern is required and must be a single line.')
+		if not self.content and not self.name:
+			raise ValueError('Enter a file name or content pattern.')
+		if '\n' in self.content or '\r' in self.content:
+			raise ValueError('Content Pattern must be a single line.')
 		if '\n' in self.name or '\r' in self.name:
 			raise ValueError('File Name Pattern must be a single line.')
 		if not os.path.isabs(self.root):
@@ -61,6 +64,10 @@ class Options:
 				raise ValueError('Invalid %s limit.' % name)
 		if self.encoding not in ('auto', 'windows-1252'):
 			raise ValueError('Encoding must be auto or windows-1252.')
+
+	@property
+	def names_only(self):
+		return not self.content
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,7 +123,7 @@ def command_fits(arguments):
 	return len(subprocess.list2cmdline(arguments).encode('utf-16-le')) // 2 <= COMMAND_UNITS
 
 
-def glob_to_regex(pattern):
+def glob_to_regex(pattern, substring=False):
 	if any(char in pattern for char in ('\x00', '\r', '\n')):
 		raise ValueError('Content glob must be a single line without NUL.')
 	parts, position = [], 0
@@ -153,6 +160,13 @@ def glob_to_regex(pattern):
 			position = end + 1
 		else:
 			parts.append(re.escape(char))
+	if substring:
+		if parts and parts[0] == '.*':
+			parts.pop(0)
+		if parts and parts[-1] == '.*':
+			parts.pop()
+		if not parts:
+			return '.*'
 	return ''.join(parts)
 
 
@@ -230,6 +244,22 @@ class Collector:
 		self.row_count = 0
 		self.files = 0
 		self.limited = ''
+
+	def accept_path(self, path):
+		root = os.path.normpath(self.options.root)
+		path = os.path.normpath(path if os.path.isabs(path) else os.path.join(root, path))
+		if os.path.commonpath((root, path)) != root:
+			raise ValueError('Search result is outside the captured root.')
+		relative = os.path.relpath(path, root)
+		size = 72 + sum(len(value.encode('utf-8')) for value in (path, as_url(path), relative))
+		if self.row_count >= self.options.max_rows or self.text_bytes + size > self.options.max_text_bytes:
+			raise Limited('Result row/text limit reached.')
+		self.rows.append(Hit(path, relative, 0, 0, 0, '', ()))
+		self.row_count += 1
+		self.files += 1
+		self.text_bytes += size
+		if self.row_count >= self.options.max_rows:
+			raise Limited('Result row limit reached; coverage may be incomplete.')
 
 	def accept(self, message):
 		kind, data = message['type'], message['data']
@@ -377,7 +407,7 @@ class Runner:
 
 	@cached_property
 	def content_pattern(self):
-		return glob_to_regex(self.options.content) if self.options.content_mode == 'glob' else self.options.content
+		return glob_to_regex(self.options.content, substring=True) if self.options.content_mode == 'glob' else self.options.content
 
 	def content_args(self):
 		options = self.options
@@ -387,8 +417,6 @@ class Runner:
 			'--max-filesize', str(options.max_file_bytes), '--encoding', options.encoding]
 		if options.content_mode == 'literal':
 			arguments.append('--fixed-strings')
-		elif options.content_mode == 'glob':
-			arguments.append('--line-regexp')
 		arguments.extend(('-e', self.content_pattern))
 		return arguments
 
@@ -419,16 +447,29 @@ class Runner:
 			raise ValueError('Search root is missing or not a directory.')
 		if stat.S_ISLNK(info.st_mode) or getattr(info, 'st_file_attributes', 0) & getattr(stat, 'FILE_ATTRIBUTE_REPARSE_POINT', 1024):
 			raise ValueError('Search root must not be a symlink or junction.')
-		arguments = self.content_args()
-		if self.options.name_mode == 'glob':
-			for pattern in masks(self.options.name):
-				arguments.extend(('--iglob', pattern))
-			final_arguments = arguments + ([] if self.options.recursive else ['--max-depth', '1']) + ['--', self.options.root]
-			if not command_fits(final_arguments):
+		if self.options.names_only:
+			if not command_fits(self.file_args()):
 				raise ValueError('Search command exceeds 24,000 UTF-16 units.')
-		self.read_child(arguments + ['--', '-'], lambda message: None, b'')
+		else:
+			arguments = self.content_args()
+			if self.options.name_mode == 'glob':
+				for pattern in masks(self.options.name):
+					arguments.extend(('--iglob', pattern))
+				final_arguments = arguments + ([] if self.options.recursive else ['--max-depth', '1']) + ['--', self.options.root]
+				if not command_fits(final_arguments):
+					raise ValueError('Search command exceeds 24,000 UTF-16 units.')
+			self.read_child(arguments + ['--', '-'], lambda message: None, b'')
 		if self.options.name_mode != 'glob' and self.options.name:
 			self.read_child(self.name_args(), lambda message: None, b'')
+
+	def file_args(self):
+		arguments = [self.engine, '--files', '--null', '--no-config', '--no-ignore', '--no-follow']
+		if not self.options.recursive:
+			arguments.extend(('--max-depth', '1'))
+		if self.options.names_only and self.options.name_mode == 'glob':
+			for pattern in masks(self.options.name):
+				arguments.extend(('--iglob', pattern))
+		return arguments + ['--', self.options.root]
 
 	def name_args(self):
 		return [self.engine, '--no-config', '--null-data', '--json', '--line-number',
@@ -457,7 +498,7 @@ class Runner:
 
 	def search_batch(self, paths):
 		accepted = set()
-		if self.options.name:
+		if self.options.name and self.options.name_mode != 'glob':
 			def collect(message):
 				if message['type'] == 'match':
 					index = message['data']['line_number'] - 1
@@ -468,7 +509,7 @@ class Runner:
 			self.read_child(self.name_args(), collect, payload)
 		else:
 			accepted.update(range(len(paths)))
-		arguments = self.content_args() + ['--max-depth', '0', '--']
+		arguments = [] if self.options.names_only else self.content_args() + ['--max-depth', '0', '--']
 		batch = []
 		for index, path in enumerate(paths):
 			self.check()
@@ -482,6 +523,10 @@ class Runner:
 				self.skipped += 1
 				self.error = str(error)
 				continue
+			if self.options.names_only:
+				self.collector.accept_path(path)
+				self.publish()
+				continue
 			if batch and not command_fits(arguments + batch + [path]):
 				self.read_child(arguments + batch, self.collector.accept)
 				batch = []
@@ -494,14 +539,14 @@ class Runner:
 			self.read_child(arguments + batch, self.collector.accept)
 
 	def search_filtered_names(self):
-		arguments = [self.engine, '--files', '--null', '--no-config', '--no-ignore', '--no-follow']
-		if not self.options.recursive:
-			arguments.extend(('--max-depth', '1'))
-		child = Child(self, arguments + ['--', self.options.root], None)
+		child = Child(self, self.file_args(), None)
 		try:
 			batch, size = [], 0
 			for record in records(child.process.stdout, b'\x00', 131072):
 				self.check()
+				if self.options.names_only and self.options.name_mode == 'glob':
+					self.search_batch((os.fsdecode(record),))
+					continue
 				if batch and (len(batch) >= 128 or size + len(record) > 256 * 1024):
 					self.search_batch(batch)
 					batch, size = [], 0
@@ -523,7 +568,7 @@ class Runner:
 			self.preflight()
 			validated = True
 			self.check()
-			if self.options.name_mode != 'glob':
+			if self.options.names_only or self.options.name_mode != 'glob':
 				self.search_filtered_names()
 			else:
 				arguments = self.content_args()
@@ -538,7 +583,8 @@ class Runner:
 			elif self.collector.limited:
 				status, reason = 'Limited', self.collector.limited
 		except Cancelled:
-			status, reason = 'Stopped', 'Search stopped; collected text-file matches only.'
+			status = 'Stopped'
+			reason = 'Search stopped; collected file names only.' if self.options.names_only else 'Search stopped; collected text-file matches only.'
 		except Limited as error:
 			status, reason = 'Limited', str(error)
 		except Exception as error:
