@@ -38,7 +38,12 @@ from .goto import *
 
 class About(ApplicationCommand):
 	def __call__(self):
-		show_alert('RoyiFileManager version: ' + FMAN_VERSION)
+		from fman.impl.application_context import get_application_context
+		version = get_application_context().build_settings['version']
+		show_alert(
+			'RoyiFileManager version: %s\nfman plug-in API: %s'
+			% (version, FMAN_VERSION)
+		)
 
 class Help(ApplicationCommand):
 
@@ -412,50 +417,29 @@ class OpenSelectedFiles(DirectoryPaneCommand):
 class OpenWithEditor(DirectoryPaneCommand):
 
 	aliases = ('Edit',)
+	role = 'editor'
 
 	def __call__(self, url=None):
+		from core.text_editor import open_file
 		if url is None:
 			url = self.pane.get_file_under_cursor()
-		if not url:
-			show_alert('No file is selected!')
-			return
-		url = resolve(url)
-		scheme = splitscheme(url)[0]
-		if scheme != 'file://':
-			show_alert(
-				'Editing files from %s is not supported. If you are a plugin '
-				'developer, you can implement this with '
-				'DirectoryPaneListener#on_command(...).' % scheme
-			)
-			return
-		editor = self._get_editor()
-		if editor:
-			file_path = as_human_readable(url)
-			popen_kwargs = strformat_dict_values(editor, {'file': file_path})
-			Popen(**popen_kwargs)
-	def _get_editor(self):
-		settings = load_json('Core Settings.json', default={})
-		result = settings.get('editor', {})
-		if result:
-			try:
-				executable_path = result['args'][0]
-			except (KeyError, IndexError, TypeError):
-				pass
-			else:
-				if os.path.exists(executable_path):
-					return result
-			message = 'Could not find your editor. Please select it again.'
-		else:
-			message = 'Editor is currently not configured. Please pick one.'
-		choice = show_alert(message, OK | CANCEL, OK)
-		if choice & OK:
-			editor_path = _show_app_open_dialog('Pick an Editor')
-			if editor_path:
-				result = get_popen_kwargs_for_opening(['{file}'], editor_path)
-				settings['editor'] = result
-				save_json('Core Settings.json')
-				return result
-		return {}
+		open_file(url, self.role)
+
+class ViewFile(OpenWithEditor):
+	aliases = ('View',)
+	role = 'viewer'
+
+class SetTextEditor(DirectoryPaneCommand):
+	aliases = ('Set text editor',)
+	role = 'editor'
+
+	def __call__(self):
+		from core.text_editor import configure
+		configure(self.role)
+
+class SetTextViewer(SetTextEditor):
+	aliases = ('Set text viewer',)
+	role = 'viewer'
 
 def _show_app_open_dialog(caption):
 	return show_file_open_dialog(

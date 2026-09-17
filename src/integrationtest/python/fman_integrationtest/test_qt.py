@@ -1267,6 +1267,164 @@ class CommandPaletteRecentIT(QtIT):
 		self.assertEqual(2, len(loads))
 		pane.run_command.assert_not_called()
 
+class TextEditorIT(QtIT):
+	def setUp(self):
+		from fman.impl.plugins.config import Config
+		from fman.impl.theme import Theme
+		from fman.impl.widgets import MainWindow
+		from pathlib import Path
+		from tempfile import TemporaryDirectory
+		from unittest.mock import Mock, patch
+		import sys
+		self.directory = TemporaryDirectory()
+		self.addCleanup(self.directory.cleanup)
+		self.config = Config('Windows')
+		self.config.add_dir(self.directory.name)
+		self.config.save_json('Core Settings.json', {
+			'editor': {'executable': sys.executable, 'arguments': []},
+			'viewer': {'executable': sys.executable, 'arguments': []}})
+		self.dialogs = []
+		self.errors = []
+		self.selection = 'Manual configuration'
+		self.argument_line = ''
+		self.cancel = None
+		def prepare():
+			root = Path(__file__).parents[3] / 'main/resources/base'
+			theme = Theme(Mock(), [])
+			theme.load(str(root / 'Plugins/Core/Theme.css'))
+			self.window = MainWindow(QApplication.instance(), [], theme, None, Mock(), 'null://')
+			self.window.before_dialog.connect(self._on_dialog)
+		self.run_in_app(prepare)
+		self.addCleanup(lambda: self.run_in_app(self.window.deleteLater))
+		for target, kwargs in (
+			('fman._get_ui', {'return_value': self.window}),
+			('fman._get_plugin_support', {'return_value': self.config}),
+			('core.text_editor.resolve', {'side_effect': lambda url: url}),
+			('fman.impl.widgets.QFileDialog.getOpenFileName', {'side_effect': self._pick_file})):
+			patcher = patch(target, **kwargs)
+			patcher.start()
+			self.addCleanup(patcher.stop)
+
+	def _on_dialog(self, dialog):
+		from fman.impl.quicksearch import Quicksearch
+		from fman.impl.widgets import Prompt
+		from PyQt5.QtCore import QThread, QTimer
+		def answer():
+			try:
+				self.assertEqual(QApplication.instance().thread(), QThread.currentThread())
+				if isinstance(dialog, Quicksearch):
+					self.dialogs.append('preset')
+					self.assertEqual(['Notepad++', 'CudaText', 'Manual configuration'],
+						[item.value for item in dialog._curr_items[:-1]])
+					self.assertIn(dialog._curr_items[-1].value, ('Clear editor', 'Clear viewer'))
+					if self.cancel == 'preset':
+						dialog.reject()
+					else:
+						dialog._query.setText(self.selection)
+						dialog._on_return_pressed()
+				elif isinstance(dialog, Prompt):
+					self.dialogs.append('arguments')
+					if self.cancel == 'arguments':
+						dialog.reject()
+					else:
+						dialog.setTextValue(self.argument_line)
+						dialog.accept()
+				else:
+					self.fail('Unexpected wizard dialog: %s' % type(dialog).__name__)
+			except BaseException as error:
+				self.errors.append(error)
+				dialog.reject()
+		QTimer.singleShot(0, answer)
+
+	def _pick_file(self, parent, caption, path, filter_text):
+		from PyQt5.QtCore import QThread, QTimer
+		from PyQt5.QtWidgets import QFileDialog
+		self.assertEqual(QApplication.instance().thread(), QThread.currentThread())
+		self.assertIn(caption, ('Set text editor', 'Set text viewer'))
+		self.assertEqual('Applications (*.exe)', filter_text)
+		self.dialogs.append('executable')
+		dialog = QFileDialog(parent, caption, path, filter_text)
+		dialog.setOption(QFileDialog.DontUseNativeDialog, True)
+		dialog.setFileMode(QFileDialog.ExistingFile)
+		QTimer.singleShot(0, dialog.reject if self.cancel == 'executable' else dialog.accept)
+		try:
+			return (dialog.selectedFiles()[0], filter_text) if dialog.exec() else ('', '')
+		finally:
+			dialog.deleteLater()
+
+	def test_preset_manual_persistence_and_real_child_launch(self):
+		from core.commands import OpenWithEditor, SetTextEditor, SetTextViewer
+		from fman.url import as_url
+		from pathlib import Path
+		from subprocess import PIPE, Popen, list2cmdline
+		from unittest.mock import Mock, patch
+		import json
+		self.selection = 'CudaText'
+		SetTextViewer(Mock())()
+		self.assertEqual(['preset', 'executable'], self.dialogs)
+		self.assertEqual(['-r'], self.config.load_json('Core Settings.json')['viewer']['arguments'])
+		self.selection = 'Manual configuration'
+		arguments = ['-c', 'import json,sys;print(json.dumps(sys.argv[1:]))', 'C:\\My Files\\session.ini', '', 'a"b']
+		self.argument_line = list2cmdline(arguments)
+		SetTextEditor(Mock())()
+		self.assertEqual(['preset', 'executable', 'preset', 'executable', 'arguments'], self.dialogs)
+		self.assertEqual([], self.errors)
+		settings = self.config.load_json('Core Settings.json')
+		self.assertEqual(arguments, settings['editor']['arguments'])
+		self.assertEqual(['-r'], settings['viewer']['arguments'])
+		target = Path(self.directory.name, 'file {data} \u754c.txt')
+		target.touch()
+		children = []
+		def launch(**kwargs):
+			child = Popen(**kwargs, stdout=PIPE, stderr=PIPE, text=True)
+			children.append(child)
+			return child
+		try:
+			with patch('core.text_editor.Popen', side_effect=launch):
+				OpenWithEditor(Mock())(as_url(str(target)))
+			self.assertEqual(1, len(children))
+			stdout, stderr = children[0].communicate(timeout=5)
+			self.assertEqual('', stderr)
+			self.assertEqual([*arguments[2:], str(target)], json.loads(stdout))
+		finally:
+			for child in children:
+				if child.poll() is None:
+					child.kill()
+				child.communicate()
+
+	def test_clear_from_setup_list_persists_without_additional_dialogs(self):
+		from copy import deepcopy
+		from core.commands import SetTextEditor, SetTextViewer
+		from fman.impl.plugins.config import Config
+		from unittest.mock import Mock, patch
+		expected = deepcopy(self.config.load_json('Core Settings.json'))
+		with patch('core.text_editor.Popen') as launch:
+			for role, command in (('editor', SetTextEditor), ('viewer', SetTextViewer)):
+				self.selection = 'Clear %s' % role
+				command(Mock())()
+				expected[role] = None
+				reloaded = Config('Windows')
+				reloaded.add_dir(self.directory.name)
+				self.assertEqual(expected, reloaded.load_json('Core Settings.json'))
+				self.assertEqual('Text %s cleared.' % role,
+					self.run_in_app(self.window._status_bar_text.text))
+			launch.assert_not_called()
+		self.assertEqual(['preset', 'preset'], self.dialogs)
+		self.assertEqual([], self.errors)
+
+	def test_cancel_each_modal_stage_preserves_settings(self):
+		from copy import deepcopy
+		from core.commands import SetTextEditor
+		from unittest.mock import Mock, patch
+		original = deepcopy(self.config.load_json('Core Settings.json'))
+		with patch('core.text_editor.Popen') as launch:
+			for stage in ('preset', 'executable', 'arguments'):
+				self.cancel = stage
+				SetTextEditor(Mock())()
+				self.assertEqual(original, self.config.load_json('Core Settings.json'))
+			launch.assert_not_called()
+		self.assertEqual([], self.errors)
+
 class SearchFileContentIT(QtIT):
 	def test_name_only_navigation_and_escape_focus(self):
 		from core import Name, Size, Modified, OpenDirectory

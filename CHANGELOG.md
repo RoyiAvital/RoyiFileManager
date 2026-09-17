@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
 
+## [0.5.1] - 2026-09-17
+
+API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
+
+### Added
+
+- Support for setting external text viewer editor.  
+  Using <kbd>F3</kbd> for viewing the current file and <kbd>F4</kbd> for editing.
+- Added 2 wizards in Command Center: **Set text viewer** / **Set text editor** to set user defined viewer / editor.
+  The wizard allows setting command line parameters to launch the viewer / editor.  
+  Built in settings for Read Only mode for [`CudaText`](https://github.com/Alexey-T/CudaText) and [Notepad++`](https://github.com/notepad-plus-plus/notepad-plus-plus).
+
+### Fixed
+
+- `About` shows the RoyiFileManager product version from
+  `src/build/settings/base.json` instead of the fman plug-in API level, which it
+  now lists separately. Removed an unused hard-coded version copy from
+  `fbs_runtime`.
+
 ## [0.5.0] - 2026-09-17
 
 API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.

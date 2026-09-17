@@ -1,4 +1,5 @@
-from core.commands import CreateAndEditFile, History, Move, NewEmptyFile, \
+from core.commands import About, CreateAndEditFile, History, Move, NewEmptyFile, \
+	OpenWithEditor, ViewFile, SetTextEditor, SetTextViewer, \
 	ResetWindowGeometry, \
 	SyncPaneLocation, \
 	_from_human_readable, \
@@ -15,6 +16,21 @@ from unittest.mock import call, Mock, patch
 import json
 import os
 import os.path
+
+class AboutTest(TestCase):
+	@patch('core.commands.show_alert')
+	def test_shows_product_version_from_build_settings(self, show_alert):
+		from fman import FMAN_VERSION
+		from pathlib import Path
+		settings_path = Path(__file__).resolve().parents[9] / 'src/build/settings/base.json'
+		version = json.loads(settings_path.read_text(encoding='utf-8'))['version']
+		context = Mock(build_settings={'version': version})
+		with patch('fman.impl.application_context.get_application_context', return_value=context):
+			About(Mock())()
+		show_alert.assert_called_once_with(
+			'RoyiFileManager version: %s\nfman plug-in API: %s' % (version, FMAN_VERSION)
+		)
+		self.assertNotEqual(FMAN_VERSION, version)
 
 class CommandPaletteHistoryTest(TestCase):
 	def setUp(self):
@@ -456,6 +472,36 @@ class NewEmptyFileTest(TestCase):
 		pane.get_file_under_cursor.return_value = None
 		pane.get_path.return_value = 'file:///folder'
 		return pane
+
+class TextEditorCommandsTest(TestCase):
+	def test_command_center_identifiers_and_aliases(self):
+		for command, name, alias in (
+			(OpenWithEditor, 'open_with_editor', 'Edit'),
+			(ViewFile, 'view_file', 'View'),
+			(SetTextEditor, 'set_text_editor', 'Set text editor'),
+			(SetTextViewer, 'set_text_viewer', 'Set text viewer')):
+			with self.subTest(command=name):
+				self.assertEqual(name, _get_command_name(command))
+				self.assertEqual((alias,), command.aliases)
+
+	@patch('core.text_editor.open_file')
+	def test_launch_commands_route_cursor_and_explicit_target(self, open_file):
+		pane = Mock()
+		pane.get_file_under_cursor.return_value = 'file:///cursor.txt'
+		for command, role in ((OpenWithEditor, 'editor'), (ViewFile, 'viewer')):
+			command(pane)()
+			open_file.assert_called_with('file:///cursor.txt', role)
+			command(pane)('file:///explicit.txt')
+			open_file.assert_called_with('file:///explicit.txt', role)
+		self.assertEqual(4, open_file.call_count)
+
+	@patch('core.text_editor.configure')
+	def test_setup_commands_route_independently_without_target(self, configure):
+		pane = Mock()
+		SetTextEditor(pane)()
+		SetTextViewer(pane)()
+		self.assertEqual([call('editor'), call('viewer')], configure.call_args_list)
+		pane.get_file_under_cursor.assert_not_called()
 
 class CreateAndEditFileTest(TestCase):
 	@patch('core.commands.OpenWithEditor.__call__')

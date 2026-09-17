@@ -139,6 +139,44 @@ Unpack rejects a misidentified source instead of extracting the wrong archive.
 `archive.zip.7z` can produce the ordinary folder `archive.zip`; browsing it is
 local, but later archive operations beneath it may hit the same parser limitation.
 
+## Text Editor and Viewer
+
+- `F3` / **View**: open the file under the cursor in the configured viewer.
+- `F4` / **Edit**: open it in the independently configured editor.
+- `Shift+F4`: create a file, if missing, then open it in the editor.
+
+Press `Ctrl+Shift+P` and run **Set text editor** or **Set text viewer**.
+Choose Notepad++, CudaText, or **Manual configuration**.
+Browse to the program's `.exe`, or type/paste its path in the file picker.
+Presets need only the executable; Manual also asks for arguments, which may be
+empty. Cancel leaves settings unchanged. If a role is unset, F3/F4 only display
+`No text viewer was set. Use "Set text viewer" in Command Center to define a text viewer.`
+(or the equivalent editor message); they never open setup automatically.
+Only existing local files can be viewed or edited.
+
+The last item in each setup list is **Clear editor** or **Clear viewer**, after
+Manual configuration. It immediately clears only that role and shows a brief
+confirmation, without asking for an executable or arguments. The other role is
+unchanged. No extra Command Center commands are added.
+
+Manual arguments use Windows quoting, for example
+`--session "C:\My Files\session.ini"`. Do not include the executable or a file
+placeholder: the selected file's full path is appended automatically as one
+argument. `""` passes an empty argument. Braces, `%VARIABLE%` and shell operators
+are literal; launches do not use a shell.
+
+Editor presets use no arguments. Viewer presets use `-ro` for Notepad++ and
+`-r` for CudaText. These are convenience defaults, **not a read-only guarantee**.
+The user is responsible for the chosen program's behavior. Use Manual configuration to
+customize the arguments for any program. No detection or installation occurs.
+
+Each configured role stores only `executable` and an `arguments` list in the
+user-layer Core Settings JSON under `UserSettings/Plugins/User/Settings`.
+Clearing stores `null` so inherited settings cannot restore the program after a
+restart. Clearing an already-unset role does not save again. The roles are
+independent. Existing legacy editor launch mappings, including their `{file}`
+templates and `cwd`/`shell` options, still work until explicitly reconfigured.
+
 ## Examples
 
 * [Key Bindings.json](Key%20Bindings.json) defines the default key bindings

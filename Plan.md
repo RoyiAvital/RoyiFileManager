@@ -9,7 +9,6 @@
 - [Flat View](Plan/FlatView.md)
 - [Migrate to PyQt6](Plan/MigrateToPyQt6.md)
 - [Process Pane](Plan/ProcessPane.md)
-- [Text Editor Service](Plan/TextEditor.md)
 - [UI Elements](Plan/UIElements.md)
 
 ## Completed
@@ -36,4 +35,5 @@
 - [Status Bar Active Indicator](Done/StatusBarActiveIndicator.md)
 - [Status Bar Worker Results](Done/StatusBarWorkerResults.md)
 - [Sync Pane Location](Done/SyncPaneLocation.md)
+- [Text Editor and Viewer](Done/TextEditor.md)
 - [Unpack Archive](Done/UnpackArchive.md)

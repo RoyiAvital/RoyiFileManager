@@ -1,6 +1,7 @@
 from json import dump
 from os import makedirs
 from os.path import join
+from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
 
@@ -8,6 +9,20 @@ from fman.impl.shortcuts import collect_shortcuts
 
 
 class CollectShortcutsTest(TestCase):
+	def test_bundled_text_commands_are_available_in_shortcut_list(self):
+		from json import load
+		path = Path(__file__).resolve().parents[4] / 'main/resources/base/Plugins/Core/Key Bindings.json'
+		commands = {'view_file', 'open_with_editor', 'create_and_edit_file'}
+		self.assertEqual([
+			('Core', 'view_file', 'F3'),
+			('Core', 'open_with_editor', 'F4'),
+			('Core', 'create_and_edit_file', 'Shift+F4')
+		], collect_shortcuts([str(path)], commands))
+		with path.open() as file:
+			bindings = load(file)
+		for shortcut in ('F3', 'F4', 'Shift+F4'):
+			self.assertEqual(1, sum(shortcut in binding['keys'] for binding in bindings))
+
 	def test_separates_sources_and_applies_override_order(self):
 		with TemporaryDirectory() as root:
 			core = self._write(root, 'Core', [

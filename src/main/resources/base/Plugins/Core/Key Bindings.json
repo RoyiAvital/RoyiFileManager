@@ -22,6 +22,7 @@
 	{ "keys": ["Backspace"], "command": "go_up" },
 	{ "keys": ["Enter"], "command": "open" },
 	{ "keys": ["F1"], "command": "help" },
+	{ "keys": ["F3"], "command": "view_file" },
 	{ "keys": ["F4"], "command": "open_with_editor" },
 	{ "keys": ["Shift+F4"], "command": "create_and_edit_file" },
 	{ "keys": ["Ctrl+N"], "command": "new_empty_file" },
