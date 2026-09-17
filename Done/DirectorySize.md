@@ -827,6 +827,22 @@ unavailable checks. No full suite, clean or freeze unless explicitly requested.
   prevent superseded or disposed scans from publishing. Automatic totals and
   the public API remain unchanged. Native blocked-scan checks pass.
 
+### 2026_09_17 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Medium
+- Context Window: Not exposed by host
+- Outcome: Investigated the Actions startup timeout. Session startup resolves
+  command-line paths, but the test compared raw fixture URLs and looked up rows
+  with the same unnormalized prefix. Reproduced the timeout with a `..` path
+  alias while both panes had loaded the canonical folder. Windows short-name
+  temporary paths are a plausible CI trigger; the original log lacks the actual
+  pane paths. Keep alias input, resolve expected URLs and add timeout diagnostics
+  instead of increasing deadlines or changing application behavior.
+
 ## Implementer
 
 ### 2026_09_17 - GitHub Copilot
@@ -943,6 +959,20 @@ unavailable checks. No full suite, clean or freeze unless explicitly requested.
   Updated registered-command and blocked-scan native tests, usage and changelog.
   Focused gate: 43 tests, 42 passed and one expected symlink-privilege skip;
   all 12 native Qt tests passed with no worker tracebacks.
+
+### 2026_09_17 - GitHub Copilot
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Medium
+- Context Window: Not exposed by host
+- Outcome: Fixed the startup test's path expectations with `Path.resolve()`,
+  retained noncanonical command-line input as regression coverage, and added
+  phase/path/column/file-value diagnostics on timeout. Both startup phases and
+  all 12 Directory Size tests pass through offscreen CI-style discovery. No
+  application, timeout, dependency, README, changelog or workflow changes.
 
 ## Validation Results
 
@@ -1091,3 +1121,26 @@ python -c "import build, os, subprocess, sys; sys.exit(subprocess.call([sys.exec
   persistence and full source startup checks pass. No new dependencies, timers,
   executors or public API changes. Full suite, manual production-tree checks
   and frozen/package builds were not run.
+
+### CI Startup Path Normalization - 2026_09_17
+
+```powershell
+python -c "import build, os, subprocess, sys; sys.exit(subprocess.call([sys.executable, '-X', 'faulthandler', '-m', 'unittest', 'fman_integrationtest.test_qt.DirectorySizeIT.test_full_core_startup_and_persisted_size_toggle', '-v', '-f'], env=dict(build._environment(), QT_QPA_PLATFORM='offscreen', QT_QPA_FONTDIR=os.path.join(os.environ['WINDIR'], 'Fonts'))))"
+```
+
+- Before the correction, noncanonical input reproduced the timeout in 12.889
+  seconds: both panes contained the canonical folder and three Core columns,
+  but the expected URL retained `..` and the exact file lookup returned `None`.
+- After resolving expected paths, the same command passed both fresh-process
+  phases in 1.317 seconds. The noncanonical input and original deadlines remain.
+
+```powershell
+python -c "import build, os, subprocess, sys; sys.exit(subprocess.call([sys.executable, '-X', 'faulthandler', '-u', '-m', 'unittest', 'discover', '-s', 'src/integrationtest/python', '-p', 'test*.py', '-k', 'DirectorySizeIT', '-v'], env=dict(build._environment(), QT_QPA_PLATFORM='offscreen', QT_QPA_FONTDIR=os.path.join(os.environ['WINDIR'], 'Fonts'))))"
+```
+
+- All 12 tests passed in 1.498 seconds using the release test's discovery route
+  and offscreen Qt backend, restricted to the affected class. No worker traceback.
+- The logged third-party `tinycss` SyntaxWarning is not the failing assertion.
+  Full suite, release builds and remote Actions rerun were not performed. The
+  next Actions run must confirm the runner-specific failure is resolved; richer
+  diagnostics now distinguish actual loading failures from path mismatches.

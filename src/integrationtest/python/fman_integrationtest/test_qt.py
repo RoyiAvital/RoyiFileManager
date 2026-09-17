@@ -133,11 +133,12 @@ from fman.impl.util.qt.thread import run_in_main_thread
 from fman.url import as_url
 from PyQt5.QtCore import QTimer
 
-root, phase = Path(sys.argv[1]), sys.argv[2]
+requested_root, phase = Path(sys.argv[1]), sys.argv[2]
+root = requested_root.resolve()
 context = get_application_context()
 app = context.app
 context.session_manager.is_first_run = False
-sys.argv = [sys.argv[0], str(root), str(root)]
+sys.argv = [sys.argv[0], str(requested_root), str(requested_root)]
 gui = lambda operation: run_in_main_thread(operation)()
 
 def wait_for(predicate):
@@ -156,7 +157,11 @@ def wait_for(predicate):
 		timer.start()
 		check()
 	gui(start)
-	assert ready.wait(12), 'Source application did not reach expected state'
+	assert ready.wait(12), gui(lambda: 'Source application did not reach expected state: '
+		'phase=%s, requested_path=%r, expected_path=%r, panes=%r' % (
+			phase, as_url(requested_root), as_url(root),
+			[(pane.get_path(), tuple(pane.get_columns()), size_cell(pane, root / 'plain.txt'))
+				for pane in context.window.get_panes()]))
 
 def size_cell(pane, path):
 	model = pane._widget._model
@@ -214,7 +219,8 @@ sys.exit(context.run())
 '''
 		for phase in ('enable', 'restore'):
 			with self.subTest(phase=phase):
-				result = subprocess.run([sys.executable, '-X', 'faulthandler', '-c', dedent(script), str(self.root), phase],
+				root_argument = self.root / '..' / self.root.name
+				result = subprocess.run([sys.executable, '-X', 'faulthandler', '-c', dedent(script), str(root_argument), phase],
 					env=dict(os.environ, ROYIFILEMANAGER_USER_SETTINGS=str(self.root / 'UserSettings')),
 					capture_output=True, text=True, timeout=40)
 				self.assertEqual(0, result.returncode, result.stdout + result.stderr)
