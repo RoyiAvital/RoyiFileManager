@@ -164,6 +164,25 @@ class ModelRecordFilesTest(TestCase):
 		self._fs = StubFileSystem({})
 		self._model = Model(self._fs, 'null://', [Column()])
 		self.maxDiff = None
+	def test_content_notifications_follow_commits_even_without_visible_diff(self):
+		model = self._model
+		model._filters.append(lambda url: url == 's://visible')
+		observed = []
+		model.files_changed.connect(lambda: observed.append((model.rowCount(), len(model.get_rows()))))
+		rows = [f('s://visible', [c('visible', 1)]), f('s://hidden', [c('hidden', 2)])]
+		model._on_rows_inited_main(rows, rows, lambda: None)
+		self.assertEqual([(1, 2)], observed)
+		model._record_files_main([f('s://other', [c('other', 3)])])
+		self.assertEqual((1, 3), observed[-1])
+		model._record_files_main([], ['s://other'])
+		self.assertEqual((1, 2), observed[-1])
+		model._on_files_reloaded([rows[1]])
+		self.assertEqual((0, 1), observed[-1])
+		model._shutdown = True
+		model._on_rows_inited_main(rows, rows, lambda: None)
+		model._record_files_main(rows)
+		model._on_files_reloaded(rows)
+		self.assertEqual(4, len(observed))
 	def tearDown(self):
 		self._app.aboutToQuit.emit()
 		Executor._INSTANCE = self._executor_before

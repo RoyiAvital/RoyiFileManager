@@ -896,7 +896,8 @@ of a plug-in operation. Sensitive previews must not be written to diagnostic log
 
 ### Relationship to Existing Plans
 
-- [Extended Quicksearch UI](ExtendedQuicksearchUI.md) conflicts with the user's
+- [Find Files 001](FindFiles001.md) and [Find Files 002](FindFiles002.md)
+  (formerly Extended Quicksearch UI) conflict with the user's
   clarified component split: embedding checkbox/choice controls in Quicksearch
   is superseded, not Phase A's first deliverable. Revise that plan separately to
   put SearchFileFuzzy operation options in the bottom Interaction Panel before

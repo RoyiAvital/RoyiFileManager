@@ -1,7 +1,9 @@
-# Extended Quicksearch UI
+# Find Files 002: Everything-Style Query Syntax
 
 Status: Design; grammar decided (Everything syntax on new `Ctrl+E` commands,
-fuzzy retained on `Ctrl+F`). Open items 2-5 under Decision remain.
+fuzzy retained on `Ctrl+F`). Open items 1-4 under Decision remain. Split from
+`ExtendedQuicksearchUI.md`; the fzf operators for the existing fuzzy dialog are
+[Find Files 001](FindFiles001.md).
 
 ## Task
 
@@ -19,9 +21,8 @@ Everything-style search is an addition with its own commands and shortcuts, so
 each dialog has exactly one matching model and neither grammar leaks into the
 other.
 
-Motivation: today the only knobs are the `mode` JSON default and a per-binding
-`mode` argument; there is no case-sensitive, wildcard, regex or date/size
-filename search and no way to express one while the dialog is open.
+Motivation: there is no case-sensitive, wildcard, regex or date/size filename
+search in the application, and no way to express one while a dialog is open.
 
 ## Scope
 
@@ -61,44 +62,9 @@ existing command identifiers, aliases, bindings and the `mode`/`query`
 arguments are unchanged; `mode` gains the value `everything`, and the two new
 commands are additive.
 
-## Current Tools
-
-Two ways exist today to find a file by name from a pane. They overlap in the
-current folder but are different mechanisms.
-
-**Start typing (pane filter)** — host code,
-[FilterBar](../src/main/python/fman/impl/widgets.py#L236). Any printable key
-opens a small box at the bottom-right of the pane; `Escape` closes it,
-`Backspace` edits. Rows that do not match are hidden in place; the cursor
-jumps to the first row whose name starts with the text. The predicate is a
-case-insensitive `re.I` substring with `*` as a wildcard on the file name.
-
-**`Ctrl+F` / `Ctrl+Shift+F` (SearchFileFuzzy)** — plug-in,
-[search_file_fuzzy](../src/main/resources/base/Plugins/SearchFileFuzzy/search_file_fuzzy/__init__.py).
-Builds an index of the folder (or subtree) once, opens the modal Quicksearch,
-and its `get_items` ranks entries with the plug-in's `Matcher`. Selecting a
-result places the cursor on the file, navigating to its folder if needed.
-
-| | Start typing (pane filter) | `Ctrl+F` (current folder) | `Ctrl+Shift+F` (recursive) |
-| --- | --- | --- | --- |
-| Where it lives | Host `FilterBar` | Plug-in, `show_quicksearch` | Plug-in, `show_quicksearch` |
-| Scope | Current folder | Current folder | Whole subtree, up to `max_recursive_entries` (50,000) |
-| Targets | Files **and** folders, any scheme | Files only | Files only |
-| Matching | Case-insensitive substring, `*` wildcard | Fuzzy (NFKC, casefold, camel-case tokens, ranked) or substring via `mode` | Same |
-| Case sensitive / wildcards / regex | No / `*` only / no | No / no / no | No / no / no |
-| Result | Pane stays filtered; act on rows directly | Cursor jumps to one file; dialog closes | Cursor jumps to one file in its folder |
-| Hidden files | Follows pane state | `include_hidden` setting (default true) | Same |
-| Configuration | None | `SearchFileFuzzy.json` `mode`; per-binding `mode` argument | Same |
-
-In the current folder `Ctrl+F` adds only fuzzy ranking over the built-in filter
-and loses folders and in-place operation; the recursive variant is the real
-addition. Substring, case-sensitive, wildcard, regex and date/size filtering
-exist in neither, which is what this task adds on the new `Ctrl+E` commands.
-
-
 ## Design
 
-### Constraints Common to Both Syntaxes
+### Constraints
 
 - **Dispatch point.** `get_items(query)` runs synchronously on the Qt thread
   for every keystroke ([quicksearch.py](../src/main/python/fman/impl/quicksearch.py#L107)).
@@ -112,7 +78,7 @@ exist in neither, which is what this task adds on the new `Ctrl+E` commands.
   unit tests; there is no upstream implementation to lean on.
 - **Highlights.** Positions index the displayed title (relative path with
   backslashes). Substring and regex give exact spans; wildcards give spans via
-  a translated regex with groups; fuzzy gives subsequence positions.
+  a translated regex with groups.
 - **Errors while typing.** A half-typed `regex:[a` or `dm:2024-` must not
   raise on the Qt thread. Yield one `QuicksearchItem(None, 'Invalid ...',
   description=<reason>)`; selecting it does nothing because its value is
@@ -127,42 +93,11 @@ exist in neither, which is what this task adds on the new `Ctrl+E` commands.
   from the directory listing without extra syscalls; the fman-index path for
   other schemes would need `fs.query` per entry and is out of scope: metadata
   terms on non-`file://` roots produce the hint row.
-- **Ordering.** Ranked results (fuzzy) require a full scan; unranked results
-  return the first `max_results` in index order (breadth-first), as today's
-  `regular` mode does. The chosen syntax must state which applies.
+- **Ordering.** Unranked results return the first `max_results` in index
+  order (breadth-first), as today's `regular` mode does, unless open item 4
+  adds a sort.
 
-### Option A: fzf Extended-Search Syntax
-
-| Term | Meaning |
-| --- | --- |
-| `report pdf` | fuzzy match of each term, AND, ranked |
-| `'report` | exact substring |
-| `^src`, `.py$` | prefix / suffix anchors |
-| `!tmp` | negation |
-| `a \| b` | OR |
-| `'two\ words` | escaped space inside a term |
-| case | smart-case: insensitive unless the term contains an uppercase letter |
-
-Pitfalls:
-
-- **No regular expressions and no metadata filters.** Adding `regex:` or
-  `dm:` would be a private extension; the grammar is then no longer fzf.
-- **Marker collisions.** `'`, `^`, `$` and `!` are legal in Windows filenames
-  (`Don't panic.txt`, `$RECYCLE.BIN`, `!important.txt`). A leading `'` or `!`
-  silently changes mode; escaping rules must be documented and tested.
-- **Smart-case is implicit.** Users cannot force case-insensitive matching of
-  an uppercase term without lowering it; the behaviour surprises people who
-  do not know Vim/ripgrep conventions.
-- **Scoring.** fzf's ranking (Smith-Waterman-like with boundary bonuses) has
-  no Python package; either port it or keep the current scorer in
-  [matcher.py](../src/main/resources/base/Plugins/SearchFileFuzzy/search_file_fuzzy/matcher.py),
-  which then only resembles fzf. Fuzzy AND over several terms scans the whole
-  index per keystroke; the pure-Python subsequence matcher measured 19-103 ms
-  for 75,000 paths ([TODO](../TODO.md)), so multi-term queries sit at the
-  edge of the budget.
-- **Audience.** Familiar to terminal users; not a Windows file-manager idiom.
-
-### Option B: Everything Syntax (Subset)
+### Grammar (Subset)
 
 | Term | Meaning |
 | --- | --- |
@@ -198,7 +133,7 @@ Pitfalls:
   app); document the choice.
 - **No fuzzy matching.** Camel-case and subsequence matching (`pow sh` ->
   `PowerShell`) disappear unless kept as a non-standard `fuzzy:` modifier,
-  which breaks the single-syntax rule.
+  which breaks the single-syntax rule. Fuzzy users keep `Ctrl+F`.
 - **Marker collisions are minimal.** `:`, `"`, `|`, `<`, `>` cannot appear in
   Windows filenames; only `!` can, and only its leading position matters.
 - **Metadata cost.** Two integers per entry (about 1.6 MB for 50,000 entries)
@@ -210,16 +145,14 @@ Pitfalls:
 **Everything syntax**, on dedicated commands. Reasons: `regex:` subsumes every
 other matching mode, `dm:`/`dc:`/`size:` add filters fzf cannot express, and
 its markers (`:`, `"`, `|`, `<`, `>`) cannot collide with Windows filenames.
-fzf's grammar has no regex or metadata and its markers (`'`, `^`, `$`, `!`)
-are legal filename characters.
 
 Fuzzy matching is neither dropped nor folded into the grammar as a `fuzzy:`
 modifier: without ranking a fuzzy term is just a permissive filter, and with
 ranking it cannot be mixed cleanly with AND/OR/NOT terms. It stays a separate
-mode on the existing commands. `Ctrl+E` was chosen over `Alt+F` because
-`Alt+Shift` is Windows' input-language toggle and `Ctrl+E` is the search
-shortcut in Everything and Explorer; `Ctrl+E` / `Ctrl+Shift+E` are unbound in
-every bundled `Key Bindings*.json`.
+mode on the existing commands, extended by [Find Files 001](FindFiles001.md).
+`Ctrl+E` was chosen over `Alt+F` because `Alt+Shift` is Windows' input-language
+toggle and `Ctrl+E` is the search shortcut in Everything and Explorer;
+`Ctrl+E` / `Ctrl+Shift+E` are unbound in every bundled `Key Bindings*.json`.
 
 Because the two dialogs look identical, the Everything dialog shows its mode:
 an empty query yields one leading hint row `Everything syntax` with a short
@@ -297,6 +230,10 @@ content providers and any online service are excluded from this task.
   host changes.
 - **Panel + Table** like Search File Content. Rejected: two surfaces for a
   one-keystroke picker; slower interaction than the modal Quicksearch.
+- **fzf syntax for this dialog** (see the comparison in
+  [Find Files 001](FindFiles001.md)): no regex or metadata, and its markers
+  (`'`, `^`, `$`, `!`) are legal filename characters. Rejected here; adopted
+  for the fuzzy dialog in 001.
 - **Mixing fzf and Everything**, or a `fuzzy:` modifier inside the Everything
   grammar. Rejected by the user: one syntax per dialog, one reference to
   point at; fuzzy without ranking adds little and with ranking mixes badly
@@ -320,8 +257,8 @@ content providers and any online service are excluded from this task.
 - Per invocation: the existing index walk plus two integers per entry when
   metadata is collected (about 1.6 MB at 50,000 entries).
 - Per keystroke on Qt: parse (well under 1 ms) plus one scan of the index:
-  substring 5-15 ms, wildcard/regex 15-50 ms, fuzzy 20-100 ms at 50,000
-  entries. No timers, workers or I/O.
+  substring 5-15 ms, wildcard/regex 15-50 ms at 50,000 entries. No timers,
+  workers or I/O.
 - Cancellation: not applicable; nothing outlives the keystroke.
 - No-op path: the fuzzy commands are unchanged; an Everything query without
   markers is a plain AND of substrings and costs the same as today's
@@ -361,8 +298,9 @@ python -m unittest fman_unittest.test_search_file_fuzzy
 
 1. Settle the four remaining Decision items and record them in this document.
 2. Extend `SearchEntry` with size, modified and created times from `scandir`.
-3. Add `search_file_fuzzy/query.py`: tokenizer, grammar, validation, hint
-   reasons; unit tests first.
+3. Add `search_file_fuzzy/everything.py`: tokenizer, grammar, validation,
+   hint reasons, AST; unit tests first. (Find Files 001's `query.py` holds the
+   fzf tokenizer; keep the two grammars in separate modules.)
 4. Add the `everything` mode to `_search`/`Matcher`: parse, select matcher,
    compute highlights, emit the mode hint row and error rows; keep index
    construction and the fuzzy/regular paths unchanged.
@@ -374,7 +312,8 @@ python -m unittest fman_unittest.test_search_file_fuzzy
 
 ## Acceptance Criteria
 
-- `Ctrl+F` / `Ctrl+Shift+F` and their palette rows behave exactly as before.
+- `Ctrl+F` / `Ctrl+Shift+F` and their palette rows behave exactly as before
+  (or as specified by Find Files 001 if that ships first).
 - `Ctrl+E` / `Ctrl+Shift+E` open the Everything dialog with the mode hint row;
   plain text is an AND of case-insensitive substrings.
 - Every grammar element in the README works and has a test.
@@ -386,6 +325,9 @@ python -m unittest fman_unittest.test_search_file_fuzzy
 - Metadata filters are correct for local files and show the hint row elsewhere.
 
 ## Reviewers
+
+Records before 2026_09_17 belong to the combined document
+`ExtendedQuicksearchUI.md`, from which this task and Find Files 001 were split.
 
 ### 2026_09_16 - GitHub Copilot
 
@@ -416,3 +358,18 @@ python -m unittest fman_unittest.test_search_file_fuzzy
   the palette-row reason for separate commands, and the in-dialog mode hint.
   Four open items remain (wildcards, match target, date/size subset and regex
   cap, ordering).
+
+### 2026_09_17 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Claude Fable 5.1
+- Effort: Low
+- Context Window: 1M
+- Outcome: Split at the user's request. This document (Find Files 002) keeps
+  the Everything grammar, its `Ctrl+E` commands, the four open items and the
+  natural-language front-end note, unchanged in substance. The fzf operators
+  for the existing fuzzy dialog moved to Find Files 001, which is the earlier
+  iteration. The fzf comparison table remains in 001; a cross-reference
+  replaces it here.

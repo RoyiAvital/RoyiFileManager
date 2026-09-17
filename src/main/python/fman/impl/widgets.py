@@ -1,5 +1,6 @@
 from fbs_runtime.platform import is_windows, is_mac
 from fman import OK
+from fman.impl.filter_pattern import compile_filter, MAX_FILTER_LENGTH
 from fman.impl.model import SortedFileSystemModel
 from fman.impl.quicksearch import Quicksearch
 from fman.impl.status_bar import ACTIVE_PANE, DISABLED, PER_PANE, \
@@ -18,8 +19,6 @@ from PyQt5.QtWidgets import QWidget, QMainWindow, QSplitter, QStatusBar, \
 	QHBoxLayout, QPushButton, QVBoxLayout, QSplitterHandle, QApplication, \
 	QFrame, QAction, QSizePolicy, QProgressDialog, QProgressBar
 from PyQt5 import sip
-
-import re
 
 class Application(QApplication):
 	def __init__(self, *args, **kwargs):
@@ -49,6 +48,8 @@ class DirectoryPaneWidget(QWidget):
 	location_changed = pyqtSignal(QWidget)
 	location_bar_clicked = pyqtSignal(QWidget)
 	status_changed = pyqtSignal()
+	filter_changed = pyqtSignal(str, int, int)
+	filter_cleared = pyqtSignal()
 
 	def __init__(self, fs, null_location, parent, controller):
 		super().__init__(parent)
@@ -72,6 +73,8 @@ class DirectoryPaneWidget(QWidget):
 			lambda: self.location_bar_clicked.emit(self)
 		)
 		self._filter_bar = FilterBar(self, self._model, self._file_view)
+		self._filter_bar.filter_changed.connect(self.filter_changed)
+		self._filter_bar.filter_cleared.connect(self.filter_cleared)
 		self._hidden_files_shown = False
 		self._status_widget = None
 		self._status_tracking = False
@@ -142,6 +145,12 @@ class DirectoryPaneWidget(QWidget):
 	@run_in_main_thread
 	def remove_filter(self, filter_):
 		self._model.remove_filter(filter_)
+	@run_in_main_thread
+	def is_filtering(self):
+		return self._filter_bar.is_active()
+	@run_in_main_thread
+	def publish_filter_count(self):
+		self._filter_bar.publish_count()
 	def set_hidden_files_shown(self, value):
 		self._hidden_files_shown = value
 		self.status_changed.emit()
@@ -293,12 +302,16 @@ class DirectoryPaneWidget(QWidget):
 		self.location_changed.emit(self)
 
 class FilterBar(QFrame):
+	filter_changed = pyqtSignal(str, int, int)
+	filter_cleared = pyqtSignal()
+
 	def __init__(self, parent, model, file_view):
 		super().__init__(parent)
 		self._model = model
 		self._file_view = file_view
 		self.setVisible(False)
 		self._input = QLineEdit()
+		self._input.setMaxLength(MAX_FILTER_LENGTH)
 		self._input.textChanged.connect(self._on_text_changed)
 		self.setFrameShape(QFrame.Box)
 		self.setFrameShadow(QFrame.Raised)
@@ -308,11 +321,15 @@ class FilterBar(QFrame):
 		self.setLayout(layout)
 		self.setFocusPolicy(NoFocus)
 		self._input.setFocusPolicy(NoFocus)
-		self._filter_re = re.compile('', re.I)
+		self._matcher = compile_filter('')
+		self._active = False
 		self._model.add_filter(self._accepts)
+		self._model.files_changed.connect(self.publish_count)
 		file_view.verticalScrollBar().rangeChanged.connect(
 			self._on_scroll_range_changed
 		)
+	def is_active(self):
+		return self._active
 	def handle_keypress(self, event):
 		if event.key() == Key_Escape:
 			self.close()
@@ -356,11 +373,21 @@ class FilterBar(QFrame):
 	def _on_scroll_range_changed(self, min_, max_):
 		self.reposition(scroll_bar_visible=min_ or max_)
 	def _on_text_changed(self, text):
-		text_re = '.*'.join(map(re.escape, text.split('*')))
-		self._filter_re = re.compile(text_re, re.I)
+		was_active = self._active
+		self._matcher = compile_filter(text)
+		self._active = bool(text)
+		self.setVisible(self._active)
 		self._model.sourceModel().update()
+		if self._active:
+			self.publish_count()
+		elif was_active:
+			self.filter_cleared.emit()
+	def publish_count(self):
+		if self._active:
+			self.filter_changed.emit(self._input.text(), self._model.rowCount(),
+				len(self._model.sourceModel().get_rows()))
 	def _accepts(self, url):
-		return bool(self._filter_re.search(basename(url)))
+		return not self._active or self._matcher.matches(basename(url))
 
 class MainWindow(QMainWindow):
 
@@ -408,6 +435,8 @@ class MainWindow(QMainWindow):
 		self._shown_timer.timeout.connect(self.shown)
 		self._dialog = None
 		self._init_help_menu(help_menu_actions)
+		self._app.focusChanged.connect(self._on_focus_changed)
+		self._status_focus_tracking = True
 	def set_controller(self, controller):
 		self._controller = controller
 	def set_bottom_panel(self, panel, close_session, focus_session=None):
@@ -520,6 +549,9 @@ class MainWindow(QMainWindow):
 		return result
 	@run_in_main_thread
 	def show_status_message(self, text, timeout_secs=None):
+		self._status_bar_text.setTextFormat(Qt.AutoText)
+		self._status_bar_text.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+		self._status_bar_text.setWordWrap(False)
 		self._status_bar_text.setText(text)
 		if timeout_secs:
 			self._timer.start(int(timeout_secs * 1000))
@@ -535,6 +567,8 @@ class MainWindow(QMainWindow):
 		)
 		self._panes.append(result)
 		self._splitter.addWidget(result)
+		result.filter_changed.connect(self._on_filter_changed)
+		result.filter_cleared.connect(self._on_filter_cleared)
 		if self._active_pane is None:
 			self._set_active_pane(result)
 		if self._extended_status_mode == PER_PANE:
@@ -550,8 +584,6 @@ class MainWindow(QMainWindow):
 		self._extended_status_mode = settings['mode']
 		if self._extended_status_mode == DISABLED:
 			return
-		self._app.focusChanged.connect(self._on_focus_changed)
-		self._status_focus_tracking = True
 		self._on_focus_changed(None, self._app.focusWidget())
 		self._status_service = StatusCalculationService(self._fs, self)
 		if self._extended_status_mode == ACTIVE_PANE:
@@ -575,9 +607,6 @@ class MainWindow(QMainWindow):
 		pane.set_status_widget(widget)
 		self._pane_status_widgets[pane] = widget
 	def _clear_extended_status_bar(self):
-		if self._status_focus_tracking:
-			self._app.focusChanged.disconnect(self._on_focus_changed)
-			self._status_focus_tracking = False
 		if self._single_pane_status is not None:
 			self._single_pane_status.deactivate()
 			self._status_bar.removeWidget(self._single_pane_status)
@@ -601,11 +630,25 @@ class MainWindow(QMainWindow):
 	def _set_active_pane(self, pane):
 		if pane is self._active_pane:
 			return
+		previous = self._active_pane
 		self._active_pane = pane
 		if self._single_pane_status is not None:
 			self._single_pane_status.bind(pane)
 		for candidate, widget in self._pane_status_widgets.items():
 			widget.set_active(candidate is pane)
+		if pane.is_filtering():
+			pane.publish_filter_count()
+		elif previous is not None and previous.is_filtering():
+			self.clear_status_message()
+	def _on_filter_changed(self, text, matched, total):
+		if self.sender() is self._active_pane:
+			self.show_status_message('Filter "%s": %d of %d items' % (text, matched, total))
+			self._status_bar_text.setTextFormat(Qt.PlainText)
+			self._status_bar_text.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+			self._status_bar_text.setWordWrap(True)
+	def _on_filter_cleared(self):
+		if self.sender() is self._active_pane:
+			self.clear_status_message()
 	def get_panes(self):
 		return self._panes
 	@run_in_main_thread
@@ -623,6 +666,9 @@ class MainWindow(QMainWindow):
 		self._shown_timer.start(50)
 	def closeEvent(self, _):
 		self._shown_timer.stop()
+		if self._status_focus_tracking:
+			self._app.focusChanged.disconnect(self._on_focus_changed)
+			self._status_focus_tracking = False
 		if self._panel_dock is not None:
 			dock = self._panel_dock
 			dock.close_session()

@@ -29,13 +29,6 @@ The final Core revision results are recorded at the end of Validation Results.
   limit. Ignore legacy `max_entries` so old saved 200,000-entry defaults do not
   constrain new scans. A subtotal keeps updating until completion, cancellation,
   an error or the configured cap; `+` marks a cap, not a complete total.
-- One-time calculation: `Ctrl+Shift+Enter` uses only the status bar, showing
-  `Calculating <path> size...` and then a five-second result. Multiple chosen
-  directories show a count followed by a combined summary. No progress dialog
-  or Cancel button is created. A newer request cancels the previous request;
-  owner disposal cancels all outstanding work. Only the current request may
-  publish its result. Invalid selection also reports through the status bar.
-  Normal status-bar replacement by other commands remains unchanged.
 - Runtime effects: keep the one enabled-only worker, no cross-location cache,
   incremental batches, cancellation and stale-result rejection. Toggle refreshes
   rows without recreating the column schema. Off/disposal performs one final
@@ -44,10 +37,6 @@ The final Core revision results are recorded at the end of Validation Results.
   The higher default permits more metadata I/O and longer scans on large trees,
   but adds no worker, timer or content reads. Memory still tracks pending
   directories and current result snapshots, not all visited files.
-  One-time scans reuse the existing command worker thread and scanner, with
-  only start/result status updates marshaled to Qt. No progress-update timer,
-  preliminary enumeration, extra executor or recurring UI work is added.
-  Canceled OS calls may finish after replacement; their results are rejected.
 - Reviewer correction, resolved: a pending nested-pane row inherits a parent result only
   when `size_bytes is None and errors`, never a known parent subtotal or total.
   Both the focused lookup and the actual two-pane Qt regression pass.
@@ -65,9 +54,6 @@ The final Core revision results are recorded at the end of Validation Results.
   Assert the standalone bundled folder is absent; full source startup must keep
   three columns even with legacy saved settings. Cover custom and unlimited
   limits, exact file-limit completion and progressive scans beyond 200,000 entries.
-  The registered one-time shortcut must not create a dialog. Hold its scan
-  open while checking the actual status bar, UI dispatch, normal completion,
-  replacement and owner disposal; stale results must not overwrite newer text.
 
 ## Task
 
@@ -812,37 +798,6 @@ unavailable checks. No full suite, clean or freeze unless explicitly requested.
   disabled behavior. Reject the obsolete bundled folder with a regression and
   verify full Core startup with legacy saved settings.
 
-### 2026_09_17 - GitHub Copilot
-
-- Role: Reviewer
-- Activity: Review
-- Agent: GitHub Copilot
-- Model: GPT-6 Astra
-- Effort: Medium
-- Context Window: Not exposed by host
-- Outcome: Reviewed the user's status-bar-only one-time workflow. Replace the
-  root-count progress dialog instead of adding a percentage, preliminary scan
-  or indeterminate dialog. Use the command worker and existing cancellation
-  checks; serialize current-request ownership and status publication on Qt to
-  prevent superseded or disposed scans from publishing. Automatic totals and
-  the public API remain unchanged. Native blocked-scan checks pass.
-
-### 2026_09_17 - GitHub Copilot
-
-- Role: Reviewer
-- Activity: Review
-- Agent: GitHub Copilot
-- Model: GPT-6 Astra
-- Effort: Medium
-- Context Window: Not exposed by host
-- Outcome: Investigated the Actions startup timeout. Session startup resolves
-  command-line paths, but the test compared raw fixture URLs and looked up rows
-  with the same unnormalized prefix. Reproduced the timeout with a `..` path
-  alias while both panes had loaded the canonical folder. Windows short-name
-  temporary paths are a plausible CI trigger; the original log lacks the actual
-  pane paths. Keep alias input, resolve expected URLs and add timeout diagnostics
-  instead of increasing deadlines or changing application behavior.
-
 ## Implementer
 
 ### 2026_09_17 - GitHub Copilot
@@ -944,35 +899,6 @@ unavailable checks. No full suite, clean or freeze unless explicitly requested.
   Clarified automatic two-pane totals versus selected-directory one-time totals.
   Focused native gate: 42 tests, 41 passed and one expected symlink-privilege skip;
   all 11 Qt tests passed, including two fresh full application processes.
-
-### 2026_09_17 - GitHub Copilot
-
-- Role: Implementer
-- Activity: Implementation
-- Agent: GitHub Copilot
-- Model: GPT-6 Astra
-- Effort: Medium
-- Context Window: Not exposed by host
-- Outcome: Removed progress-dialog creation from Show directory size. Added
-  calculating/result status messages, status-only invalid-selection feedback,
-  cancellation of previous one-time requests and rejection of late results.
-  Updated registered-command and blocked-scan native tests, usage and changelog.
-  Focused gate: 43 tests, 42 passed and one expected symlink-privilege skip;
-  all 12 native Qt tests passed with no worker tracebacks.
-
-### 2026_09_17 - GitHub Copilot
-
-- Role: Implementer
-- Activity: Implementation
-- Agent: GitHub Copilot
-- Model: GPT-6 Astra
-- Effort: Medium
-- Context Window: Not exposed by host
-- Outcome: Fixed the startup test's path expectations with `Path.resolve()`,
-  retained noncanonical command-line input as regression coverage, and added
-  phase/path/column/file-value diagnostics on timeout. Both startup phases and
-  all 12 Directory Size tests pass through offscreen CI-style discovery. No
-  application, timeout, dependency, README, changelog or workflow changes.
 
 ## Validation Results
 
@@ -1100,47 +1026,3 @@ python -c "import build, os, subprocess, sys; sys.exit(subprocess.call([sys.exec
   manual scrolling, packaged/executable validation, full suite and freeze were
   not run. An already running application must restart with the updated source
   or build to unload the old column; no running user process was stopped.
-
-### Status-Only One-Time Calculation - 2026_09_17
-
-```powershell
-python -c "import build, os, subprocess, sys; sys.exit(subprocess.call([sys.executable, '-X', 'faulthandler', '-m', 'unittest', 'fman_unittest.test_directory_size', 'core.tests.fs.test_columns', 'fman_integrationtest.test_qt.DirectorySizeIT', '-v'], env=dict(build._environment(), QT_QPA_PLATFORM='windows', QT_QPA_FONTDIR=os.path.join(os.environ['WINDIR'], 'Fonts'))))"
-```
-
-- 43 tests in 6.340 seconds: 42 passed, one expected Windows symlink-privilege
-  skip; all 12 native Qt tests passed. No worker tracebacks.
-- Registered `Ctrl+Shift+Enter` shows the full captured path before the scan
-  and the final summary afterward while automatic totals are Off. Creating
-  a progress dialog raises an assertion in this regression and is never called.
-- A held-open scan verifies the actual status bar shows the calculating message
-  without an expiry timer while Qt still services dispatch. Normal completion
-  replaces it with the total. A newer calculation cancels the old one, and its
-  result remains unchanged when the older worker returns. Disposal also cancels
-  without waiting and prevents a late result from overwriting another message.
-- Existing file-limit, metadata-only, cancellation, nested-pane, file-size,
-  persistence and full source startup checks pass. No new dependencies, timers,
-  executors or public API changes. Full suite, manual production-tree checks
-  and frozen/package builds were not run.
-
-### CI Startup Path Normalization - 2026_09_17
-
-```powershell
-python -c "import build, os, subprocess, sys; sys.exit(subprocess.call([sys.executable, '-X', 'faulthandler', '-m', 'unittest', 'fman_integrationtest.test_qt.DirectorySizeIT.test_full_core_startup_and_persisted_size_toggle', '-v', '-f'], env=dict(build._environment(), QT_QPA_PLATFORM='offscreen', QT_QPA_FONTDIR=os.path.join(os.environ['WINDIR'], 'Fonts'))))"
-```
-
-- Before the correction, noncanonical input reproduced the timeout in 12.889
-  seconds: both panes contained the canonical folder and three Core columns,
-  but the expected URL retained `..` and the exact file lookup returned `None`.
-- After resolving expected paths, the same command passed both fresh-process
-  phases in 1.317 seconds. The noncanonical input and original deadlines remain.
-
-```powershell
-python -c "import build, os, subprocess, sys; sys.exit(subprocess.call([sys.executable, '-X', 'faulthandler', '-u', '-m', 'unittest', 'discover', '-s', 'src/integrationtest/python', '-p', 'test*.py', '-k', 'DirectorySizeIT', '-v'], env=dict(build._environment(), QT_QPA_PLATFORM='offscreen', QT_QPA_FONTDIR=os.path.join(os.environ['WINDIR'], 'Fonts'))))"
-```
-
-- All 12 tests passed in 1.498 seconds using the release test's discovery route
-  and offscreen Qt backend, restricted to the affected class. No worker traceback.
-- The logged third-party `tinycss` SyntaxWarning is not the failing assertion.
-  Full suite, release builds and remote Actions rerun were not performed. The
-  next Actions run must confirm the runner-specific failure is resolved; richer
-  diagnostics now distinguish actual loading failures from path mismatches.

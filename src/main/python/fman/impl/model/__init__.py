@@ -20,6 +20,7 @@ class SortedFileSystemModel(QSortFilterProxyModel):
 	files_dropped = pyqtSignal(list, str, bool)
 	sort_order_changed = pyqtSignal(int, int)
 	transaction_ended = pyqtSignal()
+	files_changed = pyqtSignal()
 
 	def __init__(self, parent, fs, null_location):
 		super().__init__(parent)
@@ -243,6 +244,7 @@ class SortedFileSystemModel(QSortFilterProxyModel):
 		# support it. So we need Python wrappers "_emit_...":
 		model.location_loaded.connect(self._emit_location_loaded)
 		model.all_rows_loaded.connect(self._emit_all_rows_loaded)
+		model.files_changed.connect(self._emit_files_changed)
 		model.location_disappeared.connect(self._on_file_removed)
 		model.file_renamed.connect(self._emit_file_renamed)
 		model.files_dropped.connect(self._emit_files_dropped)
@@ -253,6 +255,7 @@ class SortedFileSystemModel(QSortFilterProxyModel):
 		# doesn't support it. So we need Python wrappers "_emit_...":
 		model.location_loaded.disconnect(self._emit_location_loaded)
 		model.all_rows_loaded.disconnect(self._emit_all_rows_loaded)
+		model.files_changed.disconnect(self._emit_files_changed)
 		model.location_disappeared.disconnect(self._on_file_removed)
 		model.file_renamed.disconnect(self._emit_file_renamed)
 		model.files_dropped.disconnect(self._emit_files_dropped)
@@ -263,6 +266,9 @@ class SortedFileSystemModel(QSortFilterProxyModel):
 			self.location_loaded.emit(location)
 	def _emit_all_rows_loaded(self):
 		self.all_rows_loaded.emit()
+	def _emit_files_changed(self):
+		if self.sender() is self.sourceModel():
+			self.files_changed.emit()
 	def _emit_file_renamed(self, old, new):
 		self.file_renamed.emit(old, new)
 	def _emit_files_dropped(self, urls, dest, is_copy):

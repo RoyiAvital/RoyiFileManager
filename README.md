@@ -24,6 +24,7 @@ Significant additions compared with `fman`:
 
 - **Fuzzy File Search**: Find files in the current folder or recursively using fuzzy or regular matching.
 - **File Content Search**: Press <kbd>Alt</kbd>+<kbd>F7</kbd> for a [`ripgrep`](https://github.com/burntsushi/ripgrep) based file content search. See [File Content Search Usage](src/main/resources/base/Plugins/SearchFileContent/README.md).
+- **Pane Filter / Files Filter**: Type to filter file names with globs, anchors and negation with `fzf` inspired syntax. See [Pane Filter Usage](src/main/resources/base/Plugins/Core/README.md#pane-filter).
 - **UI Components**: New building blocks that expand what plug-ins can do. [Plug-in UI guide](Plan/UIElements.md#plug-in-api).
 - **Docked Panel**: Allows controlling states and operations. Exposed to be used by Plug-In's.
 - **Favorites**: Press <kbd>Ctrl</kbd>+<kbd>B</kbd> for a fully features Favorites Manager, built entirely with the plug-in APIs.

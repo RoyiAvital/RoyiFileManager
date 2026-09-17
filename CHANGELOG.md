@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
 
+### Added
+
+- Pane filters (Files Filter) support `?`, bracket classes, leading `^` / trailing `$`
+  anchors, leading `!` negation and backslash escapes, while retaining
+  case-insensitive substring matching. Bounded segment matching avoids
+  exponential wildcard backtracking; queries are limited to 255 characters.
+  The active pane shows live matched/total counts in the existing status bar,
+  including after loading, file changes and navigation. Space remains selection.
+
 ## [0.4.4] - 2026-09-17
 
 API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.

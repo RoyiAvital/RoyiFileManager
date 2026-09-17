@@ -54,6 +54,7 @@ class Model(SortFilterTableModel, DragAndDrop):
 	all_rows_loaded = pyqtSignal()
 	file_renamed = pyqtSignal(str, str)
 	location_disappeared = pyqtSignal(str)
+	files_changed = pyqtSignal()
 
 	def __init__(
 		self, fs, location, columns, sort_column=0, ascending=True,
@@ -184,6 +185,8 @@ class Model(SortFilterTableModel, DragAndDrop):
 			callback()
 	@run_in_main_thread
 	def _on_rows_inited_main(self, rows, preloaded_rows, callback):
+		if self._shutdown:
+			return
 		self._files = {
 			row.url: row for row in rows
 		}
@@ -200,9 +203,10 @@ class Model(SortFilterTableModel, DragAndDrop):
 		#  b) inside a transaction. This prevents the transaction listener from
 		#     firing before the callback.
 		self._begin_transaction()
-		self.set_rows(preloaded_rows)
+		self.update()
 		callback()
 		self._end_transaction()
+		self.files_changed.emit()
 	def row_is_loaded(self, rownum):
 		return self._rows[rownum].is_loaded
 	def load_rows(self, rownums, callback=None):
@@ -245,6 +249,8 @@ class Model(SortFilterTableModel, DragAndDrop):
 		Tells the model that the given `files` exist and the URLs given in
 		`disappeared` do not exist.
 		"""
+		if self._shutdown:
+			return
 		if disappeared is None:
 			disappeared = []
 		self._begin_transaction()
@@ -253,6 +259,7 @@ class Model(SortFilterTableModel, DragAndDrop):
 			self._rows, self._accepts, self._get_sortval, self._apply_diff
 		)()
 		self._end_transaction()
+		self.files_changed.emit()
 	@transaction(priority=3)
 	def sort(self, column, order=Qt.AscendingOrder):
 		ascending = order == Qt.AscendingOrder
@@ -360,6 +367,7 @@ class Model(SortFilterTableModel, DragAndDrop):
 			row.url: row for row in rows
 		}
 		self.update()
+		self.files_changed.emit()
 	def get_columns(self):
 		return self._columns
 	def get_location(self):

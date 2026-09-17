@@ -3,6 +3,36 @@ The Core plugin implements most RoyiFileManager features, including copying
 files and navigating to folders. It retains the public `fman` plug-in API for
 compatibility with existing plug-ins.
 
+## Pane Filter
+
+Start typing in a pane to filter file and folder names in place. Matching is
+case-insensitive and searches anywhere in the name unless anchored.
+
+| Input | Matches |
+| --- | --- |
+| `rep` | Names containing `rep`, including `Annual Report.pdf` |
+| `rep*2024` | `rep` followed anywhere by `2024` |
+| `r?p` | `r`, one character, then `p` |
+| `[abc]`, `[a-z]`, `[!x]` | One character in the set/range, or anything except `x` |
+| `^rep`, `.py$` | Names starting with `rep`, or ending in `.py` (not `.pyc`) |
+| `!tmp` | Names that do not contain `tmp` |
+| `\$`, `\[`, `\!` | Literal `$`, `[` or `!` |
+
+`*` still means any sequence: `*.py` can match `.pyc`; add `$` for an exact
+ending. Only leading `!`/`^` and trailing `$` are operators; `!`, `^`, `$`
+and `^$` alone are literal. `\` escapes the next character, and a trailing
+lone `\` is ignored. `[$]` also matches a literal dollar sign. An unfinished
+`[` is literal; invalid ranges fall back to the whole query as literal text.
+Queries are limited to 255 characters, including escapes.
+
+The active pane reports `Filter "<text>": <matched> of <total> items` in the
+existing status bar. Counts refresh after edits, reloads and file changes.
+Other command messages can replace the count until the next update.
+`Backspace` edits; deleting the final character, pressing `Escape`, or
+navigating clears the filter and resets its status message to `Ready.`.
+`Space` still toggles selection, even while filtering. Multiple-term AND
+matching is not implemented; spaces supplied as filter text remain literal.
+
 ## Directory Sizes
 
 - `Ctrl+Shift+D`: toggle automatic recursive totals for all directories listed

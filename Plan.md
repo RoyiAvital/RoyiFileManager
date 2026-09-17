@@ -2,8 +2,10 @@
 
 ## Pending
 
-- [Extended Quicksearch UI](Plan/ExtendedQuicksearchUI.md)
 - [Filter Bar Improvements 001](Plan/FilterBarImprovements001.md)
+- [Filter Bar Improvements 002: Multiple Terms (AND)](Plan/FilterBarImprovements002.md)
+- [Find Files 001: fzf-Style Query Syntax](Plan/FindFiles001.md)
+- [Find Files 002: Everything-Style Query Syntax](Plan/FindFiles002.md)
 - [Flat View](Plan/FlatView.md)
 - [Migrate to PyQt6](Plan/MigrateToPyQt6.md)
 - [Process Pane](Plan/ProcessPane.md)
