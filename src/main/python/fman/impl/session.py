@@ -138,9 +138,9 @@ class SessionManager:
 					pane.set_path(root)
 				except Exception:
 					_LOG.exception('Could not open %s.', root)
-		if col_widths:
+		if col_widths or pane_info.get('column_widths_by_name'):
 			try:
-				pane._widget.set_column_widths(col_widths)
+				pane._widget.restore_column_widths(pane_info.get('column_widths_by_name'), col_widths)
 			except ValueError:
 				# This for instance happens when the old and new numbers of
 				# columns don't match (eg. 2 columns before, 3 now).
@@ -173,7 +173,8 @@ class SessionManager:
 	def _read_pane_settings(self, pane):
 		return {
 			'location': pane.get_location(),
-			'col_widths': pane.get_column_widths()
+			'col_widths': pane.get_default_column_widths(),
+			'column_widths_by_name': pane.get_column_widths_by_name()
 		}
 
 def _encode(bytes_):

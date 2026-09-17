@@ -5,6 +5,17 @@ from fman.impl.session import SessionManager, _encode
 
 
 class SessionManagerWindowTest(TestCase):
+	def test_named_widths_and_legacy_widths_are_forwarded(self):
+		manager = SessionManager({}, Mock(), Mock(), 'test', True)
+		for named in (None, {'core.Name': 181, 'core.Size': 91}):
+			with self.subTest(named=named):
+				pane = Mock()
+				settings = {'location': 'file://C:/', 'col_widths': [171, 83]}
+				if named is not None:
+					settings['column_widths_by_name'] = named
+				manager._init_pane(pane, None, settings)
+				pane._widget.restore_column_widths.assert_called_once_with(named, [171, 83])
+
 	def test_startup_version_messages_and_persistence(self):
 		version = '0.3.0'
 		for previous_version in (None, version, '0.2.2', '1.7.5'):

@@ -354,6 +354,8 @@ class Model(SortFilterTableModel, DragAndDrop):
 		self._load_remaining_files()
 	@run_in_main_thread
 	def _on_files_reloaded(self, rows):
+		if self._shutdown:
+			return
 		self._files = {
 			row.url: row for row in rows
 		}
@@ -401,6 +403,12 @@ class Model(SortFilterTableModel, DragAndDrop):
 		assert dirname(url) == self._location
 		self._fs.clear_cache(url)
 		self._load_files([url])
+	@transaction(priority=6)
+	def refresh_files(self, urls):
+		self._load_files([
+			url for url in dict.fromkeys(urls)
+			if dirname(url) == self._location and url in self._files
+		])
 	@transaction(priority=6, synchronous=True)
 	def notify_file_renamed(self, old_url, new_url):
 		assert dirname(old_url) == dirname(new_url) == self._location

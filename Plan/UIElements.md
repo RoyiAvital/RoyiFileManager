@@ -21,7 +21,7 @@ with composable results and preview surfaces for the following plug-in ideas:
 
 ### Content-search Table Revision
 
-The 2026_09_14 [Search File Content revision](../Done/SearchFileContent.md) is the
+The 2026_09_14 [Search File Content revision](../Done/SearchFileContent001.md) is the
 canonical contract for the next shared element: Qt-free
 `show_table(get_rows=..., num_columns=..., columns_header=...)` returning a plain
 TableHandle, with immutable TableRow records, snapshot refresh, fuzzy filtering
@@ -175,7 +175,7 @@ has an independent regex SVG toggle; recursion also uses an SVG toggle. Every
 search-panel button has a tooltip; the results surface has no explicit buttons.
 
 - Table uses the callable population/count/header contract in
-  [Search File Content](../Done/SearchFileContent.md), with exactly File Path/Snippet
+  [Search File Content](../Done/SearchFileContent001.md), with exactly File Path/Snippet
   columns initially. One matching line is one row; metadata stays in its payload.
 - Single click selects row/current column without operating on files. The
   plug-in sets file_path_column=0 and folder_path_column=None. The host resolves
@@ -902,7 +902,7 @@ of a plug-in operation. Sensitive previews must not be written to diagnostic log
   put SearchFileFuzzy operation options in the bottom Interaction Panel before
   implementing it. Do not change existing Quicksearch behavior or add its
   proposed extended API as a prerequisite for this toolkit.
-- [Search File Content](../Done/SearchFileContent.md) is a consumer, not the owner of
+- [Search File Content](../Done/SearchFileContent001.md) is a consumer, not the owner of
   shared UI. Before integration, revise and review that task to replace the modal
   exec_dialog flow with the window panel/modeless tree-preview session, keep
   internal toolkit/PyQt imports confined to its adapter, and specify bounded

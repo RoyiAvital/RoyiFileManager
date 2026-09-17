@@ -15,6 +15,17 @@ import json
 import re
 import sys
 
+class PluginService:
+	def __init__(self, window, owner):
+		self.window = window
+		self.owner = owner
+	def start(self):
+		pass
+	def on_pane_added(self, pane):
+		pass
+	def dispose(self):
+		pass
+
 class Plugin:
 	def __init__(
 		self, error_handler, appcmd_registry, panecmd_registry, key_bindings,
@@ -27,10 +38,13 @@ class Plugin:
 		self._mother_fs = mother_fs
 		self._window = window
 		self._directory_pane_listeners = []
+		self._services = []
 	@property
 	def name(self):
 		raise NotImplementedError()
 	def on_pane_added(self, pane):
+		for service in self._services:
+			service.on_pane_added(pane)
 		for listener_class in self._directory_pane_listeners:
 			pane._add_listener(
 				self._instantiate_listener(listener_class, pane)
@@ -119,6 +133,7 @@ class ExternalPlugin(Plugin):
 		self._context_menu_provider = context_menu_provider
 		self._unload_actions = []
 		self._ui_owners = []
+		self._service_classes = []
 	@property
 	def name(self):
 		return basename(self._path)
@@ -127,6 +142,8 @@ class ExternalPlugin(Plugin):
 			self._load()
 		except Exception:
 			self._error_handler.report('Plugin %r failed to load.' % self.name)
+			if self._service_classes:
+				self.unload()
 			return False
 		return True
 	def _load(self):
@@ -143,6 +160,15 @@ class ExternalPlugin(Plugin):
 		self._load_classes()
 		self._load_key_bindings()
 		self._load_context_menu()
+		self._start_services()
+	def _start_services(self):
+		for service_class in self._service_classes:
+			owner = UiOwner(resource_root=self._path)
+			self._ui_owners.append(owner)
+			service = service_class(self._window, owner)
+			owner.attach(service.dispose)
+			self._services.append(service)
+			service.start()
 	def _register_plugin_dir(self):
 		self._error_handler.add_dir(self._path)
 		self._add_unload_action(self._error_handler.remove_dir, self._path)
@@ -166,6 +192,9 @@ class ExternalPlugin(Plugin):
 		for package in self._load_packages():
 			for cls in self._iterate_classes(package):
 				superclasses = getmro(cls)[1:]
+				if PluginService in superclasses:
+					self._service_classes.append(cls)
+					continue
 				if UiController in superclasses:
 					cls.owner = UiOwner(resource_root=self._path)
 					self._ui_owners.append(cls.owner)
@@ -226,6 +255,8 @@ class ExternalPlugin(Plugin):
 		for owner in self._ui_owners:
 			owner.invalidate()
 		self._ui_owners.clear()
+		self._services.clear()
+		self._service_classes.clear()
 		for f, args, kwargs in reversed(self._unload_actions):
 			f(*args, **kwargs)
 		self._unload_actions = []

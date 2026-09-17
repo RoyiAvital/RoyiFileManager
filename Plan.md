@@ -2,12 +2,12 @@
 
 ## Pending
 
-- [Directory Size](Plan/DirectorySize.md)
 - [Extended Quicksearch UI](Plan/ExtendedQuicksearchUI.md)
 - [Filter Bar Improvements 001](Plan/FilterBarImprovements001.md)
 - [Flat View](Plan/FlatView.md)
 - [Migrate to PyQt6](Plan/MigrateToPyQt6.md)
 - [Process Pane](Plan/ProcessPane.md)
+- [Search File Content 002: File Name Only Search](Plan/SearchFileContent002.md)
 - [Text Editor Service](Plan/TextEditor.md)
 - [UI Elements](Plan/UIElements.md)
 
@@ -19,6 +19,7 @@
 - [Concise README Features](Done/ConciseReadmeFeatures.md)
 - [Context Window Capitalization](Done/ContextWindowCapitalization.md)
 - [Correct Provenance Metadata](Done/CorrectProvenanceMetadata.md)
+- [Directory Size](Done/DirectorySize.md)
 - [Favorites 001](Done/Favorites001.md)
 - [Favorites 002: Favorites Manager](Done/Favorites002.md)
 - [Focused Validation Policy](Done/FocusedValidationPolicy.md)
@@ -26,7 +27,7 @@
 - [New File](Done/NewFile.md)
 - [Recent Commands in Command Palette](Done/RecentCommandsInPalette.md)
 - [Release Workflow Hardening](Done/ReleaseWorkflowHardening.md)
-- [Search File Content](Done/SearchFileContent.md)
+- [Search File Content 001](Done/SearchFileContent001.md)
 - [Self-Contained ZIP Tests](Done/SelfContainedZipTests.md)
 - [Status Bar](Done/StatusBar.md)
 - [Status Bar Active Background](Done/StatusBarActiveBackground.md)

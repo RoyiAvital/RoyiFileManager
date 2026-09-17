@@ -8,6 +8,12 @@ from time import sleep
 from unittest import TestCase
 
 class MotherFileSystemTest(TestCase):
+	def test_optional_columns_skip_unknown_and_duplicates(self):
+		mother = MotherFileSystem(None)
+		column = object()
+		mother.register_column('size.Column', column)
+		with self.assertLogs('fman.impl.plugins.mother_fs', level='WARNING'):
+			self.assertEqual((column,), mother.get_optional_columns(['missing.Column', 'size.Column', 'size.Column']))
 	def test_exists(self):
 		fs = StubFileSystem({
 			'a': {}

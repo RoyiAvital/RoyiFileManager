@@ -30,6 +30,8 @@ class SortedFileSystemModel(QSortFilterProxyModel):
 		self._num_rows_to_preload = 0
 		self._navigation_request = None
 		self._location_generation = 0
+		self._extra_columns = {}
+		self._default_columns = ()
 		self.set_location(null_location)
 		self._fs.file_removed.add_callback(self._on_file_removed)
 	def set_num_rows_to_preload(self, preload_rows):
@@ -105,11 +107,13 @@ class SortedFileSystemModel(QSortFilterProxyModel):
 				orig_callback()
 				self.reload()
 		self._set_location_main(
-			url, columns, sort_col_index, ascending, callback, request, generation
+			url, columns, sort_col_index, ascending, callback, request, generation,
+			sort_column=sort_column
 		)
 	@run_in_main_thread
 	def _set_location_main(
-		self, url, columns, sort_col_index, ascending, callback, request=None, generation=None
+		self, url, columns, sort_col_index, ascending, callback, request=None, generation=None,
+		recreating=False, sort_column=''
 	):
 		if generation is not None and generation != self._location_generation:
 			if request:
@@ -118,6 +122,11 @@ class SortedFileSystemModel(QSortFilterProxyModel):
 		if request and not request.active:
 			request.cancel()
 			return
+		self._default_columns = tuple(columns)
+		columns = self._with_extra_columns(url, columns)
+		if sort_column:
+			names = [column.get_qualified_name() for column in columns]
+			sort_col_index = names.index(sort_column) if sort_column in names else 0
 		old_model = self.sourceModel()
 		if old_model:
 			old_model.shutdown()
@@ -126,6 +135,7 @@ class SortedFileSystemModel(QSortFilterProxyModel):
 			self._fs, url, columns, sort_col_index, ascending,
 			self._num_rows_to_preload, self._filters
 		)
+		new_model._columns_recreated = recreating
 		if request:
 			request.started = True
 			new_model._navigation_request = request
@@ -143,7 +153,8 @@ class SortedFileSystemModel(QSortFilterProxyModel):
 		self.setSourceModel(new_model)
 		self._connect_signals(new_model)
 		self._already_visited.add(url)
-		self.location_changed.emit(url)
+		if not recreating:
+			self.location_changed.emit(url)
 		order = Qt.AscendingOrder if ascending else Qt.DescendingOrder
 		self.sort_order_changed.emit(sort_col_index, order)
 		# Start model at the very end to ensure the above signals, in particular
@@ -152,6 +163,33 @@ class SortedFileSystemModel(QSortFilterProxyModel):
 		# start the model before the FilterBar has had a chance to do this, then
 		# the model may start loading files with the wrong filter.
 		new_model.start(callback)
+	def _with_extra_columns(self, url, defaults):
+		names = [column.get_qualified_name() for column in defaults]
+		extra_names = []
+		for schemes in self._extra_columns.values():
+			for name in schemes.get(splitscheme(url)[0], ()):
+				if name not in names and name not in extra_names:
+					extra_names.append(name)
+		return tuple(defaults) + (self._fs.get_optional_columns(extra_names) if extra_names else ())
+	def set_extra_columns(self, owner, schemes, sort_column, ascending, callback):
+		if self._extra_columns.get(owner, {}) == schemes:
+			return False
+		if schemes:
+			self._extra_columns[owner] = schemes
+		else:
+			self._extra_columns.pop(owner, None)
+		url = self.get_location()
+		columns = self._with_extra_columns(url, self._default_columns)
+		if columns == tuple(self.get_columns()):
+			return False
+		names = [column.get_qualified_name() for column in columns]
+		if sort_column not in names:
+			sort_column, ascending = 'core.Name', True
+		sort_index = names.index(sort_column) if sort_column in names else 0
+		self._set_location_main(url, self._default_columns, sort_index, ascending, callback, recreating=True)
+		return True
+	def refresh_files(self, urls):
+		self.sourceModel().refresh_files(tuple(urls))
 	def setSourceModel(self, model):
 		# Without this call, #sourceModel() sometimes returns None on Arch:
 		sip.transferto(model, None)
@@ -221,7 +259,8 @@ class SortedFileSystemModel(QSortFilterProxyModel):
 		model.sort_order_changed.disconnect(self._emit_sort_order_changed)
 		model.transaction_ended.remove_callback(self._emit_transaction_ended)
 	def _emit_location_loaded(self, location):
-		self.location_loaded.emit(location)
+		if not self.sourceModel()._columns_recreated:
+			self.location_loaded.emit(location)
 	def _emit_all_rows_loaded(self):
 		self.all_rows_loaded.emit()
 	def _emit_file_renamed(self, old, new):

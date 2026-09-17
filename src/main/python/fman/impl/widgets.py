@@ -10,13 +10,14 @@ from fman.impl.util.qt import disable_window_animations_mac, Key_Escape, \
 from fman.impl.util.qt.thread import run_in_main_thread
 from fman.impl.view.location_bar import LocationBar
 from fman.impl.view import FileListView, Layout, set_selection
-from fman.url import as_human_readable, basename
+from fman.url import as_human_readable, basename, dirname
 from PyQt5.QtCore import pyqtSignal, QTimer, Qt, QEvent, QSize
 from PyQt5.QtGui import QKeySequence
 from PyQt5.QtWidgets import QWidget, QMainWindow, QSplitter, QStatusBar, \
 	QMessageBox, QInputDialog, QLineEdit, QFileDialog, QLabel, QDialog, \
 	QHBoxLayout, QPushButton, QVBoxLayout, QSplitterHandle, QApplication, \
 	QFrame, QAction, QSizePolicy, QProgressDialog, QProgressBar
+from PyQt5 import sip
 
 import re
 
@@ -74,6 +75,7 @@ class DirectoryPaneWidget(QWidget):
 		self._hidden_files_shown = False
 		self._status_widget = None
 		self._status_tracking = False
+		self._column_widths_by_name = {}
 	def resizeEvent(self, e):
 		super().resizeEvent(e)
 		self._filter_bar.reposition()
@@ -201,17 +203,66 @@ class DirectoryPaneWidget(QWidget):
 		return column, ascending
 	@run_in_main_thread
 	def get_column_widths(self):
-		return [self._file_view.columnWidth(i) for i in (0, 1)]
+		return [self._file_view.columnWidth(index) for index in range(self._model.columnCount() - 1)]
 	@run_in_main_thread
 	def set_column_widths(self, column_widths):
 		num_columns = self._model.columnCount()
-		if len(column_widths) != num_columns:
+		if len(column_widths) not in (num_columns - 1, num_columns):
 			raise ValueError(
 				'Wrong number of columns: len(%r) != %d'
 				% (column_widths, num_columns)
 			)
 		for i, width in enumerate(column_widths):
 			self._file_view.setColumnWidth(i, width)
+		self.get_column_widths_by_name()
+	@run_in_main_thread
+	def get_column_widths_by_name(self):
+		self._column_widths_by_name.update(zip(self.get_columns(), self.get_column_widths()))
+		return dict(self._column_widths_by_name)
+	@run_in_main_thread
+	def get_default_column_widths(self):
+		widths = self.get_column_widths_by_name()
+		return [widths.get(column.get_qualified_name(), self._file_view.columnWidth(index))
+			for index, column in enumerate(self._model._default_columns[:-1])]
+	@run_in_main_thread
+	def restore_column_widths(self, by_name, legacy=None):
+		if isinstance(by_name, dict):
+			widths = by_name
+		else:
+			names = [column.get_qualified_name() for column in self._model._default_columns]
+			widths = dict(zip(names, legacy or ()))
+		self._column_widths_by_name.update({name: width for name, width in widths.items()
+			if isinstance(name, str) and type(width) is int and width > 0})
+		self._apply_column_widths()
+	def _apply_column_widths(self):
+		for index, name in enumerate(self.get_columns()[:-1]):
+			if name in self._column_widths_by_name:
+				self._file_view.setColumnWidth(index, self._column_widths_by_name[name])
+	@run_in_main_thread
+	def set_extra_columns(self, owner, columns_by_scheme):
+		self.get_column_widths_by_name()
+		cursor = self.get_file_under_cursor()
+		selected = self.get_selected_files()
+		sort_column, ascending = self.get_sort_column()
+		new_model = None
+		@run_in_main_thread
+		def restore():
+			if sip.isdeleted(self) or sip.isdeleted(self._model) or self._model.sourceModel() is not new_model:
+				return
+			self._file_view.resizeColumnsToContents()
+			self._apply_column_widths()
+			self.select(selected, ignore_errors=True)
+			if cursor:
+				try:
+					self.place_cursor_at(cursor)
+				except ValueError:
+					pass
+		self._model.set_extra_columns(owner, columns_by_scheme, sort_column, ascending, restore)
+		new_model = self._model.sourceModel()
+	@run_in_main_thread
+	def refresh_files(self, urls):
+		location = self.get_location()
+		self._model.refresh_files(tuple(url for url in urls if dirname(url) == location))
 	def _on_doubleclicked(self, index):
 		self._controller.on_doubleclicked(self, self._model.url(index))
 	def _on_key_pressed(self, event):
@@ -238,6 +289,7 @@ class DirectoryPaneWidget(QWidget):
 		if not self.get_file_under_cursor():
 			self.move_cursor_home()
 		self._file_view.resizeColumnsToContents()
+		self._apply_column_widths()
 		self.location_changed.emit(self)
 
 class FilterBar(QFrame):

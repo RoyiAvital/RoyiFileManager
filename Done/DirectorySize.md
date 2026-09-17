@@ -1,5 +1,74 @@
 # Directory Size
 
+## Current Revision: Core Size
+
+The 2026_09_17 revision supersedes the standalone-column design below. The user
+requires native Core ownership, not a plug-in-to-Core provider or API bypass.
+This revision is implemented. Sections Task through Acceptance Criteria preserve
+the initial design; earlier reviewer and validation records remain historical.
+The final Core revision results are recorded at the end of Validation Results.
+
+- Task and scope: toggle recursive directory totals inside the existing
+  `core.Size` column. Keep ordinary file sizes, all three default columns,
+  pane state, sort column/direction and widths intact. Off restores Core's
+  blank directory cells and normal directory-name ordering.
+- Design: the scanner, result state, service and commands live in
+  [Core/core/directory_size](../src/main/resources/base/Plugins/Core/core/directory_size/__init__.py).
+  Core registers its own service and reads its own current result snapshots.
+  The separate DirectorySize plug-in and column have been removed;
+  no cross-plug-in callback, column replacement or public API extension is added.
+  The normal private host lifecycle and asynchronous model refresh remain in use.
+- Compatibility: preserve `DirectorySize.json` enablement,
+  `toggle_directory_size_column` and the other command IDs, and all three keys.
+  The visible toggle becomes `Toggle directory sizes`, with `Directory sizes:
+  On/Off` five-second messages. Ignore legacy `show_file_sizes`; file sizes are
+  always the existing Core behavior. No public `fman` API change.
+- File limit: the user's final requirement is a configurable default of
+  10,000,000 regular files per directory root for both automatic and one-time
+  scans. Use `max_files`; `0` means unlimited. Directories do not consume the
+  limit. Ignore legacy `max_entries` so old saved 200,000-entry defaults do not
+  constrain new scans. A subtotal keeps updating until completion, cancellation,
+  an error or the configured cap; `+` marks a cap, not a complete total.
+- One-time calculation: `Ctrl+Shift+Enter` uses only the status bar, showing
+  `Calculating <path> size...` and then a five-second result. Multiple chosen
+  directories show a count followed by a combined summary. No progress dialog
+  or Cancel button is created. A newer request cancels the previous request;
+  owner disposal cancels all outstanding work. Only the current request may
+  publish its result. Invalid selection also reports through the status bar.
+  Normal status-bar replacement by other commands remains unchanged.
+- Runtime effects: keep the one enabled-only worker, no cross-location cache,
+  incremental batches, cancellation and stale-result rejection. Toggle refreshes
+  rows without recreating the column schema. Off/disposal performs one final
+  local-pane refresh without waiting for scans; disabled steady state has no
+  automatic worker, pane callbacks or recurring feature work.
+  The higher default permits more metadata I/O and longer scans on large trees,
+  but adds no worker, timer or content reads. Memory still tracks pending
+  directories and current result snapshots, not all visited files.
+  One-time scans reuse the existing command worker thread and scanner, with
+  only start/result status updates marshaled to Qt. No progress-update timer,
+  preliminary enumeration, extra executor or recurring UI work is added.
+  Canceled OS calls may finish after replacement; their results are rejected.
+- Reviewer correction, resolved: a pending nested-pane row inherits a parent result only
+  when `size_bytes is None and errors`, never a known parent subtotal or total.
+  Both the focused lookup and the actual two-pane Qt regression pass.
+- Alternatives: a separate column was rejected by the user; a private provider
+  connecting a separate plug-in to Core was also explicitly rejected. Moving
+  ownership into Core keeps this a normal Size feature without adding an API.
+- Implementation steps completed: moved implementation into Core; connected
+  display/sorting with comparable directory sort keys across On/Off; migrated
+  registrations and tests; updated Core usage, changelog and validation records.
+- Tests and acceptance: Core Size tests must preserve files and non-local rows;
+  Qt tests must prove unchanged columns/state, actual directory totals, nested
+  panes, registered shortcuts, persistence, explicit Task and nonblocking teardown.
+  Reuse calculator regressions. Keep independent optional-column host tests from
+  the first implementation; the feature no longer calls those hooks.
+  Assert the standalone bundled folder is absent; full source startup must keep
+  three columns even with legacy saved settings. Cover custom and unlimited
+  limits, exact file-limit completion and progressive scans beyond 200,000 entries.
+  The registered one-time shortcut must not create a dialog. Hold its scan
+  open while checking the actual status bar, UI dispatch, normal completion,
+  replacement and owner disposal; stale results must not overwrite newer text.
+
 ## Task
 
 Add a bundled `DirectorySize` plug-in that provides an optional `Dir Size`
@@ -714,6 +783,50 @@ unavailable checks. No full suite, clean or freeze unless explicitly requested.
   navigation and queued column restoration after native Qt deletion. Focused
   regression and native Windows smoke gates pass; unrun checks are listed below.
 
+### 2026_09_17 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: High
+- Context Window: Not exposed by host
+- Outcome: Revised for the user's explicit Core-only ownership requirement.
+  No private plug-in-to-Core provider is approved. Move the feature into Core
+  and reuse its existing Size column, preserving file behavior and the public
+  API. Reviewer parent-fallback regression passes; migration and integration
+  checks remain pending. Original records are retained as history.
+
+### 2026_09_17 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Medium
+- Context Window: Not exposed by host
+- Outcome: Reviewed the user's final 10,000,000-file default and remaining
+  standalone-column report. Use a distinct `max_files` setting rather than
+  silently treating saved entry budgets as file budgets. Retain configurable
+  caps and allow zero for unlimited scans; keep progress, cancellation and
+  disabled behavior. Reject the obsolete bundled folder with a regression and
+  verify full Core startup with legacy saved settings.
+
+### 2026_09_17 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Medium
+- Context Window: Not exposed by host
+- Outcome: Reviewed the user's status-bar-only one-time workflow. Replace the
+  root-count progress dialog instead of adding a percentage, preliminary scan
+  or indeterminate dialog. Use the command worker and existing cancellation
+  checks; serialize current-request ownership and status publication on Qt to
+  prevent superseded or disposed scans from publishing. Automatic totals and
+  the public API remain unchanged. Native blocked-scan checks pass.
+
 ## Implementer
 
 ### 2026_09_17 - GitHub Copilot
@@ -731,6 +844,105 @@ unavailable checks. No full suite, clean or freeze unless explicitly requested.
   navigation and teardown regressions, plug-in usage, main README and Unreleased
   changelog. Final focused gate: 114 tests, 113 passed and one permitted skip;
   native Windows Qt: eight passed. No background exceptions in the final runs.
+
+### 2026_09_17 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Claude Fable 5.1
+- Effort: High
+- Context Window: 1M
+- Outcome: Implementation review; approved with one medium-severity follow-up.
+  Independently re-ran the final focused gate: 114 tests, OK, one
+  symlink-privilege skip (4.5 s). Verified against
+  `Plugins/DirectorySize/directory_size/{__init__,calculator}.py`,
+  `fman/impl/plugins/plugin.py`, `fman/impl/model/__init__.py`,
+  `fman/impl/widgets.py` and `fman/impl/session.py`: the walker is
+  metadata-only, iterative, rejects link roots before opening them, skips
+  descendant links, re-raises `InterruptedError` ahead of `OSError`, checks
+  cancellation per directory and every 256 entries, and throttles progress to
+  200 ms without a timer; the controller owns one `ThreadPoolExecutor(1)`,
+  a cancellation `Event`, a generation and a locked results dict, shuts down
+  with `wait=False, cancel_futures=True`, never joins, and rejects stale
+  generations in a queued `_Delivery`; results are cleared on every restart;
+  disabled state has no executor, callbacks or contributions; both toggle
+  paths call the public `show_status_message(..., timeout_secs=5)` only after
+  `save_json` succeeds; `PluginService` is `start/on_pane_added/dispose` only;
+  `set_extra_columns`, `refresh_files` and `column_widths_by_name` match the
+  documented hooks. No public `fman` API change. Observations: (1) `restart`
+  reloads every local pane on every navigation, including the pane that just
+  loaded; accepted by the design's "simple, repeat work" rule, but reloading
+  only the pane whose location did not change would halve listing work
+  while enabled. (2) `_receive` reads `self._results` outside the lock;
+  safe because all writers are on Qt. (3) `scan_parents` treats a symlink
+  entry as a directory candidate; `walk_directory` then yields
+  `skipped_link`, so file symlinks correctly show an empty cell.
+
+#### Follow Up Tasks
+
+- [ ] **Parent-result fallback shows the wrong size for nested panes.**
+      `DirectorySizeService.result(url)` returns
+      `results.get(key(url), results.get(key(dirname(url))))`. The fallback
+      exists so children of an unreadable parent show `?`, but it applies to
+      any parent entry. When the left pane shows `C:\A` and the right pane
+      shows `C:\A\B`, `B` is a scanned child of `C:\A` and has a real result,
+      so every row in the right pane displays `B`'s subtotal (and its final
+      total) until that row's own result arrives; `B` is walked before its
+      children because parents are processed in insertion order. Fix: apply
+      the fallback only when the parent's entry is an error record
+      (`size_bytes is None and errors`), or key parent errors separately.
+      Add a unit test with two panes at `C:\A` and `C:\A\B` asserting the
+      right pane's pending rows show `...`, not `B`'s size.
+
+### 2026_09_17 - GitHub Copilot
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: High
+- Context Window: Not exposed by host
+- Outcome: Completed the Core-owned Size revision and resolved the reviewer's
+  parent-result fallback follow-up. The historical unchecked item above records
+  the review state at that time. Core now owns calculation, state, lifecycle and
+  commands; no standalone plug-in or private cross-plug-in provider remains.
+  The same Size column displays ordinary files in both modes and directory
+  totals only while enabled. Preserved settings, command IDs, pane state and
+  nonblocking no-cache scans. Added a shutdown guard after a late pane reload
+  exposed a deleted-Qt-model update during validation. Final gate: 137 tests,
+  136 passed and one expected symlink-privilege skip; ten native Qt tests passed,
+  including two fresh full-application processes for startup and persistence.
+
+### 2026_09_17 - GitHub Copilot
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Medium
+- Context Window: Not exposed by host
+- Outcome: Removed the remaining standalone DirectorySize module and empty
+  folders. Core defaults to 10,000,000 files per root, supports user overrides
+  and zero for unlimited scans, and no longer uses legacy entry budgets.
+  Clarified automatic two-pane totals versus selected-directory one-time totals.
+  Focused native gate: 42 tests, 41 passed and one expected symlink-privilege skip;
+  all 11 Qt tests passed, including two fresh full application processes.
+
+### 2026_09_17 - GitHub Copilot
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Medium
+- Context Window: Not exposed by host
+- Outcome: Removed progress-dialog creation from Show directory size. Added
+  calculating/result status messages, status-only invalid-selection feedback,
+  cancellation of previous one-time requests and rejection of late results.
+  Updated registered-command and blocked-scan native tests, usage and changelog.
+  Focused gate: 43 tests, 42 passed and one expected symlink-privilege skip;
+  all 12 native Qt tests passed with no worker tracebacks.
 
 ## Validation Results
 
@@ -792,3 +1004,90 @@ Other checks and limits:
   were exercised through the source integration harness, not a packaged restart.
 - Full `python build.py test`, clean and freeze were not run, per repository policy.
   Git was unavailable on PATH; no commit, branch, tag or release operation ran.
+
+### Core Size Revision Validation - 2026_09_17
+
+Final focused command:
+
+```powershell
+python -c "import build, os, subprocess, sys; sys.exit(subprocess.call([sys.executable, '-X', 'faulthandler', '-m', 'unittest', 'fman_unittest.test_directory_size', 'core.tests.fs.test_columns', 'fman_unittest.impl.plugins.test_plugin', 'fman_unittest.impl.plugins.test_mother_fs', 'fman_unittest.impl.plugins.test_key_bindings', 'fman_unittest.impl.model.test_model', 'fman_unittest.impl.test_session', 'fman_unittest.test_portable.PluginApiCompatibilityTest', 'fman_integrationtest.impl.plugins.test_plugin', 'fman_integrationtest.test_qt.DirectorySizeIT', 'fman_integrationtest.test_qt.SortedFileSystemModelIT'], env=dict(build._environment(), QT_QPA_PLATFORM='offscreen', QT_QPA_FONTDIR=os.path.join(os.environ['WINDIR'], 'Fonts'))))"
+```
+
+- 137 tests in 5.298 seconds: 136 passed, one expected Windows symlink-privilege
+  skip. Native junction coverage passed. Includes Core's existing column tests,
+  public API compatibility, the moved walker, lifecycle, model and session gates.
+- Nested-pane regression: known parent subtotals, complete totals and known
+  partial-error totals leave child directory cells pending. An unknown parent
+  error gives `?`; a child's own result takes precedence and displays its bytes.
+- Toggle preserves the same three columns, source-model identity, file sizes,
+  filter, selected/cursor URLs, named widths and sort column/direction. No
+  `set_extra_columns` call is permitted in the feature's toggle regression.
+- A test-fixture binding cleanup omission was corrected to mirror the host's
+  unload actions. A background reload completion after model shutdown was also
+  treated as a failure despite passing assertions; its new guard and focused
+  regression pass. The final runs have no worker tracebacks.
+
+Final native Windows Qt command, after removing the retired plug-in directory:
+
+```powershell
+python -c "import build, os, subprocess, sys; sys.exit(subprocess.call([sys.executable, '-X', 'faulthandler', '-m', 'unittest', 'fman_integrationtest.test_qt.DirectorySizeIT', '-v'], env=dict(build._environment(), QT_QPA_PLATFORM='windows', QT_QPA_FONTDIR=os.path.join(os.environ['WINDIR'], 'Fonts'))))"
+```
+
+- Ten tests passed in 2.440 seconds. This includes two fresh application
+  processes using disposable UserSettings: first startup enables directory totals;
+  second startup restores On silently and toggles Off. Both use full Core
+  registration, retain exactly Name/Size/Modified and keep ordinary file sizes.
+- The blocked-scan case rendered a running subtotal, navigated, disabled,
+  re-enabled and disposed the service before releasing the workers. Late results
+  were rejected and workers exited after release; native case took 0.008 seconds.
+- The 6,000-file, 42,000-byte fixture still completed two fresh scans with exact
+  totals and two batches each (0.007 seconds per scan in the focused gate).
+- Editor diagnostics and Markdown local links passed; each migrated Core key
+  binding is unique. No stale standalone Python import or plug-in folder remains.
+- Full source cold restart is now verified, superseding that earlier unrun item.
+  Frozen/package tests, manual scrolling and wall-clock notification expiry were
+  not run. No full suite, clean, freeze, package, Git or release operation ran.
+
+### File Limit And Standalone Removal - 2026_09_17
+
+```powershell
+python -c "import build, os, subprocess, sys; sys.exit(subprocess.call([sys.executable, '-X', 'faulthandler', '-m', 'unittest', 'fman_unittest.test_directory_size', 'core.tests.fs.test_columns', 'fman_integrationtest.test_qt.DirectorySizeIT', '-v'], env=dict(build._environment(), QT_QPA_PLATFORM='windows', QT_QPA_FONTDIR=os.path.join(os.environ['WINDIR'], 'Fonts'))))"
+```
+
+- 42 tests in 5.798 seconds: 41 passed, one expected Windows symlink-privilege
+  skip. All 11 native Qt tests passed, without worker tracebacks.
+- A synthetic 200,256-file scan emits running results beyond the former cap and
+  completes with the exact byte total. Small real trees verify file-only caps,
+  exact-limit completion without `+`, unlimited mode, errors and cancellation.
+- Settings tests verify the 10,000,000-file default, invalid values, custom and
+  unlimited values, and ignored legacy `max_entries`. Qt config-layer testing
+  verifies an explicit user limit reaches the scanner.
+- Full native source startup and restart use legacy saved settings, restore the
+  new default and persisted On/Off state, and retain exactly Name/Size/Modified.
+  A separate regression rejects a bundled standalone DirectorySize folder.
+- The 6,000-file native fixture still completes twice with exact totals and
+  incremental batches (0.008 and 0.007 seconds). A real 10-million-file benchmark,
+  manual scrolling, packaged/executable validation, full suite and freeze were
+  not run. An already running application must restart with the updated source
+  or build to unload the old column; no running user process was stopped.
+
+### Status-Only One-Time Calculation - 2026_09_17
+
+```powershell
+python -c "import build, os, subprocess, sys; sys.exit(subprocess.call([sys.executable, '-X', 'faulthandler', '-m', 'unittest', 'fman_unittest.test_directory_size', 'core.tests.fs.test_columns', 'fman_integrationtest.test_qt.DirectorySizeIT', '-v'], env=dict(build._environment(), QT_QPA_PLATFORM='windows', QT_QPA_FONTDIR=os.path.join(os.environ['WINDIR'], 'Fonts'))))"
+```
+
+- 43 tests in 6.340 seconds: 42 passed, one expected Windows symlink-privilege
+  skip; all 12 native Qt tests passed. No worker tracebacks.
+- Registered `Ctrl+Shift+Enter` shows the full captured path before the scan
+  and the final summary afterward while automatic totals are Off. Creating
+  a progress dialog raises an assertion in this regression and is never called.
+- A held-open scan verifies the actual status bar shows the calculating message
+  without an expiry timer while Qt still services dispatch. Normal completion
+  replaces it with the total. A newer calculation cancels the old one, and its
+  result remains unchanged when the older worker returns. Disposal also cancels
+  without waiting and prevents a late result from overwriting another message.
+- Existing file-limit, metadata-only, cancellation, nested-pane, file-size,
+  persistence and full source startup checks pass. No new dependencies, timers,
+  executors or public API changes. Full suite, manual production-tree checks
+  and frozen/package builds were not run.

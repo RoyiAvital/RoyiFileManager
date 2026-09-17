@@ -2,6 +2,7 @@ from fman.impl.util import Event, filenotfounderror
 from fman.url import splitscheme, basename, dirname
 from io import UnsupportedOperation
 from threading import Lock
+import logging
 
 class MotherFileSystem:
 	def __init__(self, icon_provider):
@@ -31,6 +32,14 @@ class MotherFileSystem:
 		del self._columns[column_name]
 	def get_registered_column_names(self):
 		return list(self._columns)
+	def get_optional_columns(self, names):
+		result = []
+		for name in dict.fromkeys(names):
+			if name in self._columns:
+				result.append(self._columns[name])
+			else:
+				logging.getLogger(__name__).warning('Unknown optional column: %s', name)
+		return tuple(result)
 	def get_columns(self, url):
 		child, path = self._split(url)
 		child_get_cols = child.get_default_columns

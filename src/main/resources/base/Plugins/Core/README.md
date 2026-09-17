@@ -3,6 +3,67 @@ The Core plugin implements most RoyiFileManager features, including copying
 files and navigating to folders. It retains the public `fman` plug-in API for
 compatibility with existing plug-ins.
 
+## Directory Sizes
+
+- `Ctrl+Shift+D`: toggle automatic recursive totals for all directories listed
+	in both local panes, inside the existing `Size` column. Alternatively, press
+	`Ctrl+Shift+P` and run `Toggle directory
+	sizes`. Starts Off and persists across restarts; successful toggles show an
+	On/Off notification for five seconds. No column is added or removed.
+- `Ctrl+F4` / `Sort by directory size`: sort by `Size` while directory totals
+	are enabled; repeat to reverse direction. `Ctrl+F2` remains normal Size sorting.
+- `Recalculate directory sizes`: clear current results and rescan both panes.
+- `Ctrl+Shift+Enter` / `Show directory size`: calculate only the selected
+	directories, or the directory under the cursor when nothing is selected.
+	Shows `Calculating <path> size...` in the status bar, then a five-second result.
+	Multiple selections show the directory count, then a combined total.
+	No progress dialog opens. A new request replaces and cancels the previous
+	one; closing the application also cancels it. Does not enable automatic
+	totals or update column values, and works while automatic totals are Off.
+
+File sizes are unchanged in both states. Enabled directory cells show `...`
+while pending, a subtotal followed by `...` while running, and a plain size when
+complete. `+` marks the configured file cap: `11.4 GiB+` means at least 11.4 GiB,
+not a complete total. `?` marks an error or an unavailable total.
+Linked directories are skipped. Off restores blank directory cells and Core's
+normal directory-name ordering; it keeps the current sort column/direction,
+location, filter, cursor, selection and widths.
+
+Calculations are metadata-only and run off the UI/model threads. Results arrive
+incrementally, without a cross-location cache. Enabling, navigating or running
+Recalculate starts a fresh scan; external changes are not watched. Navigation
+and Off never wait for a recursive walk, although an in-flight OS call must
+return before its canceled worker can exit.
+
+Only local `file://` directories are scanned. Root and descendant symlinks and
+junctions are not followed. Totals are logical bytes, not allocated disk space
+or a snapshot of concurrently changing files. Explicit totals retain cap/error
+warnings; cancellation does not report an unfinished total as complete.
+
+Core owns this feature, including its background service and commands. No
+separate DirectorySize plug-in, column override or plug-in-to-Core hook is used.
+Restart the updated application to discard a previously loaded standalone column.
+Defaults are in code; overrides retain the existing settings location:
+`UserSettings/Plugins/User/Settings/DirectorySize (Windows).json`.
+
+```json
+{
+	"enabled": false,
+	"max_files": 10000000
+}
+```
+
+The default limit is 10,000,000 regular files per directory root, for both
+automatic and one-time calculations. Directories do not consume the file limit.
+Set `max_files` to `0` for unlimited progressive calculation, or a positive integer
+for a custom cap. Invalid values use the default; restart after external settings
+edits. Legacy `max_entries` is ignored so the former 200,000-entry default cannot
+cap new scans. Legacy `show_file_sizes` is also ignored: ordinary file sizes are
+always shown. Units follow
+`size_divisor` in `Status Bar.json`. Existing custom command IDs remain valid:
+`toggle_directory_size_column`, `sort_by_directory_size`,
+`recalculate_directory_sizes` and `show_directory_size`.
+
 ## Archive Transfers
 
 Enter an archive as a folder, select items, then use the existing Copy or Move

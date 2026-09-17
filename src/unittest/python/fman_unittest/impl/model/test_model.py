@@ -7,10 +7,31 @@ from fman_unittest.impl.model import StubFileSystem
 from PyQt5.QtCore import QObject, pyqtSignal
 from random import shuffle, random
 from unittest import TestCase
+from unittest.mock import Mock
 
 import random
 
 class ModelRecordFilesTest(TestCase):
+	def test_reload_completion_after_shutdown_does_not_touch_rows(self):
+		model = self._model
+		previous = model._files
+		model._shutdown = True
+		model.update = Mock()
+		model._on_files_reloaded([f('s://late', [c('late')])])
+		self.assertIs(previous, model._files)
+		model.update.assert_not_called()
+
+	def test_refresh_filters_missing_and_foreign_rows_and_queues_async(self):
+		model = self._model
+		model._location = 's://'
+		model._files = {'s://a': None}
+		model._worker = Mock()
+		model._load_files = Mock()
+		model.refresh_files(('s://a', 's://a', 's://missing', 'other://a'))
+		model._load_files.assert_not_called()
+		priority, operation, target, urls = model._worker.submit.call_args.args
+		operation(target, urls)
+		model._load_files.assert_called_once_with(['s://a'])
 	def test_load_file(self):
 		f_not_loaded = f('s://a', [c('')], False)
 		self._model._record_files([f_not_loaded])

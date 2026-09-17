@@ -1,5 +1,8 @@
 from core.commands import *
 from core.fs import *
+from core import directory_size
+from core.directory_size import DirectorySizeService, ToggleDirectorySizeColumn, \
+	RecalculateDirectorySizes, SortByDirectorySize, ShowDirectorySize
 from datetime import datetime
 from fman.fs import Column
 from fman.impl.status_bar import format_size
@@ -45,7 +48,8 @@ class Size(Column):
 		except OSError:
 			return ''
 		if is_dir:
-			return ''
+			value = directory_size.get_value(url)
+			return value[0] if value is not None else ''
 		try:
 			size_bytes = self._get_size(url)
 		except OSError:
@@ -61,8 +65,12 @@ class Size(Column):
 		except OSError:
 			is_dir = False
 		if is_dir:
-			ord_ = ord if is_ascending else lambda c: -ord(c)
-			minor = tuple(ord_(c) for c in basename(url).lower())
+			value = directory_size.get_value(url)
+			if value is not None:
+				minor = (value[1],)
+			else:
+				ord_ = ord if is_ascending else lambda c: -ord(c)
+				minor = tuple(ord_(c) for c in basename(url).lower())
 		else:
 			try:
 				minor = self._get_size(url)

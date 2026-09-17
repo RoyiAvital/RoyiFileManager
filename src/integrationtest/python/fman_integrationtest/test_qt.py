@@ -37,6 +37,678 @@ class QtIT(TestCase):
 class SortedFileSystemModelIT(SortedFileSystemModelAT, QtIT):
 	pass
 
+class DirectorySizeIT(QtIT):
+	def test_no_standalone_directory_size_plugin(self):
+		from pathlib import Path
+		bundled_plugins = Path(__file__).parents[3] / 'main/resources/base/Plugins'
+		self.assertFalse((bundled_plugins / 'DirectorySize').exists(),
+			'Directory sizes belong only to Core; the standalone plug-in adds a duplicate column.')
+
+	def test_explicit_status_while_running_and_stale_results(self):
+		from core import directory_size as module
+		from fman.impl.widgets import MainWindow
+		from threading import Thread
+		from unittest.mock import Mock, patch
+		window = self.run_in_app(MainWindow, Mock(), [], Mock(), Mock(), Mock(), 'null://')
+		self.panes[0].place_cursor_at(self.url)
+		command = module.ShowDirectorySize(self.panes[0])
+		real_walk = module.walk_directory
+		try:
+			for action in ('complete', 'replace', 'dispose'):
+				with self.subTest(action=action):
+					entered, release, finished = Event(), Event(), Event()
+					failures = []
+					def walk(path, max_files, check):
+						if entered.is_set():
+							yield from real_walk(path, max_files, check)
+							return
+						entered.set()
+						if not release.wait(5):
+							raise AssertionError('Blocked explicit scan was not released')
+						yield module.DirSize(7, 1, 1, complete=True)
+					def calculate():
+						try:
+							command()
+						except BaseException as error:
+							failures.append(error)
+						finally:
+							finished.set()
+					worker = Thread(target=calculate, daemon=True)
+					with patch.object(module, 'walk_directory', side_effect=walk), \
+						patch.object(module, 'show_status_message', side_effect=window.show_status_message) as status, \
+						patch('fman._get_ui') as ui:
+						ui.return_value.create_progress_dialog.side_effect = AssertionError('No progress dialog is allowed')
+						try:
+							worker.start()
+							self.assertTrue(entered.wait(5))
+							self.assertFalse(finished.is_set())
+							def verify_running():
+								self.assertEqual('Calculating %s size...' % self.child, window._status_bar_text.text())
+								self.assertFalse(window._timer.isActive())
+							self.run_in_app(verify_running)
+							old_task = self.service._explicit_task
+							if action == 'replace':
+								command()
+								self.assertTrue(old_task.cancel_event.is_set())
+							elif action == 'dispose':
+								self.owner.invalidate()
+								self.assertTrue(old_task.cancel_event.is_set())
+								window.show_status_message('Another command')
+							before = status.call_count
+							release.set()
+							self.assertTrue(finished.wait(5))
+							self.assertEqual([], failures)
+							self.assertEqual(before + (action == 'complete'), status.call_count)
+							expected = 'Another command' if action == 'dispose' else 'folder: 7 B (1 files)'
+							self.assertEqual(expected, self.run_in_app(window._status_bar_text.text))
+							self.assertIsNone(self.service._explicit_task)
+							self.assertIsNone(self.service._executor)
+							ui.return_value.create_progress_dialog.assert_not_called()
+						finally:
+							release.set()
+							worker.join(5)
+							self.assertFalse(worker.is_alive())
+		finally:
+			self.run_in_app(window.close)
+			self.run_in_app(window.deleteLater)
+
+	def test_full_core_startup_and_persisted_size_toggle(self):
+		import json
+		import os
+		import subprocess
+		import sys
+		from textwrap import dedent
+		(self.root / 'plain.txt').write_bytes(b'abc')
+		settings_dir = self.root / 'UserSettings/Plugins/User/Settings'
+		settings_dir.mkdir(parents=True)
+		(settings_dir / 'DirectorySize (Windows).json').write_text(
+			json.dumps({'enabled': False, 'max_entries': 200000}), encoding='utf-8')
+		script = r'''
+import sys, traceback
+from pathlib import Path
+from threading import Event, Thread
+from time import monotonic
+from fman.impl.application_context import get_application_context
+from fman.impl.util.qt.thread import run_in_main_thread
+from fman.url import as_url
+from PyQt5.QtCore import QTimer
+
+root, phase = Path(sys.argv[1]), sys.argv[2]
+context = get_application_context()
+app = context.app
+context.session_manager.is_first_run = False
+sys.argv = [sys.argv[0], str(root), str(root)]
+gui = lambda operation: run_in_main_thread(operation)()
+
+def wait_for(predicate):
+	ready = Event()
+	def start():
+		timer = QTimer(context.main_window)
+		timer.setInterval(10)
+		deadline = monotonic() + 10
+		def check():
+			if predicate():
+				ready.set()
+			if ready.is_set() or monotonic() > deadline:
+				timer.stop()
+				timer.deleteLater()
+		timer.timeout.connect(check)
+		timer.start()
+		check()
+	gui(start)
+	assert ready.wait(12), 'Source application did not reach expected state'
+
+def size_cell(pane, path):
+	model = pane._widget._model
+	try:
+		return model.index(model.find(as_url(path)).row(), 1).data()
+	except ValueError:
+		return None
+
+def exercise():
+	code = 1
+	try:
+		wait_for(lambda: len(context.window.get_panes()) == 2 and all(
+			pane.get_path() == as_url(root) and size_cell(pane, root / 'plain.txt') == '3 B'
+			for pane in context.window.get_panes()))
+		from core import directory_size
+		service = directory_size._service
+		assert service is not None
+		assert service.enabled == (phase == 'restore')
+		assert service.settings['max_files'] == 10000000
+		assert gui(lambda: 'Directory sizes:' not in context.main_window._status_bar_text.text())
+		if phase == 'restore':
+			wait_for(lambda: all(size_cell(pane, root / 'folder') == '7 B' for pane in context.window.get_panes()))
+		gui(lambda: context.plugin_support.run_application_command('toggle_directory_size_column'))
+		enabled = phase == 'enable'
+		wait_for(lambda: service.enabled == enabled and all(
+			size_cell(pane, root / 'folder') == ('7 B' if enabled else '')
+			for pane in context.window.get_panes()))
+		def verify():
+			for pane in context.window.get_panes():
+				assert tuple(pane.get_columns()) == ('core.Name', 'core.Size', 'core.Modified')
+				assert size_cell(pane, root / 'plain.txt') == '3 B'
+			assert context.main_window._status_bar_text.text() == 'Directory sizes: ' + ('On' if enabled else 'Off')
+			if not enabled:
+				assert service._executor is None and not service._callbacks
+		gui(verify)
+		print('PASS: full Core startup %s, stable Size column, file sizes and persisted toggle' % phase, flush=True)
+		code = 0
+	except Exception:
+		traceback.print_exc()
+	finally:
+		def stop():
+			from core import directory_size
+			if directory_size._service is not None:
+				directory_size._service.owner.invalidate()
+			models = [pane._widget._model.sourceModel() for pane in context.window.get_panes()]
+			for model in models:
+				model.shutdown()
+			return models
+		for model in gui(stop):
+			model._worker._thread.join(2)
+		gui(lambda: app.exit(code))
+
+QTimer.singleShot(0, lambda: Thread(target=exercise, daemon=True).start())
+sys.exit(context.run())
+'''
+		for phase in ('enable', 'restore'):
+			with self.subTest(phase=phase):
+				result = subprocess.run([sys.executable, '-X', 'faulthandler', '-c', dedent(script), str(self.root), phase],
+					env=dict(os.environ, ROYIFILEMANAGER_USER_SETTINGS=str(self.root / 'UserSettings')),
+					capture_output=True, text=True, timeout=40)
+				self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+				self.assertNotIn('Traceback', result.stderr)
+				print(result.stdout.strip())
+
+	def test_column_restore_ignores_deleted_widget(self):
+		from fman.impl.widgets import DirectoryPaneWidget
+		from PyQt5 import sip
+		from unittest.mock import Mock, patch
+		widget = self.run_in_app(DirectoryPaneWidget, self.filesystem, 'null://', self.parent, Mock())
+		model = self.run_in_app(widget._model.sourceModel)
+		ready = Event()
+		model._worker.submit(100, ready.set)
+		self.assertTrue(ready.wait(5))
+		callbacks = []
+		with patch.object(widget._model, 'set_extra_columns', side_effect=lambda *args: callbacks.append(args[-1])):
+			widget.set_extra_columns(self.owner, {})
+		self.run_in_app(model.shutdown)
+		model._worker._thread.join(5)
+		self.assertFalse(model._worker._thread.is_alive())
+		def dispose_and_deliver():
+			sip.delete(widget)
+			self.assertTrue(sip.isdeleted(widget._model))
+			callbacks[0]()
+		self.run_in_app(dispose_and_deliver)
+
+	def test_toggle_notification_replacement_and_expiry_preserve_status_modes(self):
+		from fman.impl.status_bar import DISABLED, ACTIVE_PANE, PER_PANE
+		from fman.impl.widgets import MainWindow
+		from PyQt5.QtWidgets import QLabel
+		from unittest.mock import Mock, patch
+		window = self.run_in_app(MainWindow, Mock(), [], Mock(), Mock(), Mock(), 'null://')
+		try:
+			with patch('core.directory_size.save_json'), \
+				patch('core.directory_size.scan_parents'), \
+				patch('core.directory_size.show_status_message', side_effect=window.show_status_message):
+				for mode in (DISABLED, ACTIVE_PANE, PER_PANE):
+					window.set_extended_status_bar({'mode': mode, 'size_divisor': 1024, 'max_entries': 200000})
+					labels = self.run_in_app(window.findChildren, QLabel)
+					self.service.toggle()
+					self.service.toggle()
+					def check():
+						self.assertEqual('Directory sizes: Off', window._status_bar_text.text())
+						self.assertEqual(5000, window._timer.interval())
+						self.assertTrue(window._timer.isActive())
+						self.assertEqual(mode, window._extended_status_mode)
+						self.assertEqual(labels, window.findChildren(QLabel))
+						window._timer.timeout.emit()
+						self.assertEqual('Ready.', window._status_bar_text.text())
+						self.assertFalse(window._timer.isActive())
+						window.show_status_message('Directory sizes: On', timeout_secs=5)
+						window.show_status_message('Another command')
+						self.assertEqual('Another command', window._status_bar_text.text())
+						self.assertFalse(window._timer.isActive())
+					self.run_in_app(check)
+		finally:
+			self.run_in_app(window.close)
+			self.run_in_app(window.deleteLater)
+
+	def test_core_registered_keys_service_restart_and_explicit_task(self):
+		import core
+		from core import directory_size as module
+		from fman import ApplicationCommand
+		from fman.impl.controller import Controller
+		from fman.impl.plugins import PluginSupport
+		from fman.impl.plugins.command_registry import ApplicationCommandRegistry, PaneCommandRegistry
+		from fman.impl.plugins.config import Config
+		from fman.impl.plugins.key_bindings import KeyBindings
+		from fman.impl.plugins.plugin import ExternalPlugin
+		from fman.impl.session import SessionManager
+		from fman.url import as_url
+		from pathlib import Path
+		from PyQt5.QtCore import QEvent
+		from PyQt5.QtGui import QKeyEvent
+		from unittest.mock import Mock, patch
+		import json
+		self.owner.invalidate()
+		bundled_plugins = Path(__file__).parents[3] / 'main/resources/base/Plugins'
+		plugin_path = self.root / 'Core'
+		plugin_path.mkdir()
+		core_path = bundled_plugins / 'Core'
+		config = Config('Windows')
+		bindings = KeyBindings()
+		finished = Event()
+		callbacks = Mock()
+		callbacks.after_command.side_effect = lambda *args: finished.set()
+		def create_registries():
+			return ApplicationCommandRegistry(Mock(), self.errors, callbacks), PaneCommandRegistry(self.errors, callbacks)
+		applications, commands = self.run_in_app(create_registries)
+		palette = Mock()
+		class Palette(ApplicationCommand):
+			def __call__(self):
+				palette()
+		applications.register_command('command_palette', Palette)
+		bindings.register_command('command_palette')
+		with (core_path / 'Key Bindings (Windows).json').open(encoding='utf-8') as stream:
+			core_bindings = json.load(stream)
+		palette_binding = [binding for binding in core_bindings if binding['keys'] == ['Ctrl+Shift+P']]
+		feature_bindings = [binding for binding in core_bindings if binding['command'] in
+			('toggle_directory_size_column', 'sort_by_directory_size', 'show_directory_size')]
+		self.assertEqual(3, len(feature_bindings))
+		self.assertEqual([], bindings.load(palette_binding))
+		context = Mock()
+		context.load.return_value = []
+		plugin = ExternalPlugin(str(plugin_path), config, Mock(), Mock(), context,
+			self.errors, applications, commands, bindings, self.filesystem, Mock())
+		feature_classes = tuple(getattr(core, name) for name in ('DirectorySizeService',
+			'ToggleDirectorySizeColumn', 'SortByDirectorySize', 'ShowDirectorySize', 'RecalculateDirectorySizes'))
+		def load_feature_bindings():
+			self.assertEqual([], bindings.load(feature_bindings))
+			plugin._add_unload_action(bindings.unload, feature_bindings)
+		support = PluginSupport(lambda path: plugin, applications, bindings, context, config)
+		controller = Controller(support, Mock(), Mock(), Mock())
+		for pane, widget in zip(self.panes, self.widgets):
+			pane._command_registry = commands
+			self.run_in_app(controller.register_pane, widget, pane)
+		def shortcut(key, modifiers=Qt.ControlModifier | Qt.ShiftModifier):
+			finished.clear()
+			self.assertTrue(self.run_in_app(controller.handle_shortcut, self.widgets[0], QKeyEvent(QEvent.KeyPress, key, modifiers)))
+			self.assertTrue(finished.wait(5), 'Registered command did not finish')
+		with patch.object(plugin, '_load_packages', return_value=[core]), \
+			patch.object(plugin, '_iterate_classes', return_value=feature_classes), \
+			patch.object(plugin, '_load_key_bindings', side_effect=load_feature_bindings), \
+			patch.object(module, 'load_json', side_effect=config.load_json), \
+			patch.object(module, 'save_json', side_effect=config.save_json), \
+			patch('fman.fs._get_mother_fs', return_value=self.filesystem), \
+			patch.object(module, 'show_status_message') as status, patch.object(module, 'show_alert') as alert, \
+			patch('fman._get_ui') as ui:
+			try:
+				self.assertTrue(support.load_plugin(str(plugin_path)))
+				config.add_dir(str(self.root / 'UserSettings'))
+				self.service = plugin._services[0]
+				self.owner = self.service.owner
+				self.assertFalse(self.service.enabled)
+				self.assertIsNone(self.service._executor)
+				self.assertEqual({}, self.service._callbacks)
+				self.assertIn('toggle_directory_size_column', applications.get_commands())
+				self.assertEqual(('Toggle directory sizes',), applications.get_command_aliases('toggle_directory_size_column'))
+				self.assertTrue(applications.is_command_visible('toggle_directory_size_column'))
+				shortcut(Qt.Key_P)
+				palette.assert_called_once()
+				status.assert_not_called()
+				shortcut(Qt.Key_D)
+				self.service._future.result(5)
+				self.drain_models()
+				status.assert_called_once_with('Directory sizes: On', timeout_secs=5)
+				self.assertTrue(config.load_json('DirectorySize.json')['enabled'])
+				for pane in self.panes:
+					self.assertEqual(self.columns, tuple(pane.get_columns()))
+				shortcut(Qt.Key_F4, Qt.ControlModifier)
+				self.drain_models()
+				self.assertEqual((module.COLUMN, True), self.panes[0].get_sort_column())
+				self.widgets[0].set_column_widths([191, 93])
+				manager = SessionManager({}, self.filesystem, self.errors, 'test', True)
+				saved = manager._read_pane_settings(self.widgets[0])
+				support.unload_plugin(str(plugin_path))
+				self.assertEqual(self.columns, tuple(self.panes[0].get_columns()))
+				self.assertIsNone(module._service)
+				self.assertEqual([], [binding for binding in bindings.get_sanitized_bindings() if binding['command'] == 'toggle_directory_size_column'])
+				self.assertTrue(support.load_plugin(str(plugin_path)))
+				self.service = plugin._services[0]
+				self.owner = self.service.owner
+				self.assertTrue(config.load_json('DirectorySize.json')['enabled'],
+					'Reloading the plug-in lost the persisted setting')
+				self.assertTrue(self.service.enabled,
+					'Restored service settings: %r' % self.service.settings)
+				self.service._future.result(5)
+				self.drain_models()
+				manager._init_pane(self.panes[0], None, saved)
+				self.drain_models()
+				self.assertEqual([191, 93], self.widgets[0].get_column_widths())
+				self.assertEqual(1, status.call_count, 'Startup/reload must not notify')
+				finished.clear()
+				self.run_in_app(support.run_application_command, 'toggle_directory_size_column')
+				self.assertTrue(finished.wait(5))
+				self.assertEqual('Directory sizes: Off', status.call_args.args[0])
+				self.assertFalse(self.service.enabled)
+				self.drain_models()
+				self.panes[0].place_cursor_at(self.url)
+				ui.return_value.create_progress_dialog.side_effect = AssertionError('No progress dialog is allowed')
+				before = status.call_count
+				shortcut(Qt.Key_Return)
+				self.assertEqual(('Calculating %s size...' % self.child,), status.call_args_list[before].args)
+				self.assertEqual('folder: 7 B (1 files)', status.call_args.args[0])
+				self.assertIsNone(self.service._executor)
+				ui.return_value.create_progress_dialog.assert_not_called()
+				before = status.call_count
+				with patch.object(module._DirectorySizeTask, 'check_canceled', side_effect=module.Task.Canceled):
+					shortcut(Qt.Key_Return)
+				self.assertEqual(before + 2, status.call_count)
+				self.assertEqual('Directory size calculation canceled.', status.call_args.args[0])
+				override = [{'keys': ['Ctrl+Shift+D'], 'command': 'command_palette'}]
+				self.assertEqual([], bindings.load(override))
+				shortcut(Qt.Key_D)
+				self.assertEqual(2, palette.call_count)
+				self.assertFalse(self.service.enabled)
+				alert.assert_not_called()
+				self.errors.report.assert_not_called()
+			finally:
+				plugin.unload()
+
+	def setUp(self):
+		from core import Name, Size, Modified
+		from core.fs.local import LocalFileSystem
+		from core.directory_size import DirectorySizeService
+		from fman import DirectoryPane
+		from fman.impl.plugins.builtin import NullFileSystem, NullColumn
+		from fman.impl.plugins.command_registry import PaneCommandRegistry
+		from fman.impl.plugins.mother_fs import MotherFileSystem
+		from fman.impl.plugins.plugin import FileSystemWrapper
+		from fman.impl.ui import UiOwner
+		from fman.impl.widgets import DirectoryPaneWidget
+		from fman.url import as_url
+		from pathlib import Path
+		from PyQt5.QtGui import QIcon
+		from PyQt5.QtWidgets import QWidget
+		from tempfile import TemporaryDirectory
+		from unittest.mock import Mock, patch
+		self.temporary = TemporaryDirectory()
+		self.addCleanup(self.temporary.cleanup)
+		self.root = Path(self.temporary.name)
+		self.child = self.root / 'folder'
+		self.child.mkdir()
+		(self.child / 'file.txt').write_bytes(b'payload')
+		self.url = as_url(self.child)
+		self.errors = Mock()
+		self.filesystem = MotherFileSystem(Mock(get_icon=Mock(return_value=QIcon())))
+		for backend in (LocalFileSystem(), NullFileSystem()):
+			self.filesystem.add_child(backend.scheme, FileSystemWrapper(backend, self.filesystem, self.errors))
+		for column in (Name(self.filesystem), Size(self.filesystem), Modified(self.filesystem), NullColumn()):
+			self.filesystem.register_column(column.get_qualified_name(), column)
+		self.owner = UiOwner()
+		self.service = DirectorySizeService(Mock(), self.owner)
+		self.owner.attach(self.service.dispose)
+		self.service.start()
+		def create():
+			self.parent = QWidget()
+			registry = PaneCommandRegistry(self.errors, Mock())
+			self.widgets = [DirectoryPaneWidget(self.filesystem, 'null://', self.parent, Mock()) for index in range(2)]
+			self.panes = [DirectoryPane(Mock(), widget, registry) for widget in self.widgets]
+			self.parent.show()
+		self.run_in_app(create)
+		self.addCleanup(self.close_panes)
+		for pane in self.panes:
+			loaded = Event()
+			pane.set_path(as_url(self.root), callback=loaded.set)
+			self.assertTrue(loaded.wait(5))
+			with patch('core.directory_size.load_json', return_value={}):
+				self.service.on_pane_added(pane)
+		self.drain_models()
+		self.columns = ('core.Name', 'core.Size', 'core.Modified')
+		self.assertEqual(self.columns, tuple(self.panes[0].get_columns()))
+
+	def test_startup_reads_settings_after_plugin_layers_are_loaded(self):
+		from core.directory_size import DirectorySizeService
+		from fman.impl.plugins.config import Config
+		from fman.impl.ui import UiOwner
+		from unittest.mock import Mock, patch
+		self.owner.invalidate()
+		config = Config('Windows')
+		config.add_dir(str(self.root / 'Core'))
+		self.owner = UiOwner()
+		self.service = DirectorySizeService(Mock(), self.owner)
+		self.owner.attach(self.service.dispose)
+		with patch('core.directory_size.load_json', side_effect=config.load_json) as load:
+			self.service.start()
+			load.assert_not_called()
+			config.add_dir(str(self.root / 'AnotherPlugin'))
+			config.add_dir(str(self.root / 'Settings'))
+			config.save_json('DirectorySize.json', {'enabled': True, 'max_files': 2})
+			with patch('core.directory_size.scan_parents') as scan:
+				for pane in self.panes:
+					self.service.on_pane_added(pane)
+				self.service._future.result(5)
+			self.assertTrue(self.service.enabled)
+			self.assertEqual(2, self.service.settings['max_files'])
+			self.assertEqual(2, scan.call_args.args[1])
+			load.assert_called_once_with('DirectorySize.json', default={})
+
+	def close_panes(self):
+		self.owner.invalidate()
+		def close():
+			models = [widget._model.sourceModel() for widget in self.widgets]
+			for model in models:
+				model.shutdown()
+			self.parent.close()
+			self.parent.deleteLater()
+			return models
+		for model in self.run_in_app(close):
+			model._worker._thread.join(2)
+
+	def drain_models(self):
+		for widget in self.widgets:
+			done = Event()
+			self.run_in_app(lambda: widget._model.sourceModel()._worker.submit(100, done.set))
+			self.assertTrue(done.wait(5), 'Model work did not finish')
+
+	def test_toggle_preserves_pane_state_and_named_widths(self):
+		from core.directory_size import COLUMN, SortByDirectorySize
+		from fman.impl.session import SessionManager
+		from unittest.mock import Mock, patch
+		pane = self.panes[0]
+		widget = self.widgets[0]
+		paths_changed = Mock()
+		unsubscribe = pane.on_path_changed(paths_changed)
+		self.addCleanup(unsubscribe)
+		pane.place_cursor_at(self.url)
+		pane.select([self.url])
+		pane.set_sort_column('core.Size', False)
+		self.run_in_app(widget._filter_bar._input.setText, 'folder')
+		widget.set_column_widths([171, 83])
+		self.drain_models()
+		model = self.run_in_app(widget._model.sourceModel)
+		with patch('core.directory_size.scan_parents') as scan, \
+			patch.object(widget, 'set_extra_columns', side_effect=AssertionError('Column layout must not change')):
+			self.service.set_enabled(True)
+			self.service._future.result(5)
+			self.drain_models()
+			for candidate in self.panes:
+				self.assertEqual(self.columns, tuple(candidate.get_columns()))
+			self.assertIs(model, self.run_in_app(widget._model.sourceModel))
+			self.assertEqual(self.url, pane.get_file_under_cursor())
+			self.assertEqual([self.url], pane.get_selected_files())
+			self.assertEqual(('core.Size', False), pane.get_sort_column())
+			self.assertEqual('folder', self.run_in_app(widget._filter_bar._input.text))
+			self.assertEqual([171, 83], widget.get_column_widths()[:2])
+			paths_changed.assert_not_called()
+			SortByDirectorySize(pane)()
+			self.drain_models()
+			self.assertEqual((COLUMN, True), pane.get_sort_column())
+			SortByDirectorySize(pane)()
+			self.drain_models()
+			self.assertEqual((COLUMN, False), pane.get_sort_column())
+			saved = SessionManager({}, None, None, 'test', True)._read_pane_settings(widget)
+			self.assertEqual([171, 83], saved['col_widths'])
+			self.assertEqual(83, saved['column_widths_by_name'][COLUMN])
+			self.assertNotIn('core.Modified', saved['column_widths_by_name'])
+			self.service.set_enabled(False)
+			self.drain_models()
+			self.assertEqual((COLUMN, False), pane.get_sort_column())
+			self.assertEqual(self.columns, tuple(pane.get_columns()))
+			self.assertIs(model, self.run_in_app(widget._model.sourceModel))
+			self.assertEqual([171, 83], widget.get_column_widths())
+			self.assertEqual([self.url], pane.get_selected_files())
+			self.assertFalse(self.service._callbacks)
+			self.assertIsNone(self.service._executor)
+			self.service.restart()
+			self.assertEqual(1, scan.call_count)
+			paths_changed.assert_not_called()
+		self.errors.report.assert_not_called()
+
+	def test_incremental_delivery_and_navigation_while_scan_is_blocked(self):
+		from core.directory_size import COLUMN, DirSize
+		from fman.url import as_url
+		from PyQt5.QtCore import QThread
+		from threading import get_ident
+		from time import monotonic
+		from unittest.mock import patch
+		started, restarted, release, delivered = Event(), Event(), Event(), Event()
+		worker_threads, delivery_threads = [], []
+		original = self.service._delivery._receive
+		def receive(generation, results):
+			delivery_threads.append(QThread.currentThread())
+			original(generation, results)
+			delivered.set()
+		self.service._delivery._receive = receive
+		def scan(paths, limit, check, publish):
+			worker_threads.append(get_ident())
+			publish({str(self.child): DirSize(3, 1, 1)})
+			(started if len(worker_threads) == 1 else restarted).set()
+			release.wait(10)
+			publish({str(self.child): DirSize(7, 1, 1, True)})
+		start = monotonic()
+		futures, executors = [], []
+		with patch('core.directory_size.scan_parents', side_effect=scan):
+			try:
+				self.service.set_enabled(True)
+				future = self.service._future
+				futures.append(future)
+				executors.append(self.service._executor)
+				self.assertTrue(started.wait(5))
+				self.assertTrue(delivered.wait(5))
+				self.drain_models()
+				def read_cell():
+					model = self.widgets[0]._model
+					return model.index(model.find(self.url).row(), self.columns.index(COLUMN)).data()
+				self.assertEqual('3 B...', self.run_in_app(read_cell))
+				self.assertEqual([QApplication.instance().thread()], delivery_threads)
+				qt_thread = self.run_in_app(get_ident)
+				model_threads = self.run_in_app(lambda: [widget._model.sourceModel()._worker._thread.ident for widget in self.widgets])
+				self.assertNotIn(worker_threads[0], [qt_thread] + model_threads)
+				loaded = Event()
+				self.panes[0].set_path(as_url(self.child), callback=loaded.set)
+				self.assertTrue(loaded.wait(5), 'Navigation blocked behind directory walk')
+				self.service.set_enabled(False)
+				self.assertEqual(self.columns, tuple(self.panes[0].get_columns()))
+				self.assertFalse(future.done())
+				generation = self.service._generation
+				self.run_in_app(self.service._receive, generation - 1, {str(self.child): DirSize(999, complete=True)})
+				self.assertIsNone(self.service.result(self.url))
+				self.service.set_enabled(True)
+				futures.append(self.service._future)
+				executors.append(self.service._executor)
+				self.assertTrue(restarted.wait(5), 'Re-enable waited for the canceled scan')
+				self.run_in_app(self.service._receive, generation - 1, {str(self.child): DirSize(999, complete=True)})
+				self.assertNotEqual(999, self.service.result(self.url).size_bytes)
+				self.owner.invalidate()
+				self.assertFalse(self.service._callbacks)
+				self.assertIsNone(self.service._executor)
+				self.assertTrue(all(not candidate.done() for candidate in futures))
+				self.assertEqual(self.columns, tuple(self.panes[1].get_columns()))
+			finally:
+				release.set()
+				for candidate in futures:
+					candidate.result(5)
+				for executor in executors:
+					for thread in executor._threads:
+						thread.join(5)
+						self.assertFalse(thread.is_alive(), 'Canceled automatic worker did not exit')
+		self.drain_models()
+		self.assertIsNone(self.service.result(self.url))
+		print('DirectorySize blocked-scan smoke: first result, navigation, re-enable/dispose %.3fs; stale final rejected; workers stopped' % (monotonic() - start))
+
+	def test_real_scan_and_empty_pane_width_restore(self):
+		from fman.url import as_url
+		from unittest.mock import patch
+		self.service.set_enabled(True)
+		self.service._future.result(5)
+		self.run_in_app(lambda: None)
+		self.drain_models()
+		self.assertEqual(7, self.service.result(self.url).size_bytes)
+		empty = self.root / 'empty'
+		empty.mkdir()
+		loaded = Event()
+		self.panes[0].set_path(as_url(empty), callback=loaded.set)
+		self.assertTrue(loaded.wait(5))
+		self.drain_models()
+		with patch('core.directory_size.scan_parents'):
+			from PyQt5.QtCore import QThread
+			threads = []
+			original = self.widgets[0]._apply_column_widths
+			def apply_widths():
+				threads.append(QThread.currentThread())
+				original()
+			with patch.object(self.widgets[0], '_apply_column_widths', side_effect=apply_widths):
+				self.service.set_enabled(False)
+				self.drain_models()
+				self.widgets[0].restore_column_widths({'core.Name': 181, 'core.Size': 91})
+			self.assertTrue(threads)
+			self.assertTrue(all(thread == QApplication.instance().thread() for thread in threads))
+			self.assertEqual([181, 91], self.widgets[0].get_column_widths())
+
+	def test_navigation_preserves_core_size_sort(self):
+		from core.directory_size import COLUMN
+		from fman.url import as_url
+		self.service.set_enabled(True)
+		loaded = Event()
+		self.widgets[0].set_location(as_url(self.child), COLUMN, False, loaded.set)
+		self.assertTrue(loaded.wait(5))
+		self.drain_models()
+		self.assertEqual((COLUMN, False), self.panes[0].get_sort_column())
+
+	def test_nested_pane_pending_rows_do_not_inherit_parent_totals(self):
+		from core.directory_size import DirSize
+		from fman.url import as_url
+		from unittest.mock import patch
+		nested = self.child / 'nested'
+		nested.mkdir()
+		nested_url = as_url(nested)
+		loaded = Event()
+		self.panes[1].set_path(as_url(self.child), callback=loaded.set)
+		self.assertTrue(loaded.wait(5))
+		def read_cell():
+			model = self.widgets[1]._model
+			return model.index(model.find(nested_url).row(), 1).data()
+		with patch('core.directory_size.scan_parents'):
+			self.service.set_enabled(True)
+			self.service._future.result(5)
+			self.drain_models()
+			for parent in (DirSize(12), DirSize(12, complete=True), DirSize(12, errors=True)):
+				self.run_in_app(self.service._receive, self.service._generation, {str(self.child): parent})
+				self.widgets[1].refresh_files([nested_url])
+				self.drain_models()
+				self.assertEqual('...', self.run_in_app(read_cell))
+			self.run_in_app(self.service._receive, self.service._generation,
+				{str(self.child): DirSize(None, complete=True, errors=True)})
+			self.drain_models()
+			self.assertEqual('?', self.run_in_app(read_cell))
+			self.run_in_app(self.service._receive, self.service._generation,
+				{str(nested): DirSize(3, complete=True)})
+			self.drain_models()
+			self.assertEqual('3 B', self.run_in_app(read_cell))
+
 class RunInThreadIT(RunInThreadAT, QtIT):
 	pass
 

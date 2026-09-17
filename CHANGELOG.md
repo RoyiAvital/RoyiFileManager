@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
 
+## [0.4.4] - 2026-09-17
+
+API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
+
+### Added
+
+- Optional directory totals in Core's existing `Size` column in both local
+  panes, with incremental background calculation and unchanged file sizes.
+  Toggle through the Command Center or `Ctrl+Shift+D`, with a persisted
+  setting and brief On/Off notification. `Ctrl+F4` sorts by directory size;
+  `Ctrl+Shift+Enter` calculates chosen directories independently, showing a
+  calculating message and then the result in the status bar without a dialog.
+  A newer request cancels and replaces the previous one.
+  Scans skip links/junctions, mark partial totals and recompute without a
+  cross-location cache; navigation and toggle-off do not wait for recursive work.
+  The configurable limit defaults to 10,000,000 files per directory root, with
+  `0` allowing unlimited progressive calculation; directories do not consume it.
+
+### Fixed
+
+- Restore non-stretching column widths by name across optional-column changes
+  and restarts, while retaining compatibility with legacy session widths.
+- Ignore queued pane-reload results after model shutdown, preventing updates
+  to a deleted Qt model during teardown.
+
 ## [0.4.3] - 2026-09-16
 
 API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.

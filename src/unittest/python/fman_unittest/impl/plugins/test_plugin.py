@@ -3,6 +3,59 @@ from fman.impl.plugins.plugin import _get_command_name, \
 	get_command_class_name, FileSystemWrapper
 from fman_unittest.impl.plugins import StubErrorHandler
 from unittest import TestCase
+from unittest.mock import Mock, patch
+from types import ModuleType
+
+
+class PluginServiceTest(TestCase):
+	def make_plugin(self):
+		from fman.impl.plugins.plugin import ExternalPlugin
+		return ExternalPlugin('service-test', *[Mock() for index in range(10)])
+
+	def test_service_starts_after_registration_and_disposes_before_unregister(self):
+		from fman.impl.plugins.plugin import PluginService
+		from fman.fs import Column
+		events = []
+		class Service(PluginService):
+			def start(self):
+				events.append('start')
+			def on_pane_added(self, pane):
+				events.append(pane)
+			def dispose(self):
+				self.assert_inactive = not self.owner.active
+				events.append('dispose')
+		class Size(Column):
+			pass
+		package = ModuleType('service_test')
+		package.Service = Service
+		package.Size = Size
+		plugin = self.make_plugin()
+		with patch.object(plugin, '_load_packages', return_value=[package]), \
+			patch.object(plugin, '_register_column', side_effect=lambda cls: events.append('column')), \
+			patch.object(plugin, '_unregister_column', side_effect=lambda cls: events.append('unregister')):
+			plugin._load_classes()
+			plugin._start_services()
+			service = plugin._services[0]
+			plugin.on_pane_added('pane')
+			plugin.unload()
+			plugin.unload()
+		self.assertEqual(['column', 'start', 'pane', 'dispose', 'unregister'], events)
+		self.assertTrue(service.assert_inactive)
+
+	def test_failed_service_start_is_disposed(self):
+		from fman.impl.plugins.plugin import PluginService
+		disposed = Mock()
+		class Broken(PluginService):
+			def start(self):
+				raise ValueError('start failed')
+			def dispose(self):
+				disposed()
+		plugin = self.make_plugin()
+		plugin._service_classes.append(Broken)
+		with patch.object(plugin, '_load', side_effect=plugin._start_services):
+			self.assertFalse(plugin.load())
+		disposed.assert_called_once_with()
+		self.assertEqual([], plugin._services)
 
 class GetCommandNameTest(TestCase):
 	def test_single_letter(self):
