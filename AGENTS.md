@@ -6,6 +6,7 @@ These instructions apply to the entire repository.
 
  - Do not create new virtual Python environments.
  - Do not install new Python packages. You may ask the user to install.
+ - Do not change `.gitattributes` or `.gitignore` without permission or explicitly being asked for.
  - Make the code easy to grasp for human and agents.
  - Be focused and short on documentation and text.
 
