@@ -11,4 +11,5 @@ dependencies:
   - tinycss
   - requests
   - ripgrep
+  - fzf #<! For testing only
   - conda-lock

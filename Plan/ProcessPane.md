@@ -704,3 +704,52 @@ Process:
   supersedes the earlier rejection and unchecked status, not the historical
   reasoning or recorded values. Case-sensitive label checks and
   `git diff --check` validate this documentation-only change.
+
+### 2026_09_18 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Medium
+- Context Window: Not exposed by host
+- Outcome: Feasibility/difficulty assessment only; no implementation approval
+  or runtime validation. Estimated medium-high difficulty (7/10), about 5-8
+  focused developer-days for the full planned safety, integration and packaging
+  checks, assuming familiarity with this repository. A read-only process-list
+  prototype is roughly 1-2 days and is not equivalent to the complete task.
+
+#### Third-Party Plug-In Assessment
+
+- The user requires a third-party-style plug-in. Public `FileSystem`, `Column`,
+  pane commands/listeners and tasks cover the primary workflow; process logic
+  should not require a custom host widget or process-specific host API.
+- The current plan is not fully independent: it imports the private
+  `fman.impl.status_bar.format_size` and assumes host environment/spec changes
+  for psutil. Before implementation, replace the private formatting dependency
+  with plug-in-owned formatting or an already public utility, and decide how a
+  separately installed plug-in supplies a compatible native psutil dependency.
+  A bundled removable plug-in and an independently installable distribution
+  can share source, but do not have identical dependency-delivery requirements.
+- Upstream [ProcessFS source](https://github.com/mherrmann/ProcessFS/blob/master/processfs/__init__.py)
+  uses the public filesystem/command APIs. It did target Windows: its
+  [vendored psutil](https://github.com/mherrmann/ProcessFS/tree/master/psutil)
+  includes `cp35-win32` and `cp36-win32` native modules. Those binaries cannot
+  be reused with this project's Python 3.14/win-64 runtime. Modern psutil
+  supports Windows; exact package and frozen-import compatibility remain to
+  be verified, not assumed from the old example.
+- Most effort is in wrong-process prevention (PID reuse and same-handle
+  termination), Windows permission/critical-process handling, snapshot cache
+  consistency, two-pane refresh/session restore, and owned-child tests.
+  Enumeration and column registration are the simpler parts.
+- One concrete integration risk remains: Core's `_TreeCommand.__call__` calls
+  `makedirs(dest_dir, exist_ok=True)` before its transfer task, while base
+  `FileSystem.mkdir` raises `NotImplementedError`. Thus friendly rejection of
+  transfers into `process://` is not proven merely by leaving `copy`/`move`
+  unsupported. Verify command-level interception or generic unsupported-
+  operation handling without embedding process-specific logic in Core.
+- Checked the plan, upstream source/native filenames, current public filesystem
+  and listener interfaces, and Core transfer entry point. Only the appended
+  assessment was edited. No process was enumerated or terminated, no package
+  installed, and no build, test suite or frozen smoke was run. Documentation
+  validation: `git diff --check -- Plan/ProcessPane.md` and editor diagnostics.

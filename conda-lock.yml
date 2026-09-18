@@ -13,7 +13,7 @@
 version: 1
 metadata:
   content_hash:
-    win-64: 216a362e920be41af3b82140ed16e65b1f66b89ec4fc17c3a0e5ee6ee8fe4079
+    win-64: 55a7ba15d835811314967c3687cd61f8f7675eb15a76ed54905aff882af34288
   channels:
   - url: conda-forge
     used_env_vars: []
@@ -530,6 +530,17 @@ package:
     sha256: 45dfd037889b7075c5eb46394f93172de0be0b1624c7f802dd3ecc94b814d8e0
   category: main
   optional: false
+- name: fzf
+  version: 0.74.4
+  manager: conda
+  platform: win-64
+  dependencies: {}
+  url: https://conda.anaconda.org/conda-forge/win-64/fzf-0.74.4-h11686cb_0.conda
+  hash:
+    md5: 650078c81e03093b631dc46236bc4471
+    sha256: 2b8763a1f3bdcc12784131285598c7de312eb86ddf7bff6d937ca75c53d7347c
+  category: main
+  optional: false
 - name: gitdb
   version: 4.0.12
   manager: conda
@@ -558,12 +569,12 @@ package:
   category: main
   optional: false
 - name: glib
-  version: 2.88.3
+  version: 2.90.0
   manager: conda
   platform: win-64
   dependencies:
-    glib-tools: ==2.88.3
-    libglib: ==2.88.3
+    glib-tools: ==2.90.0
+    libglib: ==2.90.0
     libintl: '>=0.22.5,<1.0a0'
     libintl-devel: ''
     packaging: ''
@@ -571,27 +582,27 @@ package:
     ucrt: '>=10.0.20348.0'
     vc: '>=14.3,<15'
     vc14_runtime: '>=14.44.35208'
-  url: https://conda.anaconda.org/conda-forge/win-64/glib-2.88.3-he3ee162_4.conda
+  url: https://conda.anaconda.org/conda-forge/win-64/glib-2.90.0-h6d70850_0.conda
   hash:
-    md5: 8e91e179c38d181466a6e277541af201
-    sha256: 04549d62070aa65a597007bb28b4ba53f7cfd8b6370a618ee90bfc6bdc24c08d
+    md5: d029a1240cbb9ab85bcd881d68e69a47
+    sha256: 03069b2545dd9da17fc5fd9a60e1c1671fae63190118e51502b955f5244bb00a
   category: main
   optional: false
 - name: glib-tools
-  version: 2.88.3
+  version: 2.90.0
   manager: conda
   platform: win-64
   dependencies:
     libffi: ''
-    libglib: ==2.88.3
+    libglib: ==2.90.0
     libintl: '>=0.22.5,<1.0a0'
     ucrt: '>=10.0.20348.0'
     vc: '>=14.3,<15'
     vc14_runtime: '>=14.44.35208'
-  url: https://conda.anaconda.org/conda-forge/win-64/glib-tools-2.88.3-h16251db_4.conda
+  url: https://conda.anaconda.org/conda-forge/win-64/glib-tools-2.90.0-hafa6b35_0.conda
   hash:
-    md5: 09898b140e1bf7add73054c29b3d1a98
-    sha256: 2512097819623ec7f576d70f635082606410ae49c805a5ba2e9b6530d1a5c372
+    md5: faa5f9e5f68fa2b9bddae821fe303e8b
+    sha256: fa8096d631d7ef9cdffb6d27e41eef9f0c4ea83cc99632d7ea765c6b60c5f9f5
   category: main
   optional: false
 - name: graphite2
@@ -901,7 +912,7 @@ package:
   category: main
   optional: false
 - name: libglib
-  version: 2.88.3
+  version: 2.90.0
   manager: conda
   platform: win-64
   dependencies:
@@ -913,10 +924,10 @@ package:
     ucrt: '>=10.0.20348.0'
     vc: '>=14.3,<15'
     vc14_runtime: '>=14.44.35208'
-  url: https://conda.anaconda.org/conda-forge/win-64/libglib-2.88.3-ha564072_4.conda
+  url: https://conda.anaconda.org/conda-forge/win-64/libglib-2.90.0-ha564072_0.conda
   hash:
-    md5: 989ad46a1a5f1af28910923b231264d3
-    sha256: 16a4171f4f0c71262e2839a8631f752bc65bb96535c2e72eb2f708d6d616afcf
+    md5: 29c689012c8a53a0e36a70dfd43227e4
+    sha256: 55d9fad9d0884111826500629285dbd35c827e3f2b5fe04b50e3d7d67c71425e
   category: main
   optional: false
 - name: libharfbuzz
@@ -1573,10 +1584,10 @@ package:
     ucrt: '>=10.0.20348.0'
     vc: '>=14.3,<15'
     vc14_runtime: '>=14.44.35208'
-  url: https://conda.anaconda.org/conda-forge/win-64/pywin32-312-py314hf700ef7_1.conda
+  url: https://conda.anaconda.org/conda-forge/win-64/pywin32-312-py314hf700ef7_2.conda
   hash:
-    md5: 57992821d70e28562192fa29cff08260
-    sha256: 5a6ddd03a8441c2312a09f998dccb0bdeb1b906b45c9b8cd5e9f5a7965b0a604
+    md5: 9857b7fee277b536d66781180d3b2204
+    sha256: d41aeb9004cdd408cb1a3e381a9d687a9f6bf2b128757bad182ecd782de8f07b
   category: main
   optional: false
 - name: pywin32-ctypes
@@ -1603,10 +1614,10 @@ package:
     vc: '>=14.2,<15'
     vc14_runtime: '>=14.29.30139'
     winpty: ''
-  url: https://conda.anaconda.org/conda-forge/win-64/pywinpty-3.0.5-py314h51f0985_0.conda
+  url: https://conda.anaconda.org/conda-forge/win-64/pywinpty-3.0.5-py314h51f0985_2.conda
   hash:
-    md5: 9f34ac4f934a5e6bdffa81db44b3ce82
-    sha256: 025a42fa3df042590f9f5efdf8473e98e654672871c9db029436f32e021cb900
+    md5: 976d590b931674727bbb5943090388fc
+    sha256: 7923c70759c596fd53cb258aa9a20af7290bb91ef20206e62c781bb6d7f54b6e
   category: main
   optional: false
 - name: pyyaml
@@ -1940,7 +1951,7 @@ package:
   category: main
   optional: false
 - name: urllib3
-  version: 2.7.0
+  version: 2.8.0
   manager: conda
   platform: win-64
   dependencies:
@@ -1948,11 +1959,11 @@ package:
     brotli-python: '>=1.2.0'
     h2: '>=4,<5'
     pysocks: '>=1.5.6,<2.0,!=1.5.7'
-    python: '>=3.10'
-  url: https://conda.anaconda.org/conda-forge/noarch/urllib3-2.7.0-pyhd8ed1ab_0.conda
+    python: '>=3.11'
+  url: https://conda.anaconda.org/conda-forge/noarch/urllib3-2.8.0-pyhd8ed1ab_0.conda
   hash:
-    md5: cbb88288f74dbe6ada1c6c7d0a97223e
-    sha256: feff959a816f7988a0893201aa9727bbb7ee1e9cec2c4f0428269b489eb93fb4
+    md5: 407a3d3778570bae8e8fcf554e803e43
+    sha256: c5511c190ab55168ca412f3c54592fbf677ae6250784cb72b227a7cf3f538f7d
   category: main
   optional: false
 - name: vc

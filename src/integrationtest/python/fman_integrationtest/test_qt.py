@@ -1197,6 +1197,79 @@ class UnpackArchiveIT(QtIT):
 				model = self.run_in_app(close)
 				model._worker._thread.join(2)
 
+class SearchFileSyntaxIT(QtIT):
+	def test_native_picker_queries_highlights_accept_and_cancel(self):
+		from fman.impl.quicksearch import Quicksearch, QuicksearchItemRenderer
+		from fman.impl.theme import Theme
+		from fman.url import as_url
+		from search_file_fuzzy import SearchFilesRecursively
+		from PyQt5.QtCore import QThread, QTimer
+		from PyQt5.QtTest import QTest
+		from PyQt5.QtWidgets import QStyleOptionViewItem
+		from pathlib import Path
+		from tempfile import TemporaryDirectory
+		from unittest.mock import Mock, patch
+		app = QApplication.instance()
+		with TemporaryDirectory() as temporary:
+			root = Path(temporary)
+			for name in ('src/report.py', 'src/report.rb', 'docs/report.py', '\U0001f600report.txt'):
+				path = root / name
+				path.parent.mkdir(parents=True, exist_ok=True)
+				path.touch()
+			pane = Mock()
+			pane.get_path.return_value = as_url(root)
+			def show_on_qt(provider, query=''):
+				self.assertEqual(app.thread(), QThread.currentThread())
+				resources = Path(__file__).parents[3] / 'main/resources/base'
+				theme = Theme(Mock(), [])
+				theme.load(str(resources / 'Plugins/Core/Theme.css'))
+				css = theme.get_quicksearch_item_css()
+				dialog = Quicksearch(None, app, css, provider, query=query)
+				errors = []
+				def inspect():
+					try:
+						for text, expected in (
+							('^src .py$ | .rb$', {'src\\report.py', 'src\\report.rb'}),
+							('!^src .py$', {'docs\\report.py'}),
+							("'\U0001f600", {'\U0001f600report.txt'}),
+						):
+							dialog._query.setText(text)
+							self.assertEqual(expected, {item.title for item in dialog._curr_items})
+						self.assertEqual([0, 1], dialog._curr_items[0].highlight)
+						option = QStyleOptionViewItem()
+						option.initFrom(dialog._items)
+						renderer = QuicksearchItemRenderer(dialog._curr_items[0], option, css)
+						self.assertEqual([(0, 2)], renderer._get_highlight_ranges())
+						self.assertFalse(dialog.grab().isNull())
+						dialog._query.setText('^src .py$')
+						QTest.keyClick(dialog._query, Qt.Key_Escape if cancel else Qt.Key_Return)
+						self.assertFalse(dialog.isVisible())
+					except BaseException as error:
+						errors.append(error)
+						dialog.reject()
+				QTimer.singleShot(0, inspect)
+				try:
+					result = dialog.exec()
+					if errors:
+						raise errors[0]
+					return result
+				finally:
+					dialog.deleteLater()
+			with patch('search_file_fuzzy.load_json', return_value={}), \
+				patch('search_file_fuzzy.show_status_message'), \
+				patch('search_file_fuzzy.clear_status_message'), \
+				patch('search_file_fuzzy.show_quicksearch', side_effect=lambda *args, **kwargs:
+					self.run_in_app(show_on_qt, *args, **kwargs)):
+				for cancel in (False, True):
+					pane.run_command.reset_mock()
+					SearchFilesRecursively(pane)()
+					if cancel:
+						pane.run_command.assert_not_called()
+					else:
+						pane.run_command.assert_called_once_with('open_directory',
+							{'url': as_url(root / 'src/report.py')})
+
+
 class CommandPaletteRecentIT(QtIT):
 	def test_history_thread_affinity_and_other_provider_isolation(self):
 		from core.commands import CommandPalette, _COMMAND_PALETTE_HISTORY

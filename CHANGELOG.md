@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
 
+### Added
+
+- Fuzzy file search (`Ctrl+F` / `Ctrl+Shift+F`) supports `fzf` extended query
+  operators: exact terms, path anchors, negation, inverse fuzzy matching,
+  word boundaries, adjacent-term OR and escaped spaces. Matching text is
+  highlighted, including Unicode filenames. Ordinary fuzzy ranking and
+  regular mode are preserved; `fzf` is not a runtime dependency.
+
 ## [0.5.1] - 2026-09-17
 
 API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.

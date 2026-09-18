@@ -896,7 +896,7 @@ of a plug-in operation. Sensitive previews must not be written to diagnostic log
 
 ### Relationship to Existing Plans
 
-- [Find Files 001](FindFiles001.md) and [Find Files 002](FindFiles002.md)
+- [Find Files 001](../Done/FindFiles001.md) and [Find Files 003](FindFiles003.md)
   (formerly Extended Quicksearch UI) conflict with the user's
   clarified component split: embedding checkbox/choice controls in Quicksearch
   is superseded, not Phase A's first deliverable. Revise that plan separately to

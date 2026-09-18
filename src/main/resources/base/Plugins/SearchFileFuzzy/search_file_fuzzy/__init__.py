@@ -61,9 +61,10 @@ def _search(pane, recursive, mode=None, query=''):
 	)
 
 	def get_items(current_query):
-		for entry in matcher(current_query):
+		for entry, highlights in matcher.matches(current_query):
 			yield QuicksearchItem(
-				entry.url, title=entry.relative_path.replace('/', '\\')
+				entry.url, title=entry.relative_path.replace('/', '\\'),
+				highlight=highlights
 			)
 
 	result = show_quicksearch(get_items, query=query)

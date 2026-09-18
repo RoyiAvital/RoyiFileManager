@@ -746,7 +746,7 @@ navigation.
       as "`fzf` compatible syntax". It is not: the pane filter uses glob
       (`*`, `?`, `[...]`), leading `^`, trailing `$`, leading `!` and `\`
       escapes, while fzf uses `'exact`, `^`/`$`, `!` and `|` with no globs.
-      fzf operators belong to [Find Files 001](../Plan/FindFiles001.md).
+      fzf operators belong to [Find Files 001](FindFiles001.md).
       Replace with "glob wildcards, anchors and negation" and link the Core
       README section as it already does.
 
