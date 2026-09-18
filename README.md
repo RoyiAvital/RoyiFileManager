@@ -22,7 +22,7 @@ Repository-wide contribution and task-lifecycle requirements are defined in
 
 Significant additions compared with `fman`:
 
-- **Fuzzy File Search**: Find files with <kbd>Ctrl</kbd>+<kbd>F</kbd> or recursively with <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>. Supports fzf style exact terms, anchors, negation, OR and match highlights. **Toggle search result metadata** adds modified date and size on a second line. See [Usage, Syntax and Performance](src/main/resources/base/Plugins/SearchFileFuzzy/README.md).
+- **Fuzzy File Search**: Find files with <kbd>Ctrl</kbd>+<kbd>F</kbd> or recursively with <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>. Supports fzf style exact terms, anchors, negation, `AND` / `OR` and match highlights. Using **Toggle search result metadata** adds additional metadata in search results. See [Usage, Syntax and Performance](src/main/resources/base/Plugins/SearchFileFuzzy/README.md).
 - **File Content Search**: Press <kbd>Alt</kbd>+<kbd>F7</kbd> for a [`ripgrep`](https://github.com/burntsushi/ripgrep) based file content search, or leave content empty to list files by name in Glob, Literal or RegEx mode. See [File Content Search Usage](src/main/resources/base/Plugins/SearchFileContent/README.md).
 - **Pane Filter / Files Filter**: Type to filter file names with globs, anchors and negation with `fzf` inspired syntax. See [Pane Filter Usage](src/main/resources/base/Plugins/Core/README.md#pane-filter).
 - **UI Components**: New building blocks that expand what plug-ins can do. [Plug-in UI guide](Plan/UIElements.md#plug-in-api).
