@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
 
+## [0.6.3] - 2026-09-18
+
+API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
+
+### Changed
+
+- Added [Notepad 4](https://github.com/zufuliu/notepad4) built in preset in **Set text editor** and **Set text viewer**, using `-ns`
+  for editing and `-ro -ns` for viewing.
+- [Notepad++](https://github.com/notepad-plus-plus/notepad-plus-plus) presets now use `-multiInst -nosession -notabbar` for editing and
+  `-multiInst -nosession -notabbar -ro` for viewing. Select the preset again in
+  **Set text editor** or **Set text viewer** to update an existing configuration.
+
 ## [0.6.2] - 2026-09-18
 
 API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.

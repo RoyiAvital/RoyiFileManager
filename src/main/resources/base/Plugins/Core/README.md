@@ -167,13 +167,15 @@ are literal; launches do not use a shell.
 
 | Preset | Editor arguments | Viewer arguments |
 | --- | --- | --- |
-| Notepad++ | None | `-ro` |
+| Notepad++ | `-multiInst -nosession -notabbar` | `-multiInst -nosession -notabbar -ro` |
 | CudaText | None | `-r` |
 | Notepad 4 | `-ns` | `-ro -ns` |
 
 These are convenience defaults, **not a read-only guarantee**.
 The user is responsible for the chosen program's behavior. Use Manual configuration to
 customize the arguments for any program. No detection or installation occurs.
+Saved configurations are not updated automatically; select the preset again in
+**Set text editor** or **Set text viewer** to apply changed defaults.
 
 Each configured role stores only `executable` and an `arguments` list in the
 user-layer Core Settings JSON under `UserSettings/Plugins/User/Settings`.

@@ -1817,16 +1817,18 @@ class TextEditorIT(QtIT):
 					child.kill()
 				child.communicate()
 
-	def test_notepad4_presets_for_both_roles(self):
+	def test_notepad_presets_for_both_roles(self):
 		from core.commands import SetTextEditor, SetTextViewer
 		from fman.impl.plugins.config import Config
 		from unittest.mock import Mock
-		self.selection = 'Notepad 4'
-		for role, command, arguments in (
-			('editor', SetTextEditor, ['-ns']),
-			('viewer', SetTextViewer, ['-ro', '-ns']),
+		for preset, role, command, arguments in (
+			('Notepad 4', 'editor', SetTextEditor, ['-ns']),
+			('Notepad 4', 'viewer', SetTextViewer, ['-ro', '-ns']),
+			('Notepad++', 'editor', SetTextEditor, ['-multiInst', '-nosession', '-notabbar']),
+			('Notepad++', 'viewer', SetTextViewer, ['-multiInst', '-nosession', '-notabbar', '-ro']),
 		):
-			with self.subTest(role=role):
+			with self.subTest(preset=preset, role=role):
+				self.selection = preset
 				self.dialogs.clear()
 				command(Mock())()
 				self.assertEqual([], self.errors)

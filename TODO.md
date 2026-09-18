@@ -31,3 +31,4 @@
  - [x] Bug: On launch the status bar shows `v1.7.5`. It should show the version from `base.json`.
  - [ ] Move to `PyQt6`.
  - [x] Add support for `Notepad 4` as a text editor / viewer. Use the flags `-ro -ns` for view mode and `-ns` for edit mode.
+ - [x] Update `Notepad++` settings for viewer: `-multiInst -nosession -notabbar -ro` and for editor: `-multiInst -nosession -notabbar`.

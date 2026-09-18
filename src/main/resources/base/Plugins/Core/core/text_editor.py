@@ -10,7 +10,8 @@ import os
 
 
 PRESETS = (
-	('Notepad++', (), ('-ro',)),
+	('Notepad++', ('-multiInst', '-nosession', '-notabbar'),
+		('-multiInst', '-nosession', '-notabbar', '-ro')),
 	('CudaText', (), ('-r',)),
 	('Notepad 4', ('-ns',), ('-ro', '-ns')),
 )
