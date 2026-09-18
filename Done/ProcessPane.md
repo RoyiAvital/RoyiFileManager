@@ -2,6 +2,194 @@
 
 ## Task
 
+Provide a simple Windows process list in either file pane, with F8 to end one
+chosen process using existing Windows permissions. The user approved this reduced
+design on 2026_09_18. It supersedes the expanded proposal archived below.
+
+Status: implemented and source-validated; packaged execution has not been tested.
+
+## Scope
+
+- `Show processes`: flat Name/PID list at `process://`, using ordinary pane
+  filtering, numeric PID sorting, selection and Ctrl+R manual refresh.
+- F8, Shift+Delete and the Delete palette action route to `End process` only
+  within the process pane. Accept exactly one selected row or the cursor row.
+- Default-No process-specific confirmation, forced termination, identity checks,
+  current-permission errors and one refresh of the initiating pane.
+- Exclude child navigation, additional columns, live monitoring, batch operations,
+  graceful closing, descendant termination, exit waiting and cross-pane refresh.
+- No elevation, privilege adjustment, settings, Registry writes or public API
+  changes. Generic file deletion, copy/move/create/rename remain unsupported.
+- A removable ordinary plug-in, not a host process-management feature. Do not
+  install alongside ProcessFS because both claim the same URL scheme.
+
+Compatibility: preserves the public fman 1.7.5 plug-in API. Windows only; the host
+must supply compatible pywin32 and Windows `IsProcessCritical` support.
+
+## Design
+
+### Ownership And Dependencies
+
+[process_pane/__init__.py](../src/main/resources/base/Plugins/ProcessPane/process_pane/__init__.py)
+owns the filesystem, PID column, commands and listener using public fman APIs.
+[processes.py](../src/main/resources/base/Plugins/ProcessPane/process_pane/processes.py)
+owns immutable records, the flat snapshot, injectable provider and typed Win32
+adapter. No private host imports or new widgets are used.
+
+Reuse the already-declared pywin32 `EnumProcesses` for PIDs. Lazy-load it on first
+use; query names and raw creation FILETIME with query-limited handles. Use the
+same handle for each name/identity pair, so they describe the same kernel object.
+Denied entries display `Unavailable` (known System/Idle names excepted) with no
+terminable identity; processes that have exited during enumeration are skipped.
+PID 0 is listed as `System Idle Process` without opening a handle and has no
+terminable identity. Missing Windows API exports produce an actionable
+`ProcessError` naming the required API, surfaced by the command as an alert.
+No psutil installation or environment/lock change is needed. The spec explicitly
+collects `win32process`; the resource tree already includes plug-in source.
+
+### Flat Rows And Cache
+
+Return Core Name and the plug-in PID column. Rows are non-directories and use
+`<sanitized-name>~<pid>~<creation-hex>` paths for name filtering and stable identity.
+Restricted rows use `unknown-<generation>`. Names retain Unicode for display;
+path delimiters/control characters are sanitized. No OS queries occur in row,
+column, existence or resolution methods.
+
+Retain only the current immutable record map, O(P) for P processes. A refresh
+lock serializes enumeration; a separate short lock replaces/reads the map. Host
+root listing caching is retained; explicitly refreshing clears it. An older
+pane may display stale rows, but a missing identity is refused, never mapped to
+the new owner of a PID. If the OS changes after snapshot capture, termination's
+same-handle check is authoritative. The host rejects stale navigation results.
+
+### F8 And Termination
+
+A public pane listener rewrites `move_to_trash`/`delete_permanently` into
+`end_process` only at the process root, preserving explicit `urls` arguments.
+Capture one immutable record before confirmation. Reject multiple selections,
+roots and foreign URLs. Generic filesystem deletion is deliberately unimplemented.
+
+After a default-No plain-text warning naming the process/PID and unsaved-data
+risk, submit one short host Task. Preserve the original name and line breaks,
+without HTML escaping. Refuse PID 0, PID 4, self and unknown identities. Open the
+target with `PROCESS_TERMINATE | PROCESS_QUERY_LIMITED_INFORMATION`, compare raw
+creation time, and check `IsProcessCritical`. Refuse an unsuccessful safety check.
+Check cancellation immediately before `TerminateProcess` on that same handle.
+Close handles in `finally` on every outcome. No new PID lookup can substitute a
+different process between validation and termination.
+
+Report `Termination requested` for five seconds, not confirmed exit, with no wait
+or rollback. Access denial, already-exited/stale targets and safety refusal are
+actionable alerts. Error 5 acknowledges either permissions or an already exiting
+process and suggests refresh; no extra query or exit wait is added.
+Only the originating pane reloads, only if it is still at the root.
+Ordinary file deletion keeps Core's original confirmation and default.
+
+Copy/move commands, including Core drop routing, are intercepted for process
+sources/destinations before Core's directory preparation. No process-specific
+Core change was needed. Enter/open and interactive create/rename are refused;
+direct filesystem mutation remains unsupported as a second boundary.
+
+### Threading And Persistence
+
+Enumeration uses the host model worker. Commands and submitted tasks use the
+existing command worker and public pane/UI dispatch; no persistent worker or
+timer is introduced. Cancellation before termination is supported; there is no
+batch or exit wait to cancel. Model disposal/navigation is owned by the host.
+
+The only process location is the root. Cold stale saved row URLs fall back there
+with no enumeration during existence probes. Opening/restoring the root is use
+and may enumerate. No process snapshots or termination history are saved. Unload
+unregisters the filesystem, columns and commands using the normal plug-in loader.
+
+## Alternatives
+
+- Expanded ProcessFS-style tree: rejected by user-approved simplification; adds
+  ancestry, subtree cache and navigation work without serving the basic workflow.
+- psutil: unnecessary for Name/PID after removing optional columns; existing
+  pywin32 supplies PIDs, avoiding another native dependency and lock update.
+- Handwritten native enumeration: unnecessary because pywin32 is already present.
+- PID-only termination: rejected because a stale row can target another process.
+- Filesystem delete implementation: rejected because recursive file operations
+  should never terminate processes. Retain F8 through a scoped public listener.
+- Graceful window close, elevation and exit waiting: outside the approved scope.
+
+## Runtime Effects
+
+- Unused/disabled: no feature scans, native enumerator import, I/O, timers or jobs.
+  Registered listeners only inspect URLs for relevant commands while enabled.
+- Refresh: O(P) PID enumeration and one query-limited handle per accessible
+  process, with O(P) current-snapshot memory and no retained handles. Two panes
+  can share the host listing; manual refresh updates it. Rendering does no OS I/O.
+- Termination: one process handle, bounded native calls, no polling or waiting.
+  Cancellation cannot undo an already issued termination request.
+- No subprocess is launched by the feature; only the tests launch disposable
+  children. No network, disk scan, process-metadata persistence or Registry write.
+- Five native non-elevated snapshots: 285 records, 107 restricted records,
+  median 4.06 ms, maximum 5.06 ms. These local measurements are not a portable SLA.
+
+## Tests
+
+Focused modules:
+
+- [test_process_pane.py](../src/unittest/python/fman_unittest/test_process_pane.py):
+  record/URL identity, 10,000-row replacement, no per-cell scans, same-handle
+  safety, denied/critical/self/stale targets, cancellation, handle closure,
+  captured selection, confirmation, routing, unsupported mutation and lazy import.
+  Review regressions cover PID 0 without a handle, missing `IsProcessCritical`,
+  literal ampersands/newlines, five-second status and ambiguous error 5 wording.
+- [ProcessPaneIT](../src/integrationtest/python/fman_integrationtest/test_qt.py):
+  real plug-in registry, model, filtering, numeric sorting, reload, actual Core
+  F8 binding/controller dispatch, normal file deletion, file/folder drops, stale
+  session root restoration, two-pane stale rows and unload while panes are alive.
+- Native owned-child test: non-elevated enumeration, reject altered identity,
+  terminate only its own disposable child, always clean up. Elevated runs skip
+  the standard-user assertion; never test against arbitrary or system processes.
+
+Commands from repository root:
+
+```powershell
+$env:PYTHONPATH = @('src/main/python', 'src/unittest/python', 'src/integrationtest/python', 'src/main/resources/base/Plugins/Core', 'src/main/resources/base/Plugins/ProcessPane') -join [IO.Path]::PathSeparator
+$env:QT_QPA_PLATFORM = 'windows'
+python -m unittest fman_integrationtest.test_qt.ProcessPaneIT fman_unittest.test_process_pane
+git diff --check
+```
+
+Repeat the focused command with `QT_QPA_PLATFORM=offscreen` for the headless gate.
+Check `_environment()` includes the plug-in test path and parse the spec to
+assert its `hidden_imports` includes `win32process`; do not invoke a build.
+Manual/frozen smoke remains unrun: opening either pane, readable confirmation,
+refresh and owned-child termination in a package without development Python.
+No full suite, clean, freeze or ZIP generation is authorized for this task.
+
+## Implementation Steps
+
+1. Record the reduced design and review before code; test immutable identities.
+2. Add/test the lazy existing-library provider and same-handle Windows safeguards.
+3. Register the flat filesystem, commands, single-target task and F8 listener.
+4. Verify unit, native owned-child and real Qt integration tests.
+5. Add test path/native import declarations and concise user documentation.
+6. Record results/limitations, move the canonical document to Done and update links.
+
+## Acceptance Criteria
+
+- Show processes lists Name/PID and supports existing filter/sort/manual refresh.
+- F8 ends one confirmed process within current permissions; file panes retain
+  ordinary deletion. Multiple targets are rejected and cancellation does nothing.
+- Stale identities, self, System, critical and unverifiable targets cannot be
+  terminated; the safety checks and action use the same native handle.
+- Disabled/unused work is absent, handle closure is tested, and metadata remains
+  O(P) without per-cell OS access or feature-specific polling.
+- Real registry/Qt and non-elevated owned-child checks pass, including drops,
+  session restore, navigation away and another pane invalidating an old row.
+- Required focused source tests and build declaration checks pass; packaged and
+  human visual smoke are explicitly unverified, with no unauthorized build.
+
+<details>
+<summary>Superseded Expanded Proposal (Historical, Not Implemented)</summary>
+
+## Task
+
 Add a bundled `ProcessPane` plug-in inspired by
 [mherrmann/ProcessFS](https://github.com/mherrmann/ProcessFS). Users can open the
 Windows process list in either file pane, inspect parent/child relationships,
@@ -190,7 +378,7 @@ do not change `is_dir` to obtain an executable/file icon.
 The location bar uses the raw non-file URL, for example
 `process://chrome.exe~1234~01dc...`. This readable but technical identity suffix
 is a known v1 limitation. A future shared virtual-location display improvement
-should consider both this plug-in and [Flat View](FlatView.md), not introduce a
+should consider both this plug-in and [Flat View](../Plan/FlatView.md), not introduce a
 process-specific location-bar patch here.
 
 ### Commands And Delete Routing
@@ -505,6 +693,8 @@ source smoke, launch `python build.py run` without the offscreen Qt setting.
 - File-to-process transfers fail with a clear not-supported alert and no mutation;
   folder icons and technical location-bar suffixes are documented limitations.
 
+</details>
+
 ## Reviewers
 
 ### 2026_09_13 - GitHub Copilot
@@ -753,3 +943,170 @@ Process:
   assessment was edited. No process was enumerated or terminated, no package
   installed, and no build, test suite or frozen smoke was run. Documentation
   validation: `git diff --check -- Plan/ProcessPane.md` and editor diagnostics.
+
+### 2026_09_18 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: High
+- Context Window: Not exposed by host
+- Outcome: Reviewed and approved the user's reduced flat-list/F8 design above
+  for implementation, with focused, observable safety and integration gates.
+  Removed tree browsing, optional columns, multi-target tasks, cross-pane refresh,
+  exit waiting and the private formatter dependency. Keep one-target confirmation,
+  same-handle identity checks and existing-permission-only operation. Earlier
+  expanded-scope estimates and acceptance criteria are superseded.
+
+### 2026_09_18 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: High
+- Context Window: Not exposed by host
+- Outcome: Approved reuse of existing pywin32 PID enumeration for the reduced
+  Name/PID scope instead of adding psutil. Native handle queries supply coherent
+  name/creation identity and same-handle termination. Tests proved current-user
+  operation, F8 dispatch, denied/stale safeguards and ordinary file behavior.
+  Source gates passed; packaged execution is explicitly unverified, not a claimed
+  result. The archived expanded proposal no longer controls acceptance.
+
+### 2026_09_18 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Medium
+- Context Window: Not exposed by host
+- Outcome: Accepted implementation-review items (1)-(4) and reproduced each with
+  focused regressions. Also addressed note (5) through accurate error wording.
+  The fixes preserve the reduced design, same-handle safeguards and public API;
+  no additional native queries, polling, privileges or dependencies are needed.
+  Packaged smoke remains a release gate, not authorization to build here.
+
+## Implementer
+
+### 2026_09_18 - GitHub Copilot
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: High
+- Context Window: Not exposed by host
+- Outcome: Implemented the standalone-layout flat ProcessPane using public fman
+  APIs and existing pywin32, with scoped F8 termination and no process-specific
+  host changes. Added 23 unit/native tests and 3 real-registry Qt tests. Updated
+  test discovery, native import declaration, usage documentation and changelog.
+
+### 2026_09_18 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Claude Fable 5.1
+- Effort: High
+- Context Window: 1M
+- Outcome: Implementation matches the approved reduced design. Re-ran the focused
+  gate offscreen: `fman_integrationtest.test_qt.ProcessPaneIT` plus
+  `fman_unittest.test_process_pane`, 26 tests OK, no skips. Verified `win32process`
+  in the spec hidden imports, the plug-in on `build.py`'s test path, README and
+  CHANGELOG entries, the Plan/Done move and index update. Code review confirmed:
+  same-handle validation and termination with `PROCESS_TERMINATE |
+  PROCESS_QUERY_LIMITED_INFORMATION`, `IsProcessCritical` refusal, PID 0/4/self
+  and unknown-identity refusal, cancellation check immediately before
+  `TerminateProcess`, handles closed in `finally`, `ProcessError` not swallowed by
+  the `OSError` handler, O(1) snapshot lookups in `name`/`is_dir`/`resolve`/PID
+  column, cold-restore probes without enumeration, and listener interception of
+  `copy`/`move` for process sources or destinations (covering F5 from a file pane
+  before Core's `makedirs`). Open items for the implementer, not fixed here:
+  (1) `OpenProcess(0)` fails with error 87 on this machine, so `snapshot()` skips
+  PID 0 and the `'System Idle Process'` name mapping is unreachable; either
+  special-case PID 0 before opening or drop the mapping. (2) `html.escape` in the
+  confirmation is counterproductive: QMessageBox renders plain text unless it
+  detects markup, so a name containing `&` shows `&amp;`, and when markup is
+  detected the `\n\n` collapses; image basenames cannot contain `<`/`>`, so pass
+  the raw name. (3) On Windows older than 8.1, `WindowsApi()` raises
+  `AttributeError` for `IsProcessCritical`, escaping `get_provider` as a traceback
+  instead of the actionable `ProcessError`. (4) The `Termination requested` status
+  message has no timeout, unlike the other messages. (5) `TerminateProcess` can
+  return error 5 for a process that is already exiting; the "Access denied"
+  wording is then misleading, note only. Packaged execution remains unverified as
+  documented; run the frozen smoke before the next release.
+
+### 2026_09_18 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Claude Fable 5.1
+- Effort: Medium
+- Context Window: 1M
+- Outcome: Follow-up pass. Plug-in source is unchanged since the previous review
+  (`html.escape` at `__init__.py:87`, untimed status at `:96`, unguarded
+  `IsProcessCritical` binding and unreachable PID 0 name mapping in
+  `processes.py`). Focused gate re-run offscreen: `ProcessPaneIT` plus
+  `test_process_pane`, 26 tests OK, no skips. Design conformance and the
+  same-handle safety path stand; open items (1)-(4) above remain for the
+  implementer, and packaged smoke is still unverified.
+
+### 2026_09_18 - GitHub Copilot
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Medium
+- Context Window: Not exposed by host
+- Outcome: Closed review items (1)-(4): emit a restricted PID 0 row without a
+  handle, preserve literal confirmation text, translate missing Windows exports
+  to `ProcessError`, and expire status after five seconds. Also clarified note
+  (5), the ambiguous error 5 response. Added three regressions and strengthened
+  existing assertions. All 29 focused tests pass with offscreen and native
+  Windows Qt, without skips; earlier reviewer records are preserved.
+
+## Validation Results
+
+- First code gate: `python -m unittest fman_unittest.test_process_pane.SnapshotTest`
+  passed (3 tests at that stage), immediately after the first code edit.
+- `python -m unittest fman_integrationtest.test_qt.ProcessPaneIT fman_unittest.test_process_pane`
+  passed all 26 tests with both offscreen and native Windows Qt. No skips in
+  either final run. The owned-child test confirmed a non-elevated process.
+- Initial Qt fixture failures were corrected: unload before widget destruction,
+  restore previously imported plug-in modules after real-loader tests, and
+  explicitly refresh the second pane to invalidate the host's shared root cache.
+  The same focused command passed after repair; no production host workaround.
+- A focused `runpy`/AST check called only `build._environment()` and parsed the
+  spec: ProcessPane is on the test path, `win32process` is in hidden imports, and
+  the existing installed extension exposes `EnumProcesses`. No build executed.
+- Five read-only snapshots measured aggregate count/latency only: 285 records,
+  107 restricted, median 4.06 ms, max 5.06 ms; no process names/paths were logged.
+- Editor diagnostics and `git diff --check` reported no new errors at the checks
+  run. Documentation links/sections and final diff are checked before completion.
+- Not run: full test suite, clean/freeze/package, portable ZIP, frozen executable
+  smoke, and human visual inspection. No packages installed, environment created,
+  arbitrary process terminated, elevation requested, or Registry write added.
+
+### 2026_09_18 Review Fixes
+
+Use the repository-root `PYTHONPATH` command in Tests above.
+
+- `python -m unittest fman_unittest.test_process_pane.ProviderTest.test_idle_process_is_listed_without_opening_a_handle`
+  failed before the PID 0 fix and passed immediately afterward.
+- `python -m unittest fman_unittest.test_process_pane.ProviderCompatibilityTest fman_unittest.test_process_pane.PaneCommandTest.test_confirmation_preserves_plain_process_name_and_line_breaks fman_unittest.test_process_pane.PaneCommandTest.test_confirm_uses_captured_record_and_only_reloads_current_pane`
+  reproduced all three remaining findings, then passed all three after repair.
+- `python -m unittest fman_unittest.test_process_pane.ProviderTest` passed all
+  nine provider tests after refining error 5 and the PID 0 error-87 fixture.
+- `python -m unittest fman_integrationtest.test_qt.ProcessPaneIT fman_unittest.test_process_pane`
+  passed 29 tests with `QT_QPA_PLATFORM=offscreen` and again with `windows`,
+  without skips. Offscreen Qt reported missing-font-directory and sizing-plugin
+  warnings; native Windows Qt completed without those warnings. The native test
+  terminated only its own disposable child and confirmed non-elevated execution.
+- Packaged smoke, human visual inspection and older-Windows execution remain
+  unverified. The missing-export path is tested with an injected kernel lacking
+  `IsProcessCritical`. No full suite, clean, freeze, package or ZIP was run.
+- No separate changelog fix entry: ProcessPane is already under `Unreleased`.

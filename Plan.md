@@ -7,7 +7,6 @@
 - [Find Files 003: Everything-Style Query Syntax](Plan/FindFiles003.md)
 - [Flat View](Plan/FlatView.md)
 - [Migrate to PyQt6](Plan/MigrateToPyQt6.md)
-- [Process Pane](Plan/ProcessPane.md)
 - [Search File Content 003: Extended Mode](Plan/SearchFileContent003.md)
 - [UI Elements](Plan/UIElements.md)
 
@@ -27,6 +26,7 @@
 - [Focused Validation Policy](Done/FocusedValidationPolicy.md)
 - [Matching Icon SVG](Done/MatchingIconSvg.md)
 - [New File](Done/NewFile.md)
+- [Process Pane](Done/ProcessPane.md)
 - [Recent Commands in Command Palette](Done/RecentCommandsInPalette.md)
 - [Release Workflow Hardening](Done/ReleaseWorkflowHardening.md)
 - [Search File Content 001](Done/SearchFileContent001.md)

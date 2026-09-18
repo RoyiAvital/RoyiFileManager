@@ -1033,6 +1033,196 @@ sys.exit(context.run())
 			self.drain_models()
 			self.assertEqual('3 B', self.run_in_app(read_cell))
 
+class ProcessPaneIT(QtIT):
+	def setUp(self):
+		from core import Name, Size, Modified
+		from core.commands import MoveToTrash, Copy, Move, DragAndDropListener
+		from core.fs.local import LocalFileSystem
+		from fman import DirectoryPane
+		from fman.impl.controller import Controller
+		from fman.impl.plugins import PluginSupport
+		from fman.impl.plugins.builtin import NullFileSystem, NullColumn
+		from fman.impl.plugins.command_registry import ApplicationCommandRegistry, PaneCommandRegistry
+		from fman.impl.plugins.config import Config
+		from fman.impl.plugins.key_bindings import KeyBindings
+		from fman.impl.plugins.mother_fs import MotherFileSystem
+		from fman.impl.plugins.plugin import ExternalPlugin, FileSystemWrapper
+		from fman.impl.widgets import MainWindow
+		from pathlib import Path
+		from PyQt5.QtGui import QIcon
+		from tempfile import TemporaryDirectory
+		from unittest.mock import Mock, patch
+		import json
+		import sys
+		previous_modules = {name: module for name, module in sys.modules.items()
+			if name == 'process_pane' or name.startswith('process_pane.')}
+		self.addCleanup(sys.modules.update, previous_modules)
+		self.temporary = TemporaryDirectory()
+		self.addCleanup(self.temporary.cleanup)
+		self.root = Path(self.temporary.name)
+		(self.root / 'sample.txt').write_text('test', encoding='utf-8')
+		self.errors = Mock()
+		self.finished = Event()
+		callbacks = Mock()
+		callbacks.after_command.side_effect = lambda *args: self.finished.set()
+		self.filesystem = MotherFileSystem(Mock(get_icon=Mock(return_value=QIcon())))
+		for backend in (LocalFileSystem(), NullFileSystem()):
+			self.filesystem.add_child(backend.scheme, FileSystemWrapper(backend, self.filesystem, self.errors))
+		for column in (Name(self.filesystem), Size(self.filesystem), Modified(self.filesystem), NullColumn()):
+			self.filesystem.register_column(column.get_qualified_name(), column)
+		applications, commands = self.run_in_app(lambda: (
+			ApplicationCommandRegistry(Mock(), self.errors, callbacks), PaneCommandRegistry(self.errors, callbacks)))
+		bindings = KeyBindings()
+		for name, command in (('move_to_trash', MoveToTrash), ('copy', Copy), ('move', Move)):
+			commands.register_command(name, command)
+			bindings.register_command(name)
+		plugins = Path(__file__).parents[3] / 'main/resources/base/Plugins'
+		with (plugins / 'Core/Key Bindings.json').open(encoding='utf-8') as stream:
+			binding = [entry for entry in json.load(stream) if entry['keys'] == ['F8']]
+		self.assertEqual(1, len(binding))
+		self.assertEqual([], bindings.load(binding))
+		config = Config('Windows')
+		context = Mock()
+		plugin = ExternalPlugin(str(plugins / 'ProcessPane'), config, Mock(), Mock(), context,
+			self.errors, applications, commands, bindings, self.filesystem, Mock())
+		self.support = PluginSupport(lambda path: plugin, applications, bindings, context, config)
+		self.plugin_path = str(plugins / 'ProcessPane')
+		self.assertTrue(self.support.load_plugin(self.plugin_path))
+		self.module = sys.modules['process_pane']
+		from process_pane.processes import ProcessRecord
+		self.provider = Mock()
+		self.records = [ProcessRecord(12, 'report.exe', 100), ProcessRecord(2, 'other.exe', 200)]
+		self.provider.snapshot.side_effect = lambda: list(self.records)
+		for target, options in (
+			('process_pane.get_provider', {'return_value': self.provider}),
+			('process_pane.show_alert', {'return_value': self.module.NO}),
+			('process_pane.show_status_message', {}),
+			('process_pane.submit_task', {'side_effect': lambda task: task()}),
+			('fman.fs._get_mother_fs', {'return_value': self.filesystem}),
+		):
+			patcher = patch(target, **options)
+			patcher.start()
+			self.addCleanup(patcher.stop)
+		self.controller = Controller(self.support, Mock(), Mock(), Mock())
+		def create():
+			self.window = MainWindow(QApplication.instance(), [], Mock(), Mock(), self.filesystem, 'null://')
+			self.window.set_controller(self.controller)
+			self.panes = [self.window.add_pane() for index in range(2)]
+			public_window = Mock()
+			self.public_panes = [DirectoryPane(public_window, widget, commands) for widget in self.panes]
+			public_window.get_panes.return_value = self.public_panes
+			for widget, pane in zip(self.panes, self.public_panes):
+				pane._add_listener(DragAndDropListener(pane))
+				self.controller.register_pane(widget, pane)
+			self.window.resize(960, 600)
+			self.window.show()
+		self.run_in_app(create)
+		self.addCleanup(self.close_window)
+		self.addCleanup(self.unload_process_plugin)
+		for pane in self.panes:
+			FilterBarIT.navigate(self, pane, self.root)
+		self.provider.snapshot.assert_not_called()
+
+	drain = FilterBarIT.drain
+	close_window = FilterBarIT.close_window
+	set_query = FilterBarIT.set_query
+
+	def unload_process_plugin(self):
+		self.support.unload_plugin(self.plugin_path)
+		for pane in self.panes:
+			self.drain(pane)
+		self.errors.report.assert_not_called()
+
+	def navigate_processes(self, index=0):
+		loaded = Event()
+		self.public_panes[index].set_path('process://', callback=loaded.set)
+		self.assertTrue(loaded.wait(5), 'Process pane did not load')
+		self.drain(self.panes[index])
+		self.errors.report.assert_not_called()
+
+	def press_f8(self, index=0):
+		from PyQt5.QtCore import QEvent
+		from PyQt5.QtGui import QKeyEvent
+		self.finished.clear()
+		self.assertTrue(self.run_in_app(self.controller.handle_shortcut, self.panes[index],
+			QKeyEvent(QEvent.KeyPress, Qt.Key_F8, Qt.NoModifier)))
+		self.assertTrue(self.finished.wait(5), 'F8 command did not finish')
+		self.drain(self.panes[index])
+		self.errors.report.assert_not_called()
+
+	def test_real_registry_filter_sort_reload_and_f8(self):
+		self.navigate_processes()
+		pane = self.public_panes[0]
+		self.assertEqual(['core.Name', 'process_pane.Pid'], list(pane.get_columns()))
+		pane.set_sort_column('process_pane.Pid')
+		self.drain(self.panes[0])
+		self.assertIn('~2~', pane.get_file_under_cursor())
+		self.set_query('rep')
+		self.assertEqual(1, self.run_in_app(self.panes[0]._model.rowCount))
+		self.assertIn('report.exe', pane.get_file_under_cursor())
+		self.press_f8()
+		self.provider.end.assert_not_called()
+		self.assertEqual(self.module.NO, self.module.show_alert.call_args.args[2])
+		self.module.show_alert.return_value = self.module.YES
+		self.press_f8()
+		self.assertEqual(self.records[0], self.provider.end.call_args.args[0])
+		self.module.show_status_message.assert_called_once()
+		self.provider.snapshot.assert_called()
+		self.assertEqual(2, self.provider.snapshot.call_count)
+		self.set_query('')
+		self.records = []
+		pane.reload()
+		self.drain(self.panes[0])
+		self.assertEqual(0, self.run_in_app(self.panes[0]._model.rowCount))
+
+	def test_file_delete_keeps_core_confirmation_and_transfers_are_blocked(self):
+		from core.commands import DragAndDropListener
+		from fman.url import as_url
+		from unittest.mock import patch
+		self.navigate_processes()
+		with patch('core.commands.show_alert', return_value=self.module.NO) as file_alert:
+			self.press_f8(1)
+			file_alert.assert_called_once()
+			self.assertEqual(self.module.YES, file_alert.call_args.args[2])
+		self.module.show_alert.assert_not_called()
+		for command in ('copy', 'move'):
+			self.public_panes[1].run_command(command)
+			self.assertIn('Processes are not files', self.module.show_alert.call_args.args[0])
+		folder = self.root / 'folder'
+		folder.mkdir()
+		for source in (self.root / 'sample.txt', folder):
+			for destination in ('process://', 'process://' + self.records[0].path(1)):
+				DragAndDropListener(self.public_panes[0]).on_files_dropped([as_url(source)], destination, True)
+				self.assertIn('Processes are not files', self.module.show_alert.call_args.args[0])
+		self.assertEqual(1, self.provider.snapshot.call_count)
+		self.provider.end.assert_not_called()
+		self.assertTrue((self.root / 'sample.txt').exists())
+		self.errors.report.assert_not_called()
+
+	def test_stale_session_restores_root_and_two_panes_reject_old_row(self):
+		from fman.impl.session import SessionManager
+		from process_pane.processes import ProcessRecord
+		manager = SessionManager({}, self.filesystem, self.errors, 'test', True)
+		manager._init_pane(self.public_panes[0], None, {'location': 'process://gone~123~99'})
+		self.drain(self.panes[0])
+		self.assertEqual('process://', self.public_panes[0].get_path())
+		self.assertEqual(1, self.provider.snapshot.call_count)
+		old = self.public_panes[0].get_file_under_cursor()
+		self.records = [ProcessRecord(2, 'other.exe', 999)]
+		self.navigate_processes(1)
+		self.public_panes[1].reload()
+		self.drain(self.panes[1])
+		self.assertIn('~3e7', self.public_panes[1].get_file_under_cursor())
+		self.module.show_alert.return_value = self.module.YES
+		self.public_panes[0].run_command('move_to_trash', {'urls': [old]})
+		self.assertIn('Refresh', self.module.show_alert.call_args.args[0])
+		self.provider.end.assert_not_called()
+		self.module.show_status_message.assert_not_called()
+		self.drain(self.panes[0])
+		self.assertEqual(2, self.provider.snapshot.call_count)
+		self.errors.report.assert_not_called()
+
+
 class RunInThreadIT(RunInThreadAT, QtIT):
 	pass
 

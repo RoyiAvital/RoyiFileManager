@@ -9,8 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
 
+## [0.6.0] - 2026-09-18
+
+API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
+
 ### Added
 
+- ProcessPane plug-in: a flat Windows process list with Name/PID columns,
+  filtering, manual refresh and single-process F8 termination after a default-No
+  confirmation. Uses current Windows permissions, validates process identity,
+  refuses critical/self targets, and leaves ordinary file deletion unchanged.
 - Fuzzy file search (`Ctrl+F` / `Ctrl+Shift+F`) supports `fzf` extended query
   operators: exact terms, path anchors, negation, inverse fuzzy matching,
   word boundaries, adjacent-term OR and escaped spaces. Matching text is

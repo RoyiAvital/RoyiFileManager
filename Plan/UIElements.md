@@ -230,7 +230,7 @@ recency policy, not behavior that already exists.
 #### Phase A Reuse: Confirmation and Result Actions
 
 - Bounded list confirmation serves Favorites removal and can later serve
-  [Process Pane](ProcessPane.md), [Unpack Archive](UnpackArchive.md), and
+  [Process Pane](../Done/ProcessPane.md), [Unpack Archive](UnpackArchive.md), and
   [Calculate File Hash](../Done/CalculateFileHash.md). Show the exact total and the first
   K captured item labels, then the omitted count; default to Cancel/No.
 - Both hash commands use a centered OutputTextBox beneath a file-path heading.
@@ -915,7 +915,7 @@ of a plug-in operation. Sensitive previews must not be written to diagnostic log
 - [Favorites](../Done/Favorites001.md) provides the first real selectable-list use
   case; add multi-remove/reorder management using its existing store and lock,
   keeping navigation commands, current-path removal and shortcuts compatible.
-- [Process Pane](ProcessPane.md) can continue using the virtual filesystem/table;
+- [Process Pane](../Done/ProcessPane.md) can continue using the virtual filesystem/table;
   these components are optional tools, not a mandatory rewrite of every plug-in.
 - Hash, archive and process plans adopt the confirmation/action helpers only
   when individually revised; their feature implementation is not added to Phase A.

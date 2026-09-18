@@ -8,7 +8,7 @@ request.
 ## Scope
 
 Update both templates and the field rule in [AGENTS.md](../AGENTS.md), normalize
-field labels in [ProcessPane.md](../Plan/ProcessPane.md), and close its review
+field labels in [ProcessPane.md](ProcessPane.md), and close its review
 item. Preserve recorded values and unrelated historical documents.
 
 ## Design

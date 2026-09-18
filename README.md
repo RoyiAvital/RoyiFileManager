@@ -29,6 +29,7 @@ Significant additions compared with `fman`:
 - **Docked Panel**: Allows controlling states and operations. Exposed to be used by Plug-In's.
 - **Favorites**: Press <kbd>Ctrl</kbd>+<kbd>B</kbd> for a fully features Favorites Manager, built entirely with the plug-in APIs.
 - **Recent Commands**: <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> pins the last three commands run from the palette.
+- **Process Pane**: Run **Show processes** for a flat Name/PID list of the system running processes; select one process and press <kbd>F8</kbd> to force-terminate it, using current Windows permissions. See [Process Pane Usage](src/main/resources/base/Plugins/ProcessPane/README.md).
 - **Extended Status Bar**: Press <kbd>Ctrl</kbd>+<kbd>S</kbd> to cycle through disabled, active-pane, and per-pane file statistics.
 - **Sync Pane Location**: Send the inactive pane to the active pane's current folder from the Command Center.
 - **File Hash**: Press <kbd>Ctrl</kbd>+<kbd>H</kbd> for centered checksum output; use Calculate File Hash By to pick an algorithm in QuickSearch, then view the result. See [File Hash Calculation Usage](src/main/resources/base/Plugins/CalculateFileHash/README.md).

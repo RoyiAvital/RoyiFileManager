@@ -19,7 +19,7 @@ binaries = winpty_binaries + send2trash_binaries + [
 ]
 hidden_imports = [
 	'adodbapi', 'ctypes.wintypes', 'win32com.shell.shell',
-	'win32com.shell.shellcon', 'win32gui', 'win32wnet',
+	'win32com.shell.shellcon', 'win32gui', 'win32wnet', 'win32process',
 	'fman.ui', 'fman.impl.ui.quicklist', 'fman.impl.ui.panel',
 	'fman.impl.ui.session', 'fman.impl.ui.output', 'fman.impl.navigation',
 	'fman.impl.ui.table', 'fman.impl.ui.table_data', 'fman.impl.ui.facade',
