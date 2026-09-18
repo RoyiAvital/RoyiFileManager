@@ -1460,6 +1460,168 @@ class SearchFileSyntaxIT(QtIT):
 							{'url': as_url(root / 'src/report.py')})
 
 
+class SearchFileMetadataIT(QtIT):
+	def setUp(self):
+		from fman import DirectoryPane
+		from fman.impl.widgets import ProgressDialog
+		from PyQt5.QtCore import pyqtSignal
+		from PyQt5.QtWidgets import QWidget
+		from unittest.mock import Mock, patch
+		class PaneWidget(QWidget):
+			location_changed = pyqtSignal(str)
+			def get_location(self):
+				return 'test://root'
+		self.widget = self.run_in_app(PaneWidget)
+		self.registry = Mock()
+		self.pane = DirectoryPane(Mock(), self.widget, self.registry)
+		self.progress = []
+		def create_progress(title, size):
+			dialog = self.run_in_app(ProgressDialog, None, title, size, QApplication.instance().palette())
+			self.progress.append(dialog)
+			return dialog
+		for target, options in (
+			('fman._get_ui', {'return_value': Mock(create_progress_dialog=create_progress)}),
+			('search_file_fuzzy.load_json', {'return_value': {}}),
+			('search_file_fuzzy.show_status_message', {}),
+			('search_file_fuzzy.clear_status_message', {}),
+		):
+			patcher = patch(target, **options)
+			patcher.start()
+			self.addCleanup(patcher.stop)
+		self.addCleanup(self.dispose)
+
+	def dispose(self):
+		from PyQt5 import sip
+		def cleanup():
+			for widget in [*self.progress, self.widget]:
+				if not sip.isdeleted(widget):
+					sip.delete(widget)
+		self.run_in_app(cleanup)
+
+	def assert_unsubscribed(self):
+		self.assertEqual(0, self.run_in_app(self.widget.receivers, self.widget.location_changed))
+
+	def test_reserved_rows_reorder_filter_accept_and_cancel(self):
+		from fman.impl.quicksearch import Quicksearch
+		from fman.impl.theme import Theme
+		from search_file_fuzzy import SearchFilesInCurrentFolder, describe_metadata
+		from search_file_fuzzy.indexer import IndexResult
+		from search_file_fuzzy.matcher import SearchEntry
+		from PyQt5.QtCore import QThread, QTimer
+		from PyQt5.QtTest import QTest
+		from PyQt5.QtWidgets import QStyleOptionViewItem
+		from pathlib import Path
+		from types import SimpleNamespace
+		from unittest.mock import patch
+		app = QApplication.instance()
+		def show_on_qt(provider, query=''):
+			self.assertEqual(app.thread(), QThread.currentThread())
+			resources = Path(__file__).parents[3] / 'main/resources'
+			previous_style = app.styleSheet()
+			theme = Theme(SimpleNamespace(set_style_sheet=app.setStyleSheet), [
+				str(resources / 'base/styles.qss'), str(resources / 'windows/os_styles.qss')])
+			theme.load(str(resources / 'base/Plugins/Core/Theme.css'))
+			theme.enable_updates()
+			dialog = Quicksearch(None, app, theme.get_quicksearch_item_css(), provider, query=query)
+			errors = []
+			def inspect():
+				try:
+					for text in ('', 'report', '^second', '^first', 'missing', ''):
+						dialog._query.setText(text)
+						dialog._items.doItemsLayout()
+						heights = []
+						for row, item in enumerate(dialog._curr_items):
+							entry = next(entry for entry in entries if entry.url == item.value)
+							self.assertEqual(describe_metadata(entry) or ' ', item.description)
+							index = dialog._items.model().index(row, 0)
+							option = QStyleOptionViewItem()
+							option.initFrom(dialog._items)
+							needed = dialog._items.itemDelegate().sizeHint(option, index).height()
+							actual = dialog._items.visualRect(index).height()
+							self.assertGreaterEqual(actual, needed)
+							heights.append(actual)
+							if text:
+								self.assertTrue(item.highlight)
+						self.assertLessEqual(len(set(heights)), 1)
+					self.assertFalse(dialog.grab().isNull())
+					QTest.keyClick(dialog._query, Qt.Key_Escape if cancel else Qt.Key_Return)
+					self.assertFalse(dialog.isVisible())
+				except BaseException as error:
+					errors.append(error)
+					dialog.reject()
+			QTimer.singleShot(0, inspect)
+			try:
+				result = dialog.exec()
+				if errors:
+					raise errors[0]
+				return result
+			finally:
+				dialog.deleteLater()
+				app.setStyleSheet(previous_style)
+		with patch('search_file_fuzzy.build_index') as build, \
+			patch('search_file_fuzzy.show_quicksearch', side_effect=lambda *args, **kwargs:
+				self.run_in_app(show_on_qt, *args, **kwargs)):
+			for values in ((0, None), (None, 0), (None, None)):
+				entries = [SearchEntry('test://root/' + name, name, name, size,
+					1_800_000_000_000_000_000 if size is not None else None)
+					for name, size in zip(('first-report.txt', 'second-report.txt'), values)]
+				build.return_value = IndexResult(entries, False)
+				for cancel in (False, True):
+					self.registry.reset_mock()
+					SearchFilesInCurrentFolder(self.pane)(metadata=True)
+					if cancel:
+						self.registry.execute_command.assert_not_called()
+					else:
+						self.registry.execute_command.assert_called_once_with('open_directory',
+							{'url': entries[0].url}, self.pane)
+					self.assert_unsubscribed()
+
+	def test_blocked_provider_cancel_navigation_and_disposal_reject_results(self):
+		from concurrent.futures import ThreadPoolExecutor
+		from search_file_fuzzy import SearchFilesInCurrentFolder
+		from PyQt5 import sip
+		from unittest.mock import patch
+		for action in ('cancel', 'loaded', 'navigate', 'close'):
+			with self.subTest(action=action):
+				entered, release = Event(), Event()
+				def metadata(*args):
+					entered.set()
+					if not release.wait(5):
+						raise AssertionError('Provider was not released')
+					return 0
+				with patch('search_file_fuzzy.indexer.iterdir', return_value=['report.txt']), \
+					patch('search_file_fuzzy.indexer.is_dir', return_value=False), \
+					patch('search_file_fuzzy.indexer.query', side_effect=metadata) as query, \
+					patch('search_file_fuzzy.show_quicksearch') as show, \
+					patch('search_file_fuzzy.show_status_message') as status, \
+					patch('search_file_fuzzy.clear_status_message', side_effect=status.reset_mock), \
+					ThreadPoolExecutor(max_workers=1) as executor:
+					pending = executor.submit(SearchFilesInCurrentFolder(self.pane), metadata=True)
+					try:
+						self.assertTrue(entered.wait(5))
+						if action == 'cancel':
+							self.run_in_app(self.progress[-1].request_cancel)
+						elif action == 'loaded':
+							self.run_in_app(self.widget.location_changed.emit, 'test://root')
+						elif action == 'navigate':
+							self.run_in_app(self.widget.location_changed.emit, 'test://away')
+							self.run_in_app(self.widget.location_changed.emit, 'test://root')
+						else:
+							self.run_in_app(sip.delete, self.widget)
+					finally:
+						release.set()
+					pending.result(timeout=5)
+					query.assert_called_once_with('test://root/report.txt', 'size_bytes')
+					show.assert_not_called()
+					self.registry.execute_command.assert_not_called()
+					if action == 'cancel':
+						status.assert_called_once_with('File search canceled.', timeout_secs=3)
+					else:
+						status.assert_not_called()
+					if action != 'close':
+						self.assert_unsubscribed()
+
+
 class CommandPaletteRecentIT(QtIT):
 	def test_history_thread_affinity_and_other_provider_isolation(self):
 		from core.commands import CommandPalette, _COMMAND_PALETTE_HISTORY

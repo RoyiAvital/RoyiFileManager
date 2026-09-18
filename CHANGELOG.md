@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
 
+## [0.6.1] - 2026-09-18
+
+API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
+
+### Added
+
+- Optional modified date and size beneath fuzzy file-search results. Use
+  **Toggle search result metadata** in the Command Center to save the preference,
+  or override it per search with `metadata`. Empty files display `0 B`; missing
+  metadata retains a blank second line. Metadata indexing supports cancellation
+  and discards results after pane navigation or closure.
+
 ## [0.6.0] - 2026-09-18
 
 API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.

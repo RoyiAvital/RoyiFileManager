@@ -18,6 +18,28 @@ symbolic links or junctions.
 Searches are case-insensitive. When hidden entries are disabled, hidden
 directories are pruned together with all of their descendants.
 
+## Result Metadata
+
+Run **Toggle search result metadata** from the Command Center (`Ctrl+Shift+P`)
+to show or hide a second line containing the local modified date and size, for
+example `2026-09-18 12:34, 1.2 MiB`. It is off by default, persists under
+`UserSettings`, and applies to the next search. Dates use `YYYY-MM-DD HH:MM`;
+sizes use the pane's configured units. An empty file displays `0 B`.
+
+Every result reserves two lines while enabled. Unsupported or unreadable values
+are omitted; when neither is available, the second line is blank. File links
+show target metadata, falling back to link metadata for missing targets, like
+the pane. ZIP and other providers supply metadata when supported.
+
+Metadata is captured once during indexing, never during typing. Long indexing
+shows the existing cancellable progress dialog; canceling it reports
+`File search canceled.` Navigation or pane closure silently discards pending
+results. A search started before the pane finishes loading can also be discarded
+when loading completes; rerun it once the folder is ready. A blocked
+filesystem/provider call must return before cancellation can finish. The disabled
+mode does not query metadata or create the metadata progress task or lifecycle
+subscriptions.
+
 ## Query Syntax
 
 Fuzzy mode supports [fzf extended-search syntax](https://github.com/junegunn/fzf#search-syntax).
@@ -113,6 +135,14 @@ Preparing the extra path cache once when opening a 50,000-file search added
 about **6 ms and 3.7 MiB**. Filesystem indexing is separate and is not included
 in these timings. fzf itself is not launched during a search.
 
+For optional metadata, a 2026-09-18 Windows fixture with 50,000 empty files in
+100 folders measured median indexing times of **90.16 ms off / 123.09 ms on**,
+including enabled cancellation checks. Retained index allocations were
+**16.21 / 18.11 MiB**. Formatting 100 returned descriptions took **0.166 ms**,
+separate from matching. The two new record slots cost **0.76 MiB** at 50,000
+entries even when metadata is off. These are local warm measurements, not bounds
+for network paths or arbitrary providers.
+
 ## Focused Tests
 
 From the repository root in the existing development environment:
@@ -120,6 +150,7 @@ From the repository root in the existing development environment:
 ```powershell
 $env:PYTHONPATH="src/main/python;src/unittest/python;src/integrationtest/python;src/main/resources/base/Plugins/Core;src/main/resources/base/Plugins/SearchFileFuzzy"
 python -m unittest fman_unittest.test_search_file_fuzzy
+python -m unittest fman_integrationtest.test_qt.SearchFileMetadataIT fman_integrationtest.test_qt.SearchFileSyntaxIT
 ```
 
 Offline tests include fixed syntax expectations. To compare match sets with
@@ -142,6 +173,14 @@ try { python -m unittest fman_unittest.test_search_file_fuzzy.SearchPerformanceT
 finally { Remove-Item Env:SEARCH_PERFORMANCE_TESTS }
 ```
 
+The metadata benchmark creates and removes a temporary 50,000-file tree:
+
+```powershell
+$env:SEARCH_METADATA_PERFORMANCE_TESTS="1"
+try { python -m unittest fman_unittest.test_search_file_fuzzy.SearchMetadataPerformanceTest }
+finally { Remove-Item Env:SEARCH_METADATA_PERFORMANCE_TESTS }
+```
+
 ## Settings
 
 The defaults are stored in `SearchFileFuzzy.json`:
@@ -151,7 +190,8 @@ The defaults are stored in `SearchFileFuzzy.json`:
 	"mode": "fuzzy",
 	"max_recursive_entries": 50000,
 	"max_results": 100,
-	"include_hidden": true
+	"include_hidden": true,
+	"show_metadata": false
 }
 ```
 
@@ -165,4 +205,10 @@ results. When `include_hidden` is false, dot-prefixed and Windows-hidden entries
 are excluded, including entire hidden directory trees.
 
 The commands also accept an optional `mode` argument from custom key bindings,
-which overrides the configured mode for that invocation.
+which overrides the configured mode for that invocation. A boolean `metadata`
+argument similarly overrides `show_metadata` for one search without changing
+the saved preference, for example:
+
+```json
+{ "keys": ["Ctrl+F"], "command": "search_files_in_current_folder", "args": { "metadata": true } }
+```

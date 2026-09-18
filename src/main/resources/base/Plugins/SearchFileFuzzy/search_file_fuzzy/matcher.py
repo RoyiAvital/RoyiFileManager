@@ -6,7 +6,10 @@ from collections import namedtuple
 from search_file_fuzzy.query import parse
 
 
-SearchEntry = namedtuple('SearchEntry', 'url name relative_path')
+SearchEntry = namedtuple(
+	'SearchEntry', 'url name relative_path size_bytes modified_ns',
+	defaults=(None, None)
+)
 
 _SEPARATORS = re.compile(r'[\W_]+')
 _OPERATORS = re.compile(r"['^$!|\\\t]")

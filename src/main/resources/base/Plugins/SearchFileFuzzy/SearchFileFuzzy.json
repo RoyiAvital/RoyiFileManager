@@ -2,5 +2,6 @@
 	"mode": "fuzzy",
 	"max_recursive_entries": 50000,
 	"max_results": 100,
-	"include_hidden": true
+	"include_hidden": true,
+	"show_metadata": false
 }

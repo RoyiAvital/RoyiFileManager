@@ -64,7 +64,7 @@ Excluded:
 - Regular expressions, fuzzy matching, smart case, date/size filters,
   persisting the filter across navigation, folder-only/file-only
   visibility rules. Regex and metadata belong to
-  [Find Files 002](../Plan/FindFiles002.md).
+  [Find Files 002](FindFiles002.md).
 - Showing the match count inside the extended per-pane status widget
   (`PaneStatusWidget`); that widget is optional (default disabled) and its
   counts are recomputed off-thread with debouncing, which is unnecessary for

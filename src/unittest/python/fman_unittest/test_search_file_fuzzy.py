@@ -675,7 +675,379 @@ class BuildIndexTest(TestCase):
 		self.assertTrue(_is_directory_link(entry))
 
 
+class MetadataIndexTest(TestCase):
+	def test_local_values_include_zero_and_default_fields_are_none(self):
+		with TemporaryDirectory() as root:
+			path = Path(root) / 'empty.txt'
+			path.touch()
+			stat_result = path.stat()
+			entry, = build_index(as_url(root), collect_metadata=True).entries
+			self.assertEqual(0, entry.size_bytes)
+			self.assertEqual(stat_result.st_mtime_ns, entry.modified_ns)
+			plain, = build_index(as_url(root)).entries
+			self.assertEqual((None, None), plain[3:])
+			self.assertEqual(plain[:3], entry[:3])
+
+	def local_entry(self, *, include_hidden=True, collect_metadata=True):
+		from unittest.mock import MagicMock
+		children = MagicMock()
+		children.__enter__.return_value = iter([self.child])
+		with patch('search_file_fuzzy.indexer.os.scandir', return_value=children):
+			return build_index('file://C:/root', include_hidden=include_hidden,
+				collect_metadata=collect_metadata).entries
+
+	def setUp(self):
+		from types import SimpleNamespace
+		self.stat_result = SimpleNamespace(st_size=12, st_mtime_ns=345, st_file_attributes=0)
+		self.child = Mock(name='child')
+		self.child.name = 'report.txt'
+		self.child.is_junction.return_value = False
+		self.child.is_symlink.return_value = False
+		self.child.is_dir.return_value = False
+		self.child.stat.return_value = self.stat_result
+
+	def test_hidden_check_reuses_stat_and_disabled_path_does_not_stat(self):
+		entry, = self.local_entry(include_hidden=False)
+		self.assertEqual((12, 345), entry[3:])
+		self.child.stat.assert_called_once_with(follow_symlinks=False)
+		self.child.stat.reset_mock()
+		self.local_entry(collect_metadata=False)
+		self.child.stat.assert_not_called()
+		self.stat_result.st_file_attributes = FILE_ATTRIBUTE_HIDDEN
+		self.assertEqual([], self.local_entry(include_hidden=False))
+
+	def test_metadata_error_keeps_entry_but_hidden_filter_error_still_skips(self):
+		for error in (FileNotFoundError(), PermissionError()):
+			with self.subTest(error=type(error).__name__):
+				self.child.stat.side_effect = error
+				entry, = self.local_entry()
+				self.assertEqual((None, None), entry[3:])
+				self.assertEqual([], self.local_entry(include_hidden=False))
+
+	def test_file_links_follow_target_and_fallback_only_when_missing(self):
+		from types import SimpleNamespace
+		from unittest.mock import call
+		self.child.is_symlink.return_value = True
+		target = SimpleNamespace(st_size=100, st_mtime_ns=678)
+		for result, expected in ((target, (100, 678)), (FileNotFoundError(), (12, 345)),
+			(PermissionError(), (None, None))):
+			with self.subTest(result=result):
+				self.child.stat.reset_mock()
+				self.child.stat.side_effect = [self.stat_result, result]
+				entry, = self.local_entry()
+				self.assertEqual(expected, entry[3:])
+				self.assertEqual([call(follow_symlinks=False), call()], self.child.stat.call_args_list)
+
+	def test_provider_values_are_independent_and_disabled_queries_are_absent(self):
+		from datetime import datetime, timezone
+		stamp = datetime(2026, 9, 18, 12, tzinfo=timezone.utc)
+		with patch('search_file_fuzzy.indexer.iterdir', return_value=['file']), \
+			patch('search_file_fuzzy.indexer.is_dir', return_value=False), \
+			patch('search_file_fuzzy.indexer.query') as query:
+			for supplied, expected in (
+				([0, stamp], (0, int(stamp.timestamp() * 1_000_000_000))),
+				([12, None], (12, None)), ([None, None], (None, None)),
+				([NotImplementedError(), stamp], (None, int(stamp.timestamp() * 1_000_000_000))),
+				([0, OSError()], (0, None)), ([AttributeError(), ValueError()], (None, None)),
+			):
+				query.side_effect = supplied
+				entry, = build_index('test://root', collect_metadata=True).entries
+				self.assertEqual(expected, entry[3:])
+			query.reset_mock()
+			build_index('test://root')
+			query.assert_not_called()
+
+	def test_cancellation_between_provider_calls_discards_partial_index(self):
+		from fman import Task
+		from threading import Event
+		canceled = Event()
+		def check():
+			if canceled.is_set():
+				raise Task.Canceled()
+		def size(*args):
+			canceled.set()
+			return 0
+		with patch('search_file_fuzzy.indexer.iterdir', return_value=['file']), \
+			patch('search_file_fuzzy.indexer.is_dir', return_value=False), \
+			patch('search_file_fuzzy.indexer.query', side_effect=size) as query:
+			with self.assertRaises(Task.Canceled):
+				build_index('test://root', collect_metadata=True, check_canceled=check)
+			query.assert_called_once_with('test://root/file', 'size_bytes')
+
+	def test_zip_provider_supplies_zero_size_and_modified_time(self):
+		from core.fs.zip import ZipFileSystem
+		from datetime import datetime
+		from fman.impl.plugins.mother_fs import MotherFileSystem
+		from zipfile import ZipFile, ZipInfo
+		with TemporaryDirectory() as root:
+			archive = Path(root) / 'test.zip'
+			with ZipFile(archive, 'w') as writer:
+				writer.writestr(ZipInfo('empty.txt', (2026, 9, 18, 12, 34, 0)), b'')
+			filesystem = MotherFileSystem(Mock())
+			filesystem.add_child('zip://', ZipFileSystem(suffixes={'.zip'}))
+			with patch('fman.fs._get_mother_fs', return_value=filesystem):
+				entry, = build_index(as_url(archive, 'zip://'), collect_metadata=True).entries
+			self.assertEqual(0, entry.size_bytes)
+			self.assertEqual(datetime(2026, 9, 18, 12, 34), datetime.fromtimestamp(entry.modified_ns / 1e9))
+
+
+class DescribeMetadataTest(TestCase):
+	def test_zero_partial_missing_and_out_of_range_values(self):
+		from datetime import datetime
+		from search_file_fuzzy import describe_metadata
+		stamp = int(datetime(2026, 9, 18, 12, 34).timestamp() * 1_000_000_000)
+		for size, modified, expected in (
+			(0, stamp, '2026-09-18 12:34, 0 B'),
+			(0, 0, datetime.fromtimestamp(0).strftime('%Y-%m-%d %H:%M') + ', 0 B'),
+			(None, stamp, '2026-09-18 12:34'), (0, None, '0 B'),
+			(None, None, ''), (0, 10**40, '0 B'),
+		):
+			with self.subTest(size=size, modified=modified):
+				self.assertEqual(expected, describe_metadata(SearchEntry('url', 'name', 'path', size, modified)))
+		self.assertEqual('', describe_metadata(SearchEntry('url', 'name', 'path')))
+
+	def test_size_uses_current_pane_divisor(self):
+		from search_file_fuzzy import describe_metadata
+		for divisor, expected in ((1000, '1.0 KB'), (1024, '1000 B')):
+			with patch('fman.impl.status_bar._size_divisor', divisor):
+				self.assertEqual(expected, describe_metadata(SearchEntry('url', 'name', 'path', 1000)))
+
+
+class ToggleMetadataTest(TestCase):
+	def test_application_registry_exposes_toggle_and_alias(self):
+		from fman.impl.plugins.command_registry import ApplicationCommandRegistry
+		from search_file_fuzzy import ToggleSearchResultMetadata
+		errors = Mock()
+		registry = ApplicationCommandRegistry(Mock(), errors, Mock())
+		registry.register_command('toggle_search_result_metadata', ToggleSearchResultMetadata)
+		self.assertTrue(registry.is_command_visible('toggle_search_result_metadata'))
+		self.assertIn('Toggle search result metadata', registry.get_command_aliases('toggle_search_result_metadata'))
+		errors.report.assert_not_called()
+
+	def test_real_config_persists_toggle_and_preserves_unrelated_settings(self):
+		from fman.impl.plugins.config import Config
+		from search_file_fuzzy import ToggleSearchResultMetadata
+		import json
+		with TemporaryDirectory() as root:
+			user_settings = Path(root) / 'UserSettings/Plugins/User/Settings'
+			user_settings.mkdir(parents=True)
+			bundled = Path(__file__).parents[3] / 'main/resources/base/Plugins/SearchFileFuzzy'
+			config = Config('Windows')
+			config.add_dir(str(bundled))
+			config.add_dir(str(user_settings))
+			original = dict(config.load_json('SearchFileFuzzy.json'))
+			original['max_results'] = 17
+			config.save_json('SearchFileFuzzy.json', original)
+			with patch('search_file_fuzzy.load_json', side_effect=config.load_json), \
+				patch('search_file_fuzzy.save_json', side_effect=config.save_json), \
+				patch('search_file_fuzzy.show_status_message'):
+				ToggleSearchResultMetadata(Mock())()
+			reloaded = Config('Windows')
+			reloaded.add_dir(str(bundled))
+			reloaded.add_dir(str(user_settings))
+			self.assertTrue(reloaded.load_json('SearchFileFuzzy.json')['show_metadata'])
+			self.assertEqual(17, reloaded.load_json('SearchFileFuzzy.json')['max_results'])
+			self.assertFalse(original['show_metadata'])
+			saved = json.loads((user_settings / 'SearchFileFuzzy (Windows).json').read_text())
+			self.assertEqual({'max_results': 17, 'show_metadata': True}, saved)
+
+	def test_toggle_copies_settings_and_preserves_keys(self):
+		from search_file_fuzzy import ToggleSearchResultMetadata
+		configured = {'mode': 'regular', 'max_results': 7}
+		with patch('search_file_fuzzy.load_json', side_effect=lambda *args, **kwargs: configured), \
+			patch('search_file_fuzzy.save_json') as save, \
+			patch('search_file_fuzzy.show_status_message') as status:
+			def saved(name, values):
+				nonlocal configured
+				self.assertIsNot(values, configured)
+				self.assertEqual('regular', values['mode'])
+				self.assertEqual(7, values['max_results'])
+				configured = values
+			save.side_effect = saved
+			for enabled, text in ((True, 'On'), (False, 'Off')):
+				ToggleSearchResultMetadata(Mock())()
+				self.assertEqual(enabled, configured['show_metadata'])
+				status.assert_called_with('Search result metadata: ' + text, timeout_secs=3)
+
+	def test_save_error_preserves_loaded_value(self):
+		from search_file_fuzzy import ToggleSearchResultMetadata
+		for error, message in (
+			(OSError('denied'), 'Could not save search result metadata: denied'),
+			(ValueError('incompatible types'), 'Search result metadata settings conflict: incompatible types'),
+		):
+			with self.subTest(error=type(error).__name__):
+				configured = {'show_metadata': False, 'max_results': 17}
+				with patch('search_file_fuzzy.load_json', return_value=configured), \
+					patch('search_file_fuzzy.save_json', side_effect=error), \
+					patch('search_file_fuzzy.show_status_message') as status:
+					ToggleSearchResultMetadata(Mock())()
+					self.assertEqual({'show_metadata': False, 'max_results': 17}, configured)
+					status.assert_called_once_with(message, timeout_secs=5)
+
+
+class MetadataCommandTest(TestCase):
+	def setUp(self):
+		import search_file_fuzzy
+		self.plugin = search_file_fuzzy
+		self.pane = Mock()
+		self.pane.get_path.return_value = 'test://root'
+		self.entry = SearchEntry('test://root/empty.txt', 'empty.txt', 'empty.txt', 0)
+		for name, options in (
+			('load_json', {'return_value': {'show_metadata': True}}),
+			('build_index', {'return_value': IndexResult([self.entry], False)}),
+			('show_quicksearch', {'return_value': None}), ('show_status_message', {}),
+			('clear_status_message', {}), ('submit_task', {'side_effect': lambda task: task()}),
+		):
+			patcher = patch('search_file_fuzzy.' + name, **options)
+			patcher.start()
+			self.addCleanup(patcher.stop)
+
+	def test_both_commands_collect_and_reserve_description_without_query_io(self):
+		for command, recursive in ((SearchFilesInCurrentFolder, False), (SearchFilesRecursively, True)):
+			self.plugin.build_index.return_value = IndexResult([
+				self.entry, SearchEntry('test://root/unknown', 'unknown', 'unknown')], False)
+			def show(get_items, query=''):
+				with patch('search_file_fuzzy.indexer.query', side_effect=AssertionError('Query I/O')):
+					self.assertEqual(['0 B', ' '], [item.description for item in get_items('')])
+				return '', self.entry.url
+			self.plugin.show_quicksearch.side_effect = show
+			command(self.pane)()
+			options = self.plugin.build_index.call_args.kwargs
+			self.assertTrue(options['collect_metadata'])
+			self.assertEqual(recursive, options['recursive'])
+			self.assertTrue(callable(options['check_canceled']))
+			self.pane.run_command.assert_called_with('open_directory', {'url': self.entry.url})
+			self.pane.on_path_changed.return_value.assert_called()
+			self.pane.on_closed.return_value.assert_called()
+
+	def test_disabled_override_creates_no_task_subscriptions_or_formatting(self):
+		with patch('search_file_fuzzy.describe_metadata', side_effect=AssertionError('Formatting')):
+			def show(get_items, query=''):
+				self.assertEqual([''], [item.description for item in get_items('')])
+			self.plugin.show_quicksearch.side_effect = show
+			SearchFilesInCurrentFolder(self.pane)(metadata=False)
+		self.plugin.submit_task.assert_not_called()
+		self.pane.on_path_changed.assert_not_called()
+		self.pane.on_closed.assert_not_called()
+		self.assertNotIn('collect_metadata', self.plugin.build_index.call_args.kwargs)
+
+	def test_cancel_or_stale_index_never_opens_picker(self):
+		from fman import Task
+		for event in ('cancel', 'on_path_changed', 'on_closed'):
+			with self.subTest(event=event):
+				self.plugin.clear_status_message.side_effect = self.plugin.show_status_message.reset_mock
+				def index(*args, **kwargs):
+					if event == 'cancel':
+						raise Task.Canceled()
+					getattr(self.pane, event).call_args.args[0]()
+					return IndexResult([self.entry], False)
+				self.plugin.build_index.side_effect = index
+				SearchFilesRecursively(self.pane)()
+				self.plugin.show_quicksearch.assert_not_called()
+				self.pane.run_command.assert_not_called()
+				self.pane.on_path_changed.return_value.assert_called()
+				self.pane.on_closed.return_value.assert_called()
+				if event == 'cancel':
+					self.plugin.show_status_message.assert_called_once_with('File search canceled.', timeout_secs=3)
+				else:
+					self.plugin.show_status_message.assert_not_called()
+
+	def test_submit_task_without_completion_cannot_publish(self):
+		self.plugin.submit_task.side_effect = None
+		self.plugin.clear_status_message.side_effect = self.plugin.show_status_message.reset_mock
+		SearchFilesInCurrentFolder(self.pane)()
+		self.plugin.show_quicksearch.assert_not_called()
+		self.plugin.show_status_message.assert_called_once_with('File search canceled.', timeout_secs=3)
+		self.pane.on_path_changed.return_value.assert_called_once()
+		self.pane.on_closed.return_value.assert_called_once()
+
+	def test_index_error_reports_failure_and_removes_subscriptions(self):
+		self.plugin.build_index.side_effect = OSError('denied')
+		SearchFilesInCurrentFolder(self.pane)()
+		self.plugin.show_quicksearch.assert_not_called()
+		self.assertIn('Could not index', self.plugin.show_status_message.call_args.args[0])
+		self.pane.on_path_changed.return_value.assert_called_once()
+		self.pane.on_closed.return_value.assert_called_once()
+
+	def test_stale_while_picker_is_open_cannot_navigate(self):
+		def show(get_items, query=''):
+			self.pane.on_path_changed.call_args.args[0]()
+			self.assertEqual([], list(get_items('')))
+			return '', self.entry.url
+		self.plugin.show_quicksearch.side_effect = show
+		SearchFilesInCurrentFolder(self.pane)()
+		self.pane.run_command.assert_not_called()
+
+
+@skipUnless(os.environ.get('SEARCH_METADATA_PERFORMANCE_TESTS') == '1', 'Opt-in metadata benchmark')
+class SearchMetadataPerformanceTest(TestCase):
+	def test_fifty_thousand_file_index_and_result_formatting(self):
+		from collections import namedtuple
+		from search_file_fuzzy import _IndexFiles, describe_metadata
+		from statistics import median
+		from threading import Event
+		from time import perf_counter
+		import tracemalloc
+		with TemporaryDirectory() as root:
+			for folder_number in range(100):
+				folder = Path(root) / ('folder%03d' % folder_number)
+				folder.mkdir()
+				for file_number in range(500):
+					(folder / ('report%03d.txt' % file_number)).touch()
+			url = as_url(root)
+			options = dict(recursive=True, max_entries=51_000, include_hidden=True)
+			timings = {False: [], True: []}
+			def index(enabled):
+				if enabled:
+					task = _IndexFiles(url, options, Event())
+					task()
+					return task.index
+				return build_index(url, **options)
+			for repeat in range(5):
+				for enabled in ((False, True) if repeat % 2 == 0 else (True, False)):
+					started = perf_counter()
+					result = index(enabled)
+					timings[enabled].append((perf_counter() - started) * 1000)
+					self.assertEqual(50_000, len(result.entries))
+					self.assertFalse(result.truncated)
+					del result
+			for enabled in (False, True):
+				tracemalloc.start()
+				try:
+					result = index(enabled)
+					current, peak = tracemalloc.get_traced_memory()
+				finally:
+					tracemalloc.stop()
+				print('Metadata %s: 50,000 files, median %.2f ms, retained %.2f MiB, peak %.2f MiB' %
+					(enabled, median(timings[enabled]), current / 2**20, peak / 2**20), file=sys.stderr)
+				if enabled:
+					returned = Matcher(result.entries).matches("'report")
+					formats = []
+					for repeat in range(21):
+						started = perf_counter()
+						descriptions = [describe_metadata(entry) for entry, highlights in returned]
+						formats.append((perf_counter() - started) * 1000)
+					self.assertEqual(100, len(descriptions))
+					self.assertTrue(all(text.endswith(', 0 B') for text in descriptions))
+					print('100 metadata descriptions: median %.3f ms' % median(formats), file=sys.stderr)
+				del result
+		previous = namedtuple('PreviousEntry', 'url name relative_path')
+		overhead = sys.getsizeof(SearchEntry('', '', '')) - sys.getsizeof(previous('', '', ''))
+		print('Record-slot overhead at 50,000 entries: %d bytes' % (50_000 * overhead), file=sys.stderr)
+
+
 class SettingsTest(TestCase):
+	@patch('search_file_fuzzy.load_json')
+	def test_metadata_requires_boolean_and_override_wins(self, load):
+		for configured in ({}, {'show_metadata': 'true'}, {'show_metadata': 1}):
+			load.return_value = configured
+			self.assertIs(False, _get_settings()['show_metadata'])
+		load.return_value = {'show_metadata': True}
+		self.assertIs(True, _get_settings()['show_metadata'])
+		self.assertIs(False, _get_settings(metadata=False)['show_metadata'])
+		load.return_value = {'show_metadata': False}
+		self.assertIs(True, _get_settings(metadata=True)['show_metadata'])
+
 	@patch('search_file_fuzzy.load_json')
 	def test_invalid_values_use_defaults(self, load_json):
 		load_json.return_value = {
