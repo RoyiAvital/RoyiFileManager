@@ -1787,7 +1787,7 @@ class TextEditorIT(QtIT):
 		self.selection = 'CudaText'
 		SetTextViewer(Mock())()
 		self.assertEqual(['preset', 'executable'], self.dialogs)
-		self.assertEqual(['-r'], self.config.load_json('Core Settings.json')['viewer']['arguments'])
+		self.assertEqual(['-r', '-n', '-ns', '-nh'], self.config.load_json('Core Settings.json')['viewer']['arguments'])
 		self.selection = 'Manual configuration'
 		arguments = ['-c', 'import json,sys;print(json.dumps(sys.argv[1:]))', 'C:\\My Files\\session.ini', '', 'a"b']
 		self.argument_line = list2cmdline(arguments)
@@ -1796,7 +1796,7 @@ class TextEditorIT(QtIT):
 		self.assertEqual([], self.errors)
 		settings = self.config.load_json('Core Settings.json')
 		self.assertEqual(arguments, settings['editor']['arguments'])
-		self.assertEqual(['-r'], settings['viewer']['arguments'])
+		self.assertEqual(['-r', '-n', '-ns', '-nh'], settings['viewer']['arguments'])
 		target = Path(self.directory.name, 'file {data} \u754c.txt')
 		target.touch()
 		children = []
@@ -1817,7 +1817,7 @@ class TextEditorIT(QtIT):
 					child.kill()
 				child.communicate()
 
-	def test_notepad_presets_for_both_roles(self):
+	def test_presets_for_both_roles(self):
 		from core.commands import SetTextEditor, SetTextViewer
 		from fman.impl.plugins.config import Config
 		from unittest.mock import Mock
@@ -1826,6 +1826,8 @@ class TextEditorIT(QtIT):
 			('Notepad 4', 'viewer', SetTextViewer, ['-ro', '-ns']),
 			('Notepad++', 'editor', SetTextEditor, ['-multiInst', '-nosession', '-notabbar']),
 			('Notepad++', 'viewer', SetTextViewer, ['-multiInst', '-nosession', '-notabbar', '-ro']),
+			('CudaText', 'editor', SetTextEditor, ['-n', '-ns', '-nh']),
+			('CudaText', 'viewer', SetTextViewer, ['-r', '-n', '-ns', '-nh']),
 		):
 			with self.subTest(preset=preset, role=role):
 				self.selection = preset

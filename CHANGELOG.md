@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
 
+## [0.6.4] - 2026-09-19
+
+API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
+
+### Changed
+
+- [CudaText](https://github.com/Alexey-T/CudaText) presets now use `-n -ns -nh` for editing and `-r -n -ns -nh` for
+  viewing. Select the preset again in **Set text editor** or **Set text viewer**
+  to update an existing configuration.
+
 ## [0.6.3] - 2026-09-18
 
 API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.

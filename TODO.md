@@ -8,7 +8,7 @@
   focused tests for the boundary and preserved behavior. Preserve the upstream
   fman 1.7.5 plug-in API.
 - [ ] Replace legacy `tinycss 0.4` usage with `tinycss2` to remove Python 3.14
-  invalid-escape warnings. Preserve existing CSS selector, declaration, value,
+  invalid escape warnings. Preserve existing CSS selector, declaration, value,
   Unicode, and parse-error behavior; add focused parser and theme regression
   tests; regenerate `conda-lock.yml`; and verify the PyInstaller build.
 - [ ] Reevaluate RapidFuzz as a future replacement for the pure-Python fuzzy matcher.
@@ -19,16 +19,17 @@
   a conda-forge package that does not pull in NumPy and MKL, verify collection
   and execution in the PyInstaller build, rerun the benchmark, and add ranking
   regression tests for representative filename queries.
- - [ ] Add "Quick View" mode where there inactive pane is used for previewing the current file.
- - [ ] Integrate "Quick Look Win". See [QuickLook-Win](https://github.com/BenjaminKobjolke/QuickLook-Win).
- - [ ] Integrate a Terminal into the file manager. Or at least open the current folder in Windows Terminal.
- - [ ] Add a "Rename Tool" as a Plug In. See [FManPowerRenamerAndReplacer
+- [ ] Add "Quick View" mode where there inactive pane is used for previewing the current file.
+- [ ] Integrate "Quick Look Win". See [QuickLook-Win](https://github.com/BenjaminKobjolke/QuickLook-Win).
+- [ ] Integrate a Terminal into the file manager. Or at least open the current folder in Windows Terminal.
+- [ ] Add a "Rename Tool" as a Plug In. See [FManPowerRenamerAndReplacer
 ](https://github.com/BenjaminKobjolke/FManPowerRenamerAndReplacer).
- - [ ] Add "Synchronized Browsing" feature. See [SynchronizedBrowsing](https://github.com/mherrmann/SynchronizedBrowsing).
- - [ ] Add option to compare 2 files using external file comparison or integrate Meld view. See [SimpleCompare
+- [ ] Add "Synchronized Browsing" feature. See [SynchronizedBrowsing](https://github.com/mherrmann/SynchronizedBrowsing).
+- [ ] Add option to compare 2 files using external file comparison or integrate Meld view. See [SimpleCompare
 ](https://github.com/rjwojcicki/SimpleCompare).
- - [ ] Show System Process in a Pane with teh ability to kill a process. See [ProcessFS](https://github.com/mherrmann/ProcessFS).
- - [x] Bug: On launch the status bar shows `v1.7.5`. It should show the version from `base.json`.
- - [ ] Move to `PyQt6`.
- - [x] Add support for `Notepad 4` as a text editor / viewer. Use the flags `-ro -ns` for view mode and `-ns` for edit mode.
- - [x] Update `Notepad++` settings for viewer: `-multiInst -nosession -notabbar -ro` and for editor: `-multiInst -nosession -notabbar`.
+- [ ] Show System Process in a Pane with teh ability to kill a process. See [ProcessFS](https://github.com/mherrmann/ProcessFS).
+- [x] Bug: On launch the status bar shows `v1.7.5`. It should show the version from `base.json`.
+- [ ] Move to `PyQt6`.
+- [x] Add support for `Notepad 4` as a text editor / viewer. Use the flags `-ro -ns` for view mode and `-ns` for edit mode.
+- [x] Update `Notepad++` settings for viewer: `-multiInst -nosession -notabbar -ro` and for editor: `-multiInst -nosession -notabbar`.
+- [x] Update `CudaText` settings for viewer: `-r -n -ns -nh` and for editor: `-n -ns -nh`.

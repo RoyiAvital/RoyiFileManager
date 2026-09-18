@@ -168,7 +168,7 @@ are literal; launches do not use a shell.
 | Preset | Editor arguments | Viewer arguments |
 | --- | --- | --- |
 | Notepad++ | `-multiInst -nosession -notabbar` | `-multiInst -nosession -notabbar -ro` |
-| CudaText | None | `-r` |
+| CudaText | `-n -ns -nh` | `-r -n -ns -nh` |
 | Notepad 4 | `-ns` | `-ro -ns` |
 
 These are convenience defaults, **not a read-only guarantee**.

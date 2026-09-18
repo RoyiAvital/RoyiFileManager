@@ -12,7 +12,7 @@ import os
 PRESETS = (
 	('Notepad++', ('-multiInst', '-nosession', '-notabbar'),
 		('-multiInst', '-nosession', '-notabbar', '-ro')),
-	('CudaText', (), ('-r',)),
+	('CudaText', ('-n', '-ns', '-nh'), ('-r', '-n', '-ns', '-nh')),
 	('Notepad 4', ('-ns',), ('-ro', '-ns')),
 )
 MAX_COMMAND_UNITS = 32766

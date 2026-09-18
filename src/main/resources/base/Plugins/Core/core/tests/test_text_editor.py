@@ -115,6 +115,7 @@ class TextEditorWizardTest(TestCase):
 		self.assertEqual(['Notepad++', 'CudaText', 'Notepad 4'], [preset[0] for preset in PRESETS])
 		self.assertIn(('Notepad++', ('-multiInst', '-nosession', '-notabbar'),
 			('-multiInst', '-nosession', '-notabbar', '-ro')), PRESETS)
+		self.assertIn(('CudaText', ('-n', '-ns', '-nh'), ('-r', '-n', '-ns', '-nh')), PRESETS)
 		self.assertIn(('Notepad 4', ('-ns',), ('-ro', '-ns')), PRESETS)
 		for role in ('editor', 'viewer'):
 			for name, editor_args, viewer_args in PRESETS:
