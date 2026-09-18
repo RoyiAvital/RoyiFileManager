@@ -146,7 +146,7 @@ local, but later archive operations beneath it may hit the same parser limitatio
 - `Shift+F4`: create a file, if missing, then open it in the editor.
 
 Press `Ctrl+Shift+P` and run **Set text editor** or **Set text viewer**.
-Choose Notepad++, CudaText, or **Manual configuration**.
+Choose Notepad++, CudaText, Notepad 4, or **Manual configuration**.
 Browse to the program's `.exe`, or type/paste its path in the file picker.
 Presets need only the executable; Manual also asks for arguments, which may be
 empty. Cancel leaves settings unchanged. If a role is unset, F3/F4 only display
@@ -165,8 +165,13 @@ placeholder: the selected file's full path is appended automatically as one
 argument. `""` passes an empty argument. Braces, `%VARIABLE%` and shell operators
 are literal; launches do not use a shell.
 
-Editor presets use no arguments. Viewer presets use `-ro` for Notepad++ and
-`-r` for CudaText. These are convenience defaults, **not a read-only guarantee**.
+| Preset | Editor arguments | Viewer arguments |
+| --- | --- | --- |
+| Notepad++ | None | `-ro` |
+| CudaText | None | `-r` |
+| Notepad 4 | `-ns` | `-ro -ns` |
+
+These are convenience defaults, **not a read-only guarantee**.
 The user is responsible for the chosen program's behavior. Use Manual configuration to
 customize the arguments for any program. No detection or installation occurs.
 

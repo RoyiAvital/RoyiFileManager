@@ -1739,7 +1739,7 @@ class TextEditorIT(QtIT):
 				self.assertEqual(QApplication.instance().thread(), QThread.currentThread())
 				if isinstance(dialog, Quicksearch):
 					self.dialogs.append('preset')
-					self.assertEqual(['Notepad++', 'CudaText', 'Manual configuration'],
+					self.assertEqual(['Notepad++', 'CudaText', 'Notepad 4', 'Manual configuration'],
 						[item.value for item in dialog._curr_items[:-1]])
 					self.assertIn(dialog._curr_items[-1].value, ('Clear editor', 'Clear viewer'))
 					if self.cancel == 'preset':
@@ -1816,6 +1816,24 @@ class TextEditorIT(QtIT):
 				if child.poll() is None:
 					child.kill()
 				child.communicate()
+
+	def test_notepad4_presets_for_both_roles(self):
+		from core.commands import SetTextEditor, SetTextViewer
+		from fman.impl.plugins.config import Config
+		from unittest.mock import Mock
+		self.selection = 'Notepad 4'
+		for role, command, arguments in (
+			('editor', SetTextEditor, ['-ns']),
+			('viewer', SetTextViewer, ['-ro', '-ns']),
+		):
+			with self.subTest(role=role):
+				self.dialogs.clear()
+				command(Mock())()
+				self.assertEqual([], self.errors)
+				self.assertEqual(['preset', 'executable'], self.dialogs)
+				reloaded = Config('Windows')
+				reloaded.add_dir(self.directory.name)
+				self.assertEqual(arguments, reloaded.load_json('Core Settings.json')[role]['arguments'])
 
 	def test_clear_from_setup_list_persists_without_additional_dialogs(self):
 		from copy import deepcopy

@@ -112,7 +112,8 @@ class TextEditorWizardTest(TestCase):
 		self.assertEqual(expected, reloaded.load_json(SETTINGS))
 
 	def test_all_presets_for_both_independent_roles(self):
-		self.assertEqual(['Notepad++', 'CudaText'], [preset[0] for preset in PRESETS])
+		self.assertEqual(['Notepad++', 'CudaText', 'Notepad 4'], [preset[0] for preset in PRESETS])
+		self.assertIn(('Notepad 4', ('-ns',), ('-ro', '-ns')), PRESETS)
 		for role in ('editor', 'viewer'):
 			for name, editor_args, viewer_args in PRESETS:
 				with self.subTest(role=role, preset=name):

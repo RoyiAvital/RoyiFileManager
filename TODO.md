@@ -30,3 +30,4 @@
  - [ ] Show System Process in a Pane with teh ability to kill a process. See [ProcessFS](https://github.com/mherrmann/ProcessFS).
  - [x] Bug: On launch the status bar shows `v1.7.5`. It should show the version from `base.json`.
  - [ ] Move to `PyQt6`.
+ - [x] Add support for `Notepad 4` as a text editor / viewer. Use the flags `-ro -ns` for view mode and `-ns` for edit mode.

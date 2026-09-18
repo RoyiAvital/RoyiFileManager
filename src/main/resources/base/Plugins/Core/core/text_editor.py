@@ -12,6 +12,7 @@ import os
 PRESETS = (
 	('Notepad++', (), ('-ro',)),
 	('CudaText', (), ('-r',)),
+	('Notepad 4', ('-ns',), ('-ro', '-ns')),
 )
 MAX_COMMAND_UNITS = 32766
 SETTINGS = 'Core Settings.json'

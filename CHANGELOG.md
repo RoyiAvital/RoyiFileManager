@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
 
+## [0.6.2] - 2026-09-18
+
+API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
+
+### Added
+
+- Notepad 4 preset in **Set text editor** and **Set text viewer**, using `-ns`
+  for editing and `-ro -ns` for viewing.
+
 ## [0.6.1] - 2026-09-18
 
 API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
