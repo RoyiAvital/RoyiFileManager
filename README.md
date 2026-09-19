@@ -67,6 +67,11 @@ python build.py freeze
 python build.py package
 ```
 
+`test` prints each test name as it runs. Each discovery group emits Python
+thread stacks every two minutes while still running and has a ten-minute timeout.
+For a stalled CI run, use the last test name and thread dump to locate the wait;
+the full GitHub Actions build also has a sixty-minute job limit.
+
 `run`, `test`, and `freeze` download the pinned x64 `7za.exe` from the official
 7-Zip distribution when it is not already present under the Core plug-in.
 These commands therefore require internet access on their first run.

@@ -20,6 +20,49 @@ class PortableStorageTest(TestCase):
 		self.assertNotIn('AppData', data_directory.parts)
 
 
+class TestRunnerDiagnosticsTest(TestCase):
+	def run_fixture(self, body, **options):
+		import build
+		import os
+		import subprocess
+		from tempfile import TemporaryDirectory
+		run = subprocess.run
+		def capture(*args, **kwargs):
+			return run(*args, **kwargs, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+		with TemporaryDirectory() as root:
+			Path(root, 'test_probe.py').write_text(
+				'from unittest import TestCase\n'
+				'class Probe(TestCase):\n'
+				' def test_outcome(self):\n'
+				'  ' + body + '\n', encoding='utf-8')
+			with patch('build.subprocess.run', side_effect=capture), patch('builtins.print'):
+				return build._run_test_directory(root, os.environ.copy(), **options)
+
+	def test_reports_test_names_and_success(self):
+		result = self.run_fixture('self.assertTrue(True)')
+		self.assertIn('test_outcome (test_probe.Probe.test_outcome)', result.stdout)
+		self.assertIn('Ran 1 test', result.stdout)
+		self.assertEqual(0, result.returncode)
+
+	def test_preserves_failing_exit_status(self):
+		from subprocess import CalledProcessError
+		with self.assertRaises(CalledProcessError) as caught:
+			self.run_fixture('self.fail("intentional failure")')
+		self.assertEqual(1, caught.exception.returncode)
+		self.assertIn('intentional failure', caught.exception.stdout)
+
+	def test_hang_dumps_stack_and_times_out(self):
+		from subprocess import TimeoutExpired
+		with self.assertRaises(TimeoutExpired) as caught:
+			self.run_fixture('from threading import Event; Event().wait()', traceback_after=0.2, timeout=3)
+		output = caught.exception.stdout
+		if isinstance(output, bytes):
+			output = output.decode('utf-8', errors='replace')
+		self.assertIn('test_outcome (test_probe.Probe.test_outcome)', output)
+		self.assertIn('Timeout (', output)
+		self.assertIn('in test_outcome', output)
+
+
 class PluginApiCompatibilityTest(TestCase):
 	def test_general_api_does_not_expose_qt_host_bridges(self):
 		self.assertFalse(hasattr(fman.DirectoryPane, 'closed'))

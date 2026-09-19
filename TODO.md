@@ -33,3 +33,4 @@
 - [x] Add support for `Notepad 4` as a text editor / viewer. Use the flags `-ro -ns` for view mode and `-ns` for edit mode.
 - [x] Update `Notepad++` settings for viewer: `-multiInst -nosession -notabbar -ro` and for editor: `-multiInst -nosession -notabbar`.
 - [x] Update `CudaText` settings for viewer: `-r -n -ns -nh` and for editor: `-n -ns -nh`.
+- [ ] Evaluate using [`fd`](https://github.com/sharkdp/fd) to accelerate searching.

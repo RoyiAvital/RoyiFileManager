@@ -176,14 +176,24 @@ def test():
 		ROOT / 'src' / 'main' / 'resources' / 'base' / 'Plugins' / 'Core'
 	]
 	for test_directory in test_directories:
-		subprocess.run(
-			[
-				sys.executable, '-X', 'faulthandler', '-u',
-				'-m', 'unittest', 'discover',
-				'-s', str(test_directory), '-p', 'test*.py'
-			],
-			check=True, env=environment
-		)
+		_run_test_directory(test_directory, environment)
+
+
+def _run_test_directory(test_directory, environment, *, traceback_after=120, timeout=600):
+	print('Running tests in %s (timeout: %s seconds)' % (test_directory, timeout), flush=True)
+	runner = (
+		'import faulthandler, sys, unittest; '
+		'faulthandler.dump_traceback_later(%r, repeat=True); '
+		'unittest.main(module=None, testRunner=unittest.TextTestRunner('
+		'stream=sys.stdout, verbosity=2))'
+	) % traceback_after
+	return subprocess.run(
+		[
+			sys.executable, '-X', 'faulthandler', '-u', '-c', runner,
+			'discover', '-s', str(test_directory), '-p', 'test*.py'
+		],
+		check=True, env=environment, timeout=timeout
+	)
 
 
 def clean():
