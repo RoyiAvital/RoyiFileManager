@@ -41,6 +41,10 @@ Significant additions compared with `fman`:
 - **Archive Transfers**: Extraction progress and cancellation, with verified output before source deletion when moving out of or between archives. See [Archive Transfers Usage](src/main/resources/base/Plugins/Core/README.md#archive-transfers).
 - **Unpack Archive**: Works like `Extract Here` in `7-Zip` / `WinRar`. See [Unpack Archive Usage](src/main/resources/base/Plugins/Core/README.md#unpack-archive).
 
+> [!TIP]
+> Open an issue for new feature feature requests.  
+> feedback is more than welcome.
+
 ## Development
 
 Install a conda package manager then create the environment:
