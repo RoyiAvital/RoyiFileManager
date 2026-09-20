@@ -1988,7 +1988,7 @@ class ComparatorIT(QtIT):
 		from unittest.mock import Mock, patch
 		self.directory = TemporaryDirectory()
 		self.addCleanup(self.directory.cleanup)
-		self.root = Path(self.directory.name)
+		self.root = Path(self.directory.name).resolve(strict=True)
 		self.left_root, self.right_root = self.root / 'left', self.root / 'right'
 		for root in (self.left_root, self.right_root):
 			root.mkdir()

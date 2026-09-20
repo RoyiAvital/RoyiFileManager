@@ -140,7 +140,7 @@ def main():
 		return run_application(Path(sys.argv[1]), '--restart' in sys.argv)
 	from subprocess import run
 	with TemporaryDirectory(prefix='comparator-smoke-') as temporary:
-		root = Path(temporary)
+		root = Path(temporary).resolve(strict=True)
 		for name in ('left', 'right'):
 			(root / name).mkdir()
 			(root / name / 'sample.txt').write_text(name)

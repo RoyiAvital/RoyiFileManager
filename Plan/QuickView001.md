@@ -434,3 +434,79 @@ unchanged below. Subsequent reviews apply to this combined initial stage.
   user's request. Retained both contracts and their history, removed the separate
   shared task, and redirected the later stages and index. Design only; runtime
   and dependency gates remain pending.
+
+### 2026_09_20 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Claude Fable 5.1
+- Effort: High
+- Context Window: 1M
+- Outcome: Not approved as written; a simplification pass is requested. Review
+  brief from the user: prefer the simplest robust design over runtime efficiency.
+  Checked against the code: `Ctrl+Q` is free on Windows (only the Linux bindings
+  use it); `DirectoryPaneWidget` sets `setFocusProxy(self._file_view)` and
+  `PluginSupport.get_active_pane()` is `widget.hasFocus()`, so any focusable
+  viewport child makes the active pane `None` for every pane command;
+  `MainWindow._on_focus_changed` promotes whichever pane `isAncestorOf` the
+  focused widget; the packaged artifact already ships `qjpeg`, `qgif`, `qico`,
+  `qtiff`, `qwebp`, `qsvg`, `qtga`, `qwbmp`, `qicns` (no BMP/PNG plug-in needed,
+  they are built in). Findings, in priority order:
+  1. **Viewport never takes keyboard focus.** Give every viewport widget
+     `Qt.NoFocus`. Keyboard focus stays in the source file list for the whole
+     session; interaction is mouse (drag, wheel, Ctrl+wheel, toolbar buttons) plus
+     ordinary pane commands (`quick_view_fit`, `quick_view_actual_size`,
+     `quick_view_zoom_in/out`) that users may bind. This deletes **Focus
+     QuickView**, the Escape/Tab traversal rules, the "scoped preview-owner rule"
+     in controller/active-pane lookup, "shortcuts never fall through to the hidden
+     target", and "toggle while preview controls have focus". Nothing in
+     `get_active_pane()` or `MainWindow` changes.
+  2. **Hide, do not restore.** State the invariant once: the target pane's model,
+     view, filter bar and location bar are only hidden (a `QStackedLayout` page
+     over the existing `Layout`), never modified, so there is nothing to capture
+     or restore. Drop the restoration list and its tests in favour of one check:
+     hide then show, `get_path`/cursor/marks/sort/column widths identical.
+  3. **Do not intercept target navigation.** Remove "programmatic target
+     focus/navigation closes QuickView before performing the action". Let the
+     hidden pane navigate; the user sees the result on close. The only close
+     triggers: the toggle, `DirectoryPaneWidget.focus()` on the hidden target
+     (so `Tab`/`switch_panes` closes then focuses, one hook), source or window
+     close.
+  4. **One executor, generation check, no slot bookkeeping.** Replace the
+     "one running/one pending job, retiring slot, weak-session late-result
+     service" contract with a module-level `ThreadPoolExecutor(max_workers=1)`;
+     each job first compares its generation with the session's current one and
+     returns early if stale; results arrive via `run_in_main_thread` and are
+     checked again. Cancellation is "ignore the result". Qt never joins the
+     executor; no shutdown wait.
+  5. **Pass a `QImage`, not bytes.** `QImage` is explicitly usable off the GUI
+     thread (only `QPixmap` is not) and is neither a widget nor a model. Decode in
+     the worker with `QImageReader(device)`, `setDecideFormatFromContent(True)`,
+     allowlist check on `imageFormat()`, `setAutoTransform(True)`, `read()`,
+     `setDevicePixelRatio(1)`; return the `QImage`. This removes stride/length
+     validation, the retained-bytes lifetime rule and one full-size copy.
+  6. **Use `QAbstractScrollArea`.** Scrollbars, pan range and wheel handling come
+     for free; paint in `viewport()` with `QPainter.setTransform` + `drawImage`,
+     so no zoom-sized buffers exist. Keep physical-pixel 100% and Fit formulas;
+     drop the "align origin to physical pixel boundaries" clause, disabling
+     smoothing at 100% is enough.
+  7. **Move stage 002/003 contracts out.** Helper-process-per-window,
+     video-to-text transitions, private worker dispatch and libmpv/Pygments
+     dependency rows belong in QuickView002/003. Stage 001 should only define the
+     renderer interface: `load(request) -> result` off-thread, `show(result)` and
+     `dispose()` on the Qt thread.
+  8. **Loading state without blanking.** Keep the 100 ms single-shot timer, but
+     update the name/metadata label immediately and dim the previous image with a
+     "Loading…" overlay instead of clearing it; blank only on error, folder,
+     unsupported or empty cursor. Same "never a stale image under a new name"
+     guarantee with far less flicker; if the user prefers the blank rule, keep it,
+     but it is not required for correctness.
+  Keep as is: file 64 MiB / edge 32,768 / 32 MP limits, allowlisted handlers with
+  content sniffing, off-on-start, lazy `QuickView.json`, `Ctrl+Q`, source-cursor
+  following with `location_loaded` gating, the `cursor_changed` signal added to
+  `DirectoryPaneWidget` beside its existing `selectionChanged` hookup.
+  Editorial: the `### Commands and Manual Gates` heading and the Implementation
+  Steps / Acceptance Criteria lists are indented inconsistently; the PowerShell
+  block has a stray leading indent on its third line. With items 1-7 applied, the
+  Tests section should shrink accordingly before implementation starts.

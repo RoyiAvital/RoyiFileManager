@@ -1,6 +1,6 @@
 # Find Files 003: `Everything` Style Query Syntax
 
-Status: Design; grammar decided (Everything syntax on new `Ctrl+E` commands,
+Status: Design; grammar decided (Everything syntax on new `Ctrl+Alt+F` commands,
 fuzzy retained on `Ctrl+F`). Open items 1-4 under Decision remain. Split from
 `ExtendedQuicksearchUI.md`; the fzf operators for the existing fuzzy dialog are
 [Find Files 001](../Done/FindFiles001.md). Metadata-view integration builds on the
@@ -35,8 +35,8 @@ Included:
 
   | Command id | Alias | Windows binding |
   | --- | --- | --- |
-  | `search_files_in_current_folder_everything` | Search files in current folder (Everything syntax) | `Ctrl+E` |
-  | `search_files_recursively_everything` | Search files recursively (Everything syntax) | `Ctrl+Shift+E` |
+  | `search_files_in_current_folder_everything` | Search files in current folder (Everything syntax) | `Ctrl+Alt+F` |
+  | `search_files_recursively_everything` | Search files recursively (Everything syntax) | `Ctrl+Alt+Shift+F` |
 
   `search_files_in_current_folder` (`Ctrl+F`) and `search_files_recursively`
   (`Ctrl+Shift+F`) keep their identifiers, aliases, bindings and fuzzy
@@ -251,9 +251,11 @@ Fuzzy matching is neither dropped nor folded into the grammar as a `fuzzy:`
 modifier: without ranking a fuzzy term is just a permissive filter, and with
 ranking it cannot be mixed cleanly with AND/OR/NOT terms. It stays a separate
 mode on the existing commands, extended by [Find Files 001](../Done/FindFiles001.md).
-`Ctrl+E` was chosen over `Alt+F` because `Alt+Shift` is Windows' input-language
-toggle and `Ctrl+E` is the search shortcut in Everything and Explorer;
-`Ctrl+E` / `Ctrl+Shift+E` are unbound in every bundled `Key Bindings*.json`.
+`Ctrl+Alt+F` / `Ctrl+Alt+Shift+F` sit beside the fuzzy `Ctrl+F` / `Ctrl+Shift+F`
+and are unbound in every bundled `Key Bindings*.json`. `Alt+F` was rejected
+because `Alt+Shift` is Windows' input-language toggle. `Ctrl+E`, originally
+planned here, is reserved for the search backed by the real Everything process
+([Everything Plug-In](EverythingPlugIn.md)); this dialog only borrows the syntax.
 
 Because the two dialogs look identical, the Everything dialog shows its mode:
 an empty query yields one leading hint row identifying `Everything syntax` and
@@ -520,7 +522,7 @@ Extend these existing test modules/classes; repeat the Qt command with
   index is built once and `get_items` never touches the filesystem; the
   fuzzy commands' results are byte-for-byte unchanged.
 - Commands: the two new identifiers register, carry the stated aliases and
-  `Ctrl+E`/`Ctrl+Shift+E` bindings, and the empty-query hint row is present
+  `Ctrl+Alt+F`/`Ctrl+Alt+Shift+F` bindings, and the empty-query hint row is present
   only in the Everything dialog.
 - Manual: real folder, all documented examples from the README, all four
   palette rows with correct shortcut hints, 100 % and 150 % scaling for
@@ -539,7 +541,7 @@ Extend these existing test modules/classes; repeat the Qt command with
   compute highlights, reuse `describe_metadata` and emit mode/error hints with
   the shared line-count policy. Keep fuzzy/regular results and metadata behavior
   unchanged; validate real Qt transitions before adding command bindings.
-5. Add the two `_everything` commands, aliases and `Ctrl+E`/`Ctrl+Shift+E`
+5. Add the two `_everything` commands, aliases and `Ctrl+Alt+F`/`Ctrl+Alt+Shift+F`
   bindings, forwarding `query` and `metadata` without persisting overrides.
 6. Docs: README syntax/command tables, shared metadata view, upfront collection
   with the view off, snapshot/cancellation limitations and CHANGELOG entry.
@@ -549,8 +551,8 @@ Extend these existing test modules/classes; repeat the Qt command with
 
 - `Ctrl+F` / `Ctrl+Shift+F` and their palette rows behave exactly as before
   with the implemented Find Files 001 syntax and Find Files 002 metadata view.
-- `Ctrl+E` / `Ctrl+Shift+E` open the Everything dialog with the mode hint row;
-  plain text is an AND of case-insensitive substrings.
+- `Ctrl+Alt+F` / `Ctrl+Alt+Shift+F` open the Everything dialog with the mode hint
+  row; plain text is an AND of case-insensitive substrings.
 - Every grammar element in the README works and has a test.
 - Invalid or partial queries never raise; the hint row explains why.
 - The Command Palette shows four search rows, each with its own shortcut.
@@ -660,3 +662,17 @@ Records before 2026_09_17 belong to the combined document
   without a Python fallback, so this design keeps its Python engine; Everything
   is reserved for a possible separate machine-wide search feature. Design only;
   no application code changed.
+
+### 2026_09_20 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Claude Fable 5.1
+- Effort: Low
+- Context Window: 1M
+- Outcome: Rebound the two `_everything` commands from `Ctrl+E` / `Ctrl+Shift+E`
+  to `Ctrl+Alt+F` / `Ctrl+Alt+Shift+F`, accepted by the user, so `Ctrl+E` goes to
+  the Everything-backed [Everything Plug-In](EverythingPlugIn.md). Table, Decision
+  rationale, Tests, Implementation Steps and Acceptance Criteria updated; no
+  other change.

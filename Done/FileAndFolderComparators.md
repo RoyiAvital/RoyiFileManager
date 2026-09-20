@@ -514,6 +514,19 @@ python -c "import build, subprocess, sys; sys.exit(subprocess.run([sys.executabl
   executable validation and correct pending-token handling; no changes needed.
   Existing external-tool/UNC/link deferrals remain unchanged.
 
+### 2026_09_20 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Low
+- Context Window: Not exposed by host
+- Outcome: The v0.7.1 CI failures compare unresolved temporary paths with resolved
+  launch operands: Windows expands an 8.3 user-directory alias. Canonicalize the
+  Qt and source-smoke fixture roots, retaining exact argv/order assertions and
+  production resolution. Validate with real short-path TEMP/TMP values.
+
 ## Implementer
 
 ### 2026_09_20 - GitHub Copilot
@@ -547,6 +560,19 @@ python -c "import build, subprocess, sys; sys.exit(subprocess.run([sys.executabl
   comparator unit/native Qt gate passed 27 tests with 1 expected skip. No public
   API, selection rules or fire-and-forget behavior changed. No separate changelog
   fix entry is needed for this still-unreleased feature.
+
+### 2026_09_20 - GitHub Copilot
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Low
+- Context Window: Not exposed by host
+- Outcome: Resolved both existing temporary fixture roots with
+  `Path.resolve(strict=True)`. The two reported failures pass offscreen; all five
+  native comparator Qt tests and source/restart smoke pass under a verified 8.3
+  temporary path. Test-only correction; no application or changelog changes.
 
 ## Validation Results
 
@@ -603,3 +629,26 @@ python -c "import build, subprocess, sys; env=build._environment(); env['QT_QPA_
 - Source/restart smoke and live vendor checks were not rerun for this narrow
   settings-lock/documentation follow-up. Previously accepted deferrals stand;
   no full suite, packaging or dependency changes.
+
+### Windows Short-Path CI Fix (2026-09-20)
+
+Each validation used a disposable `TemporaryDirectory` with a long-name prefix.
+Resolved its path, obtained `win32api.GetShortPathName`, asserted that the short
+and long spellings differ but `Path.samefile` agrees, then set both `TEMP` and
+`TMP` to that alias in `build._environment()`. Child processes inherited this
+environment; fixtures and recorder children were cleaned up normally.
+
+Exact child commands (120-second timeout per invocation):
+
+```powershell
+# QT_QPA_PLATFORM=offscreen; both CI failures pass (2 tests).
+python -m unittest fman_integrationtest.test_qt.ComparatorIT.test_pending_validation_is_bounded_and_snapshot_survives_navigation fman_integrationtest.test_qt.ComparatorIT.test_real_marks_cursors_folder_roots_and_registration -q
+# QT_QPA_PLATFORM=windows; source setup and fresh-process restart both pass.
+python -m fman_integrationtest.comparator_smoke
+# Same native environment; all 5 tests pass, no skips.
+python -m unittest fman_integrationtest.test_qt.ComparatorIT -q
+```
+
+Offscreen Qt reported missing development fonts but both tests passed. The CI
+`tinycss` SyntaxWarning is unrelated to the failing path assertions. No full
+suite, packaging, dependency installation or live vendor comparison was run.
