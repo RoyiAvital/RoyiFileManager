@@ -1,14 +1,19 @@
-# SearchFileFuzzy
+# Find Files
 
-Searches files from the active pane without modifying the pane's file model or
+Finds files by name from the active pane without modifying the pane's file model or
 the main window. Local searches build a fresh index with `os.scandir` for every
 invocation, so changes made by other programs are reflected in the results.
 Other filesystem schemes use the public fman filesystem API.
 
 ## Commands
 
-- `Ctrl+F`: Search files in the current folder.
-- `Ctrl+Shift+F`: Search files recursively using breadth-first traversal.
+- `Ctrl+F`: **Find files in current folder**.
+- `Ctrl+Shift+F`: **Find files recursively**, using breadth-first traversal.
+
+These commands and the fd panel (`Shift+F7`) are named **Find Files**. Only
+the ripgrep panel (`Alt+F7`) is named **Search Files**. Displaying result
+metadata here does not change filename matching into metadata filtering.
+Command IDs, key bindings and the `SearchFileFuzzy.json` settings name are unchanged.
 
 Selecting a result opens its containing folder and places the cursor on the
 file. Directories are traversed but are not included in the results. Unreadable
@@ -20,7 +25,7 @@ directories are pruned together with all of their descendants.
 
 ## Result Metadata
 
-Run **Toggle search result metadata** from the Command Center (`Ctrl+Shift+P`)
+Run **Toggle find result metadata** from the Command Center (`Ctrl+Shift+P`)
 to show or hide a second line containing the local modified date and size, for
 example `2026-09-18 12:34, 1.2 MiB`. It is off by default, persists under
 `UserSettings`, and applies to the next search. Dates use `YYYY-MM-DD HH:MM`;
@@ -33,7 +38,7 @@ the pane. ZIP and other providers supply metadata when supported.
 
 Metadata is captured once during indexing, never during typing. Long indexing
 shows the existing cancellable progress dialog; canceling it reports
-`File search canceled.` Navigation or pane closure silently discards pending
+`Find files canceled.` Navigation or pane closure silently discards pending
 results. A search started before the pane finishes loading can also be discarded
 when loading completes; rerun it once the folder is ready. A blocked
 filesystem/provider call must return before cancellation can finish. The disabled
@@ -200,7 +205,7 @@ Create
 values without changing the bundled plug-in. Set `mode` to `fuzzy` for
 subsequence matching or `regular` for normalized, case-insensitive substring
 matching. `max_recursive_entries` bounds the number of files and directories
-inspected during either search command. `max_results` bounds the quicksearch
+inspected during either find command. `max_results` bounds the quicksearch
 results. When `include_hidden` is false, dot-prefixed and Windows-hidden entries
 are excluded, including entire hidden directory trees.
 

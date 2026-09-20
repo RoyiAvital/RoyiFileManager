@@ -15,7 +15,8 @@ datas = [
 	('src/main/icons/Icon.ico', 'resources')
 ] + winpty_datas + send2trash_datas
 binaries = winpty_binaries + send2trash_binaries + [
-	(str(Path(sys.prefix) / 'bin' / 'rg.exe'), 'resources/Plugins/SearchFiles/bin')
+	(str(Path(sys.prefix) / 'bin' / 'rg.exe'), 'resources/Plugins/SearchFiles/bin'),
+	(str(Path(sys.prefix) / 'bin' / 'fd.exe'), 'resources/Plugins/FindFiles/bin')
 ]
 hidden_imports = [
 	'adodbapi', 'ctypes.wintypes', 'win32com.shell.shell',

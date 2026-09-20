@@ -529,7 +529,7 @@ Import from `fman.ui`. The complete explicit export list is:
 ListItem, QuickList, Panel, IconButton, TextButton, DropDown, JsonSettings,
 UiController, UiOwner, Resource, settings_resource, matchers,
 ToolWindow, PaneToolWindow, NavigationHandle, navigate, OutputTextBox
-TableRow, TableAction, TextField, Toggle, Choice, Label, Action,
+TableRow, TableAction, TextField, Toggle, Choice, Select, DateField, IntegerField, Separator, Label, Action,
 TableHandle, PanelHandle, show_table, show_panel
 ```
 
@@ -563,7 +563,7 @@ show_table(*, owner, get_rows, num_columns, columns_header, pane=None,
   panel=None, title='', fuzzy=True, file_path_column=None,
   folder_path_column=None, resolve_path=None, base_path=None, modal=True,
   close_on_navigate=None, summary='', get_details=None, on_activate=None,
-  get_menu=None, on_closed=None)
+  get_menu=None, on_closed=None, entry_path_column=None, get_count_text=None)
 
 show_panel(*, owner, pane, rows, on_change=None, on_action=None, on_closed=None)
 ```
@@ -583,6 +583,13 @@ explicitly when the pane may have moved. No filesystem/CWD/environment expansion
 occurs during resolution. `resolve_path(row, column)` may instead return an
 authoritative absolute native string or `None`. Without a pane, Copy works but
 Go To is disabled; no active pane is silently selected.
+
+`file_path_column` and `folder_path_column` require files and folders respectively
+when navigating. `entry_path_column` accepts either; it must be distinct from
+the other path roles. `get_count_text(visible, retained)` optionally formats the
+footer after each filter projection. It runs on Qt, must be fast, and may capture
+a separately computed total; it does not change Table storage limits. Omit it
+for the existing `visible / retained rows` text.
 
 `on_activate(row, column)` handles ordinary cells only. `get_details(row, column)`
 returns passive text. `get_menu(row, column)` returns at most 32
@@ -637,6 +644,30 @@ Snapshots contain the selected string. Use `update(values={'mode': 'glob'})` to
 select silently, or `update(enabled={'mode': False})` to disable the entire group.
 An unknown value fails before any update is applied. Search Files uses
 Choice for Literal/Glob/RegEx; Toggle remains for independent boolean settings.
+
+`Select(id, label, options, value, tooltip='')` renders a dropdown with 1-128
+unique `(value, label)` string pairs. `DateField(id, label, value=None, tooltip='')`
+renders an optional calendar picker; values are canonical ISO dates from
+1752-09-14 or `None`. `IntegerField(id, label, value=None, minimum=0,
+maximum=18446744073709551615, tooltip='')` renders an optional exact integer
+stepper without a 32-bit ceiling. Booleans, fractions and out-of-range values
+are rejected. A blank date/integer field returns `None`; clearing removes the
+previous value, and zero remains a valid integer. No activation checkbox is
+used. Snapshots contain no Qt objects.
+
+`Separator(id)` inserts a vertical context divider before the following control.
+It has no snapshot value and rejects value updates; its ID must be unique.
+
+Forms containing these structured descriptors use 28-pixel controls and
+bottom-aligned wrapping rows. Text fields grow within their width limits;
+date/integer controls keep compact widths. An IntegerField immediately followed
+by Select stays together (e.g. a size bound and its unit). Existing Search Files
+aligned forms stay unchanged.
+Programmatic updates are validated and silent, as for existing descriptors.
+Structured rows beginning with an icon Label and containing Actions keep the
+label left and the remaining controls right, with 3-pixel toolbar spacing.
+Select tooltips also cover their labels. Tab and Shift+Tab follow descriptor
+order, visiting each logical control once and skipping disabled controls.
 
 `PanelHandle.snapshot()` returns an immutable value mapping.
 `update(values=None, enabled=None)` validates and applies changes atomically

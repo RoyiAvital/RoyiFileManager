@@ -232,7 +232,7 @@ class SearchSession:
 
 
 class SearchFiles(DirectoryPaneCommand):
-	aliases = ('Search files', 'Find text in files')
+	aliases = ('Search files', 'Search text in files')
 
 	def is_visible(self):
 		path = self.pane.get_path()

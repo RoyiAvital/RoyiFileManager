@@ -144,6 +144,8 @@ def _environment():
 		ROOT / 'src' / 'main' / 'resources' / 'base' / 'Plugins' /
 		'SearchFiles',
 		ROOT / 'src' / 'main' / 'resources' / 'base' / 'Plugins' /
+		'FindFiles',
+		ROOT / 'src' / 'main' / 'resources' / 'base' / 'Plugins' /
 		'ProcessPane'
 	]
 	existing = environment.get('PYTHONPATH')

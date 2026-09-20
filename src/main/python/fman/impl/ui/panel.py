@@ -3,9 +3,223 @@ from threading import Event
 
 from fman import load_json, save_json
 from fman.impl.ui import require_ui_thread, resource, submit_work
-from PyQt5.QtCore import QEvent, QObject, Qt, QSignalBlocker, QSize, pyqtSignal
-from PyQt5.QtGui import QIcon, QKeySequence
-from PyQt5.QtWidgets import QApplication, QComboBox, QFrame, QHBoxLayout, QPushButton, QToolButton, QShortcut, QSizePolicy, QStyle, QWidget
+from PyQt5.QtCore import QDate, QEvent, QObject, QPoint, QRect, Qt, QSignalBlocker, QSize, pyqtSignal
+from PyQt5.QtGui import QIcon, QKeySequence, QValidator
+from PyQt5.QtWidgets import QAbstractSpinBox, QApplication, QComboBox, QDateEdit, QFrame, QHBoxLayout, QLabel, QLayout, QPushButton, QToolButton, QShortcut, QSizePolicy, QStyle, QWidget
+
+
+class ExactIntegerInput(QAbstractSpinBox):
+	value_changed = pyqtSignal()
+
+	def __init__(self, minimum, maximum, parent=None):
+		super().__init__(parent)
+		self.minimum, self.maximum = minimum, maximum
+		self._value = None
+		self.lineEdit().textChanged.connect(self._edited)
+		self.setMinimumWidth(110)
+
+	def validate(self, content, position):
+		if not content:
+			state = QValidator.Acceptable
+		elif not content.isascii() or not content.isdecimal() or len(content) > 20:
+			state = QValidator.Invalid
+		else:
+			value = int(content)
+			state = QValidator.Acceptable if self.minimum <= value <= self.maximum else QValidator.Invalid
+		return state, content, position
+
+	def fixup(self, content):
+		return '' if self._value is None else str(self._value)
+
+	def value(self):
+		return self._value
+
+	def set_value(self, value):
+		self._value = value
+		self.lineEdit().setText('' if value is None else str(value))
+
+	def clear(self):
+		self.set_value(None)
+
+	def _edited(self, content):
+		if self.validate(content, 0)[0] == QValidator.Acceptable:
+			self._value = int(content) if content else None
+			self.value_changed.emit()
+
+	def stepBy(self, steps):
+		self.set_value(self.minimum if self._value is None else max(self.minimum, min(self.maximum, self._value + steps)))
+
+	def stepEnabled(self):
+		flags = QAbstractSpinBox.StepNone
+		if self._value is None or self._value < self.maximum:
+			flags |= QAbstractSpinBox.StepUpEnabled
+		if self._value is not None and self._value > self.minimum:
+			flags |= QAbstractSpinBox.StepDownEnabled
+		return flags
+
+
+class OptionalDateInput(QDateEdit):
+	value_changed = pyqtSignal()
+
+	def __init__(self, parent=None):
+		super().__init__(parent)
+		self.setMinimumDate(QDate(1752, 9, 13))
+		self.setSpecialValueText(' ')
+		self.setDisplayFormat('yyyy-MM-dd')
+		self.setCalendarPopup(True)
+		self.set_value(None)
+		self.dateChanged.connect(lambda date: self.value_changed.emit())
+		self.lineEdit().textChanged.connect(self._edited)
+
+	def validate(self, content, position):
+		if not content.strip():
+			return QValidator.Acceptable, content, position
+		return super().validate(content, position)
+
+	def dateTimeFromText(self, content):
+		if not content.strip():
+			return self.minimumDateTime()
+		return super().dateTimeFromText(content)
+
+	def _edited(self, content):
+		if not content.strip() and self.date() != self.minimumDate():
+			self.clear()
+
+	def keyPressEvent(self, event):
+		activating = self.value() is None and event.text().isascii() and event.text().isdigit()
+		if activating:
+			with QSignalBlocker(self):
+				self.setDate(QDate.currentDate())
+			self.setSelectedSection(QDateEdit.YearSection)
+		if event.text() == '-' and self.lineEdit().hasSelectedText():
+			event.accept()
+			return
+		super().keyPressEvent(event)
+		if activating:
+			self.value_changed.emit()
+
+	def clear(self):
+		self.set_value(None)
+
+	def value(self):
+		return None if self.date() == self.minimumDate() else self.date().toString('yyyy-MM-dd')
+
+	def set_value(self, value):
+		self.setDate(self.minimumDate() if value is None else QDate.fromString(value, 'yyyy-MM-dd'))
+
+
+class OptionalField(QWidget):
+	value_changed = pyqtSignal()
+
+	def __init__(self, record, is_date, parent=None):
+		super().__init__(parent)
+		self.is_date = is_date
+		layout = QHBoxLayout(self)
+		layout.setContentsMargins(0, 0, 0, 0)
+		layout.setSpacing(6)
+		label = QLabel(record.label, self)
+		layout.addWidget(label)
+		if is_date:
+			self.editor = OptionalDateInput(self)
+			self.editor.calendarWidget().installEventFilter(self)
+		else:
+			self.editor = ExactIntegerInput(record.minimum, record.maximum, self)
+		self.editor.value_changed.connect(self.value_changed)
+		label.setBuddy(self.editor)
+		self.editor.setAccessibleName(record.label)
+		self.editor.setToolTip(record.tooltip or record.label)
+		layout.addWidget(self.editor, 1)
+		self.set_value(record.value)
+		self.setFocusProxy(self.editor)
+
+	def eventFilter(self, watched, event):
+		if self.is_date and watched is self.editor.calendarWidget() and event.type() == QEvent.Show and self.value() is None:
+			today = QDate.currentDate()
+			watched.setCurrentPage(today.year(), today.month())
+		if self.is_date and watched is self.editor.calendarWidget() and event.type() == QEvent.ShortcutOverride and event.key() == Qt.Key_Escape:
+			event.accept()
+			return True
+		return super().eventFilter(watched, event)
+
+	def value(self):
+		return self.editor.value()
+
+	def set_value(self, value):
+		with QSignalBlocker(self.editor):
+			self.editor.set_value(value)
+
+
+class WrappingRow(QLayout):
+	def __init__(self, parent=None):
+		super().__init__(parent)
+		self.items = []
+		self.setContentsMargins(0, 0, 0, 0)
+		self.setSpacing(8)
+
+	def addItem(self, item):
+		self.items.append(item)
+
+	def count(self):
+		return len(self.items)
+
+	def itemAt(self, index):
+		return self.items[index] if 0 <= index < len(self.items) else None
+
+	def takeAt(self, index):
+		return self.items.pop(index) if 0 <= index < len(self.items) else None
+
+	def expandingDirections(self):
+		return Qt.Horizontal
+
+	def hasHeightForWidth(self):
+		return True
+
+	def heightForWidth(self, width):
+		return self._arrange(QRect(0, 0, width, 0), False)
+
+	def setGeometry(self, rect):
+		super().setGeometry(rect)
+		self._arrange(rect, True)
+
+	def minimumSize(self):
+		return QSize(max((item.minimumSize().width() for item in self.items), default=0),
+			max((item.minimumSize().height() for item in self.items), default=0))
+
+	def sizeHint(self):
+		return QSize(sum(item.sizeHint().width() + self.spacing() for item in self.items), self.minimumSize().height())
+
+	def _arrange(self, rect, apply):
+		lines, line, used = [], [], 0
+		for item in self.items:
+			size = item.sizeHint().expandedTo(item.minimumSize()).boundedTo(item.maximumSize())
+			size.setWidth(min(size.width(), rect.width()))
+			if line and used + self.spacing() + size.width() > rect.width():
+				lines.append(line)
+				line, used = [], 0
+			used += (self.spacing() if line else 0) + size.width()
+			line.append((item, size))
+		if line:
+			lines.append(line)
+		top = rect.y()
+		for line in lines:
+			height = max(size.height() for item, size in line)
+			spare = rect.width() - sum(size.width() for item, size in line) - self.spacing() * (len(line) - 1)
+			growing = [(item, size) for item, size in line
+				if item.expandingDirections() & Qt.Horizontal and size.width() < item.maximumSize().width()]
+			while spare > 0 and growing:
+				share = max(1, spare // len(growing))
+				for item, size in growing:
+					added = min(share, spare, item.maximumSize().width() - size.width())
+					size.setWidth(size.width() + added)
+					spare -= added
+				growing = [(item, size) for item, size in growing if size.width() < item.maximumSize().width()]
+			left = rect.x()
+			for item, size in line:
+				if apply:
+					item.setGeometry(QRect(QPoint(left, top + height - size.height()), size))
+				left += size.width() + self.spacing()
+			top += height + self.spacing()
+		return top - rect.y() - (self.spacing() if lines else 0)
 
 
 class IconButton(QToolButton):
@@ -146,11 +360,37 @@ class PanelDock(QFrame):
 		self.escape = QShortcut(QKeySequence(Qt.Key_Escape), self)
 		self.escape.setContext(Qt.WidgetWithChildrenShortcut)
 		self.escape.activated.connect(close_session)
+		for widget in self.panel.findChildren(QWidget):
+			if not widget.isWindow():
+				widget.installEventFilter(self)
+
+	def eventFilter(self, watched, event):
+		if event.type() in (QEvent.ShortcutOverride, QEvent.KeyPress) and event.key() in (Qt.Key_Tab, Qt.Key_Backtab) and not QApplication.activePopupWidget():
+			if event.type() == QEvent.ShortcutOverride:
+				event.accept()
+				return True
+			return self.focusNextPrevChild(event.key() == Qt.Key_Tab and not event.modifiers() & Qt.ShiftModifier)
+		return super().eventFilter(watched, event)
 
 	def focusNextPrevChild(self, next):
-		controls = [widget for widget in self.findChildren(QWidget)
-			if widget.focusPolicy() & Qt.TabFocus and widget.isVisible() and widget.isEnabled()]
+		controls = []
+		widget = self.nextInFocusChain()
+		while widget is not self:
+			if self.isAncestorOf(widget) and widget.focusPolicy() & Qt.TabFocus and widget.isVisible() and widget.isEnabled():
+				control = widget
+				while control.focusProxy() is not None:
+					control = control.focusProxy()
+				if isinstance(control.parentWidget(), QAbstractSpinBox):
+					control = control.parentWidget()
+				if control not in controls:
+					controls.append(control)
+			widget = widget.nextInFocusChain()
+		if hasattr(self.panel, 'tab_controls'):
+			controls = [control for control in (*self.panel.tab_controls, self.close_button)
+				if control.isVisible() and control.isEnabled()]
 		current = QApplication.focusWidget()
+		if current is not None and isinstance(current.parentWidget(), QAbstractSpinBox):
+			current = current.parentWidget()
 		if current in controls:
 			index = controls.index(current) + (1 if next else -1)
 			if 0 <= index < len(controls):

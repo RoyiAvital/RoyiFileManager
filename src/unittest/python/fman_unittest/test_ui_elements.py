@@ -6,6 +6,26 @@ from fman.impl.navigation import NavigationRequest, current_request
 
 
 class TableDataTest(TestCase):
+	def test_structured_panel_fields(self):
+		from fman.impl.ui.table_data import DateField, IntegerField, Select, Separator, panel_records, validate_field_value
+		options = tuple((str(index), 'Type %d' % index) for index in range(11))
+		rows = ((Select('type', 'Type', options, '0'), DateField('start', 'Start'),
+			DateField('end', 'End', '2026-09-20'), IntegerField('size', 'Size', 5000000000), Separator('section')),)
+		self.assertEqual(rows, panel_records(rows))
+		for field in (DateField('date', 'Date', '2026-02-30'), DateField('date', 'Date', '20260920'),
+				DateField('date', 'Date', '1700-01-01'), IntegerField('size', 'Size', True),
+				IntegerField('size', 'Size', -1), IntegerField('size', 'Size', 1.5),
+				IntegerField('depth', 'Depth', 0, minimum=1), IntegerField('size', 'Size', 2**64),
+				Select('type', 'Type', options, 'unknown'), Select('type', 'Type', (('a', 'A'), ('a', 'B')), 'a')):
+			with self.subTest(field=field), self.assertRaises((TypeError, ValueError)):
+				panel_records(((field,),))
+		validate_field_value(rows[0][1], None)
+		validate_field_value(rows[0][3], 0)
+		with self.assertRaises(ValueError):
+			validate_field_value(rows[0][3], '12')
+		with self.assertRaises(ValueError):
+			panel_records(((Separator('same'), Separator('same')),))
+
 	def test_choice_descriptors_validate_plain_options(self):
 		from fman.impl.ui.table_data import Choice, panel_records
 		options = [('literal', 'text.svg', 'Literal'), ('glob', 'asterisk.svg', 'Glob')]

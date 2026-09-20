@@ -7,6 +7,10 @@ without changing their imports.
 
 See the [Plug In API Reference](PlugIn.md) for legacy APIs and new extensions.
 
+The window opens at 1280 x 800 logical pixels on first launch and restores its
+saved geometry afterward. Its enforced minimum is 960 x 600, including on
+high-DPI displays; it does not shrink below that minimum on smaller screens.
+
 ## Planning and Implementation Workflow
 
 The [`Plan.md`](Plan.md) file is the task index. Each pending task has one standalone
@@ -22,15 +26,16 @@ Repository-wide contribution and task-lifecycle requirements are defined in
 
 Significant additions compared with `fman`:
 
-- **Fuzzy File Search**: Find files with <kbd>Ctrl</kbd>+<kbd>F</kbd> or recursively with <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>. Supports fzf style exact terms, anchors, negation, `AND` / `OR` and match highlights. Using **Toggle search result metadata** adds additional metadata in search results. See [Usage, Syntax and Performance](src/main/resources/base/Plugins/SearchFileFuzzy/README.md).
+- **Fuzzy Find Files**: Find files by name with <kbd>Ctrl</kbd>+<kbd>F</kbd> or recursively with <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>. Supports [`fzf`](https://github.com/junegunn/fzf) style exact terms, anchors, negation, `AND` / `OR` and match highlights. Using **Toggle find result metadata** adds metadata to results. See [Usage, Syntax and Performance](src/main/resources/base/Plugins/SearchFileFuzzy/README.md).
 - **Search Files**: Press <kbd>Alt</kbd>+<kbd>F7</kbd> for [`ripgrep`](https://github.com/burntsushi/ripgrep) based filename and content search in Glob, Literal or RegEx mode. Leave content empty to list files by name. See [Search Files Usage](src/main/resources/base/Plugins/SearchFiles/README.md).
-- **Pane Filter / Files Filter**: Type to filter file names with globs, anchors and negation with `fzf` inspired syntax. See [Pane Filter Usage](src/main/resources/base/Plugins/Core/README.md#pane-filter).
+- **Find Files with fd**: Press <kbd>Shift</kbd>+<kbd>F7</kbd> for [`fd`](https://github.com/sharkdp/fd) based filename search with date, size, type and traversal filters. See [Find Files Usage](src/main/resources/base/Plugins/FindFiles/README.md).
+- **Pane Filter / Files Filter**: Type to filter file names with globs, anchors and negation with [`fzf`](https://github.com/junegunn/fzf) inspired syntax. See [Pane Filter Usage](src/main/resources/base/Plugins/Core/README.md#pane-filter).
 - **UI Components**: New building blocks that expand what plug-ins can do. [Plug-in UI guide](Plan/UIElements.md#plug-in-api).
 - **Docked Panel**: Allows controlling states and operations. Exposed to be used by Plug-In's.
 - **Favorites**: Press <kbd>Ctrl</kbd>+<kbd>B</kbd> for a fully features Favorites Manager, built entirely with the plug-in APIs.
 - **Recent Commands**: <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> pins the last three commands run from the palette.
-- **Process Pane**: Run **Show processes** for a flat Name/PID list of the system running processes; select one process and press <kbd>F8</kbd> to force-terminate it, using current Windows permissions. See [Process Pane Usage](src/main/resources/base/Plugins/ProcessPane/README.md).
-- **Extended Status Bar**: Press <kbd>Ctrl</kbd>+<kbd>S</kbd> to cycle through disabled, active-pane, and per-pane file statistics.
+- **Process Pane**: Run **Show the OS' processes** for a flat Name/PID list of the system running processes. Press <kbd>F8</kbd> to force terminate it. See [Process Pane Usage](src/main/resources/base/Plugins/ProcessPane/README.md).
+- **Extended Status Bar**: Press <kbd>Ctrl</kbd>+<kbd>S</kbd> to cycle through disabled, active-pane and per-pane file statistics.
 - **Sync pane location**: Send the inactive pane to the active pane's current folder from the Command Center.
 - **File Hash**: Press <kbd>Ctrl</kbd>+<kbd>H</kbd> for centered checksum output; use Calculate File Hash By to pick an algorithm in QuickSearch, then view the result. See [File Hash Calculation Usage](src/main/resources/base/Plugins/CalculateFileHash/README.md).
 - **Directory Size**: Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd> to toggle progressive directory size calculation in both panes, or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Enter</kbd> for a one time total of selected directories. See [Directory Size Usage](src/main/resources/base/Plugins/Core/README.md#directory-sizes).
@@ -87,6 +92,10 @@ without requiring the conda package cache. Refresh these notices when updating
 ripgrep in the lock file. There are no custom downloads, version/hash checks or
 integrity manifests. Packaged searches use the bundled executable, not a system
 `rg` or Python installation.
+
+Find Files similarly uses conda-forge's `bin/fd.exe` and bundles it with
+[fd notices](src/main/resources/base/Plugins/FindFiles/licenses). Refresh those
+notices when updating `fd-find` in the lock file.
 
 `freeze` creates a PyInstaller onedir build. `package` produces
 `target/RoyiFileManager-<version>-windows-x86_64.zip` with an empty

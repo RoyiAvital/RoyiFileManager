@@ -13,22 +13,18 @@ class SearchEngineTest(TestCase):
 		from fman.impl.plugins.command_registry import PaneCommandRegistry
 		from threading import Event
 		from unittest.mock import Mock
-		from search_files import SearchFiles, SearchFileContent
-		self.assertEqual('Search files', SearchFiles.aliases[0])
+		from search_files import SearchFiles
+		self.assertEqual(('Search files', 'Search text in files'), SearchFiles.aliases)
 		registry = PaneCommandRegistry(Mock(), Mock())
 		registry.register_command('search_files', SearchFiles)
-		registry.register_command('search_file_content', SearchFileContent)
 		pane = Mock()
 		pane.get_path.return_value = 'file:///C:/root'
 		self.assertTrue(registry.is_command_visible('search_files', pane))
-		self.assertFalse(registry.is_command_visible('search_file_content', pane))
 		completed = Event()
 		with patch.object(SearchFiles, '__call__', side_effect=completed.set) as search:
-			for command in ('search_file_content', 'search_files'):
-				completed.clear()
-				registry.execute_command(command, {}, pane)
-				self.assertTrue(completed.wait(2), 'Search command did not run')
-			self.assertEqual(2, search.call_count)
+			registry.execute_command('search_files', {}, pane)
+			self.assertTrue(completed.wait(2), 'Search command did not run')
+			search.assert_called_once()
 
 	def test_settings_survive_plugin_rename(self):
 		from fman.impl.plugins.config import Config

@@ -69,7 +69,7 @@ def exercise(context, root, output, layout_only=False):
 			expected_pane = 'Left pane' if pane is context.window.get_panes()[0] else 'Right pane'
 			assert indicator.toolTip() == expected_pane, 'Wrong pane icon tooltip'
 			assert not indicator.pixmap().isNull() and indicator.pixmap().width() >= 20, 'Missing or undersized pane icon'
-			for width in (640, 960, 1440):
+			for width in (960, 1280, 1440):
 				main.resize(width, 720)
 				QApplication.processEvents()
 				assert main.width() == width, 'Panel prevented the requested window width'

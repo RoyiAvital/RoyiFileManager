@@ -16,7 +16,7 @@ from fman.impl.ui.quicklist import QuickList
 from fman.impl.ui.panel import Panel, DropDown, IconButton, JsonSettings, TextButton
 from fman.impl.ui.output import OutputTextBox
 from fman.impl.ui.session import NavigationHandle, PaneToolWindow, ToolWindow, navigate
-from fman.impl.ui.table_data import Action, Choice, Label, TableAction, TableRow, TextField, Toggle
+from fman.impl.ui.table_data import Action, Choice, DateField, IntegerField, Label, Select, Separator, TableAction, TableRow, TextField, Toggle
 from fman.impl.ui.facade import PanelHandle, TableHandle, show_panel, show_table
 
 
@@ -26,5 +26,6 @@ __all__ = [
 	'settings_resource', 'matchers', 'ToolWindow', 'PaneToolWindow',
 	'NavigationHandle', 'navigate', 'OutputTextBox', 'TableRow', 'TableAction',
 	'TextField', 'Toggle', 'Choice', 'Label', 'Action', 'TableHandle', 'PanelHandle',
+	'Select', 'DateField', 'IntegerField', 'Separator',
 	'show_table', 'show_panel'
 ]

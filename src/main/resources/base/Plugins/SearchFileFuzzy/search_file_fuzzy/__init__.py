@@ -22,21 +22,21 @@ _DEFAULT_SETTINGS = {
 
 
 class SearchFilesInCurrentFolder(DirectoryPaneCommand):
-	aliases = ('Search files in current folder',)
+	aliases = ('Find files in current folder',)
 
 	def __call__(self, mode=None, query='', metadata=None):
 		_search(self.pane, recursive=False, mode=mode, query=query, metadata=metadata)
 
 
 class SearchFilesRecursively(DirectoryPaneCommand):
-	aliases = ('Search files recursively', 'Search files in subfolders')
+	aliases = ('Find files recursively', 'Find files in subfolders')
 
 	def __call__(self, mode=None, query='', metadata=None):
 		_search(self.pane, recursive=True, mode=mode, query=query, metadata=metadata)
 
 
 class ToggleSearchResultMetadata(ApplicationCommand):
-	aliases = ('Toggle search result metadata', 'Search files: toggle modified date and size')
+	aliases = ('Toggle find result metadata', 'Find files: toggle modified date and size')
 
 	def is_visible(self):
 		return True
@@ -49,12 +49,12 @@ class ToggleSearchResultMetadata(ApplicationCommand):
 		try:
 			save_json('SearchFileFuzzy.json', values)
 		except ValueError as error:
-			show_status_message('Search result metadata settings conflict: %s' % error, timeout_secs=5)
+			show_status_message('Find result metadata settings conflict: %s' % error, timeout_secs=5)
 			return
 		except OSError as error:
-			show_status_message('Could not save search result metadata: %s' % error, timeout_secs=5)
+			show_status_message('Could not save find result metadata: %s' % error, timeout_secs=5)
 			return
-		show_status_message('Search result metadata: %s' % ('On' if enabled else 'Off'), timeout_secs=3)
+		show_status_message('Find result metadata: %s' % ('On' if enabled else 'Off'), timeout_secs=3)
 
 
 class _IndexFiles(Task):
@@ -114,7 +114,7 @@ def _search(pane, recursive, mode=None, query='', metadata=None):
 			)
 			return
 		if index is None:
-			show_status_message('File search canceled.', timeout_secs=3)
+			show_status_message('Find files canceled.', timeout_secs=3)
 			return
 		_show_results(pane, index, settings, query, stale)
 
@@ -146,7 +146,7 @@ def _show_results(pane, index, settings, query, stale):
 		return
 	if index.truncated:
 		show_status_message(
-			'Search limited to the first %s entries.' %
+			'File list limited to the first %s entries.' %
 			settings['max_recursive_entries'],
 			timeout_secs=3
 		)

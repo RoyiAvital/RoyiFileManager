@@ -37,6 +37,23 @@ class QtIT(TestCase):
 class SortedFileSystemModelIT(SortedFileSystemModelAT, QtIT):
 	pass
 
+class MainWindowIT(QtIT):
+	def test_forced_minimum_size(self):
+		from fman.impl.widgets import MainWindow
+		from PyQt5.QtCore import QSize
+		from unittest.mock import Mock
+		def check():
+			window = MainWindow(Mock(), [], Mock(), Mock(), Mock(), 'null://')
+			try:
+				self.assertEqual(QSize(960, 600), window.minimumSize())
+				for width, height in ((960, 600), (1280, 800), (1440, 900)):
+					window.resize(width, height)
+					self.assertEqual(QSize(width, height), window.size())
+			finally:
+				window.close()
+				window.deleteLater()
+		self.run_in_app(check)
+
 class FilterBarIT(QtIT):
 	def setUp(self):
 		from core import Name, Size, Modified
@@ -1690,7 +1707,7 @@ class SearchFileMetadataIT(QtIT):
 					show.assert_not_called()
 					self.registry.execute_command.assert_not_called()
 					if action == 'cancel':
-						status.assert_called_once_with('File search canceled.', timeout_secs=3)
+						status.assert_called_once_with('Find files canceled.', timeout_secs=3)
 					else:
 						status.assert_not_called()
 					if action != 'close':
@@ -1949,6 +1966,313 @@ class TextEditorIT(QtIT):
 			launch.assert_not_called()
 		self.assertEqual([], self.errors)
 
+class FindFilesIT(QtIT):
+	def setUp(self):
+		from core import Name, Size, Modified, OpenDirectory
+		from core.fs.local import LocalFileSystem
+		from fman import DirectoryPane, Window
+		from fman.ui import UiOwner
+		from fman.url import as_url
+		from fman.impl.plugins.builtin import NullFileSystem, NullColumn
+		from fman.impl.plugins.command_registry import PaneCommandRegistry
+		from fman.impl.plugins.mother_fs import MotherFileSystem
+		from fman.impl.plugins.plugin import FileSystemWrapper
+		from fman.impl.ui.facade import _hosts
+		from fman.impl.widgets import MainWindow
+		from find_files import DEFAULTS, FindSession
+		from pathlib import Path
+		from PyQt5.QtGui import QIcon
+		from tempfile import TemporaryDirectory
+		from unittest.mock import Mock
+		self.temporary = TemporaryDirectory()
+		self.addCleanup(self.temporary.cleanup)
+		self.root = Path(self.temporary.name).resolve()
+		(self.root / 'report.txt').write_bytes(b'hello')
+		(self.root / 'other.txt').write_bytes(b'')
+		(self.root / 'folder').mkdir()
+		self.errors = Mock()
+		self.filesystem = MotherFileSystem(Mock(get_icon=Mock(return_value=QIcon())))
+		for backend in (LocalFileSystem(), NullFileSystem()):
+			self.filesystem.add_child(backend.scheme, FileSystemWrapper(backend, self.filesystem, self.errors))
+		for column in (Name(self.filesystem), Size(self.filesystem), Modified(self.filesystem), NullColumn()):
+			self.filesystem.register_column(column.get_qualified_name(), column)
+		self.plugin_root = Path(__file__).parents[3] / 'main/resources/base/Plugins/FindFiles'
+		self.owner = UiOwner(resource_root=str(self.plugin_root))
+		def prepare():
+			self.main = MainWindow(QApplication.instance(), [], Mock(), Mock(), self.filesystem, 'null://')
+			self.main.set_controller(Mock(handle_shortcut=Mock(return_value=False), handle_nonexistent_shortcut=Mock(return_value=False)))
+			self.main.setStyleSheet((self.plugin_root.parents[1] / 'styles.qss').read_text())
+			registry = PaneCommandRegistry(self.errors, Mock())
+			registry.register_command('open_directory', OpenDirectory)
+			window = Window(self.main, Mock())
+			self.pane = DirectoryPane(window, self.main.add_pane(), registry)
+			window._panes = [self.pane]
+			self.main.resize(960, 700)
+			self.main.show()
+			self.main.activateWindow()
+		self.run_in_app(prepare)
+		self.addCleanup(self.close_window)
+		loaded = Event()
+		self.pane.set_path(as_url(self.root), callback=loaded.set)
+		self.assertTrue(loaded.wait(5))
+		self.session = self.run_in_app(FindSession, self.owner, self.pane, str(self.root), dict(DEFAULTS))
+		self.host = self.run_in_app(lambda: _hosts[self.session.panel._key()])
+
+	def close_window(self):
+		self.owner.invalidate()
+		def close():
+			model = self.pane._widget._model.sourceModel()
+			model.shutdown()
+			self.main.close()
+			return model
+		model = self.run_in_app(close)
+		model._worker._thread.join(5)
+		self.assertFalse(model._worker._thread.is_alive())
+		self.run_in_app(self.main.deleteLater)
+		self.errors.report.assert_not_called()
+
+	def search(self, **values):
+		from find_files.engine import resolve_engine
+		from pathlib import Path
+		if not Path(resolve_engine()).is_file():
+			self.skipTest('Installed fd.exe is unavailable')
+		finished = Event()
+		completed = self.session.completed
+		def observed(*args):
+			try:
+				completed(*args)
+			finally:
+				finished.set()
+		self.session.completed = observed
+		self.session.panel.update(values=values)
+		self.run_in_app(self.session.action, 'search', self.session.panel.snapshot())
+		self.assertTrue(finished.wait(10))
+		self.session.completed = completed
+		self.run_in_app(QApplication.processEvents)
+
+	def test_controls_optional_bounds_validation_and_wrapping(self):
+		from PyQt5.QtCore import QDate, QPoint
+		from PyQt5.QtTest import QTest
+		from unittest.mock import Mock, patch
+		def check():
+			controls = {name: control for name, (record, control) in self.host.controls.items()}
+			self.assertEqual(11, controls['type'].count())
+			self.assertEqual('smart', controls['case_mode'].value())
+			self.assertIsNone(self.session.panel.snapshot()['max_results'])
+			self.assertEqual('', controls['max_results'].editor.text())
+			self.assertEqual('Name Pattern', self.host.controls['pattern'][0].label)
+			self.assertEqual('Modification Date', controls['modified_label'].content)
+			self.assertEqual('File Size', controls['size_label'].content)
+			self.assertIn('Entry type', controls['type'].toolTip())
+			self.assertIn('Entry type', controls['type'].parentWidget().toolTip())
+			self.assertIn('Honor .gitignore', controls['honor_gitignore'].toolTip())
+			self.assertIn('.fdignore', controls['honor_gitignore'].toolTip())
+			self.assertTrue(controls['stop'].isEnabled())
+			values, status = self.session.panel.snapshot(), self.host.status
+			with patch('find_files.Runner') as runner:
+				controls['stop'].click()
+				runner.assert_not_called()
+			self.assertIsNone(self.session.runner)
+			self.assertEqual(values, self.session.panel.snapshot())
+			self.assertIs(status, self.host.status)
+			self.assertFalse(controls['min_size_unit'].isEnabled())
+			self.assertNotIn('max_depth', controls)
+			self.assertNotIn('size_filters', self.session.panel.snapshot())
+			with self.assertRaises(ValueError):
+				self.host.update_controls(values={'size_filters': 'invalid'})
+			changed = Mock(wraps=self.session.changed)
+			self.host.on_change = changed
+			with patch('find_files.engine.subprocess.Popen') as process:
+				self.session.panel.update(values={'min_size': 5000000000, 'start_date': '2024-02-29', 'max_results': None})
+				changed.assert_not_called()
+				self.assertEqual(5000000000, controls['min_size'].editor.value())
+				controls['min_size'].editor.stepBy(1)
+				self.assertEqual(1, changed.call_count)
+				self.assertEqual(5000000001, self.session.panel.snapshot()['min_size'])
+				self.assertTrue(controls['min_size_unit'].isEnabled())
+				controls['min_size'].editor.selectAll()
+				QTest.keyClick(controls['min_size'].editor, Qt.Key_Backspace)
+				self.assertIsNone(self.session.panel.snapshot()['min_size'])
+				self.assertFalse(controls['min_size_unit'].isEnabled())
+				self.assertEqual('', controls['min_size'].editor.text())
+				QTest.keyClicks(controls['min_size'].editor, '0')
+				self.assertEqual(0, self.session.panel.snapshot()['min_size'])
+				controls['min_size'].editor.selectAll()
+				QTest.keyClicks(controls['min_size'].editor, '5000000001')
+				self.assertEqual(5000000001, self.session.panel.snapshot()['min_size'])
+				controls['start_date'].editor.setDate(QDate(2028, 2, 29))
+				self.assertEqual('2028-02-29', self.session.panel.snapshot()['start_date'])
+				controls['start_date'].editor.selectAll()
+				QTest.keyClick(controls['start_date'].editor, Qt.Key_Backspace)
+				self.assertIsNone(self.session.panel.snapshot()['start_date'])
+				self.assertEqual('', controls['start_date'].editor.text().strip())
+				for date in ('2024-02-29', '2026-09-20', '1752-09-14', '9999-12-31'):
+					editor = controls['start_date'].editor
+					editor.selectAll()
+					QTest.keyClicks(editor, date)
+					QTest.keyClick(editor, Qt.Key_Tab)
+					self.assertEqual(date, self.session.panel.snapshot()['start_date'])
+					editor.selectAll()
+					QTest.keyClick(editor, Qt.Key_Delete)
+					QTest.keyClick(editor, Qt.Key_Tab)
+					self.assertIsNone(self.session.panel.snapshot()['start_date'])
+				controls['start_date'].editor.setDate(QDate(2028, 2, 29))
+				self.assertEqual('2028-02-29', self.session.panel.snapshot()['start_date'])
+				self.session.panel.update(values={'max_size': 1})
+				self.session.enable_form()
+				self.assertFalse(controls['search'].isEnabled())
+				self.assertIn('Minimum', self.host.status.content)
+				self.session.action('search', self.session.panel.snapshot())
+				process.assert_not_called()
+				self.session.panel.update(values={'min_size': None, 'max_size': None, 'start_date': None})
+				self.session.enable_form()
+				self.assertTrue(controls['search'].isEnabled())
+			for width in (960, 1280, 1440):
+				self.main.resize(width, 800)
+				QApplication.processEvents()
+				self.assertEqual(width, self.main.width())
+				for body, actions in self.host.form.rows:
+					layout = body.layout()
+					geometries = [layout.itemAt(index).geometry() for index in range(layout.count())]
+					for index, geometry in enumerate(geometries):
+						self.assertTrue(body.rect().contains(geometry), (width, body.rect(), geometry))
+						self.assertFalse(any(geometry.intersects(other) for other in geometries[index + 1:]))
+				for name in ('min_size', 'max_size'):
+					bound, unit = controls[name], controls[name + '_unit']
+					self.assertEqual(bound.mapTo(self.host.form, QPoint()).y(), unit.parentWidget().mapTo(self.host.form, QPoint()).y())
+				self.assertTrue(self.host.form.rows[1][0].isAncestorOf(controls['max_results']))
+				self.assertEqual(3, controls['stop'].mapTo(self.host.form, QPoint()).x() -
+					controls['search'].mapTo(self.host.form, QPoint(controls['search'].width(), 0)).x())
+				self.assertEqual(self.host.form.width(), controls['stop'].mapTo(self.host.form, QPoint(controls['stop'].width(), 0)).x())
+				self.assertLess(controls['root'].mapTo(self.host.form, QPoint()).x(), controls['recursive'].mapTo(self.host.form, QPoint()).x())
+				for name, maximum in (('pattern', 480), ('extensions', 180), ('exclude', 240)):
+					self.assertLessEqual(controls[name].width(), maximum)
+				for name in ('pattern', 'extensions', 'exclude', 'type', 'case_mode', 'recursive', 'search'):
+					self.assertEqual(28, controls[name].height(), name)
+				for name in ('min_size', 'max_size', 'start_date', 'end_date', 'max_results'):
+					self.assertEqual(28, controls[name].editor.height(), name)
+				for name in ('modified_label', 'size_label', 'root'):
+					label = controls[name]
+					self.assertTrue(label.isVisible(), name)
+					self.assertTrue(label.parentWidget().rect().contains(label.geometry()), name)
+				for body, actions in self.host.form.rows:
+					bottoms = {}
+					for index in range(body.layout().count()):
+						geometry = body.layout().itemAt(index).geometry()
+						bottoms.setdefault(geometry.top(), geometry.bottom())
+						self.assertEqual(bottoms[geometry.top()], geometry.bottom())
+			editor = controls['start_date'].editor
+			editor.setFocus()
+			QTest.mouseClick(editor, Qt.LeftButton, pos=QPoint(editor.width() - 10, editor.height() // 2))
+			QApplication.processEvents()
+			calendar = editor.calendarWidget()
+			self.assertTrue(calendar.isVisible())
+			self.assertEqual(QDate.currentDate().year(), calendar.yearShown())
+			self.assertEqual(QDate.currentDate().month(), calendar.monthShown())
+			QTest.keyClick(calendar, Qt.Key_Escape)
+			self.assertTrue(self.session.panel.is_open)
+			stops = [control for control in self.host.form.tab_controls if control.isEnabled()]
+			stops.append(self.main._panel_dock.close_button)
+			for sequence, key, modifiers in ((stops, Qt.Key_Tab, Qt.NoModifier),
+					(list(reversed(stops)), Qt.Key_Tab, Qt.ShiftModifier)):
+				sequence[0].setFocus()
+				for current, expected in zip(sequence, sequence[1:]):
+					QTest.keyClick(current, key, modifiers)
+					self.assertIs(expected, QApplication.focusWidget(), expected.accessibleName())
+		self.run_in_app(check)
+
+	def test_real_results_counts_filter_copy_and_navigation(self):
+		from fman.url import as_url
+		from PyQt5.QtTest import QTest
+		from unittest.mock import patch
+		self.search(type='all', max_results=None)
+		def check():
+			window = self.host.table_window
+			self.assertTrue(window.isVisible())
+			self.assertEqual('Find files', window.windowTitle())
+			self.assertEqual('Showing 3 / 3 files', window.table.counts.text())
+			self.assertFalse(self.host.controls['pattern'][1].isEnabled())
+			self.session.table.filter_text = 'report'
+			QApplication.processEvents()
+			self.assertEqual('Showing 1 / 3 files', window.table.counts.text())
+			window.open_menu(*window.table.current_cell, window.rect().center())
+			next(action for action in window.menu.actions() if action.text() == 'Copy Path').trigger()
+			self.assertEqual(str(self.root / 'report.txt'), QApplication.clipboard().text())
+			return window
+		window = self.run_in_app(check)
+		closed = Event()
+		self.run_in_app(window.disposed.connect, closed.set)
+		with patch('fman.fs._get_mother_fs', return_value=self.filesystem):
+			self.run_in_app(QTest.keyClick, window.table.view, Qt.Key_Return)
+			self.assertTrue(closed.wait(5))
+			self.assertEqual(as_url(self.root / 'report.txt'), self.pane.get_file_under_cursor())
+			self.search(type='d', max_results=None)
+			window = self.run_in_app(lambda: self.host.table_window)
+			closed.clear()
+			self.run_in_app(window.disposed.connect, closed.set)
+			self.run_in_app(QTest.keyClick, window.table.view, Qt.Key_Return)
+			self.assertTrue(closed.wait(5))
+			self.assertEqual(as_url(self.root / 'folder'), self.pane.get_path())
+			def check_focus():
+				QApplication.processEvents()
+				focused = QApplication.focusWidget()
+				self.assertTrue(focused is self.pane._widget or self.pane._widget.isAncestorOf(focused))
+			self.run_in_app(check_focus)
+
+	def test_inactive_results_keep_form_locked(self):
+		from PyQt5.QtWidgets import QWidget
+		def other_window():
+			other = QWidget()
+			other.show()
+			other.activateWindow()
+			QApplication.processEvents()
+			return other
+		other = self.run_in_app(other_window)
+		try:
+			self.search(max_results=None)
+			def check():
+				window = self.host.table_window
+				self.assertTrue(window.pending)
+				self.assertFalse(window.isVisible())
+				self.assertFalse(self.host.controls['search'][1].isEnabled())
+				self.assertFalse(self.host.controls['pattern'][1].isEnabled())
+				self.main.activateWindow()
+				for turn in range(3):
+					QApplication.processEvents()
+				self.assertTrue(window.isVisible())
+				self.assertFalse(window.pending)
+				self.session.table.close()
+				self.assertTrue(self.host.controls['search'][1].isEnabled())
+			self.run_in_app(check)
+		finally:
+			self.run_in_app(other.close)
+			self.run_in_app(other.deleteLater)
+
+	def test_cancel_root_change_and_unload_reject_stale_results(self):
+		from find_files.engine import Result
+		from unittest.mock import patch
+		from fman.url import as_url
+		def check():
+			with patch('find_files.Runner') as runner:
+				self.session.action('search', self.session.panel.snapshot())
+				generation = self.session.generation
+				self.assertTrue(self.host.controls['stop'][1].isEnabled())
+				self.assertFalse(self.host.controls['pattern'][1].isEnabled())
+				self.host.controls['stop'][1].click()
+				runner.return_value.stop.assert_called_once()
+				with patch.object(self.pane, 'get_path', return_value=as_url(self.root / 'folder')):
+					self.session.refresh_root()
+				self.assertEqual(2, runner.return_value.stop.call_count)
+				self.assertTrue(self.host.controls['stop'][1].isEnabled())
+				self.session.completed(generation, Result((), 0, True, False, 'Complete', ''))
+				self.assertIsNone(self.host.table_window)
+				self.session.action('search', self.session.panel.snapshot())
+				self.owner.invalidate()
+				self.assertFalse(self.session.panel.is_open)
+				self.assertGreaterEqual(runner.return_value.stop.call_count, 3)
+		self.run_in_app(check)
+
+
 class SearchFilesIT(QtIT):
 	def test_name_only_navigation_and_escape_focus(self):
 		from core import Name, Size, Modified, OpenDirectory
@@ -2134,7 +2458,7 @@ class SearchFilesIT(QtIT):
 						for record, wrapper, label in host.form.fields:
 							self.assertEqual(host.controls[record.id][1].toolTip(), label.toolTip())
 						host.form.setStyleSheet('QLabel { font-size: 16px; }')
-						for width in (640, 960, 1440):
+						for width in (960, 1280, 1440):
 							main.resize(width, 600)
 							QApplication.processEvents()
 							self.assertEqual(width, main.width())
@@ -2289,7 +2613,7 @@ class SearchFilesIT(QtIT):
 				from fman.url import as_url
 				pane.get_path = lambda: as_url(root)
 				pane.on_path_changed = Mock(return_value=lambda: None)
-				main.resize(900, 600)
+				main.resize(960, 600)
 				main.show()
 				main.activateWindow()
 				QApplication.processEvents()
@@ -2959,6 +3283,16 @@ class OutputTextBoxIT(QtIT):
 		self.run_in_app(check)
 
 class HashResultIT(QtIT):
+	def assert_centered_within_screen(self, window):
+		available = self.main.screen().availableGeometry()
+		frame = window.frameGeometry()
+		expected = self.main.frameGeometry().center()
+		expected.setX(max(available.left() + (frame.width() - 1) // 2,
+			min(expected.x(), available.right() - frame.width() // 2)))
+		expected.setY(max(available.top() + (frame.height() - 1) // 2,
+			min(expected.y(), available.bottom() - frame.height() // 2)))
+		self.assertEqual(expected, frame.center())
+
 	def setUp(self):
 		from calculate_file_hash.ui import HashController
 		from fman import DirectoryPane, Window
@@ -3004,13 +3338,13 @@ class HashResultIT(QtIT):
 
 	def test_result_centers_on_main_window_when_shown(self):
 		def place_main():
-			self.main.setGeometry(70, 60, 640, 400)
+			self.main.setGeometry(70, 60, 960, 600)
 			QApplication.processEvents()
 		self.run_in_app(place_main)
 		window = self.controller.show(self.pane)
 		def check_center():
 			QApplication.processEvents()
-			self.assertEqual(self.main.frameGeometry().center(), window.frameGeometry().center())
+			self.assert_centered_within_screen(window)
 		self.run_in_app(check_center)
 		def move_windows():
 			self.main.move(120, 100)
@@ -3024,12 +3358,12 @@ class HashResultIT(QtIT):
 		from fman.url import as_human_readable
 		from unittest.mock import patch
 		import hashlib
-		self.run_in_app(lambda: self.main.setGeometry(70, 60, 640, 400))
+		self.run_in_app(lambda: self.main.setGeometry(70, 60, 960, 600))
 		CalculateFileHash(self.pane)()
 		window = self.controller.show(self.pane)
 		def check(algorithm, digest):
 			QApplication.processEvents()
-			self.assertEqual(self.main.frameGeometry().center(), window.frameGeometry().center())
+			self.assert_centered_within_screen(window)
 			self.assertIsNone(window.bottom_panel)
 			self.assertIsNone(self.main._panel_dock)
 			self.assertEqual(2, window.layout().count())
@@ -3392,7 +3726,7 @@ class DockedPanelIT(QtIT):
 			window = MainWindow(Mock(), [], Mock(), Mock(), Mock(), 'null://')
 			window._splitter.addWidget(QWidget())
 			window._splitter.addWidget(QWidget())
-			window.resize(800, 600)
+			window.resize(960, 600)
 			window.show()
 			QApplication.processEvents()
 			original_height = window._splitter.height()
@@ -3931,7 +4265,7 @@ class FavoritesManagerIT(QtIT):
 			from fman import DirectoryPane
 			self.parent = MainWindow(Mock(), [], Mock(), Mock(), Mock(), 'null://')
 			self.parent._theme.get_quicksearch_item_css.return_value = None
-			self.parent.resize(800, 600)
+			self.parent.resize(960, 600)
 			self.parent.show()
 			self.pane = Mock()
 			self.pane._widget = QWidget(self.parent)

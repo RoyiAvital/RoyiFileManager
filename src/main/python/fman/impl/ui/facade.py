@@ -6,17 +6,17 @@ from threading import Event
 from types import MappingProxyType
 
 from fman.impl.ui import UiOwner
-from fman.impl.ui.panel import Panel, TextButton
+from fman.impl.ui.panel import DropDown, OptionalField, Panel, TextButton, WrappingRow
 from fman.impl.ui.session import MessageDialog, ToolWindow, navigate
 from fman.impl.ui.table import Table
-from fman.impl.ui.table_data import Action, Choice, Label, TableAction, TableSchema, TextField, Toggle, panel_records, text
+from fman.impl.ui.table_data import Action, Choice, DateField, IntegerField, Label, Select, Separator, TableAction, TableSchema, TextField, Toggle, panel_records, text, validate_field_value
 from fman.impl.util.qt.thread import run_in_main_thread
 from fman.url import as_human_readable, as_url
 from PyQt5 import sip
 from PyQt5.QtCore import QEvent, QSize, Qt, QSignalBlocker, QTimer, pyqtSignal
 from PyQt5.QtGui import QColor, QIcon, QPainter, QPalette, QPixmap
 from PyQt5.QtSvg import QSvgRenderer
-from PyQt5.QtWidgets import QApplication, QButtonGroup, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMenu, QSizePolicy, QSpacerItem, QToolButton, QVBoxLayout, QWidget
+from PyQt5.QtWidgets import QApplication, QButtonGroup, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMenu, QSizePolicy, QSpacerItem, QToolButton, QVBoxLayout, QWidget
 
 
 _keys = count(1)
@@ -192,6 +192,7 @@ class PanelForm(QWidget):
 		self.rows = []
 		self.narrow = None
 		self.fields = []
+		self.structured = any(isinstance(record, (Select, DateField, IntegerField, Separator)) for row in rows for record in row)
 		self.aligned = any(isinstance(row[0], TextField) for row in rows) and all(
 			(isinstance(row[0], Label) or isinstance(row[0], TextField) and row[0].max_width is not None)
 			and not any(isinstance(record, (TextField, Label)) for record in row[1:]) for row in rows)
@@ -203,28 +204,76 @@ class PanelForm(QWidget):
 			grid.addItem(QSpacerItem(0, 0, QSizePolicy.Expanding, QSizePolicy.Minimum), 0, 2)
 		for row in rows:
 			body = QWidget(self)
-			body_layout = QHBoxLayout(body)
+			toolbar = self.structured and isinstance(row[0], Label) and row[0].icon and any(isinstance(record, Action) for record in row)
+			body_layout = WrappingRow(body) if self.structured and not toolbar else QHBoxLayout(body)
 			body_layout.setContentsMargins(0, 0, 0, 0)
+			if toolbar:
+				body_layout.setSpacing(3)
+				body_layout.setAlignment(Qt.AlignBottom)
 			actions = QWidget(self)
 			action_layout = QHBoxLayout(actions)
 			action_layout.setContentsMargins(0, 0, 0, 0)
 			action_layout.setSpacing(3)
 			has_actions = False
+			previous = None
+			bound_group = None
+			divider = None
 			for record in row:
 				widget, control = self.create(record)
-				if isinstance(record, Action) or self.aligned and not isinstance(record, (TextField, Label)):
+				session.controls[record.id] = (record, control)
+				if isinstance(record, Separator):
+					divider = widget
+					continue
+				if divider is not None:
+					group = QWidget(body)
+					layout = QHBoxLayout(group)
+					layout.setContentsMargins(0, 0, 0, 0)
+					layout.setSpacing(8)
+					layout.addWidget(divider)
+					layout.addWidget(widget)
+					group.setSizePolicy(widget.sizePolicy())
+					group.setMaximumWidth(min(16777215, widget.maximumWidth() + 17))
+					widget, divider = group, None
+				if self.structured:
+					if isinstance(record, Select) and isinstance(previous, IntegerField):
+						bound_group.layout().addWidget(widget)
+					elif isinstance(record, IntegerField):
+						bound_group = QWidget(body)
+						bound_group.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+						bound_layout = QHBoxLayout(bound_group)
+						bound_layout.setContentsMargins(0, 0, 0, 0)
+						bound_layout.setSpacing(6)
+						bound_layout.addWidget(widget)
+						body_layout.addWidget(bound_group)
+					else:
+						body_layout.addWidget(widget)
+				elif isinstance(record, Action) or self.aligned and not isinstance(record, (TextField, Label)):
 					action_layout.addWidget(widget)
 					has_actions = True
 				else:
 					body_layout.addWidget(widget, 1 if isinstance(record, (TextField, Label)) else 0)
-				session.controls[record.id] = (record, control)
-			if not self.aligned and any(isinstance(record, TextField) and record.max_width is not None for record in row):
+				if toolbar and record is row[0]:
+					body_layout.addStretch(1)
+				previous = record
+			if divider is not None:
+				body_layout.addWidget(divider)
+			if not self.structured and not self.aligned and any(isinstance(record, TextField) and record.max_width is not None for record in row):
 				body_layout.addStretch()
 			if has_actions:
 				actions.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
 			else:
 				actions.deleteLater()
 			self.rows.append((body, actions if has_actions else None))
+		self.tab_controls = []
+		for record, control in session.controls.values():
+			if isinstance(record, Choice):
+				self.tab_controls.extend(control.group.buttons())
+			elif isinstance(record, (DateField, IntegerField)):
+				self.tab_controls.append(control.editor)
+			elif not isinstance(record, (Label, Separator)):
+				self.tab_controls.append(control)
+		for previous, current in zip(self.tab_controls, self.tab_controls[1:]):
+			QWidget.setTabOrder(previous, current)
 		self.reflow(False)
 
 	def create(self, record):
@@ -240,10 +289,26 @@ class PanelForm(QWidget):
 			control = QLineEdit(record.value, widget)
 			control.setMaxLength(4096)
 			control.setMinimumWidth(min(80, record.max_width or 80))
+			if self.structured and record.max_width is not None:
+				control.setMaximumWidth(record.max_width)
+				label.ensurePolished()
+				layout.setSpacing(6)
+				widget.setMaximumWidth(label.sizeHint().width() + 6 + record.max_width)
+			if self.structured:
+				widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 			label.setBuddy(control)
 			layout.addWidget(label)
 			layout.addWidget(control, 1)
 			control.textChanged.connect(session.controls_changed)
+		elif isinstance(record, Separator):
+			widget = control = QWidget(self)
+			widget.setFixedSize(9, 28)
+			layout = QHBoxLayout(widget)
+			layout.setContentsMargins(4, 4, 4, 4)
+			line = QFrame(widget)
+			line.setFrameShape(QFrame.VLine)
+			line.setFrameShadow(QFrame.Plain)
+			layout.addWidget(line)
 		elif isinstance(record, Label):
 			widget = control = ElidedLabel(record.text, self)
 			if record.icon:
@@ -264,6 +329,23 @@ class PanelForm(QWidget):
 		elif isinstance(record, Choice):
 			widget = control = ChoiceButtons(record, session, self)
 			control.changed.connect(session.controls_changed)
+		elif isinstance(record, (DateField, IntegerField)):
+			widget = control = OptionalField(record, isinstance(record, DateField), self)
+			control.value_changed.connect(session.controls_changed)
+		elif isinstance(record, Select):
+			widget = QWidget(self)
+			widget.setToolTip(record.tooltip or record.label)
+			layout = QHBoxLayout(widget)
+			layout.setContentsMargins(0, 0, 0, 0)
+			control = DropDown(tuple((label, value) for value, label in record.options), record.label, widget)
+			control.set_value(record.value)
+			if record.label:
+				label = QLabel(record.label, widget)
+				label.setToolTip(record.tooltip or record.label)
+				label.setBuddy(control)
+				layout.addWidget(label)
+			layout.addWidget(control)
+			control.value_changed.connect(session.controls_changed)
 		else:
 			if isinstance(record, Toggle) or record.icon is not None and not record.label:
 				control = QToolButton(self)
@@ -284,7 +366,17 @@ class PanelForm(QWidget):
 				control.toggled.connect(session.controls_changed)
 			else:
 				control.clicked.connect(lambda checked=False, name=record.id: session.action(name))
-		if not isinstance(record, Label):
+		if self.structured:
+			if not isinstance(record, TextField):
+				widget.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+			if isinstance(record, (DateField, IntegerField)):
+				control.editor.setFixedSize(120 if isinstance(record, DateField) else 110, 28)
+			elif isinstance(record, (TextField, Select, Label)):
+				control.setFixedHeight(28)
+			if isinstance(record, Label):
+				control.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+				control.setMaximumWidth(240)
+		if not isinstance(record, (Label, Separator)):
 			control.setAccessibleName(record.label or record.tooltip)
 			control.setToolTip(record.tooltip or record.label)
 		return widget, control
@@ -294,6 +386,15 @@ class PanelForm(QWidget):
 		self.reflow(self.width() < 620)
 
 	def reflow(self, narrow):
+		if self.structured:
+			for record, control in self.session.controls.values():
+				if isinstance(record, Label):
+					control.ensurePolished()
+					control.setMinimumWidth(min(240, control.fontMetrics().horizontalAdvance(control.content) + 2))
+					control.set_content(control.content)
+			for position, (body, actions) in enumerate(self.rows):
+				self.layout().addWidget(body, position, 0)
+			return
 		for record, widget, label in self.fields:
 			label.ensurePolished()
 		label_width = max((label.sizeHint().width() for record, widget, label in self.fields), default=0)
@@ -354,6 +455,7 @@ class PanelSession(ToolWindow):
 		_hosts[self.state.key] = self
 		try:
 			self.form = PanelForm(self, rows)
+			self.panel.tab_controls = self.form.tab_controls
 			self.panel.add(self.form, stretch=1)
 			self.main.set_bottom_panel(self.panel, self.close, self.focus_from_panel)
 			self.main.installEventFilter(self)
@@ -403,7 +505,7 @@ class PanelSession(ToolWindow):
 		for name, (record, control) in self.controls.items():
 			if isinstance(record, TextField):
 				values[name] = control.text()
-			elif isinstance(record, Choice):
+			elif isinstance(record, (Choice, Select, DateField, IntegerField)):
 				values[name] = control.value()
 			elif isinstance(record, Toggle):
 				values[name] = control.isChecked()
@@ -434,7 +536,7 @@ class PanelSession(ToolWindow):
 	def update_controls(self, values=None, enabled=None):
 		values, enabled = dict(values or {}), dict(enabled or {})
 		for name, value in values.items():
-			if name not in self.controls or isinstance(self.controls[name][0], Action):
+			if name not in self.controls or isinstance(self.controls[name][0], (Action, Separator)):
 				raise ValueError('Unknown value control: ' + name)
 			record = self.controls[name][0]
 			if isinstance(record, Toggle):
@@ -443,6 +545,8 @@ class PanelSession(ToolWindow):
 			elif isinstance(record, Choice):
 				if value not in tuple(option[0] for option in record.options):
 					raise ValueError('Unknown choice value: ' + str(value))
+			elif isinstance(record, (Select, DateField, IntegerField)):
+				validate_field_value(record, value)
 			else:
 				text(value, 'Control value', 4096 if isinstance(record, TextField) else None)
 		for name, value in enabled.items():
@@ -453,7 +557,7 @@ class PanelSession(ToolWindow):
 			with QSignalBlocker(control):
 				if isinstance(record, Toggle):
 					control.setChecked(value)
-				elif isinstance(record, Choice):
+				elif isinstance(record, (Choice, Select, DateField, IntegerField)):
 					control.set_value(value)
 				elif isinstance(record, TextField):
 					control.setText(value)
@@ -541,7 +645,7 @@ class PanelSession(ToolWindow):
 
 class TableWindow(ToolWindow):
 	def __init__(self, owner, main, pane, panel, schema, rows, provider, title,
-			fuzzy, modal, close_on_navigate, summary, get_details, on_activate, get_menu, on_closed):
+			fuzzy, modal, close_on_navigate, summary, get_details, on_activate, get_menu, on_closed, get_count_text=None):
 		self.state = HandleState()
 		super().__init__(main, owner)
 		self.setWindowFlags(Qt.Dialog)
@@ -559,7 +663,7 @@ class TableWindow(ToolWindow):
 		self.menu = None
 		self.pending = False
 		self.retry_queued = False
-		self.table = Table(schema, rows, self, fuzzy)
+		self.table = Table(schema, rows, self, fuzzy, get_count_text)
 		self.table.view.setColumnWidth(0, 300)
 		self.focus_widget = self.table
 		layout = QVBoxLayout(self)
@@ -631,7 +735,7 @@ class TableWindow(ToolWindow):
 			return
 		role = self.schema.roles[column]
 		def check(url):
-			valid = os.path.isfile(path) if role == 'file' else os.path.isdir(path)
+			valid = os.path.exists(path) if role == 'entry' else os.path.isfile(path) if role == 'file' else os.path.isdir(path)
 			if not valid:
 				raise OSError('The target is missing, inaccessible or not a %s: %s' % (role, path))
 		def complete(outcome, message):
@@ -798,9 +902,10 @@ def show_panel(*, owner, pane, rows, on_change=None, on_action=None, on_closed=N
 def show_table(*, owner, get_rows, num_columns, columns_header, pane=None,
 		panel=None, title='', fuzzy=True, file_path_column=None, folder_path_column=None,
 		resolve_path=None, base_path=None, modal=True, close_on_navigate=None,
-		summary='', get_details=None, on_activate=None, get_menu=None, on_closed=None):
+		summary='', get_details=None, on_activate=None, get_menu=None, on_closed=None,
+		entry_path_column=None, get_count_text=None):
 	_require_owner(owner)
-	_validate_callbacks(get_details, on_activate, get_menu, on_closed)
+	_validate_callbacks(get_details, on_activate, get_menu, on_closed, get_count_text)
 	for value in (fuzzy, modal):
 		if type(value) is not bool:
 			raise TypeError('fuzzy and modal must be boolean.')
@@ -818,11 +923,11 @@ def show_table(*, owner, get_rows, num_columns, columns_header, pane=None,
 		if panel_session.table_window is not None:
 			raise RuntimeError('This Panel already owns a Table.')
 		pane = panel_session.pane
-	if base_path is None and pane is not None and (file_path_column is not None or folder_path_column is not None):
+	if base_path is None and pane is not None and any(column is not None for column in (file_path_column, folder_path_column, entry_path_column)):
 		location = pane.get_path()
 		if isinstance(location, str) and location.startswith('file://'):
 			base_path = as_human_readable(location)
-	schema = TableSchema(num_columns, columns_header, file_path_column, folder_path_column, resolve_path, base_path)
+	schema = TableSchema(num_columns, columns_header, file_path_column, folder_path_column, resolve_path, base_path, entry_path_column)
 	rows = schema.snapshot(get_rows)
 	if pane is None:
 		from fman import _get_ui
@@ -830,6 +935,6 @@ def show_table(*, owner, get_rows, num_columns, columns_header, pane=None,
 	else:
 		main = pane.window._widget
 	window = TableWindow(owner, main, pane, panel_session, schema, rows, get_rows,
-		title, fuzzy, modal, close_on_navigate, summary, get_details, on_activate, get_menu, on_closed)
+		title, fuzzy, modal, close_on_navigate, summary, get_details, on_activate, get_menu, on_closed, get_count_text)
 	window.present()
 	return TableHandle(window.state)

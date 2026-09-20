@@ -140,12 +140,13 @@ class TableView(QTableView):
 class Table(QWidget):
 	state_changed = pyqtSignal()
 
-	def __init__(self, schema, rows, parent=None, fuzzy=True):
+	def __init__(self, schema, rows, parent=None, fuzzy=True, get_count_text=None):
 		require_ui_thread()
 		super().__init__(parent)
 		self.setObjectName('results-table')
 		self.schema = schema
 		self.rows = rows
+		self.get_count_text = get_count_text
 		self.generation = 0
 		self.closed = False
 		self.sort_column = None
@@ -254,7 +255,13 @@ class Table(QWidget):
 				index = next((index for index, row in enumerate(visible) if current and row.id == current[0].id), 0)
 				self.view.setCurrentIndex(self.model.index(index, current[1] if current else 0))
 				self.view.verticalScrollBar().setValue(anchor)
-			self.counts.setText('%d / %d rows' % (len(visible), len(rows)))
+			if self.get_count_text is None:
+				self.counts.setText('%d / %d rows' % (len(visible), len(rows)))
+			else:
+				try:
+					self.counts.setText(str(self.get_count_text(len(visible), len(rows))))
+				except Exception as error:
+					self.counts.setText(str(error))
 			self.state_changed.emit()
 		def step():
 			nonlocal position
@@ -288,6 +295,7 @@ class Table(QWidget):
 
 	def dispose(self):
 		self.closed = True
+		self.get_count_text = None
 		self.generation += 1
 		self.rows = ()
 		self.model.replace((), {})

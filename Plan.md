@@ -4,7 +4,6 @@
 
 - [Filter Files 002: Multiple Terms (AND)](Plan/FilterFiles002.md)
 - [Find Files 003: Everything-Style Query Syntax](Plan/FindFiles003.md)
-- [Find Files Panel](Plan/FindFilesPanel.md)
 - [Flat View](Plan/FlatView.md)
 - [Improve Pane Scan](Plan/ImprovePaneScan.md)
 - [Migrate to PyQt6](Plan/MigrateToPyQt6.md)
@@ -28,6 +27,7 @@
 - [Filter Files 001](Done/FilterFiles001.md)
 - [Find Files 001: fzf-Style Query Syntax](Done/FindFiles001.md)
 - [Find Files 002: Result Metadata](Done/FindFiles002.md)
+- [Find Files Panel](Done/FindFilesPanel.md)
 - [Focused Validation Policy](Done/FocusedValidationPolicy.md)
 - [Matching Icon SVG](Done/MatchingIconSvg.md)
 - [New File](Done/NewFile.md)

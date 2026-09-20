@@ -821,7 +821,7 @@ class ToggleMetadataTest(TestCase):
 		registry = ApplicationCommandRegistry(Mock(), errors, Mock())
 		registry.register_command('toggle_search_result_metadata', ToggleSearchResultMetadata)
 		self.assertTrue(registry.is_command_visible('toggle_search_result_metadata'))
-		self.assertIn('Toggle search result metadata', registry.get_command_aliases('toggle_search_result_metadata'))
+		self.assertIn('Toggle find result metadata', registry.get_command_aliases('toggle_search_result_metadata'))
 		errors.report.assert_not_called()
 
 	def test_real_config_persists_toggle_and_preserves_unrelated_settings(self):
@@ -867,13 +867,13 @@ class ToggleMetadataTest(TestCase):
 			for enabled, text in ((True, 'On'), (False, 'Off')):
 				ToggleSearchResultMetadata(Mock())()
 				self.assertEqual(enabled, configured['show_metadata'])
-				status.assert_called_with('Search result metadata: ' + text, timeout_secs=3)
+				status.assert_called_with('Find result metadata: ' + text, timeout_secs=3)
 
 	def test_save_error_preserves_loaded_value(self):
 		from search_file_fuzzy import ToggleSearchResultMetadata
 		for error, message in (
-			(OSError('denied'), 'Could not save search result metadata: denied'),
-			(ValueError('incompatible types'), 'Search result metadata settings conflict: incompatible types'),
+			(OSError('denied'), 'Could not save find result metadata: denied'),
+			(ValueError('incompatible types'), 'Find result metadata settings conflict: incompatible types'),
 		):
 			with self.subTest(error=type(error).__name__):
 				configured = {'show_metadata': False, 'max_results': 17}
@@ -948,7 +948,7 @@ class MetadataCommandTest(TestCase):
 				self.pane.on_path_changed.return_value.assert_called()
 				self.pane.on_closed.return_value.assert_called()
 				if event == 'cancel':
-					self.plugin.show_status_message.assert_called_once_with('File search canceled.', timeout_secs=3)
+					self.plugin.show_status_message.assert_called_once_with('Find files canceled.', timeout_secs=3)
 				else:
 					self.plugin.show_status_message.assert_not_called()
 
@@ -957,7 +957,7 @@ class MetadataCommandTest(TestCase):
 		self.plugin.clear_status_message.side_effect = self.plugin.show_status_message.reset_mock
 		SearchFilesInCurrentFolder(self.pane)()
 		self.plugin.show_quicksearch.assert_not_called()
-		self.plugin.show_status_message.assert_called_once_with('File search canceled.', timeout_secs=3)
+		self.plugin.show_status_message.assert_called_once_with('Find files canceled.', timeout_secs=3)
 		self.pane.on_path_changed.return_value.assert_called_once()
 		self.pane.on_closed.return_value.assert_called_once()
 
@@ -1070,6 +1070,11 @@ class SettingsTest(TestCase):
 
 
 class SearchCommandTest(TestCase):
+	def test_filename_commands_use_find_labels(self):
+		from search_file_fuzzy import SearchFilesInCurrentFolder, SearchFilesRecursively
+		self.assertEqual(('Find files in current folder',), SearchFilesInCurrentFolder.aliases)
+		self.assertEqual(('Find files recursively', 'Find files in subfolders'), SearchFilesRecursively.aliases)
+
 	@patch('search_file_fuzzy.load_json', return_value={})
 	@patch('search_file_fuzzy.clear_status_message')
 	@patch('search_file_fuzzy.show_status_message')
@@ -1198,7 +1203,7 @@ class SearchCommandTest(TestCase):
 		self.assertEqual(
 			[
 				'Indexing files...', 'quicksearch',
-				'Search limited to the first 50000 entries.',
+				'File list limited to the first 50000 entries.',
 			],
 			events
 		)

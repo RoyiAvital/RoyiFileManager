@@ -400,6 +400,7 @@ class MainWindow(QMainWindow):
 		null_location
 	):
 		super().__init__()
+		self.setMinimumSize(960, 600)
 		self._controller = None
 		self._app = app
 		self._theme = theme

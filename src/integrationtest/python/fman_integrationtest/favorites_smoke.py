@@ -130,7 +130,7 @@ def exercise(context, root, output):
 			original_size = main.size()
 			widths = []
 			try:
-				for width in (640, 960, 1440):
+				for width in (960, 1280, 1440):
 					main.resize(width, original_size.height())
 					QApplication.processEvents()
 					check_buttons()

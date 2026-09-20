@@ -9,13 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
 
+## [0.7.0] - 2026-09-20
+
+API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
+
 ### Added
 
+- **Find files with fd** (`Shift+F7`): compact docked name search with case,
+  extension, exclusion, date, exact size, type and traversal controls, grouped
+  with dividers and equal-height inputs. Blank optional bounds are inactive;
+  subfolder search uses a single recursive toggle. Optional
+  search limits are independent of bounded result storage; searches are
+  uncapped by default and count every match. Results support filtering, Go To
+  and Copy Path.
+- Additive provisional `fman.ui` dropdown, clearable date/integer Panel fields, section dividers,
+  mixed file/folder Table paths and customizable filtered count text.
 - [EmEditor](https://www.emeditor.com) preset in **Set text editor** and **Set text viewer**, using
   `-nr -sp` for editing and `-nr -sp -r` for viewing.
 
 ### Changed
 
+- Named `Ctrl+F` and `Ctrl+Shift+F` **Find files in current folder** and
+  **Find files recursively**, with **Toggle find result metadata** for their
+  optional details. The fd panel remains **Find files with fd**; only the
+  ripgrep panel is **Search files**. Shortcuts, command IDs and settings are unchanged.
+- Enforced a 960 x 600 logical-pixel minimum application window size. The
+  default size remains 1280 x 800.
 - Renamed the Favorites command to **Open favorites manager**, retaining
   **Favorites Manager**, **Favorites**, and **Show favorites** as search aliases.
   `Ctrl+B` and the `show_favorites` command identifier are unchanged.

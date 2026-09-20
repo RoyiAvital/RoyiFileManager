@@ -1,5 +1,6 @@
 from collections.abc import Sequence
 from dataclasses import dataclass, fields, is_dataclass
+from datetime import date
 from itertools import islice
 import ntpath
 
@@ -75,6 +76,57 @@ class Choice:
 
 
 @dataclass(frozen=True, slots=True)
+class Select:
+	id: str
+	label: str
+	options: tuple
+	value: str
+	tooltip: str = ''
+
+	def __post_init__(self):
+		if not isinstance(self.options, (tuple, list)) or not 1 <= len(self.options) <= 128:
+			raise ValueError('Select requires 1-128 options.')
+		if any(not isinstance(option, (tuple, list)) or len(option) != 2 for option in self.options):
+			raise TypeError('Select options must be (value, label) pairs.')
+		object.__setattr__(self, 'options', tuple(tuple(option) for option in self.options))
+
+
+@dataclass(frozen=True, slots=True)
+class DateField:
+	id: str
+	label: str
+	value: str | None = None
+	tooltip: str = ''
+
+
+@dataclass(frozen=True, slots=True)
+class IntegerField:
+	id: str
+	label: str
+	value: int | None = None
+	minimum: int = 0
+	maximum: int = 18446744073709551615
+	tooltip: str = ''
+
+
+def validate_field_value(record, value):
+	if isinstance(record, Select):
+		if not isinstance(value, str) or value not in tuple(option[0] for option in record.options):
+			raise ValueError('Unknown selection: ' + record.id)
+	elif isinstance(record, DateField) and value is not None:
+		if not isinstance(value, str) or date.fromisoformat(value).isoformat() != value or value < '1752-09-14':
+			raise ValueError('Date must be an ISO calendar date from 1752-09-14: ' + record.id)
+	elif isinstance(record, IntegerField) and value is not None:
+		if type(value) is not int or not record.minimum <= value <= record.maximum:
+			raise ValueError('Integer outside allowed range: ' + record.id)
+
+
+@dataclass(frozen=True, slots=True)
+class Separator:
+	id: str
+
+
+@dataclass(frozen=True, slots=True)
 class Label:
 	id: str
 	text: str
@@ -92,7 +144,7 @@ class Action:
 
 class TableSchema:
 	def __init__(self, num_columns, columns_header, file_path_column=None,
-			folder_path_column=None, resolve_path=None, base_path=None):
+			folder_path_column=None, resolve_path=None, base_path=None, entry_path_column=None):
 		if type(num_columns) is not int:
 			raise TypeError('num_columns must be an integer.')
 		if num_columns <= 0:
@@ -106,7 +158,7 @@ class TableSchema:
 			raise ValueError('Column headers must not be empty.')
 		self.num_columns = num_columns
 		self.roles = {}
-		for column, role in ((file_path_column, 'file'), (folder_path_column, 'folder')):
+		for column, role in ((file_path_column, 'file'), (folder_path_column, 'folder'), (entry_path_column, 'entry')):
 			if column is None:
 				continue
 			if type(column) is not int:
@@ -207,11 +259,13 @@ def panel_records(rows):
 		if not items or len(items) > 16 or len(result) >= 16:
 			raise ValueError('Panel rows must contain 1-16 controls, with at most 16 rows.')
 		for item in items:
-			if type(item) not in (TextField, Toggle, Choice, Label, Action):
+			if type(item) not in (TextField, Toggle, Choice, Select, DateField, IntegerField, Separator, Label, Action):
 				raise TypeError('Expected a plain panel control descriptor.')
 			if not text(item.id, 'Control ID', 128) or item.id in ids:
 				raise ValueError('Panel control IDs must be nonempty and unique.')
 			ids.add(item.id)
+			if isinstance(item, Separator):
+				continue
 			if isinstance(item, Label):
 				text(item.text, 'Label')
 				text(item.tooltip, 'Tooltip')
@@ -224,6 +278,17 @@ def panel_records(rows):
 					raise ValueError('Field max_width must be a positive integer or None.')
 			if isinstance(item, Toggle) and type(item.value) is not bool:
 				raise TypeError('Toggle value must be bool.')
+			if isinstance(item, Select):
+				values = set()
+				for value, label in item.options:
+					if not text(value, 'Select value', 128) or value in values or not text(label, 'Select label', 128):
+						raise ValueError('Select requires unique values and nonempty labels.')
+					values.add(value)
+			if isinstance(item, IntegerField):
+				if type(item.minimum) is not int or type(item.maximum) is not int or not 0 <= item.minimum <= item.maximum <= 18446744073709551615:
+					raise ValueError('Integer bounds must fit unsigned 64-bit integers.')
+			if isinstance(item, (Select, DateField, IntegerField)):
+				validate_field_value(item, item.value)
 			if isinstance(item, Choice):
 				values = set()
 				for value, icon, tooltip in item.options:

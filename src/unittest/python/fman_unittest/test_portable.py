@@ -79,6 +79,7 @@ class PluginApiCompatibilityTest(TestCase):
 			'settings_resource', 'matchers', 'ToolWindow', 'PaneToolWindow',
 			'NavigationHandle', 'navigate', 'OutputTextBox', 'TableRow', 'TableAction',
 			'TextField', 'Toggle', 'Choice', 'Label', 'Action', 'TableHandle', 'PanelHandle',
+			'Select', 'DateField', 'IntegerField', 'Separator',
 			'show_table', 'show_panel'
 		}
 		self.assertEqual(expected, set(fman.ui.__all__))
