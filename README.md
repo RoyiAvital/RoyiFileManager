@@ -43,7 +43,7 @@ Significant additions compared with `fman`:
 
 > [!TIP]
 > Open an issue for new feature feature requests.  
-> Any feedback is more than welcome.
+> Any feedback is highly appreciated.
 
 ## Development
 
