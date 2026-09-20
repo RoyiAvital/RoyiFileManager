@@ -7,10 +7,7 @@
   migrate Favorites as the reference consumer, document API migration, and add
   focused tests for the boundary and preserved behavior. Preserve the upstream
   fman 1.7.5 plug-in API.
-- [ ] Replace legacy `tinycss 0.4` usage with `tinycss2` to remove Python 3.14
-  invalid escape warnings. Preserve existing CSS selector, declaration, value,
-  Unicode, and parse-error behavior; add focused parser and theme regression
-  tests; regenerate `conda-lock.yml`; and verify the PyInstaller build.
+- [x] Generate a plan to replace legacy `tinycss 0.4` usage with `tinycss2`.
 - [ ] Reevaluate RapidFuzz as a future replacement for the pure-Python fuzzy matcher.
   The benchmark in `src/misc/benchmark_fuzzy_search.py` measured RapidFuzz
   `QRatio` at approximately 8.5 ms per query over 75,000 paths, compared with
@@ -19,15 +16,15 @@
   a conda-forge package that does not pull in NumPy and MKL, verify collection
   and execution in the PyInstaller build, rerun the benchmark, and add ranking
   regression tests for representative filename queries.
-- [ ] Add "Quick View" mode where there inactive pane is used for previewing the current file.
+- [x] Add "Quick View" mode where there inactive pane is used for previewing the current file.
 - [ ] Integrate "Quick Look Win". See [QuickLook-Win](https://github.com/BenjaminKobjolke/QuickLook-Win).
 - [ ] Integrate a Terminal into the file manager. Or at least open the current folder in Windows Terminal.
 - [ ] Add a "Rename Tool" as a Plug In. See [FManPowerRenamerAndReplacer
 ](https://github.com/BenjaminKobjolke/FManPowerRenamerAndReplacer).
 - [ ] Add "Synchronized Browsing" feature. See [SynchronizedBrowsing](https://github.com/mherrmann/SynchronizedBrowsing).
-- [ ] Add option to compare 2 files using external file comparison or integrate Meld view. See [SimpleCompare
+- [x] Add option to compare 2 files using external file comparison or integrate Meld view. See [SimpleCompare
 ](https://github.com/rjwojcicki/SimpleCompare).
-- [ ] Show System Process in a Pane with teh ability to kill a process. See [ProcessFS](https://github.com/mherrmann/ProcessFS).
+- [x] Show System Process in a Pane with the ability to kill a process. See [ProcessFS](https://github.com/mherrmann/ProcessFS).
 - [x] BUG: On launch the status bar shows `v1.7.5`. It should show the version from `base.json`.
 - [ ] Move to `PyQt6`.
 - [x] Add support for `Notepad 4` as a text editor / viewer. Use the flags `-ro -ns` for view mode and `-ns` for edit mode.
@@ -35,7 +32,7 @@
 - [x] Update `CudaText` settings for viewer: `-r -n -ns -nh` and for editor: `-n -ns -nh`.
 - [x] Add support for `EmEditor` as a text editor / viewer. Use the flags `-nr -sp -r` for view mode and `-nr -sp` for edit mode.
 - [x] Rename the file creation commands: "Edit new file" (`Shift+F4`) creates a file and opens it in the editor, "New file" (`Ctrl+N`) creates an empty file without opening the editor.
-- [ ] Evaluate using [`fd`](https://github.com/sharkdp/fd) to accelerate searching.
+- [x] Evaluate using [`fd`](https://github.com/sharkdp/fd) to accelerate searching.
 - [ ] Use ISO Style date (`YYYY-mm-dd`) and 24 Hours format for time. Should be a tiny run time improvement.
 - [ ] Enable the file watching mechanism on Windows.
 - [ ] Implement [Commit `f3e48d2`](https://github.com/mherrmann/fman/commit/f3e48d23308689c4d3ffc90753a73bf6bb24a55b) from [`fman`](https://github.com/mherrmann/fman).

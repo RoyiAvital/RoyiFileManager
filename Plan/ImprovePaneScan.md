@@ -1,7 +1,8 @@
 # Improve Pane Scan
 
-Status: Proposed design; review before implementation. Only the standalone
-benchmark and its tests are implemented. Application scanning is unchanged.
+Status: Proposed design; review before implementation. The standalone benchmark
+and its tests are implemented; the lazy prototype below is diagnostic-only.
+Application scanning is unchanged.
 
 ## Task
 
@@ -101,6 +102,41 @@ but incomplete identity in the enumeration result:
 
 The numbers identify the observed sample, not test constants. This matches
 [Python's documented Windows behavior](https://docs.python.org/3.14/library/os.html#os.DirEntry.stat).
+
+### Whole-Pane Profile (2026_09_21)
+
+Read-only measurements on the CelebAAligned dataset: 202,603 entries, including
+202,599 JPEGs. QuickView was never imported. The separate uniform-row-height fix
+was already active; this measures the remaining first-list-display delay.
+
+| Phase | Lightweight timing | Detail |
+| --- | ---: | --- |
+| Worker preparation | 6.04 s | Row/name/directory metadata setup: 3.73 s; filtering/sorting: 1.86 s. |
+| Qt-thread model commit | 2.19 s | Repeated filtering/sorting: 1.86 s; initial row diff/application: 0.30 s. |
+| Remaining dispatch and first paint | 0.03 s | Paint callback itself: 15 ms. |
+| First populated paint | 8.26 s | Includes the preceding phases; not image decoding. |
+
+Separate raw enumeration took 71 ms. Only 34 visible rows needed full-column
+preloading. Profile captures identify `Name.get_sort_value -> is_dir -> stat`
+during every row's construction. Both filtering passes invoke
+[the hidden-file helper](../src/main/resources/base/Plugins/Core/core/commands/util.py),
+which creates a fresh `QFileInfo(...).isHidden()` rather than using the stat cache:
+202,603 calls per pass. Name comparisons are not the dominant sorting cost.
+
+Method: disposable application settings, existing Python 3.14.7/Qt runtime,
+`perf_counter()` boundaries around row preparation, Qt commit and first populated
+paint, plus separate `cProfile` captures of preparation and commit. OS caches
+were not flushed. Full profiling increased total time to 15.74 s, so its elapsed
+times are not the baseline. This Python build's cProfile captures other threads;
+the captures describe sequential regions, not exclusive per-thread CPU time.
+
+The lazy-stat alternative targets metadata acquisition within the 3.73 s row
+setup; it does not remove Python row/cache construction. Its provider-only form
+does not affect hidden-file checks, which bypass that cache. Reusing Windows
+hidden attributes would be an additional consumer change requiring parity tests
+for attributes, links, errors and invalidation. Reusing the worker's filtered,
+sorted rows at Qt commit is complementary but remains outside this scan task:
+it needs sort/filter/navigation-state guards, not merely a faster iterator.
 
 ## Scope
 
@@ -300,6 +336,147 @@ $env:PYTHONPATH = 'src/main/python;src/unittest/python;src/main/resources/base/P
 $env:PYTHONUTF8 = '1'
 python -m unittest core.tests.fs.test_local_scan core.tests.fs.test_local
 ```
+
+#### Isolated Whole-Pane Trial (2026_09_21)
+
+Tested the alternative on the same 202,603-entry CelebAAligned folder through
+real application startup, navigation and first populated paint. No application
+source, saved settings or dataset files were changed. Each run used a fresh
+Python 3.14.7 process, disposable settings and native Qt; QuickView remained
+unimported and the uniform-row-height fix remained active.
+
+The process-local prototype seeded ordinary entries with a slotted proxy holding
+enumeration stat, path, optional full stat and an upgrade lock. Cache `query`
+preserved an existing full result instead of unconditionally overwriting it.
+Reparse entries stayed on the existing full-stat path. Identity accessed an
+uncached stat-with-fallback, once under the lock. This does **not** solve stale
+scan publication after cache invalidation, cancellation, or proxy protocol/API
+compatibility; it is a quiet single-scan performance experiment.
+
+Three modes, run in order `baseline`, `lazy`, `lazy-hidden`, then reverse order:
+
+- `baseline`: existing listdir/stat and Qt hidden-file checks.
+- `lazy`: provider-only lazy stat; existing hidden-file checks unchanged.
+- `lazy-hidden`: same proxy plus an experimental Windows hidden-filter consumer
+  reading the cached proxy's `st_file_attributes`. Reject the entry when
+  `attributes & FILE_ATTRIBUTE_HIDDEN` is nonzero, instead of constructing
+  `QFileInfo` and calling `isHidden()`. Non-proxy entries retain the Qt helper;
+  identity access still performs the real stat described above.
+
+No explicit warmups or OS-cache flush. Two observations per mode are too few for
+a stable performance guarantee. Phase columns are arithmetic means; ranges show
+both first-paint observations. Counter/proxy overhead is included; exhaustive
+metadata/order verification and identity reads occurred after the timed paint.
+
+| Mode | Worker preparation | Qt commit | First paint mean | First paint range | Path stats before paint | Qt hidden checks |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Baseline | 6.229 s | 2.481 s | 8.742 s | 8.342-9.142 s | 202,603 | 405,206 |
+| Lazy provider | 5.030 s | 2.853 s | 7.917 s | 7.805-8.029 s | 0 | 405,206 |
+| Lazy + hidden attributes | 3.496 s | 1.107 s | 4.634 s | 4.612-4.655 s | 0 | 0 |
+
+Provider-only lazy stat saved 0.825 s (9%) on average, not the entire row setup.
+It showed no Qt-commit improvement; the cause of its slower commit was not
+isolated. Adding hidden-attribute reuse saved 4.108 s (47%, 1.89x overall) versus
+baseline while still evaluating the filter 405,206 times. It did not remove the
+second filter/sort pass or change model publication.
+
+Memory is a tradeoff: mean working-set growth at first paint was 524.9 MiB for
+baseline and 561.2 MiB for either lazy mode, approximately 36.4 MiB extra.
+Process peak working set minus pre-navigation working set was 569.4 versus
+605.8 MiB. These are process measurements, not isolated proxy allocation sizes;
+the prototype retains enumeration results and per-entry paths/locks.
+
+All six runs had identical fingerprints over names, directory status, normalized
+size, exact modification time, Windows attributes, hidden classification and
+displayed order. All 202,603 entries were visible, so this folder does not prove
+behavior for hidden entries. Each lazy run also verified a sampled file's
+device/inode/link count against real stat: two identity reads caused exactly
+one path stat. This does not resolve the earlier System32 mismatch.
+
+Validation: the process-injected prototype ran the 19 existing acceptance cases
+plus three focused checks for concurrent identity access, failed upgrade, and
+preserving an existing full stat. Result: **20 passed, two symlink-privilege
+skips**, 0.268 s. The handle-closure fixture used a temporary context-manager
+wrapper because native `iterator.close` is read-only; the tracked test file was
+not changed. All three modes passed a small-folder startup/navigation/paint/
+shutdown smoke before the dataset runs. Production still has no `LazyStat`;
+these results are not a passing production implementation gate.
+
+Local diagnostic artifacts are under `target/diagnostics/directory-load/`:
+`lazy_probe.py`, `large-1-baseline.json` through `large-6-baseline.json` (mode in
+each filename), and `lazy-summary.json`. They are ignored, not shipped source.
+The batch required matching entry/visible-row counts, metadata fingerprints and
+visible-order fingerprints across every run before producing its summary.
+
+Reproduction commands from the repository root, with the existing application
+Python on PATH and `$Dataset` set to the read-only folder under test:
+
+```powershell
+$probe = 'target/diagnostics/directory-load/lazy_probe.py'
+python -c "import build, subprocess, sys; sys.exit(subprocess.run([sys.executable, *sys.argv[1:]], env=build._environment(), timeout=120).returncode)" "$probe" --self-test
+$run = 0
+foreach ($mode in @('baseline', 'lazy', 'lazy-hidden', 'lazy-hidden', 'lazy', 'baseline')) {
+    $run++
+    python -c "import build, subprocess, sys; env=build._environment(); env['QT_QPA_PLATFORM']='windows'; sys.exit(subprocess.run([sys.executable, *sys.argv[1:]], env=env, timeout=240).returncode)" "$probe" "$Dataset" --mode "$mode" --output "target/diagnostics/directory-load/large-$run-$mode.json"
+    if ($LASTEXITCODE -ne 0) { throw "Probe failed: $mode" }
+}
+git diff --check -- Plan/ImprovePaneScan.md
+```
+
+Design implications, not adoption decisions:
+
+- Here, **lazy means identity metadata on demand**, not progressive display of
+  only visible rows. Enumeration, proxy/cache creation and initial row creation
+  remain O(N); both filtering/sorting passes still precede first display.
+- Evaluate hidden-attribute reuse explicitly alongside either scan architecture.
+  It is an additional Core consumer change, not a provider-only benefit. A
+  private cheap metadata accessor could support it while public `stat()` keeps
+  returning a real full result; that compatibility refinement remains untested.
+- Hidden reuse needs Windows hidden/system/dot-name fixtures, special-entry and
+  error parity, and attribute-change refresh/invalidation tests. Nonlocal and
+  unsupported cases must keep existing behavior; do not promise general parity
+  from this all-visible, stable folder.
+- Reusing the worker's prepared order at Qt commit is complementary, untested
+  and outside this task's current scope. It requires sort/filter/navigation
+  state validation, not changes to the lazy proxy.
+- Resolve public return-object compatibility, cache publication races,
+  cancellation and the additional memory cost before adopting lazy stat. The
+  requested runtime choice and proposed listdir default remain unchanged.
+
+#### Further Headroom (Analysis Only, 2026_09_21)
+
+Going below the measured 4.634 s is plausible, not demonstrated. The remaining
+mean time is 3.496 s worker preparation, 1.107 s Qt commit and approximately
+0.031 s other dispatch/paint work. These are whole-phase measurements; they do
+not establish how much of either phase is removable.
+
+- **Reuse the prepared order.** [Model._initialize](../src/main/python/fman/impl/model/model.py)
+  already filters and sorts the rows. Its Qt commit calls `update()`, which
+  [filters and sorts again](../src/main/python/fman/impl/model/sorted_table.py).
+  Reusing the prepared result could remove part of the 1.107 s commit and reduce
+  the UI stall. Required row insertion/model notifications still cost time, so
+  subtracting the entire commit would overstate the saving. Reuse needs matching
+  navigation, sort, filter and row-data state; arbitrary plug-in filters may
+  depend on external state. Fall back to recomputation when validity cannot be
+  established. This is the strongest next experiment candidate, not approval
+  to run it or an extension of the current scan scope.
+- **Reduce per-entry Python work.** Lazy stat still builds cache entries,
+  proxies, rows and cells for all 202,603 entries. Fewer allocations and repeated
+  cache/path lookups might reduce worker time and the measured memory overhead.
+  The optimized worker needs its own profile before choosing a change; the
+  baseline profile cannot quantify its remaining allocation/lookup costs.
+- **Defer more row construction.** Creating additional display cells only when
+  needed could reduce upfront work, but this is a broader model design change.
+  Only visible rows currently receive full-column preloading, so this proposal
+  concerns the initial row/cell structures, not deferring that work a second
+  time. Correct global sorting/filtering still requires examining all relevant
+  entries; loading only the first 34 enumerated names is not equivalent.
+
+Any future comparison must preserve displayed order, selection and cursor,
+custom-column/filter behavior and stale-result rejection, and report memory as
+well as first-paint time and Qt-thread blocking. No specific lower-time target
+is justified by the existing measurements. Per the user's instruction, this
+follow-up records analysis only: no further experiment or application change.
 
 ### Original Alternatives
 
@@ -553,3 +730,36 @@ python -m unittest fman_integrationtest.test_qt.SortedFileSystemModelIT
   compatibility. Recorded conditional public-query tests and a private-proxy
   refinement for stricter compatibility. No architecture adoption, application
   implementation or compatibility-break approval is implied by this update.
+
+### 2026_09_21 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: High
+- Context Window: Not exposed by host
+- Outcome: Added the remaining first-paint profile and isolated whole-pane lazy
+  trial. On 202,603 stable entries, provider-only lazy stat averaged 7.917 s
+  versus 8.742 s baseline; adding hidden-attribute reuse averaged 4.634 s with
+  equal metadata and displayed order. Recorded approximately 36.4 MiB extra
+  working set, 20 passing prototype checks and two symlink skips. Lazy identity
+  alone does not eliminate repeated Qt hidden checks or make display progressive.
+  Recommend evaluating a compatible cheap-metadata/hidden-consumer path before
+  architecture adoption; proxy API, invalidation races, cancellation and special
+  files remain gates. No production scan, scope, default or compatibility-break
+  change is approved by this diagnostic review.
+
+### 2026_09_21 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Low
+- Context Window: Not exposed by host
+- Outcome: Clarified the hidden-attribute check and documented possible further
+  gains from prepared-order reuse, reduced per-entry Python work and deferred
+  row construction. Distinguished measured phase totals from unmeasured savings
+  and recorded correctness boundaries. Documentation only at the user's request;
+  no additional experiment, implementation or scope/default change.

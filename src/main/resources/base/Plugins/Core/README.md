@@ -33,6 +33,47 @@ navigating clears the filter and resets its status message to `Ready.`.
 `Space` still toggles selection, even while filtering. Multiple-term AND
 matching is not implemented; spaces supplied as filter text remain literal.
 
+## QuickView
+
+On Windows, `Ctrl+Q` / **Toggle QuickView** previews the file under the source
+cursor over the other pane, including its address bar. Marked files do not choose
+the preview. JPEG, PNG and BMP are supported; loading errors appear inline.
+QuickView starts off at every launch and does no image work while off.
+
+| Control | Action |
+| --- | --- |
+| Source `Tab` | Focus QuickView instead of the covered file list |
+| QuickView `Tab`, `Shift+Tab`, `Escape` | Return to source without closing |
+| `Ctrl+Q` or close icon | Close QuickView |
+| Fit / `F` | Fit without enlarging small images |
+| 100% / `1` | One image pixel per physical screen pixel |
+| `+`, `-`, zoom buttons, `Ctrl+wheel` | Zoom between 5% and 800%; Fit can be smaller |
+| Arrows / `Shift+arrows` | Pan 32 / 128 logical pixels |
+| Drag, wheel / `Shift+wheel` | Pan with mouse, vertically / horizontally |
+
+Image keys apply only while QuickView has focus. Other keys first focus the
+source and use its existing shortcut dispatch, including Command Center.
+An unbound key is consumed, not typed into the source filter. Custom source Tab
+bindings retain their normal precedence. File operations still use the actual
+covered directory as their opposite-pane destination; QuickView does not block
+operations or restore old directory state when closed.
+
+Command Center also offers **QuickView: Fit**, **100%**, **Zoom in**, **Zoom out**
+and **Pan** when an image is ready. Their command IDs are `quick_view_fit`,
+`quick_view_actual_size`, `quick_view_zoom_in`, `quick_view_zoom_out` and
+`quick_view_pan`; Pan accepts `direction` (`left`, `right`, `up`, `down`, default
+`down`) and `large` (default `false`). These commands have no additional default
+bindings. Only explicit Fit/100% preferences are saved to `QuickView.json` under
+UserSettings, using `image_mode` values `fit` and `actual_size`.
+
+Local and accessible UNC regular files are supported, including resolved local
+symlinks. Limits are 64 MiB encoded, 128 million pixels and 65,536 pixels per edge.
+The normalized image can use about 488 MiB; temporary decoding/conversion buffers
+can exceed that substantially. Only the first image/frame is shown. No archive
+extraction, animation, SVG rasterization, video, text preview, prefetch or image
+cache is included. Cancellation discards stale results; it cannot interrupt a
+blocked native read, but disabling QuickView and exiting do not wait for it.
+
 ## Directory Sizes
 
 - `Ctrl+Shift+D`: toggle automatic recursive totals for all directories listed

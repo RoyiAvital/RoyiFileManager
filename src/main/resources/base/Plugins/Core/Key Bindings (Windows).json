@@ -7,6 +7,7 @@
 	{ "keys": ["Ctrl+V"], "command": "paste" },
 	{ "keys": ["Ctrl+A"], "command": "select_all" },
 	{ "keys": ["Ctrl+S"], "command": "toggle_extended_status_bar" },
+	{ "keys": ["Ctrl+Q"], "command": "toggle_quick_view" },
 	{ "keys": ["Ctrl+D"], "command": "deselect" },
 	{ "keys": ["Ctrl+Shift+D"], "command": "toggle_directory_size_column" },
 	{ "keys": ["Ctrl+Shift+Enter"], "command": "show_directory_size" },

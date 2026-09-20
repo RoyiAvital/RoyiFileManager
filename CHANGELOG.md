@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
 
+## [0.8.0] - 2026-09-21
+
+API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
+
+### Added
+
+- Windows image **QuickView** (`Ctrl+Q`): cursor-following JPEG/PNG/BMP preview
+  over the opposite pane, without replacing its layout or directory state.
+  Tab focuses the preview; Fit, physical-pixel 100%, zoom, pan, EXIF orientation
+  and transparency are supported. Loading is bounded and asynchronous, with
+  stale-result rejection, inline errors and limits of 128 MP / 65,536 pixels per
+  edge / 64 MiB encoded. Starts off and remembers explicit Fit/100% preferences.
+
+### Fixed
+
+- Avoid recalculating every file-list row height on metadata updates in large
+  folders, preventing repeated UI stalls and delayed image previews. Uniform
+  row heights still follow font and theme changes.
+
 ## [0.7.1] - 2026-09-20
 
 API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.

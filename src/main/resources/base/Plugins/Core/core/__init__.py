@@ -3,6 +3,8 @@ from core.fs import *
 from core import directory_size
 from core.directory_size import DirectorySizeService, ToggleDirectorySizeColumn, \
 	RecalculateDirectorySizes, SortByDirectorySize, ShowDirectorySize
+from core.quick_view import QuickViewService, ToggleQuickView, QuickViewFit, \
+	QuickViewActualSize, QuickViewZoomIn, QuickViewZoomOut, QuickViewPan
 from datetime import datetime
 from fman.fs import Column
 from fman.impl.status_bar import format_size

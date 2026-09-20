@@ -39,6 +39,94 @@ class QtIT(TestCase):
 class SortedFileSystemModelIT(SortedFileSystemModelAT, QtIT):
 	pass
 
+class UniformRowHeightsIT(QtIT):
+	def test_metadata_updates_do_not_measure_every_row(self):
+		from fman.impl.view import FileListView
+		from fman.impl.view.uniform_row_heights import DummyModel, UniformRowHeights
+		from PyQt5.QtCore import QSize
+		class CountingView(UniformRowHeights):
+			def __init__(self):
+				super().__init__()
+				self.row_size_requests = 0
+			def sizeHintForRow(self, row):
+				self.row_size_requests += 1
+				return super().sizeHintForRow(row)
+		def check():
+			model = DummyModel(200000, 3, QSize(16, 16))
+			view = CountingView()
+			model.setParent(view)
+			view.setModel(model)
+			FileListView._init_vertical_header(view)
+			try:
+				view.resize(640, 480)
+				view.show()
+				QApplication.processEvents()
+				for first, last, column in ((0, 20, 2), (199900, 199920, 2), (0, 0, 0)):
+					with self.subTest(first=first, last=last, column=column):
+						view.row_size_requests = 0
+						model.dataChanged.emit(model.index(first, 0), model.index(last, column), [])
+						QApplication.processEvents()
+						self.assertLess(view.row_size_requests, 100, 'Metadata update resized the entire directory')
+						self.assertEqual(view.get_row_height(), view.rowHeight(0))
+						self.assertEqual(view.rowHeight(0), view.rowHeight(model.rowCount() - 1))
+				view.scrollTo(model.index(model.rowCount() - 1, 0))
+				QApplication.processEvents()
+				self.assertIn(model.rowCount() - 1, view.get_visible_row_range())
+				self.assertEqual(view.rowAt(0), view.get_visible_row_range().start)
+			finally:
+				view.close()
+				view.deleteLater()
+		self.run_in_app(check)
+
+	def test_font_style_and_editor_updates_preserve_row_geometry(self):
+		from fman.impl.view import FileListView
+		from fman.impl.view.uniform_row_heights import UniformRowHeights
+		from PyQt5.QtGui import QFont, QStandardItemModel
+		from PyQt5.QtTest import QTest
+		from PyQt5.QtWidgets import QLineEdit
+		def check():
+			view = UniformRowHeights()
+			model = QStandardItemModel(200, 3, view)
+			view.setModel(model)
+			view.setShowGrid(False)
+			view.setWordWrap(False)
+			FileListView._init_vertical_header(view)
+			try:
+				view.resize(640, 480)
+				view.show()
+				QApplication.processEvents()
+				original_height = view.rowHeight(0)
+				font = QFont(view.font())
+				font.setPixelSize(original_height + 12)
+				view.setFont(font)
+				QApplication.processEvents()
+				self.assertGreater(view.rowHeight(0), original_height)
+				for style in ('QTableView::item { padding: 6px; }', ''):
+					view.setStyleSheet(style)
+					QApplication.processEvents()
+					expected = max(view._get_cell_heights())
+					self.assertEqual(expected, view.rowHeight(0))
+					self.assertEqual(expected * model.rowCount(), view.verticalHeader().length())
+					view.scrollTo(model.index(model.rowCount() - 1, 0))
+					self.assertIn(model.rowCount() - 1, view.get_visible_row_range())
+				index = model.index(model.rowCount() - 1, 0)
+				model.setData(index, 'before')
+				view.edit(index)
+				editor = view.findChild(QLineEdit)
+				self.assertIsNotNone(editor)
+				model.setData(index, 'after')
+				self.assertEqual('after', editor.text())
+				QTest.keyClick(editor, Qt.Key_Escape)
+				model.setRowCount(0)
+				view.setFont(QFont())
+				model.setRowCount(200)
+				QApplication.processEvents()
+				self.assertEqual(max(view._get_cell_heights()), view.rowHeight(0))
+			finally:
+				view.close()
+				view.deleteLater()
+		self.run_in_app(check)
+
 class MainWindowIT(QtIT):
 	def test_forced_minimum_size(self):
 		from fman.impl.widgets import MainWindow
@@ -55,6 +143,427 @@ class MainWindowIT(QtIT):
 				window.close()
 				window.deleteLater()
 		self.run_in_app(check)
+
+class QuickViewIT(QtIT):
+	def setUp(self):
+		FilterBarIT.setUp(self)
+
+	def close_window(self):
+		FilterBarIT.close_window(self)
+
+	def navigate(self, *args):
+		return FilterBarIT.navigate(self, *args)
+
+	def drain(self, *args):
+		return FilterBarIT.drain(self, *args)
+
+	def test_overlay_preserves_panes_and_focus(self):
+		from fman.impl.quick_view import QuickViewOverlay
+		from PyQt5.QtTest import QTest
+		def check():
+			source, target = self.panes
+			original = (target.layout(), target._model, target._file_view.parent(), target.focusProxy(), self.window.minimumSize(), self.window._splitter.count())
+			overlay = QuickViewOverlay(self.window, source, target)
+			try:
+				self.assertIs(overlay.parentWidget(), self.window.centralWidget())
+				self.assertFalse(target.isAncestorOf(overlay))
+				for key, modifiers in ((Qt.Key_Tab, Qt.NoModifier), (Qt.Key_Backtab, Qt.ShiftModifier), (Qt.Key_Escape, Qt.NoModifier)):
+					overlay.focus_canvas()
+					self.assertTrue(overlay.canvas.hasFocus())
+					QTest.keyClick(overlay.canvas, key, modifiers)
+					self.assertTrue(source.hasFocus())
+					self.assertTrue(overlay.isVisible())
+				overlay.focus_canvas()
+				QTest.keyClick(overlay.canvas, Qt.Key_Down, Qt.ShiftModifier)
+				self.assertTrue(overlay.canvas.hasFocus())
+				self.controller.handle_shortcut.reset_mock()
+				QTest.keyClick(overlay.canvas, Qt.Key_F8)
+				self.controller.handle_shortcut.assert_called_once()
+				self.assertTrue(source.hasFocus())
+				self.assertEqual(original, (target.layout(), target._model, target._file_view.parent(), target.focusProxy(), self.window.minimumSize(), self.window._splitter.count()))
+				target.setFocus()
+				QTest.mouseClick(overlay.canvas.viewport(), Qt.LeftButton)
+				self.assertTrue(overlay.canvas.hasFocus())
+				self.assertIs(source, self.window._active_pane)
+			finally:
+				overlay.dispose()
+		self.run_in_app(check)
+
+	def test_overlay_follows_panel_and_splitter(self):
+		from fman.impl.quick_view import QuickViewOverlay
+		from PyQt5.QtCore import QPoint, QRect
+		from PyQt5.QtWidgets import QFrame
+		def check():
+			source, target = self.panes
+			overlay = QuickViewOverlay(self.window, source, target)
+			panel = QFrame(self.window.centralWidget())
+			panel.setFixedHeight(90)
+			try:
+				self.window._central_layout.addWidget(panel)
+				panel.show()
+				QApplication.processEvents()
+				self.assertEqual(QRect(target.mapTo(overlay.parentWidget(), QPoint()), target.size()), overlay.geometry())
+				panel.hide()
+				QApplication.processEvents()
+				before = target.pos()
+				self.window._splitter.move(self.window._splitter.pos() + QPoint(0, 7))
+				self.assertEqual(before, target.pos())
+				self.assertEqual(QRect(target.mapTo(overlay.parentWidget(), QPoint()), target.size()), overlay.geometry())
+				self.window._splitter.moveSplitter(390, 1)
+				self.assertEqual(QRect(target.mapTo(overlay.parentWidget(), QPoint()), target.size()), overlay.geometry())
+			finally:
+				overlay.dispose()
+				self.window._central_layout.removeWidget(panel)
+				panel.deleteLater()
+		self.run_in_app(check)
+
+
+class QuickViewImagesIT(QtIT):
+	setUp = QuickViewIT.setUp
+	close_window = QuickViewIT.close_window
+	navigate = QuickViewIT.navigate
+	drain = QuickViewIT.drain
+
+	def make_image(self, name='image.png', width=600, height=400, color='red', image_format='PNG'):
+		from PyQt5.QtGui import QColor, QImage
+		path = self.root / name
+		image = QImage(width, height, QImage.Format_ARGB32)
+		image.fill(QColor(color))
+		self.assertTrue(image.save(str(path), image_format))
+		return path
+
+	def test_decoders_limits_wrong_suffix_and_unsupported(self):
+		from fman.impl.quick_view_images import ImageRequest, load_image, MAX_FILE_BYTES
+		from fman.url import as_url
+		from unittest.mock import patch
+		from types import SimpleNamespace
+		for image_format in ('JPEG', 'PNG', 'BMP'):
+			path = self.make_image(image_format + '.wrong', 9, 7, image_format=image_format)
+			result = load_image(ImageRequest(1, as_url(path)), lambda: False, lambda url: url)
+			self.assertIsNotNone(result.image, result.message)
+			self.assertEqual((9, 7), (result.image.width(), result.image.height()))
+			self.assertEqual(1, result.image.devicePixelRatio())
+			self.assertGreater(result.image.pixelColor(0, 0).red(), 240)
+		path = self.make_image('retina@2x.png', 8, 6, '#80402010')
+		result = load_image(ImageRequest(1, as_url(path)), lambda: False, lambda url: url)
+		self.assertEqual(128, result.image.pixelColor(0, 0).alpha())
+		self.assertEqual(1, result.image.devicePixelRatio())
+		for name, data in (('bad.png', b'not an image'), ('vector.png', b'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>')):
+			path = self.root / name
+			path.write_bytes(data)
+			self.assertIsNone(load_image(ImageRequest(1, as_url(path)), lambda: False, lambda url: url).image)
+		request = ImageRequest(1, as_url(self.root / 'retina@2x.png'))
+		info = (self.root / 'retina@2x.png').stat()
+		changed = SimpleNamespace(st_dev=info.st_dev, st_ino=info.st_ino, st_size=info.st_size, st_mtime_ns=info.st_mtime_ns + 1)
+		with patch('fman.impl.quick_view_images.os.stat', side_effect=[info, changed]):
+			self.assertIn('changed', load_image(request, lambda: False, lambda url: url).message)
+		oversized = SimpleNamespace(st_mode=info.st_mode, st_size=MAX_FILE_BYTES + 1)
+		with patch('fman.impl.quick_view_images.os.stat', return_value=oversized), patch('fman.impl.quick_view_images.QImageReader') as reader:
+			self.assertIsNone(load_image(request, lambda: False, lambda url: url).image)
+			reader.assert_not_called()
+
+	def test_exif_orientation(self):
+		from fman.impl.quick_view_images import ImageRequest, load_image
+		from fman.url import as_url
+		from struct import pack
+		path = self.make_image('oriented.jpg', 12, 8, image_format='JPEG')
+		data = path.read_bytes()
+		exif = b'Exif\0\0II' + pack('<HIH', 42, 8, 1) + pack('<HHIHHI', 274, 3, 1, 6, 0, 0)
+		path.write_bytes(data[:2] + b'\xff\xe1' + pack('>H', len(exif) + 2) + exif + data[2:])
+		result = load_image(ImageRequest(1, as_url(path)), lambda: False, lambda url: url)
+		self.assertIsNotNone(result.image, result.message)
+		self.assertEqual((8, 12), (result.image.width(), result.image.height()))
+
+	def test_session_cursor_delivery_modes_and_cleanup(self):
+		from fman.impl.quick_view import QuickViewSession
+		from fman.impl.quick_view_images import load_image
+		from fman.impl.ui import UiOwner
+		from fman.url import as_url
+		from PyQt5.QtCore import QThread
+		from unittest.mock import patch
+		path = self.make_image()
+		self.panes[0].reload()
+		self.drain(self.panes[0])
+		self.panes[0].place_cursor_at(as_url(path))
+		ready, worker = Event(), []
+		owner = UiOwner()
+		def load(request, canceled):
+			worker.append(QThread.currentThread() != QApplication.instance().thread())
+			return load_image(request, canceled, self.filesystem.resolve)
+		with patch('fman.load_json', return_value={'other': 7}), patch('fman.save_json') as save:
+			def create():
+				session = QuickViewSession(self.window, *self.panes, owner=owner, load=load)
+				session.overlay.canvas.changed.connect(lambda: ready.set() if session.overlay.canvas.image is not None else None)
+				return session
+			session = self.run_in_app(create)
+			self.addCleanup(session.shutdown)
+			self.assertTrue(ready.wait(5), 'Image did not reach Qt')
+			self.assertEqual([True], worker)
+			def check():
+				canvas = session.overlay.canvas
+				self.assertIsNotNone(canvas.image)
+				self.assertEqual('fit', canvas.mode)
+				session.image_action('actual_size')
+				self.assertEqual(1, canvas.scale)
+				self.window.resize(1100, 680)
+				self.assertEqual(1, canvas.scale)
+				session.image_action('zoom_in')
+				self.assertEqual(1.25, canvas.scale)
+				session.switch_focus()
+				self.assertTrue(canvas.hasFocus())
+				session.switch_focus()
+				self.assertTrue(self.panes[0].hasFocus())
+				self.assertEqual(2, len(self.window.get_panes()))
+			self.run_in_app(check)
+			save.assert_called_once_with('QuickView.json', {'other': 7, 'image_mode': 'actual_size'})
+			owner.invalidate()
+			self.assertTrue(session.closed)
+			self.assertIsNone(self.window._quick_view_session)
+			self.assertFalse(session._connections)
+
+	def test_empty_and_disappeared_locations_finish_loading(self):
+		from fman.impl.quick_view import QuickViewSession
+		from fman.impl.quick_view_images import ImageResult
+		from fman.url import as_url
+		from PyQt5.QtGui import QImage
+		from unittest.mock import Mock, patch
+		source = self.panes[0]
+		for disappears in (False, True):
+			with self.subTest(disappears=disappears):
+				parent = self.root / ('empty-%s' % disappears)
+				parent.mkdir()
+				destination = parent
+				if disappears:
+					destination = parent / 'disappearing'
+					destination.mkdir()
+				parent_url, destination_url = as_url(parent), as_url(destination)
+				loaded = Event()
+				load = Mock(return_value=ImageResult(message='Unexpected load'))
+				iterdir = self.filesystem.iterdir
+				def list_directory(url):
+					if disappears and url == destination_url:
+						destination.rmdir()
+						raise FileNotFoundError(url)
+					return iterdir(url)
+				def on_loaded(url):
+					if url == parent_url:
+						loaded.set()
+				def create():
+					session = QuickViewSession(self.window, *self.panes, load=load)
+					session.timer.stop()
+					session.overlay.canvas.set_image(QImage(2, 2, QImage.Format_RGB32))
+					session.overlay.set_title('previous.png')
+					source._model.location_loaded.connect(on_loaded)
+					return session
+				with patch('fman.load_json', return_value={}), patch.object(self.filesystem, 'iterdir', side_effect=list_directory):
+					session = self.run_in_app(create)
+					try:
+						source.set_location(destination_url)
+						self.assertTrue(loaded.wait(5), 'Empty parent did not finish loading')
+						self.drain(source)
+						def check():
+							self.assertEqual(parent_url, source.get_location())
+							self.assertFalse(session._loading_location)
+							self.assertIsNone(session.overlay.canvas.image)
+							self.assertEqual('No file selected', session.overlay.canvas.message)
+							self.assertFalse(session.timer.isActive())
+						self.run_in_app(check)
+						load.assert_not_called()
+					finally:
+						self.run_in_app(source._model.location_loaded.disconnect, on_loaded)
+						session.shutdown()
+
+	def test_large_edge_paint_and_zoom_anchor(self):
+		from fman.impl.quick_view import QuickViewOverlay
+		from PyQt5.QtCore import QPointF
+		from PyQt5.QtGui import QColor, QImage
+		def check():
+			overlay = QuickViewOverlay(self.window, *self.panes)
+			try:
+				canvas = overlay.canvas
+				image = QImage(40, 20, QImage.Format_RGB32)
+				image.fill(QColor('red'))
+				canvas.set_image(image, 'actual_size')
+				pixels = canvas.viewport().grab().toImage()
+				def red(color):
+					return color.red() > 240 and color.green() < 20 and color.blue() < 20
+				self.assertEqual(40, sum(red(pixels.pixelColor(column, pixels.height() // 2)) for column in range(pixels.width())))
+				self.assertEqual(20, sum(red(pixels.pixelColor(pixels.width() // 2, row)) for row in range(pixels.height())))
+				image = QImage(65536, 8, QImage.Format_RGB32)
+				image.fill(QColor('red'))
+				canvas.set_image(image, 'actual_size')
+				for position in (0, canvas.horizontalScrollBar().maximum()):
+					canvas.horizontalScrollBar().setValue(position)
+					pixels = canvas.viewport().grab().toImage()
+					self.assertTrue(red(pixels.pixelColor(pixels.width() // 2, pixels.height() // 2)))
+				image = QImage(2000, 1600, QImage.Format_RGB32)
+				image.fill(QColor('blue'))
+				canvas.set_image(image, 'actual_size')
+				pointer = QPointF(120, 100)
+				before = canvas._image_point(pointer)
+				canvas.zoom(1, pointer)
+				after = canvas._image_point(pointer)
+				self.assertLess(abs(before.x() - after.x()), 2)
+				self.assertLess(abs(before.y() - after.y()), 2)
+			finally:
+				overlay.dispose()
+		self.run_in_app(check)
+
+	def test_disable_reenable_reuses_blocked_loader_and_rejects_old_image(self):
+		from fman.impl.quick_view import QuickViewSession
+		from fman.impl.quick_view_images import ImageResult
+		from fman.url import as_url
+		from PyQt5.QtGui import QColor, QImage
+		from unittest.mock import patch
+		path = self.make_image()
+		self.panes[0].reload()
+		self.drain(self.panes[0])
+		self.panes[0].place_cursor_at(as_url(path))
+		started, release, ready = Event(), Event(), Event()
+		loads = []
+		def load(request, canceled):
+			loads.append(request.generation)
+			first = len(loads) == 1
+			if first:
+				started.set()
+				release.wait(5)
+			image = QImage(2, 2, QImage.Format_RGB32)
+			image.fill(QColor('red' if first else 'blue'))
+			return ImageResult(image, format='png')
+		self.addCleanup(release.set)
+		with patch('fman.load_json', return_value={}):
+			first = self.run_in_app(lambda: QuickViewSession(self.window, *self.panes, load=load))
+			self.addCleanup(first.shutdown)
+			self.assertTrue(started.wait(5))
+			def replace():
+				bridge = first.bridge
+				first.close()
+				session = QuickViewSession(self.window, *self.panes, load=load)
+				self.assertIs(bridge, session.bridge)
+				session.overlay.canvas.changed.connect(lambda: ready.set() if session.overlay.canvas.image is not None else None)
+				return session
+			second = self.run_in_app(replace)
+			self.addCleanup(second.shutdown)
+			release.set()
+			self.assertTrue(ready.wait(5))
+			self.assertEqual(2, len(loads))
+			self.assertEqual(QColor('blue'), self.run_in_app(lambda: second.overlay.canvas.image.pixelColor(0, 0)))
+
+	def test_cursor_debounce_ignores_marks_and_clears_old_pixels(self):
+		from fman.impl.quick_view import QuickViewSession
+		from fman.impl.quick_view_images import load_image
+		from fman.url import as_url
+		from PyQt5.QtGui import QColor
+		from unittest.mock import patch
+		red = as_url(self.make_image('red.png', 8, 8, 'red'))
+		blue = as_url(self.make_image('blue.png', 8, 8, 'blue'))
+		self.panes[0].reload()
+		self.drain(self.panes[0])
+		self.panes[0].place_cursor_at(red)
+		ready = Event()
+		loads = []
+		def load(request, canceled):
+			loads.append(request.url)
+			return load_image(request, canceled, self.filesystem.resolve)
+		with patch('fman.load_json', return_value={}), patch('fman.save_json') as save:
+			def create():
+				session = QuickViewSession(self.window, *self.panes, load=load)
+				session.overlay.canvas.changed.connect(lambda: ready.set() if session.overlay.canvas.image is not None else None)
+				return session
+			session = self.run_in_app(create)
+			self.addCleanup(session.shutdown)
+			self.assertTrue(ready.wait(5))
+			ready.clear()
+			generation = session.generation
+			self.panes[0].select([blue])
+			self.assertEqual(generation, session.generation)
+			def browse():
+				for index in range(200):
+					self.panes[0].place_cursor_at(red if index % 2 else blue)
+				self.panes[0].place_cursor_at(blue)
+				self.assertIsNone(session.overlay.canvas.image)
+				self.assertTrue(session.timer.isActive())
+			self.run_in_app(browse)
+			self.assertTrue(ready.wait(5))
+			self.assertEqual([red, blue], loads)
+			self.assertEqual(QColor('blue'), self.run_in_app(lambda: session.overlay.canvas.image.pixelColor(0, 0)))
+			save.assert_not_called()
+
+	def test_optional_formats_and_first_gif_frame(self):
+		from fman.impl.quick_view_images import ImageRequest, load_image
+		from fman.url import as_url
+		from PyQt5.QtGui import QImageWriter, QImageReader
+		from struct import pack
+		writers = {bytes(name).lower() for name in QImageWriter.supportedImageFormats()}
+		readers = {bytes(name).lower() for name in QImageReader.supportedImageFormats()}
+		for image_format in ('webp', 'tiff', 'ico'):
+			if image_format.encode() not in writers & readers:
+				continue
+			with self.subTest(format=image_format):
+				path = self.make_image(image_format + '.bin', 16, 16, image_format=image_format.upper())
+				result = load_image(ImageRequest(1, as_url(path)), lambda: False, lambda url: url)
+				self.assertIsNotNone(result.image, result.message)
+		if b'gif' not in readers:
+			self.skipTest('Conditional GIF reader unavailable')
+		header = b'GIF89a' + pack('<HHBBB', 1, 1, 128, 0, 0) + b'\xff\0\0\0\0\xff'
+		frame = b',' + pack('<HHHHB', 0, 0, 1, 1, 0) + b'\x02\x02'
+		path = self.root / 'animated.gif'
+		path.write_bytes(header + frame + b'\x44\x01\0' + frame + b'\x4c\x01\0' + b';')
+		result = load_image(ImageRequest(1, as_url(path)), lambda: False, lambda url: url)
+		self.assertIsNotNone(result.image, result.message)
+		self.assertEqual(255, result.image.pixelColor(0, 0).red())
+		self.assertEqual(0, result.image.pixelColor(0, 0).blue())
+
+	def test_mouse_controls_and_save_failure_remain_usable(self):
+		from fman.impl.quick_view import QuickViewSession
+		from PyQt5.QtCore import QEvent, QPoint, QPointF
+		from PyQt5.QtGui import QColor, QImage, QMouseEvent, QWheelEvent
+		from unittest.mock import patch
+		with patch('fman.load_json', return_value={}), patch('fman.save_json', side_effect=PermissionError('denied')):
+			def check():
+				session = QuickViewSession(self.window, *self.panes)
+				try:
+					session.timer.stop()
+					canvas = session.overlay.canvas
+					image = QImage(2000, 1600, QImage.Format_RGB32)
+					image.fill(QColor('blue'))
+					canvas.set_image(image, 'actual_size')
+					session.image_action('fit')
+					self.assertEqual('fit', canvas.mode)
+					self.assertIn('could not be saved', self.window._status_bar_text.text())
+					canvas.set_mode('actual_size')
+					horizontal = canvas.horizontalScrollBar().value()
+					vertical = canvas.verticalScrollBar().value()
+					canvas.mousePressEvent(QMouseEvent(QEvent.MouseButtonPress, QPointF(100, 100), Qt.LeftButton, Qt.LeftButton, Qt.NoModifier))
+					canvas.mouseMoveEvent(QMouseEvent(QEvent.MouseMove, QPointF(120, 130), Qt.NoButton, Qt.LeftButton, Qt.NoModifier))
+					self.assertEqual(horizontal - 20, canvas.horizontalScrollBar().value())
+					self.assertEqual(vertical - 30, canvas.verticalScrollBar().value())
+					canvas.mouseReleaseEvent(QMouseEvent(QEvent.MouseButtonRelease, QPointF(120, 130), Qt.LeftButton, Qt.NoButton, Qt.NoModifier))
+					canvas.wheelEvent(QWheelEvent(QPointF(100, 100), QPointF(100, 100), QPoint(), QPoint(0, 120), Qt.NoButton, Qt.ControlModifier, Qt.NoScrollPhase, False))
+					self.assertEqual(1.25, canvas.scale)
+					self.assertFalse(session.overlay.buttons['fit'].isChecked())
+					self.assertFalse(session.overlay.buttons['actual_size'].isChecked())
+					self.assertTrue(canvas.hasFocus())
+				finally:
+					session.shutdown()
+			self.run_in_app(check)
+
+	def test_window_close_disposes_retiring_disabled_bridge(self):
+		from fman.impl.quick_view import LoaderBridge
+		from fman.impl.quick_view_images import ImageRequest, ImageResult
+		started, release = Event(), Event()
+		def load(request, canceled):
+			started.set()
+			release.wait(5)
+			return ImageResult(message='late')
+		bridge = self.run_in_app(lambda: LoaderBridge(self.window, load))
+		self.addCleanup(release.set)
+		bridge.loader.submit(ImageRequest(bridge.loader.invalidate(), 'blocked'))
+		self.assertTrue(started.wait(5))
+		self.run_in_app(self.window.closed.emit)
+		self.assertTrue(bridge.closed)
+		self.assertTrue(bridge.loader._closed)
+
 
 class FilterBarIT(QtIT):
 	def setUp(self):

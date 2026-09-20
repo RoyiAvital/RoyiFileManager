@@ -2,7 +2,7 @@
 
 ## Task
 
-Extend the viewport from [stage 001: initial design and images](QuickView001.md)
+Extend the viewport from [stage 001: initial design and images](../Done/QuickView001.md)
 with local video preview and explicit playback. Images continue to work unchanged.
 No additional pane, viewer window or video-specific toggle.
 

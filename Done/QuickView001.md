@@ -8,14 +8,15 @@ support: inspect at Fit or true 100%, and pan larger images without another wind
 There is one QuickView feature and one viewport, extended in three delivery stages:
 
 1. Stage 001: the shared foundation and images, specified in this document.
-2. [Stage 002: Videos](QuickView002.md): add video support to that same viewport.
-3. [Stage 003: Text-Based Files](QuickView003.md): add text, Markdown, and programming languages.
+2. [Stage 002: Videos](../Plan/QuickView002.md): add video support to that same viewport.
+3. [Stage 003: Text-Based Files](../Plan/QuickView003.md): add text, Markdown, and programming languages.
 
-Status: revised design only, incorporating the user's overlay, Tab-focus and
-minimal-workflow-impact decisions through 2026-09-21. This supersedes the earlier
-NoFocus/stacked-page design and its approval. The latest review approved the overlay
-design with three simplifications, incorporated below; implementation and its
-validation gates remain pending.
+Status: implementation complete on 2026-09-21, with focused validation recorded below.
+The approved overlay/Tab design and user-approved 128 MP allowance are implemented.
+The user approved moving the canonical task to Done while retaining open release
+gates: explicit acceptance of measured peak RAM, portable-artifact codec verification
+and the deferred checks listed in Validation Results. This is not release approval.
+Earlier NoFocus/stacked-page designs remain superseded.
 Stages 002 and 003 remain independently pending and must align with this overlay
 and focus contract before implementation.
 
@@ -58,8 +59,9 @@ changes only the covered area's input/display and the source-to-preview focus sw
 Other commands retain their normal semantics. Near-zero workflow impact is an
 acceptance goal, not a claim of zero native-code, memory or regression risk.
 
-Allowed existing-code changes: thin Core command/lifecycle wiring, Windows binding
-registration, and one active-session branch in `SwitchPanes`. Put the overlay,
+Existing behavior changes: thin Core command/lifecycle wiring, Windows binding
+registration, and one active-session branch in `SwitchPanes`. Packaging also lists
+the lazy internal renderer as a hidden import; no startup renderer import. Put the overlay,
 event adapters, image loader and controls in internal QuickView modules. No changes
 to pane layout/focus proxies, global active-pane lookup, MainWindow focus/status
 handling, Controller dispatch, filesystem/model behavior or session persistence.
@@ -194,9 +196,10 @@ compact toolbar; use existing icon conventions, tooltips, and accessible names.
 
 ### Renderer Boundary
 
-Keep only three internal operations: `load(request) -> result` on the worker,
-`show(result)` and `dispose()` on Qt. Requests contain immutable plain data;
-`load` receives no widget, model or bound GUI adapter. Result disposal and generation
+The image-stage boundary is `load_image(request, canceled) -> result` on the
+worker, `show_result(result)` and `close()`/`dispose()` on Qt. Requests contain
+immutable plain data; `load_image` receives no widget, model or bound GUI adapter.
+Result disposal and generation
 checks belong to the controller; image ownership is specified below. This is an
 image-stage interface, not a generic streaming or process framework. Playback,
 helper-process lifetime and text selection/find behavior belong to stages 002/003;
@@ -219,8 +222,10 @@ review without adding another viewport/toggle.
   after decode and on Qt delivery. No module-global executor or general job scheduler.
 - An active job includes any decoded result awaiting Qt delivery: do not start the
   next decode until that result is accepted/discarded. Thus queued completions cannot
-  retain a succession of large images. Return through an explicit queued Qt signal,
-  not the synchronous `run_in_main_thread` bridge. Disconnect on receiver disposal;
+  retain a succession of large images. Keep the result in a single loader mailbox;
+  an explicit queued Qt signal carries notification only. Qt takes/discards the
+  mailbox result to acknowledge delivery. Do not use the synchronous
+  `run_in_main_thread` bridge for result delivery. Disconnect on receiver disposal;
   discard a result whose session/generation is no longer current.
 - Disable drops the pending request and invalidates the active one. The loader
   remains owned by the window across disable/re-enable until a blocked job returns;
@@ -239,8 +244,8 @@ existing differential config under `UserSettings`, loaded lazily on first use.
 Default to image Fit. Save only deliberate Fit/100% preference changes, never pan
 positions or every cursor event; preserve unknown keys. A failed save does not
 prevent viewing. Stage 001 adds no package or helper process. Video/text dependencies,
-preferences and helper cleanup remain in [002](QuickView002.md) and
-[003](QuickView003.md), not prerequisites or implementation work for this stage.
+preferences and helper cleanup remain in [002](../Plan/QuickView002.md) and
+[003](../Plan/QuickView003.md), not prerequisites or implementation work for this stage.
 
 ### Image Dependencies
 
@@ -335,8 +340,10 @@ settings writes do not prevent viewing.
   neither mutate it nor keep an image cache. Qt paints it read-only. Do not wrap
   external byte storage, call `bits()` for transport, or construct a `QPixmap`.
   There is no raw-stride contract, retained-bytes owner or full-size transport copy.
-- Paint using `QPainter` transform and `drawImage`. No zoom-sized buffers, re-decode
-  on pan/resize, or second full-sized image cache. Clear the old image before loading.
+- Paint using `QPainter.drawImage` with the visible source rectangle mapped to the
+  viewport destination. This avoids excessive raster coordinates for 65,536-pixel
+  edges and large zoom without cropping into a new image. No zoom-sized buffers,
+  re-decode on pan/resize or second full-sized cache. Clear old pixels before loading.
 - Reject stale/changed output. Cancellation checks bracket native reads/decodes;
   they cannot interrupt a blocked call. Keep the one loader occupied until return.
 - Corrupt, unavailable or oversized images show the shared inline state and disable
@@ -445,7 +452,8 @@ abuse but do not prove a hard process-memory bound or prevent codec defects.
 
 ## Tests
 
-Planned application tests, not implemented or run in this design task:
+Required coverage follows; implemented commands, outcomes and explicit remaining
+gaps are recorded under Validation Results.
 
 ### Shared Foundation
 
@@ -559,8 +567,8 @@ Name conditional-codec skips; advertise those formats only after artifact valida
 6. Measure limits, run source smoke and inspect codec delivery. Record unavailable
    artifact gates explicitly; do not build packages without authorization.
 7. Update README/Core usage and CHANGELOG only after implementation, then complete
-   this task with validation results. Leave [videos](QuickView002.md) and
-   [text](QuickView003.md) pending their own revised focus/process designs. Update
+  this task with validation results. Leave [videos](../Plan/QuickView002.md) and
+  [text](../Plan/QuickView003.md) pending their own revised focus/process designs. Update
    relative links when moving this canonical file to Done; never keep a Plan copy.
 
 ## Acceptance Criteria
@@ -596,8 +604,9 @@ Name conditional-codec skips; advertise those formats only after artifact valida
   After retirement, off has no image thread, queued work or recurring activity.
 - Artifact codec verification is recorded before release; development codecs and
   existing plug-in DLLs alone do not establish delivered format support.
-- Design only until reviewed/implemented/tested. Record exact results and explicit
-  deferrals for any unrun gates; stages 002/003 remain separate future work.
+- Keep exact implementation results and explicit deferrals for unrun gates;
+  stages 002/003 remain separate future work. Do not close this task until its
+  release gates have passed or the user explicitly accepts their deferral.
 
 ## Review Resolution
 
@@ -617,6 +626,9 @@ Name conditional-codec skips; advertise those formats only after artifact valida
 | 2026-09-21: exact geometry adapters | Adopt. Target Resize/Move/Show/Hide, splitter Resize/Move and splitterMoved; mapTo central on sync. Include panel layout and ancestor-only movement regressions. Never parent to Splitter. |
 | 2026-09-21: explicit canvas traversal | Adopt. Canvas focusNextPrevChild returns False; keyPressEvent handles Tab/Backtab, with no custom ShortcutOverride or parent-chain dependency. |
 | 2026-09-21: user-approved image capacity | Double each axis: 65,536-pixel edge and 128 MP area, with a 512 MB (about 488 MiB) normalized buffer. Keep the 64 MiB encoded-file limit and bounded loading. Supersede the old peak target; measure and obtain acceptance of actual peak RAM separately. |
+| Implementation review: disappearing folder | Fix the confirmed empty-folder state bug, not the proposed signal wiring. The inner Model emits location_disappeared; SortedFileSystemModel already navigates to a parent and has no public disappearance signal. Loading during that navigation is valid. Reset used None for both an unevaluated candidate and an empty cursor, leaving the loading message after an empty parent finished. Use an empty URL as reset state so the empty selection updates the display. No new model listeners or shared-code changes. |
+| Implementation review: WeakKeyDictionary | Defer. Current window-owned session/loader/owner state has explicit cleanup and tested lifetime. A registry in the renderer would require additional coordination with Core's lazy import boundary; it is not a useful one-line replacement. Revisit only if later stages introduce duplicated ownership logic. |
+| Implementation review: memory limits | Retain the user-approved 128 MP / 65,536-pixel limits. The existing measured peak remains visible; this review adds no evidence warranting a capacity reduction. Peak acceptance and packaged-codec verification remain open release gates. |
 
 Design checks on 2026-09-20: native Qt mouse clicking a NoFocus button preserved
 source focus; a worker-created QImage remained valid after handoff; a device-backed
@@ -656,7 +668,7 @@ edge, an over-area maximum-edge square and a zero dimension. The independent
 relative links and append-only reviewer history passed. No 128 MP image was
 allocated or decoded; actual peak RAM and large-image rendering remain unverified.
 
-Documentation validation: `git diff --check -- Plan/QuickView001.md`, required
+Documentation validation: `git diff --check -- Done/QuickView001.md`, required
 section checks, relative-link targets and append-only comparison against the full
 pre-edit reviewer history, including the restored record. No application,
 dependency, changelog, README or other stage-plan edits in this review response.
@@ -964,3 +976,200 @@ unchanged below. Subsequent reviews apply to this combined initial stage.
   boundary/performance tests and required measured peak-RAM acceptance rather than
   promising a 500 MB process cap. Prior reviewer history is unchanged; design only,
   with actual large-image decode, memory and rendering checks still pending.
+
+### 2026_09_21 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: High
+- Context Window: Not exposed by host
+- Outcome: Implementation retains the reviewed host boundary. Recorded two local
+  refinements: queued signals carry only mailbox notifications, and painting maps
+  the visible source region instead of transforming an oversized whole-image
+  rectangle. Added the lazy renderer's packaging hidden import. Native focus,
+  dispatch, geometry, rendering, lifecycle and source/restart checks passed.
+  Measured 128 MP peak is about 980.51 MiB, awaiting user acceptance before release;
+  artifact verification remains unrun. Earlier reviewer history is unchanged.
+
+### 2026_09_21 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Low
+- Context Window: Not exposed by host
+- Outcome: User approved recording implementation completion in Done while keeping
+  release gates open. Relocated the canonical task and updated index/stage links;
+  preserved prior review and implementation records. This supersedes the earlier
+  decision to keep the implemented task in Plan, without accepting peak memory or
+  claiming packaged-codec verification. No application code changed.
+
+### 2026_09_21 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Claude Fable 5.1
+- Effort: High
+- Context Window: 1M
+- Outcome: Implementation review; approved. Isolation contract honoured exactly:
+  `widgets.py`, `controller.py` and `plugins/__init__.py` are unchanged; existing
+  code edits are two imports and a two-line `SwitchPanes` branch in Core, one
+  `Ctrl+Q` binding, a hidden-import line in the spec and the changelog. New code
+  lives in `core/quick_view.py` (100 lines, lazy import of the renderer),
+  `fman/impl/quick_view.py` (overlay, canvas, session, loader bridge) and
+  `fman/impl/quick_view_images.py` (decode, bounded mailbox loader). Verified
+  against the reviewed design: sibling overlay parented to `centralWidget()`
+  with event filters on target (`Resize`/`Move`/`Show`/`Hide`) and splitter
+  (`Resize`/`Move`) plus `splitterMoved`; canvas `focusNextPrevChild` returns
+  `False`; local keys handled locally and every other key focuses the source
+  then calls `Controller.handle_shortcut(source, event)` with no binding logic
+  in QuickView; `QImage` handoff via a queued signal with delivery
+  acknowledgement; one-time `RGB32`/`ARGB32_Premultiplied` normalization;
+  format pinned with `setFormat` + `setDecideFormatFromContent(False)` +
+  `setAutoDetectImageFormat(False)`; loader thread exits when idle and is
+  reused across disable/re-enable while a job is blocked; `save_json` only on
+  Fit/100% (differential write makes repeats no-ops). Re-ran the documented
+  gate: 135 tests, OK (1 expected skip), and `quick_view_smoke` PASS for source
+  and restart. Non-blocking notes:
+  1. `SortedFileSystemModel` does not emit `location_loaded` when the location
+     disappears (`FileNotFoundError` path emits `location_disappeared`), so the
+     overlay shows "Loading folder" until the follow-up navigation lands. Cosmetic;
+     connecting `location_disappeared` to `_location_loaded` would clear it.
+  2. Session and owner state are attached as ad-hoc attributes on the
+     `MainWindow` instance (`_quick_view_session`, `_quick_view_loader`,
+     `_quick_view_owner`). Acceptable under the contract's "no widgets.py
+     edits"; a one-line `WeakKeyDictionary` in `fman.impl.quick_view` would be
+     the tidier equivalent if the pattern spreads to stages 002/003.
+  3. The user-approved 128 MP / 65,536 px limits measured ~981 MiB peak for a
+     488 MiB buffer; `MAX_PIXELS` in `quick_view_images.py` is the single knob
+     if that proves too high in practice. Release gates listed by the
+     implementer (peak acceptance, packaged codec smoke) remain open as recorded.
+
+### 2026_09_21 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Medium
+- Context Window: Not exposed by host
+- Outcome: Evaluated all three implementation-review notes. Native regression
+  reproduced stuck loading after both direct empty-folder navigation and a folder
+  disappearing during initialization. Fixed reset/cursor identity rather than
+  adding inner-model signal tracking. Deferred the optional state registry and
+  preserved approved image limits. Existing release gates remain open; prior
+  reviewer records are unchanged.
+
+## Implementer
+
+### 2026_09_21 - GitHub Copilot
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: High
+- Context Window: Not exposed by host
+- Outcome: Implemented lazy QuickView Core commands, Windows Ctrl+Q, the isolated
+  overlay, focus handoff, bounded daemon loader, guarded Qt codecs, physical-pixel
+  canvas, controls and preferences. Added unit/native integration/source-restart
+  smoke coverage and an opt-in full-capacity measurement. Updated usage, changelog
+  and frozen-build import collection. No shared widgets/controller/plug-in routing
+  changes, packages or public API changes. Release gates below prevent marking
+  the canonical task complete yet.
+
+### 2026_09_21 - GitHub Copilot
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Medium
+- Context Window: Not exposed by host
+- Outcome: Changed only QuickView's reset candidate state and added one native
+  regression covering empty navigation and disappearance fallback. Both cases
+  failed before the one-line fix and passed afterward. The focused 32-test gate
+  and source/restart smoke passed as detailed below. No new imports, listeners,
+  background work, shared-model edits or public API changes.
+
+## Validation Results
+
+Commands from the repository root:
+
+```powershell
+python -c "import build, subprocess, sys; env=build._environment(); env['QT_QPA_PLATFORM']='windows'; sys.exit(subprocess.run([sys.executable, '-m', 'unittest', 'fman_unittest.test_quick_view', 'fman_unittest.test_quick_view_images', 'fman_unittest.impl.test_status_bar', 'fman_integrationtest.test_qt.QuickViewIT', 'fman_integrationtest.test_qt.QuickViewImagesIT', 'fman_integrationtest.test_qt.FilterBarIT', 'fman_integrationtest.test_qt.MainWindowIT', 'core.tests.commands.test___init__', 'fman_unittest.test_portable.PluginApiCompatibilityTest', '-q'], env=env, timeout=120).returncode)"
+python -c "import build, subprocess, sys; env=build._environment(); env['QT_QPA_PLATFORM']='windows'; sys.exit(subprocess.run([sys.executable, '-m', 'fman_integrationtest.quick_view_smoke'], env=env, timeout=150).returncode)"
+python -c "import build, subprocess, sys; env=build._environment(); env['QUICK_VIEW_PERFORMANCE_TESTS']='1'; sys.exit(subprocess.run([sys.executable, '-m', 'unittest', 'fman_unittest.test_quick_view_images.ImageMemoryTest', '-v'], env=env, timeout=180).returncode)"
+```
+
+- First edit: 2 native overlay tests passed immediately, before decoder work.
+  Final focused gate: 135 tests in 5.915 s, 134 passed and one expected skip for
+  the opt-in memory test, which passed separately with the third command. Editor
+  diagnostics reported no errors in the new modules or touched test/command files.
+- Source/restart smoke passed through the real command registry and application:
+  no renderer import/session/loader off at startup, Ctrl+Q, source Tab/canvas
+  Escape, Command Center cancel, image commands, preferences preserving unknown
+  keys, both source panes, exact pane/model/layout identity and owner invalidation.
+- Native QuickView tests and source/restart smoke also passed with
+  `QT_SCALE_FACTOR=1.5` and `2` in the child environment. Screenshots and fixture
+  pixel checks passed; 100% tests count exact physical pixel extents. At 200%,
+  Windows reduced the requested 1280x800 logical height to fit the work area;
+  assertions used the resulting geometry. This is not a monitor-hotplug test.
+- JPEG/PNG/BMP, EXIF rotation, alpha, wrong suffix, SVG rejection, changed-file
+  rejection and development WebP/TIFF/ICO/GIF first-frame checks passed. Generated
+  fixtures require no third-party image assets. Packaged conditional codecs are
+  not yet advertised. Unit tests verify area/edge limits without large allocations.
+- Event-gated tests cover 200 pending replacements, one undelivered result,
+  independent loaders, stale results, disable/re-enable with one blocked worker,
+  close/unload, and subprocess exit without joining a blocked daemon. Cursor tests
+  prove marks do not retarget, old pixels clear and 200 cursor changes debounce to
+  the final candidate without settings writes. Drag, wheel, anchored zoom and
+  failed preference saves pass native checks.
+- 128 MP generated alpha PNG: 0.911 s load, 488.28 MiB normalized buffer,
+  980.51 MiB incremental peak working set, 94.3 ms maximum Qt heartbeat gap.
+  After release, working set was 3.96 MiB above baseline. Windows machine had
+  about 93.6 GiB RAM / 64.17 GiB free before this isolated measurement. This is
+  fixture-specific, not a universal codec/process memory ceiling.
+- Additional in-memory `python -` benchmark created temporary alpha PNGs and
+  launched fresh child decoders via `build._environment()`. First/warm times and
+  observed process incremental peak: 1 MP 0.016/0.007 s, 10.68 MiB; 12 MP
+  0.091/0.083 s, 94.53 MiB; 32 MP 0.231/0.223 s, 247.21 MiB. The files were just
+  generated, so the first run is not a controlled cold filesystem-cache benchmark.
+
+### Implementation Review Follow-Up
+
+Commands from the repository root on 2026-09-21:
+
+```powershell
+python -c "import build, subprocess, sys; env=build._environment(); env['QT_QPA_PLATFORM']='windows'; sys.exit(subprocess.run([sys.executable, '-m', 'unittest', 'fman_integrationtest.test_qt.QuickViewImagesIT.test_empty_and_disappeared_locations_finish_loading', '-v'], env=env, timeout=60).returncode)"
+python -c "import build, subprocess, sys; env=build._environment(); env['QT_QPA_PLATFORM']='windows'; sys.exit(subprocess.run([sys.executable, '-m', 'unittest', 'fman_unittest.test_quick_view', 'fman_unittest.test_quick_view_images', 'fman_integrationtest.test_qt.QuickViewIT', 'fman_integrationtest.test_qt.QuickViewImagesIT', 'fman_integrationtest.test_qt.FilterBarIT', '-q'], env=env, timeout=120).returncode)"
+python -c "import build, subprocess, sys; env=build._environment(); env['QT_QPA_PLATFORM']='windows'; sys.exit(subprocess.run([sys.executable, '-m', 'fman_integrationtest.quick_view_smoke'], env=env, timeout=150).returncode)"
+```
+
+- The new regression failed in both subcases before the fix: the parent location
+  was loaded but the canvas still said `Loading folder`. It passed immediately
+  after the fix, with no image retained, no active debounce timer and no decode.
+- Focused gate: 32 tests in 5.416 s, 31 passed and one expected opt-in memory-test
+  skip. Source and restart smoke both passed. No Python editor diagnostics.
+- Documentation checks verify local links, append-only reviewer/implementer
+  history and whitespace. Earlier validation results remain historical records.
+- No memory benchmark, package build or full suite was rerun. Existing release
+  gates and the user's implementation-completion decision are unchanged.
+
+### Open Release Gates
+
+- User acceptance of approximately 981 MiB measured peak for a 488 MiB image
+  buffer, as required by the approved capacity revision, before release.
+- Portable-artifact baseline/conditional codec decode smoke and final packaging
+  collection check. No freeze, package, clean or complete test suite was run.
+- Live UNC/symlink access, monitor/DPR hotplug, unavailable-codec builds, real
+  multi-window application workflows, 128 MP warm/varied-codec/EXIF peak rendering
+  and long-running toggle stress remain unverified. Worker independence, source
+  paths, synthetic blocked I/O and selected DPI scales were tested instead.
+- Stages 002/003 are not implemented and still require their own focus/backend
+  design alignment. Their separate tasks remain in Plan. Stage 001 is recorded in
+  Done by user approval; its open release gates above are not marked passed.

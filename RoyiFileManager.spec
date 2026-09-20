@@ -24,6 +24,7 @@ hidden_imports = [
 	'fman.ui', 'fman.impl.ui.quicklist', 'fman.impl.ui.panel',
 	'fman.impl.ui.session', 'fman.impl.ui.output', 'fman.impl.navigation',
 	'fman.impl.ui.table', 'fman.impl.ui.table_data', 'fman.impl.ui.facade',
+	'fman.impl.quick_view',
 	'PyQt5.QtSvg'
 ] + winpty_imports + send2trash_imports
 

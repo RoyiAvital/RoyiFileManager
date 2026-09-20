@@ -19,12 +19,15 @@ class UniformRowHeights(QTableView):
 	def get_row_height(self):
 		if self._row_height is None:
 			self._row_height = max(self._get_cell_heights())
+			self.verticalHeader().setDefaultSectionSize(self._row_height)
 		return self._row_height
 	def changeEvent(self, event):
 		# This for instance happens when the style sheet changed. It may affect
 		# the calculated row height. So invalidate:
 		self._row_height = None
 		super().changeEvent(event)
+		if self.model() is not None and self.model().columnCount():
+			self.get_row_height()
 	def dataChanged(self, top, bottom, roles):
 		if top != bottom or not top.isValid(): # As in super().dataChanged(...)
 			visible = self.get_visible_row_range()
@@ -87,7 +90,7 @@ class UniformRowHeights(QTableView):
 		option = self.viewOptions()
 		model = self.model()
 		dummy_model = DummyModel(
-			model.rowCount(), model.columnCount(), option.decorationSize
+			max(1, model.rowCount()), model.columnCount(), option.decorationSize
 		)
 		for column in range(model.columnCount()):
 			index = dummy_model.index(row, column)

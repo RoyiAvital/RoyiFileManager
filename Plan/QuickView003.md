@@ -3,7 +3,7 @@
 ## Task
 
 Add plain text, Markdown and programming-language previews to the
-viewport from [stage 001: initial design and images](QuickView001.md). Deliver
+viewport from [stage 001: initial design and images](../Done/QuickView001.md). Deliver
 after [videos](QuickView002.md); all formats use the same inactive pane, toggle
 and lifecycle.
 
@@ -28,7 +28,7 @@ Status: proposed design only; review and dependency approval precede implementat
 
 ### Dependencies
 
-Hard prerequisite: the shared foundation in [stage 001](QuickView001.md).
+Hard prerequisite: the shared foundation in [stage 001](../Done/QuickView001.md).
 Earlier stages are delivery and regression prerequisites; text does not import
 the image decoder or libmpv, and must work when video dependencies are absent.
 

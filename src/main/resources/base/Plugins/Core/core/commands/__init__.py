@@ -8,6 +8,7 @@ from core.os_ import open_terminal_in_directory, open_native_file_manager, \
 from core.util import strformat_dict_values, listdir_absolute, is_parent
 from core.quicksearch_matchers import contains_chars, \
 	contains_chars_after_separator
+from core.quick_view import switch_quick_view as _switch_quick_view
 from fman import *
 from fman.fs import exists, touch, mkdir, is_dir, delete, samefile, copy, \
 	iterdir, resolve, prepare_copy, prepare_move, prepare_delete, \
@@ -1923,6 +1924,8 @@ class Reload(DirectoryPaneCommand):
 
 class SwitchPanes(DirectoryPaneCommand):
 	def __call__(self, pane_index=None):
+		if _switch_quick_view(self.pane, pane_index):
+			return
 		if pane_index is None:
 			pane = _get_opposite_pane(self.pane)
 		else:
