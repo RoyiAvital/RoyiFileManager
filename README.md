@@ -2,8 +2,8 @@
 
 # RoyiFileManager
 
-`RoyiFileManager` is a Windows only, portable fork of the [`fman`](https://github.com/mherrmann/fman) 
-(By [Michael Herrmann](https://github.com/mherrmann)) dual pane file manager. 
+`RoyiFileManager` is a dual pane, keyboard workflow focused, Windows only, [SublimeText](https://en.wikipedia.org/wiki/Sublime_Text) inspired and portable _File Manager_.
+It is a fork of [`fman`](https://github.com/mherrmann/fman) by [Michael Herrmann](https://github.com/mherrmann). 
 
 The _File Manager_ focuses on:
  - **Minimalistic** and focused UI.
@@ -11,11 +11,10 @@ The _File Manager_ focuses on:
  - **Keyboard** oriented workflow.
  - Advanced search tools with **reactivity**.
  - Easy **integration** of 3rd party tools (Editors, File Comparison, etc...).
+ - Developed and verified on **Windows OS**.
 
-As `fman` states, it is inspired by [SublimeText](https://en.wikipedia.org/wiki/Sublime_Text).
-
-Currently, the _File Manager_ retains the `fman` plug-in API so existing plug-ins can be used
-without changing their imports.  
+Currently, the _File Manager_ retains the `fman` plug-in API so existing plug-ins can be used.  
+The API is also extended with new features and capabilities.
 See the [Plug In API Reference](PlugIn.md) for legacy APIs and new extensions.
 
 ## Features

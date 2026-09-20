@@ -39,6 +39,11 @@ and focus contract before implementation.
   verified Qt handlers in the portable distribution; missing codecs are explicit.
   Decode only the first frame/page; no animation timers.
 - EXIF orientation, transparency, Fit, 100%, incremental zoom, mouse/keyboard pan.
+- Up to 128 million source pixels and 65,536 pixels per edge, doubling each axis
+  of the previous limits. The normalized 32-bit image buffer is at most 512 MB
+  (about 488 MiB), matching the user's approximate 500 MB per-image allowance.
+  The separate encoded-file limit remains 64 MiB; peak process RAM is not capped
+  by the decoded-buffer allowance.
 - Exclude SVG rasterization, RAW, HEIC/AVIF, multipage navigation, slideshows,
   editing, export and persistent thumbnails. SVG may appear as source in stage 003.
 - Preserve the public `fman` plug-in API and the identity/state of both real panes.
@@ -313,9 +318,12 @@ settings writes do not prevent viewing.
   and `setAutoDetectImageFormat(False)`, then inspect dimensions/read. Other formats
   are rejected, even when installed. Content detection can probe installed codecs;
   the allowlist controls accepted decodes, not a security boundary around probing.
-- Before full decode reject unknown/nonpositive dimensions, an edge above 32,768
-  pixels or more than 32 million source pixels. Recheck decoded dimension limits;
-  record `sizeInBytes()` in memory tests. Limits require review before raising.
+- Before full decode reject unknown/nonpositive dimensions, an edge above 65,536
+  pixels or more than 128 million source pixels. Both limits apply independently;
+  65,536 by 65,536 is not allowed. Recheck decoded dimension limits and normalized
+  `sizeInBytes()` against 512,000,000 bytes. These limits double each previous axis
+  and quadruple the pixel/buffer allowance, as requested on 2026-09-21. Further
+  increases require review; the 64 MiB encoded-file limit is unchanged.
 - Decode full resolution once with `setAutoTransform(True)`; reject null results
   and normalize DPR to `1`. Normalize once in the loader to
   `Format_ARGB32_Premultiplied` for alpha or `Format_RGB32` otherwise, avoiding
@@ -397,12 +405,22 @@ abuse but do not prove a hard process-memory bound or prevent codec defects.
 
 - Off/other renderer: no image probes, reads, timers, submissions or pixel buffers.
   Enumerate capabilities lazily on first image use, not application startup.
-- On: one loader per window, cursor file only. A 32 MP, 32-bit image is about
-  122 MiB; higher-depth input, orientation and one-time format conversion can
-  temporarily use more. QImage handoff adds no deliberate full-size copy.
-  Target incremental peak working set below
-  512 MiB on the largest accepted fixture; measure codec overhead and reduce
-  limits if needed. This is not an allocator cap or a codec sandbox.
+- On: one loader per window, cursor file only. A 128 MP, 32-bit image uses
+  512,000,000 bytes (512 MB, about 488 MiB) of normalized pixel storage: for example,
+  16,000 by 8,000 pixels, twice each axis of an 8,000 by 4,000 image. This is the
+  user's approximate 500 MB per-image allowance, not a strict 500,000,000-byte cap.
+- Higher-depth input, orientation, format conversion and codec workspace can push
+  peak RAM substantially above the retained buffer; one extra full-sized 32-bit
+  buffer alone brings pixel storage to about 977 MiB. QImage handoff adds no
+  deliberate full-size copy. The former below-512-MiB incremental peak target is
+  superseded, not silently claimed for the larger images. Measure retained bytes
+  and incremental peak working set separately; the measured peak needs explicit
+  acceptance before release, rather than assuming an unrestricted higher budget.
+  No hard allocator cap or codec sandbox is introduced.
+- The maximum pixel workload/buffer is four times the previous allowance, not
+  twice. Independent windows each have this allowance; aggregate RAM can grow
+  accordingly. Loading can take longer, but off-path work, concurrency, immediate
+  old-image release and the ban on prefetch/scaled-image caches remain unchanged.
 - Loaded: CPU only on repaint/interaction; no polling/animation. Zoom/pan does not
   allocate image-sized scaled copies. Read-only I/O plus explicit preference writes;
   no temporary or cache files. One blocked native call can retire after close.
@@ -415,6 +433,9 @@ abuse but do not prove a hard process-memory bound or prevent codec defects.
 - Decoder faults can still terminate the process; header limits are not isolation.
   UNC/native reads may block the single loader indefinitely, although GUI close
   remains nonblocking. Do not describe either as guaranteed safe or cancellable.
+- The larger image allowance increases enabled-state memory pressure and decode
+  cost. The approximately 500 MB buffer budget does not establish safe total RAM
+  use; largest-image peak measurements and their acceptance remain a release gate.
 - Ordinary commands still operate on both real panes where their existing semantics
   require it. The covered target may change. QuickView is not a protection layer;
   disabling it exposes current state, with no rollback or new confirmation policy.
@@ -474,6 +495,11 @@ Planned application tests, not implemented or run in this design task:
 - Unit: Fit/100% at DPR 1/1.25/1.5/2; EXIF dimension swap; anchored zoom; pan clamping;
   small images; preferences; all size thresholds; malformed headers/null results;
   stale, changed-file and canceled results. Resize/pan must never request decoding.
+- Size boundaries: accept 16,000 by 8,000 and reject 16,001 by 8,000; independently
+  accept 65,536 by 1 and its transpose, reject 65,537 by 1 and its transpose, and
+  reject 65,536 by 65,536 on area. Check exact/one-above 64 MiB encoded-file and
+  512,000,000-byte normalized-buffer limits. Unit tests use metadata/stubs, not
+  hundreds of MiB of real allocations.
 - Qt/codec: generated JPEG/PNG/BMP; small licensed fixtures for EXIF and conditional
   formats. Assert pixels/alpha, `@2x`, first-frame-only, corruption, wrong suffix,
   removed files, codec absence and rejection of installed SVG. Verify worker-created
@@ -483,10 +509,17 @@ Planned application tests, not implemented or run in this design task:
   preserve source cursor/marks and specified focus transitions. Check physical 1:1
   extent and snapped edges, not just nonblank output. Large images/labels must not
   change window minimum size or overflow the overlay at narrow widths.
-- Performance: 1/12/32 MP cold/warm loads, 200 cursor changes, repeated toggles and
+- Performance: 1/12/32/128 MP cold/warm loads, 200 cursor changes, repeated toggles and
   event-gated slow reads/delivery. Assert bounded requests and no accumulated QImage
-  results or retained-buffer growth. Measure load time/peak memory and target GUI
-  heartbeat gaps below 100 ms on the recorded machine while decoding.
+  results or retained-buffer growth. Use a compressed 16,000 by 8,000 fixture within
+  the encoded-file limit, plus supported thin images at the maximum edge; verify
+  Fit/100% and every corner remain paintable. Record normalized `sizeInBytes()`
+  (at most 512,000,000), incremental peak RAM including orientation/conversion, load
+  time and release after close. Obtain explicit acceptance of the measured peak;
+  do not report the buffer size as peak RAM. Retain the target GUI heartbeat gaps
+  below 100 ms on the recorded machine while decoding. Large-image performance
+  checks are separate from lightweight unit tests; do not allocate them in this
+  design-only update.
 
 ### Commands and Manual Gates
 
@@ -552,6 +585,11 @@ Name conditional-codec skips; advertise those formats only after artifact valida
 - Fit and physical-pixel 100% work; mouse/keyboard panning reaches every image edge
   at tested DPI scales via local controls/bindable commands. Resize preserves 100%.
 - Baseline codecs, orientation, alpha, limits and inline errors pass focused tests.
+- Both the 128-million-pixel area and 65,536-pixel edge limits pass boundary tests;
+  encoded files remain limited to 64 MiB. The largest supported compressed fixture
+  renders correctly with a normalized buffer no larger than 512,000,000 bytes.
+  Actual peak RAM, including decoder/conversion overhead, is recorded and explicitly
+  accepted before release; the approximately 500 MB buffer is not a peak-RAM claim.
 - Workers access no widgets/models and never mutate a QImage after handoff. Stale
   images never reappear; one active/one pending bound holds across toggle cycles.
 - Blocked loading does not hold up Qt shutdown/process exit or other windows.
@@ -578,6 +616,7 @@ Name conditional-codec skips; advertise those formats only after artifact valida
 | 2026-09-21: no canvas binding recognition | Adopt. Local keys stay local; every other non-modifier key focuses source and calls Controller once, consuming even unbound input. Toggle uses that ordinary dispatch path. |
 | 2026-09-21: exact geometry adapters | Adopt. Target Resize/Move/Show/Hide, splitter Resize/Move and splitterMoved; mapTo central on sync. Include panel layout and ancestor-only movement regressions. Never parent to Splitter. |
 | 2026-09-21: explicit canvas traversal | Adopt. Canvas focusNextPrevChild returns False; keyPressEvent handles Tab/Backtab, with no custom ShortcutOverride or parent-chain dependency. |
+| 2026-09-21: user-approved image capacity | Double each axis: 65,536-pixel edge and 128 MP area, with a 512 MB (about 488 MiB) normalized buffer. Keep the 64 MiB encoded-file limit and bounded loading. Supersede the old peak target; measure and obtain acceptance of actual peak RAM separately. |
 
 Design checks on 2026-09-20: native Qt mouse clicking a NoFocus button preserved
 source focus; a worker-created QImage remained valid after handoff; a device-backed
@@ -608,6 +647,14 @@ passed panel show/hide, splitter-only movement with no target Move event,
 splitterMoved and target show/hide. Both real pane children remained in place.
 These are design probes, not real Command Center/file-operation tests or production
 overlay lifecycle validation; the planned application gates remain required.
+
+2026-09-21 capacity validation: a no-allocation PowerShell check verified doubled
+axes produce 128 million pixels and 512,000,000 bytes (488.28125 MiB). Eight
+dimension cases passed: the exact/over-area pair, both orientations of exact/over
+edge, an over-area maximum-edge square and a zero dimension. The independent
+64 MiB encoded-file conversion is 67,108,864 bytes. Document limit consistency,
+relative links and append-only reviewer history passed. No 128 MP image was
+allocated or decoded; actual peak RAM and large-image rendering remain unverified.
 
 Documentation validation: `git diff --check -- Plan/QuickView001.md`, required
 section checks, relative-link targets and append-only comparison against the full
@@ -901,3 +948,19 @@ unchanged below. Subsequent reviews apply to this combined initial stage.
   Aligned input, implementation and acceptance gates; preserved the restored and
   subsequent reviewer records. Design only; application implementation, native
   workflow regressions and release gates remain pending.
+
+### 2026_09_21 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Low
+- Context Window: Not exposed by host
+- Outcome: Applied the user's approximate 500 MB per-image allowance by doubling
+  each dimension limit: 65,536 pixels per edge and 128 million pixels total,
+  yielding at most 512,000,000 bytes of normalized 32-bit pixel storage. Kept the
+  independent 64 MiB file limit and existing isolation/concurrency design. Updated
+  boundary/performance tests and required measured peak-RAM acceptance rather than
+  promising a 500 MB process cap. Prior reviewer history is unchanged; design only,
+  with actual large-image decode, memory and rendering checks still pending.
