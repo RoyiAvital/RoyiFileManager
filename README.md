@@ -6,11 +6,11 @@
 (By [Michael Herrmann](https://github.com/mherrmann)) dual pane file manager. 
 
 The _File Manager_ focuses on:
- - Minimalistic and focused UI.
- - Commands through _Command Center_.
- - Keyboard oriented workflow.
- - Advanced search tools with reactivity.
- - Easy integration of 3rd party tools (Editors, File Comparison, etc...)
+ - **Minimalistic** and focused UI.
+ - **Commands** through _Command Center_.
+ - **Keyboard** oriented workflow.
+ - Advanced search tools with **reactivity**.
+ - Easy **integration** of 3rd party tools (Editors, File Comparison, etc...).
 
 As `fman` states, it is inspired by [SublimeText](https://en.wikipedia.org/wiki/Sublime_Text).
 

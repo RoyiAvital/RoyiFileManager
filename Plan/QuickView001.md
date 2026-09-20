@@ -11,9 +11,13 @@ There is one QuickView feature and one viewport, extended in three delivery stag
 2. [Stage 002: Videos](QuickView002.md): add video support to that same viewport.
 3. [Stage 003: Text-Based Files](QuickView003.md): add text, Markdown, and programming languages.
 
-Status: proposed design only; review required before implementation. Each stage
-owns its implementation, tests and completion record. Completing this initial
-stage leaves stages 002 and 003 independently pending.
+Status: revised design only, incorporating the user's overlay, Tab-focus and
+minimal-workflow-impact decisions through 2026-09-21. This supersedes the earlier
+NoFocus/stacked-page design and its approval. The latest review approved the overlay
+design with three simplifications, incorporated below; implementation and its
+validation gates remain pending.
+Stages 002 and 003 remain independently pending and must align with this overlay
+and focus contract before implementation.
 
 ## Scope
 
@@ -23,9 +27,10 @@ stage leaves stages 002 and 003 independently pending.
   Preserve Linux's existing `Ctrl+Q` quit binding and macOS Quick Look.
 - Follow the source cursor, not marked selection, including when several files
   are marked. Source browsing/filtering/navigation remains available.
-- Same viewport, toggle, focus rules, and lifecycle across all three stages.
-  Type-specific controls appear within it; no extra splitter pane, bottom dock,
-  detached preview window, or independent image/video/text toggle.
+- One opaque QuickView overlay covers the target pane, including its address bar,
+  without changing that pane's layout or widgets. Tab switches keyboard focus
+  between the source file list and QuickView, never the covered target list.
+  No extra splitter pane, bottom dock, detached window, or per-type toggle.
 - Local regular files and accessible UNC files after URL resolution, including
   resolved local symlinks. No archive extraction, remote downloads, directory
   thumbnails, PDF/office documents, editing, executing scripts, persistent content
@@ -39,6 +44,22 @@ stage leaves stages 002 and 003 independently pending.
 - Preserve the public `fman` plug-in API and the identity/state of both real panes.
 
 ## Design
+
+### Isolation Contract
+
+Prioritize a small integration surface over making QuickView impersonate a pane.
+Off must preserve existing behavior, not merely approximate it. On intentionally
+changes only the covered area's input/display and the source-to-preview focus switch.
+Other commands retain their normal semantics. Near-zero workflow impact is an
+acceptance goal, not a claim of zero native-code, memory or regression risk.
+
+Allowed existing-code changes: thin Core command/lifecycle wiring, Windows binding
+registration, and one active-session branch in `SwitchPanes`. Put the overlay,
+event adapters, image loader and controls in internal QuickView modules. No changes
+to pane layout/focus proxies, global active-pane lookup, MainWindow focus/status
+handling, Controller dispatch, filesystem/model behavior or session persistence.
+If implementation cannot satisfy this boundary, stop and review the reason rather
+than widening the changes implicitly.
 
 ### Experience and Reference
 
@@ -59,34 +80,50 @@ compact toolbar; use existing icon conventions, tooltips, and accessible names.
 
 ### Shared State and Focus
 
-- Off -> On: capture the source/target pane identities and show the initial cursor
-  preview in the target. Leave keyboard focus in the source file list.
+- Off -> On: retain the source/target pane identities and show the initial cursor
+  preview over the target. Initially leave focus in the source file list. The
+  preview canvas is one keyboard-focus target, including while loading or showing
+  an error; its toolbar buttons and scrollbars use `Qt.NoFocus` to avoid extra stops.
 - On -> On: cursor change immediately invalidates the old result, clears its
   content, and schedules the latest candidate after a 100 ms single-shot debounce.
   Marking alone does not retarget. Source location changes invalidate immediately;
   request the new cursor only after its listing is ready.
-- On -> Off: the toggle or viewport close control cancels work, releases media,
-  restores the target's directory presentation, and returns focus to the source.
-  Toggling while preview controls have focus closes the same session, never reverses
-  the source and target.
-- Add **Focus QuickView** / `focus_quick_view`, without a default shortcut, for
-  keyboard-only access through Command Center or a user binding. Clicking the
-  viewport also focuses its controls. Focus does not change the source owner.
-- In the preview, local keys pan/seek/scroll/copy as specified by the renderer.
-  `Escape` returns focus to the source; it does not consume Escape in source rename,
-  filter, or other dialogs. `Tab` traverses preview controls with an exit back to
-  the source. File-operation shortcuts never fall through to the hidden target.
-- Normal pane switching from the source, including its existing Tab command,
-  closes QuickView and then focuses the restored target file list. Programmatic
-  target focus/navigation also closes it before performing the requested action.
-  Merely focusing preview controls does neither.
+- Tab in the source follows the existing `switch_panes` binding, redirected to the
+  QuickView canvas while enabled. Tab or Shift+Tab in QuickView returns to source;
+  neither closes it. Clicking the canvas also focuses it. Image actions do not
+  change the captured source/target identities or the source cursor.
+- Escape in QuickView returns to source without closing. Source Escape, filtering,
+  rename and dialog behavior are unchanged. No separate **Focus QuickView** command.
+  The canvas explicitly returns `False` from `focusNextPrevChild`, so Tab/Backtab
+  reach its `keyPressEvent` without traversing covered controls or relying on the
+  MainWindow parent chain. No toolbar tab cycle or custom `ShortcutOverride` handler.
+- QuickView is an auxiliary widget, not a substitute active file pane. Local image
+  actions use its captured session. For every other non-modifier keypress, first
+  focus the real source list, then call unchanged command dispatch once. This also
+  handles toggle and Command Center; QuickView does not inspect bindings. Consume
+  the event even if dispatch returns `False`, without synthesizing a list/filter
+  keypress or invoking nonexistent-shortcut handling. An unbound key returns focus
+  to source but does not act on the list. Leave focus where dispatch puts it; no
+  automatic return to preview. Modifier-only presses retain canvas focus for local
+  Shift+arrow and Ctrl+wheel interaction. Tab remains available to resume QuickView.
+- On -> Off: Ctrl+Q/the configured toggle or the mouse close control invalidates
+  work, releases the image and removes the overlay. Return focus to the surviving
+  source when closing from QuickView; preserve focus in unrelated dialogs/panels.
+  Toggle lookup is per window, so invocation from the preview closes the existing
+  session rather than reversing source and target.
+- Do not intercept target navigation, model changes or explicitly invoked file
+  operations. They continue normally underneath; removal reveals the latest state.
+  No operation blacklist, rollback or blanket disabling of the underlying pane.
+  The supported pane-switch route focuses the overlay instead of the covered list;
+  arbitrary direct widget manipulation by a plug-in is outside this focus guarantee.
 - Source file operations keep their normal semantics; opposite-pane copy/move
   destinations remain the real target location, not the previewed file. Existing
   destination prompts must display that path. No preview drag/drop filesystem actions.
-- Restore location, cursor, marks, sorting, column widths, filters, scrolling,
-  status-bar mode, and splitter sizes without recreating/reloading a pane just to
-  close QuickView. Real concurrent filesystem/model changes still take effect;
-  restoration must not resurrect removed files or undo deliberate navigation.
+- Cover, do not rebuild or restore: existing target widgets/model stay in place
+  and retain state. Do not hide/reparent them, replace their layout, or change the
+  splitter. No recreation, reload or snapshot rollback on toggle.
+- Closing either pane/window or unloading the Core command owner disposes the
+  session. Invalid pane counts fail before any presentation change.
 
 ### Shared Ownership and Integration
 
@@ -94,74 +131,111 @@ compact toolbar; use existing icon conventions, tooltips, and accessible names.
   Renderer modules are internal adapters, not new `FileSystem` providers or pane
   objects. Do not add an external plug-in API in this task.
 - [DirectoryPaneWidget and MainWindow](../src/main/python/fman/impl/widgets.py)
-  retain their identities and splitter positions. Add a private presentation mode
-  inside the existing target widget: hide its normal location/list/filter/status
-  presentation and show the viewport in the same bounds. Do not reparent the pane
-  or change the assumptions of its `window` property and public handle.
-- The shared controller owns source/target, generation token, debounce, bounded
-  work, renderer disposal, and restoration. The pane owns Qt layout/focus hooks;
-  each renderer owns only content and its controls.
-- [Controller dispatch](../src/main/python/fman/impl/controller.py),
-  [active-pane lookup](../src/main/python/fman/impl/plugins/__init__.py), and
-  MainWindow focus/status handling require a scoped preview-owner rule. During
-  viewport interaction, Command Center/toggle/focus actions resolve to the source,
-  not the hidden target. Non-preview operation remains unchanged.
-- Subscribe to source current-row, model-reset/location-load, pane-close, and
-  relevant layout changes only while enabled. GUI/model access stays on the Qt
-  thread. The private current-row subscription is necessary because the public
-  API does not expose a cursor-change subscription; isolate it in the pane adapter.
-- Independent windows have independent sessions. Closing either pane/window or
-  unloading its command owner disposes the session. Unsupported pane counts fail
-  before hiding anything. Existing search/favorites panels keep their own lifecycle.
+  retain their identities and existing layout. Parent the lazy opaque overlay to
+  `MainWindow.centralWidget()`, as a non-layout sibling above the splitter, not a
+  descendant of either pane and not a separate window. Never parent it to the
+  splitter, which adopts child widgets as panes. Map the target's rectangle into
+  the central widget's coordinates; cover its address bar/list/filter/local status,
+  never the splitter handle, source, bottom panels or global status bar.
+- Keep the pane's focus proxy, filter positioning, status insertion and size hints
+  unchanged. A sibling above the splitter also covers newly raised pane children
+  without monitoring every filter/status child or changing their z-order.
+- While enabled, filter target-pane `Resize`, `Move`, `Show`, `Hide` and splitter
+  `Resize`, `Move`; also connect `splitterMoved`. On enable and these geometry/show
+  notifications, recompute the rectangle from
+  `target.mapTo(central, QPoint(0, 0))` and `target.size()`, then reposition/raise
+  only the overlay. Mirror target show/hide; normal ancestor visibility applies.
+  Disconnect/remove these adapters on disposal. No central/application-wide event
+  filter, polling, layout insertion or off-path listener.
+- Splitter movement within the central layout need not move the target relative to
+  its own parent, so target-only filtering is insufficient. Panel open/close and
+  ancestor-only movement are mandatory geometry regressions. The overlay receives
+  pointer input, rejects filesystem drops and never forwards mouse events to
+  covered controls.
+- The Qt-thread controller owns source/target, generation, debounce and renderer
+  disposal. It owns overlay geometry and focus switching; each renderer owns only
+  content/controls. No normal-pane page container or state-restoration machinery.
+- [SwitchPanes](../src/main/resources/base/Plugins/Core/core/commands/__init__.py)
+  delegates to a small private QuickView focus handler when that window has a
+  session: no explicit pane index toggles source/canvas; an explicit source/target
+  index focuses that surface. With no session, the command follows its old path.
+  The off path checks a private window-local reference without importing a renderer
+  or reading settings. No change to `DirectoryPaneWidget.focus()` or navigation.
+- Before entering the canvas, focus source if needed, then canvas. Existing
+  MainWindow tracking retains the source because the overlay is outside both pane
+  subtrees. Do not modify [active-pane lookup](../src/main/python/fman/impl/plugins/__init__.py)
+  or status routing. While the auxiliary canvas has focus, a direct active-pane
+  query can return none; this is explicit, not patched with a false focus owner.
+- Canvas `keyPressEvent` handles only the local controls below and consumes
+  modifier-only presses without changing focus. For every other key, focus source
+  and call existing `Controller.handle_shortcut(source_widget, event)` once via
+  [controller dispatch](../src/main/python/fman/impl/controller.py). Consume the
+  event whether that returns `True` or `False`; if source cannot gain focus, consume
+  without dispatch. Do not forward a raw keypress or call a file-list key handler.
+- Zero binding recognition, settings lookup, toggle-command identification or
+  shortcut cache lives in QuickView. Controller alone applies existing binding
+  order, user overrides and pane/application command dispatch. Toggle is an ordinary
+  source-pane command that closes the window's session; Command Center sees real
+  source focus. Local canvas keys take precedence only inside QuickView. Source
+  Tab follows its existing binding; the documented cycle assumes `switch_panes`.
+  No command blacklist, custom `ShortcutOverride` handling or automatic focus
+  restoration. Dialogs, panels and source-list dispatch remain outside this adapter.
+- Connect source `selectionModel().currentChanged`, model-reset/location-load and
+  close signals only while enabled, through one private pane adapter. No permanent
+  cursor listener and no use of selection changes as cursor changes. GUI/model
+  access remains on Qt; layout/DPR events are renderer-local.
+- Independent windows have independent sessions. Existing search/favorites panels
+  retain their own lifecycle and normal focus behavior.
+
+### Renderer Boundary
+
+Keep only three internal operations: `load(request) -> result` on the worker,
+`show(result)` and `dispose()` on Qt. Requests contain immutable plain data;
+`load` receives no widget, model or bound GUI adapter. Result disposal and generation
+checks belong to the controller; image ownership is specified below. This is an
+image-stage interface, not a generic streaming or process framework. Playback,
+helper-process lifetime and text selection/find behavior belong to stages 002/003;
+they reuse the source/preview focus switch and may extend local interaction after
+review without adding another viewport/toggle.
 
 ### Shared Data, Bounds, and Failure
 
-- GUI captures a plain immutable request: generation, source URL, viewport size,
-  device-pixel ratio, and renderer options. No widget/model is passed to workers.
-- Resolve/stat/read off the GUI thread. Provider reads use the resolved local
-  file, never arbitrary shell commands. Extension hints only choose a candidate;
-  format validation determines whether it is supported. Symlinks follow their
-  local targets; missing/broken/inaccessible inputs show an inline state.
+- Qt captures generation, source URL and load options as immutable plain data.
+  Viewport size/DPR are display state, not decode inputs; resize never queues a read.
+  Resolve/stat/read off Qt, accepting resolved local regular files only. Extension
+  hints are not proof of format. Missing/broken/inaccessible inputs show inline states.
 - Common states: empty cursor, folder, loading, ready, unsupported format,
   unavailable dependency, too large, and read/decode failure. Escape filenames as
   plain text. Clear stale content immediately; do not leave a previous file visible
   under a new name or show modal errors for each cursor movement.
-- At most one shared decode/read job and one replaceable pending request per
-  window. Results carry their generation and file size/mtime fingerprint; reject
-  stale results and files changed during a read. No file watcher or recurring stat;
-  reload/cursor changes request fresh data.
-- Native blocking reads/decodes may not be interruptible: cancel cooperatively,
-  retain the occupied slot until return, and never spawn a replacement pool on
-  disable/re-enable. Qt must not join/wait on those calls during teardown. Late
-  results go to a service that checks weak session ownership before GUI dispatch.
-- Across renderers, at most one helper process per window, including a retiring
-  one. Stop/dispose it on replacement before starting another; this applies to
-  video-to-text transitions too. Stage 002 introduces private worker dispatch and
-  process cleanup reused by stage 003 without a dependency on video libraries.
-  Format-specific message/resource limits belong to the stage plans.
-- Release the previous renderer before allocating the next large result. Return
-  plain bytes/text/metadata from workers; create GUI resources on the Qt thread.
+- One lazy daemon loader thread per window, with one active job and one overwriteable
+  pending request protected by a lock/condition. A new request replaces pending data;
+  it does not submit another future. Use generation/cancellation checks before I/O,
+  after decode and on Qt delivery. No module-global executor or general job scheduler.
+- An active job includes any decoded result awaiting Qt delivery: do not start the
+  next decode until that result is accepted/discarded. Thus queued completions cannot
+  retain a succession of large images. Return through an explicit queued Qt signal,
+  not the synchronous `run_in_main_thread` bridge. Disconnect on receiver disposal;
+  discard a result whose session/generation is no longer current.
+- Disable drops the pending request and invalidates the active one. The loader
+  remains owned by the window across disable/re-enable until a blocked job returns;
+  re-enable replaces pending data on that same loader. Threads exit when idle.
+  On close/unload, drop requests, disconnect delivery and let an active daemon retire.
+  Neither Qt teardown nor process exit joins it; check shutdown in a subprocess.
+- Results include size/mtime fingerprints checked around the read; reject observed
+  changes. This is not an atomic filesystem snapshot. No watcher, recurring stat,
+  directory scan or prefetch. Clear the displayed image before a replacement decode.
 
 ### Shared Persistence and Dependencies
 
 QuickView starts off on every application launch. No automatic session restoration
 or cursor-history persistence. Optional preferences use `QuickView.json` through
 existing differential config under `UserSettings`, loaded lazily on first use.
-Initial defaults: image Fit, video no autoplay and muted, text no wrap, Markdown
-rendered. Save only deliberate preference changes, never pan positions or every
-cursor event; preserve unknown keys. A failed save does not prevent viewing.
-
-| Stage | Dependency decision | New requirement |
-| --- | --- | --- |
-| 001: initial design and images | Existing PyQt5 5.15 widgets, QtGui image codecs | No new Python package; verify delivered codec plugins. |
-| 002: videos | Proposed `python-mpv` binding (PyPI `mpv`) and Windows `libmpv` in an on-demand helper | New Python package plus native DLL/dependencies and license review. |
-| 003: text-based | Qt plain text/Markdown rendering; proposed Pygments for language lexing | Pygments is new; no WebEngine, Node, or browser service. |
-
-The [environment](../environment.yml) currently declares PyQt5, not `python-mpv`
-or Pygments. These are design choices, not claims that packages are installed or
-approved. User installation/approval is required before adding new packages; no
-environment or dependency changes in this planning task. Details, alternatives,
-fallbacks, and packaging gates belong to each stage. Yazi is not required.
+Default to image Fit. Save only deliberate Fit/100% preference changes, never pan
+positions or every cursor event; preserve unknown keys. A failed save does not
+prevent viewing. Stage 001 adds no package or helper process. Video/text dependencies,
+preferences and helper cleanup remain in [002](QuickView002.md) and
+[003](QuickView003.md), not prerequisites or implementation work for this stage.
 
 ### Image Dependencies
 
@@ -179,27 +253,44 @@ in Qt 5.15. Recheck these APIs if the separately planned Qt migration lands firs
 
 ### Image Display and Interaction
 
-| Control | Behavior while preview has focus |
+Use `QAbstractScrollArea` with a custom-painted `viewport()`, scrollbars and a
+compact toolbar. Use one strong-focus canvas, with toolbar buttons/scrollbars
+`Qt.NoFocus`; canvas clicks focus it and toolbar clicks retain the current focus.
+Normal scrollbar input is reused; drag, anchored Ctrl+wheel zoom and painting
+need small explicit handlers. Keep pan in one scrollbar-based model.
+
+| Control | Behavior |
 | --- | --- |
-| Fit / `F` | Complete oriented image, preserved aspect ratio, no enlargement beyond 100%. |
-| 100% / `1` | One source image pixel per physical screen pixel; never an enlarged thumbnail. |
-| Zoom icons / `+`, `-` / Ctrl+wheel | Multiply/divide scale by 1.25, within 5%-800%; Fit can go below 5%. |
+| Source Tab / `switch_panes` | Focus QuickView; do not close or reveal the covered list. |
+| Canvas Tab / Shift+Tab / Escape | Focus source; leave QuickView open. |
+| Configured toggle / close icon | Close QuickView; return to source if preview had focus. |
+| Fit / canvas F | Complete oriented image, preserved aspect ratio, no enlargement beyond 100%. |
+| 100% / canvas 1 | One source image pixel per physical screen pixel; never an enlarged thumbnail. |
+| Zoom icons / Ctrl+wheel / canvas + or - | Multiply/divide scale by 1.25, within 5%-800%; Fit can go below 5%. |
+| Canvas arrows / Shift+arrows | Pan 32 / 128 logical pixels; never change the file cursor. |
 | Left-button drag | Hand cursor; image follows pointer, clamped to its edges. |
 | Wheel / Shift+wheel | Vertical/horizontal pan; never change the source file. |
-| Arrows / Shift+arrows | Pan by 32/128 logical pixels. |
-| Escape / Tab / toggle | Shared focus/close rules; no fallthrough to hidden directory commands. |
+| Other non-modifier key in canvas | Focus source, invoke unchanged dispatch once; consume unbound keys without sending them to the list/filter. |
 
-Compact toolbar with existing icons, tooltips and accessible names; Fit/100% are
-mode controls, with a percentage for custom zoom. Show dimensions/format as concise
-metadata. Center small images and paint alpha over a restrained checkerboard.
-Scrollbars expose both axes; no automatic fullscreen or file opening on double-click.
+Also expose ordinary Core pane commands, without default bindings:
+`quick_view_fit`, `quick_view_actual_size`, `quick_view_zoom_in`,
+`quick_view_zoom_out`, and `quick_view_pan(direction, large=False)`, where direction
+is left/right/up/down. All controls use the same renderer methods, are visible
+only for a ready image in the invoking source session, and safely no-op otherwise.
+Canvas-local controls do not move focus to execute pane commands. Source navigation
+keys and Command Center behavior stay unchanged.
+
+Use existing icons/tooltips/accessible names; Fit/100% are mode controls, with a
+percentage for custom zoom. Show dimensions/format, center small images and paint
+alpha over a restrained checkerboard. No fullscreen or double-click file opening.
 
 Define scale in physical output pixels per oriented source pixel. For viewport DPR
 `ratio`, logical paint transform is `scale / ratio`. Fit is the minimum of `1`,
 physical viewport width/image width and physical viewport height/image height.
 Normalize decoded image DPR to `1` so `@2x` names cannot silently halve the size.
-Metadata DPI does not change 100%. At 100%, align the origin to physical pixel
-boundaries and disable smoothing.
+Metadata DPI does not change 100%. At 100%, disable smoothing and round the paint
+origin to physical pixels (`round(origin * ratio) / ratio` in logical coordinates).
+This is a paint-only adjustment, not another pan state or an image-sized buffer.
 
 Ctrl+wheel anchors zoom under the pointer; toolbar/keyboard zoom anchors the center.
 Preserve that image coordinate until clamping is necessary. Fit recomputes on resize;
@@ -213,25 +304,33 @@ settings writes do not prevent viewing.
 
 ### Image Decode and Ownership
 
-- The shared bounded worker receives immutable request data. Resolve, stat, inspect
-  headers and decode off the GUI thread; create/destroy reader and file handle there.
-- Open the exact file through a read-only device, avoiding suffix fallback. Select
-  only approved handlers and validate content; a decode error must not fall through
-  to SVG or another installed handler.
-- Before full decode reject input above 64 MiB, unknown/nonpositive dimensions,
-  an edge above 32,768 pixels, or more than 32 million source pixels. These initial
-  limits require measurements/review before raising; no unbounded override.
-- Decode full resolution once with `setAutoTransform(True)` and convert to RGBA8888.
-  Scaled decoding may still allocate the full source, so is not a safety mechanism.
-  Do not enumerate frames/pages or load embedded thumbnails.
-- Return immutable bytes, dimensions/stride, format, generation and fingerprint.
-  No widgets, models or `QPixmap` cross threads. On Qt, validate byte length/stride
-  before creating the display `QImage`, retaining backing bytes for its lifetime.
-- Paint the original with a transform. No zoom-sized buffers, re-decode on pan or
-  resize, or second full-sized `QPixmap` cache. Release old image/bytes before replacement.
-- Reject stale output and files changed during reads. Cancellation is cooperative
-  before/after native decode; `read()` itself may not be interruptible. Keep its
-  shared slot occupied across disable/re-enable until it returns. Qt never waits.
+- Create the read-only `QFile` and `QImageReader(device)` in the loader; close both
+  there. Never pass a filename to an API that can try alternative suffixes.
+- Reject files above 64 MiB before codec probing. Use
+  `setDecideFormatFromContent(True)` and `reader.format()` to detect the format.
+  Accept JPEG/PNG/BMP plus verified conditional GIF/ICO/TIFF/WebP handlers only.
+  Pin the approved format with `setFormat`, `setDecideFormatFromContent(False)`
+  and `setAutoDetectImageFormat(False)`, then inspect dimensions/read. Other formats
+  are rejected, even when installed. Content detection can probe installed codecs;
+  the allowlist controls accepted decodes, not a security boundary around probing.
+- Before full decode reject unknown/nonpositive dimensions, an edge above 32,768
+  pixels or more than 32 million source pixels. Recheck decoded dimension limits;
+  record `sizeInBytes()` in memory tests. Limits require review before raising.
+- Decode full resolution once with `setAutoTransform(True)`; reject null results
+  and normalize DPR to `1`. Normalize once in the loader to
+  `Format_ARGB32_Premultiplied` for alpha or `Format_RGB32` otherwise, avoiding
+  repeated source-format conversion during painting. Release the original after
+  conversion and measure this transient overlap. No scaled decode, frame/page
+  enumeration or embedded thumbnails.
+- Return the owned `QImage` plus plain metadata, generation and fingerprint. A
+  `QImage` is a reentrant value type, not a widget: after handoff the worker must
+  neither mutate it nor keep an image cache. Qt paints it read-only. Do not wrap
+  external byte storage, call `bits()` for transport, or construct a `QPixmap`.
+  There is no raw-stride contract, retained-bytes owner or full-size transport copy.
+- Paint using `QPainter` transform and `drawImage`. No zoom-sized buffers, re-decode
+  on pan/resize, or second full-sized image cache. Clear the old image before loading.
+- Reject stale/changed output. Cancellation checks bracket native reads/decodes;
+  they cannot interrupt a blocked call. Keep the one loader occupied until return.
 - Corrupt, unavailable or oversized images show the shared inline state and disable
   image controls. A new cursor never retains the previous image under its name.
 
@@ -246,7 +345,26 @@ abuse but do not prove a hard process-memory bound or prevent codec defects.
 - Independent viewers per stage: creates competing state/bindings. Extend one
   controller with renderer adapters; stages add formats only.
 - Replacing a real pane/model with a preview filesystem: breaks directory handles
-  and restoration. Change presentation while retaining the real pane.
+  and state preservation. Cover the real pane without modifying it.
+- Stacked pages or reparenting existing widgets: unnecessary layout/focus/size-hint
+  changes. A non-layout sibling overlay leaves the existing pane tree untouched.
+- Overlay parented inside target plus global focus-owner overrides: changes shared
+  command/status semantics. A sibling outside both panes plus explicit source-focus
+  handoff uses existing semantics. Direct plug-in queries while the canvas is focused
+  may see no active pane; this limitation is preferable to a global override.
+- NoFocus canvas or Tab-to-close: simpler, but superseded by the user's requirement
+  that Tab focus QuickView. Keep one focusable canvas, not a toolbar traversal chain.
+- Snapshot/restore or target-navigation interception: unnecessary and can undo
+  legitimate changes. Leave the actual directory widgets/model alive and covered.
+- `ThreadPoolExecutor(max_workers=1)`: caps running threads, not queued requests;
+  Python still joins its workers at exit, even after `shutdown(wait=False)`.
+  A tiny per-window daemon loader/mailbox retains bounded work without that exit
+  wait or cross-window blocking. No generic scheduler or weak-session registry.
+- Raw RGBA bytes: extra copy and lifetime/stride bookkeeping with no process
+  boundary to justify them. Transfer an exclusively handed-off `QImage` instead.
+- Dimmed previous image under a Loading overlay: smoother browsing, but requires
+  separate old/new file identity and retains the old pixel buffer during decode.
+  Keep immediate blanking; it is simpler and never labels old content as new.
 - Polling/preloading every file: adds idle work and network I/O. Subscribe on enable
   and load only the cursor file, with debounce and bounded latest-request handling.
 - Always-active previews: not requested and can hold media/files open unexpectedly.
@@ -264,121 +382,237 @@ abuse but do not prove a hard process-memory bound or prevent codec defects.
 
 ### Shared Foundation
 
-- Off: command registrations and a cheap null presentation check only; no new
-  models, scans, file reads, codecs, player, worker, listeners, or active timers.
+- Startup/off: thin command registrations and a null session check when
+  `switch_panes` runs. No replacement layout, renderer import, overlay creation,
+  settings read, new models, scans, codecs, workers, listeners or active timers.
   Disabling may leave one previously blocked read retiring, never new work.
-- On: one viewport inside the existing pane, invocation-scoped subscriptions and
+- On: one sibling overlay over the existing target, enabled-only subscriptions and
   a single-shot debounce. No extra filesystem model or directory enumeration.
-- CPU/memory/I/O budgets are renderer-specific. Only the active renderer may own
-  heavy resources. Settings writes occur only on explicit preference changes.
-- Cancellation invalidates immediately; media/process cleanup is bounded by the
-  relevant adapter. Blocking OS reads are a documented latency limit, not a reason
-  to block Qt or accumulate workers.
+- CPU/memory/I/O here are image-only. Settings writes occur on explicit mode changes.
+- Cancellation invalidates immediately. One blocked job may delay the next image
+  in that window, never UI closure or another window's loader. Once disabled work
+  retires, its thread exits; no polling, idle executor or queued future backlog.
 
 ### Images
 
 - Off/other renderer: no image probes, reads, timers, submissions or pixel buffers.
   Enumerate capabilities lazily on first image use, not application startup.
-- On: one shared worker, cursor file only, no directory scan/prefetch. A 32 MP RGBA
-  image is about 122 MiB; conversion/transport may temporarily retain several buffers.
-  Target incremental peak working set below 512 MiB on the largest accepted fixture;
-  measure codec overhead and reduce limits if needed. This is not an allocator cap.
+- On: one loader per window, cursor file only. A 32 MP, 32-bit image is about
+  122 MiB; higher-depth input, orientation and one-time format conversion can
+  temporarily use more. QImage handoff adds no deliberate full-size copy.
+  Target incremental peak working set below
+  512 MiB on the largest accepted fixture; measure codec overhead and reduce
+  limits if needed. This is not an allocator cap or a codec sandbox.
 - Loaded: CPU only on repaint/interaction; no polling/animation. Zoom/pan does not
   allocate image-sized scaled copies. Read-only I/O plus explicit preference writes;
   no temporary or cache files. One blocked native call can retire after close.
 
+### Residual Risks
+
+- Off-path integration should be low risk once regressions pass; it is not yet
+  implemented or measured. While enabled, overlay geometry/input and queued result
+  disposal remain the principal application-integration risks.
+- Decoder faults can still terminate the process; header limits are not isolation.
+  UNC/native reads may block the single loader indefinitely, although GUI close
+  remains nonblocking. Do not describe either as guaranteed safe or cancellable.
+- Ordinary commands still operate on both real panes where their existing semantics
+  require it. The covered target may change. QuickView is not a protection layer;
+  disabling it exposes current state, with no rollback or new confirmation policy.
+- A plug-in that assumes a file pane is always focused can observe none while the
+  canvas owns focus, as with other auxiliary widgets. Test command handoff rather
+  than expanding the public API to conceal this. Revisit only on demonstrated need.
+
 ## Tests
 
-Planned tests, not implemented or run in this design task:
+Planned application tests, not implemented or run in this design task:
 
 ### Shared Foundation
 
 - `fman_unittest.test_quick_view`: state transitions, latest-only requests, cursor
-  versus marks, format routing, bounds, errors, generation checks, lazy settings,
-  and cleanup. Assert no preview-specific work off, including re-enable while a
-  canceled read is still retiring.
+  versus marks, generation checks, lazy settings and cleanup. Event-gated reads
+  must prove one active job (including undelivered output) and one replaceable
+  request, including disable/re-enable; no off-path work after retirement.
 - `fman_integrationtest.test_qt.QuickViewIT`: real command registry and Windows
-  binding; both source sides; still exactly two identical pane/model instances;
-  restoration of marks/filter/cursor/scroll/splitter; current-row/loading races;
-  programmatic focus/navigation; source Tab and viewport focus traversal;
-  Command Center ownership; destructive keys do not reach hidden targets;
-  existing panels/status bars; close/unload; stale delivery after deletion.
-- Use event-gated workers to prove GUI responsiveness and bounded concurrency,
-  not sleeps. Assert zero idle I/O/timers/jobs, and no directory scans when enabled.
-- Run existing pane/filter/status/command regressions for touched integration paths.
-  Add renderer gates from each stage. No full suite or package build automatically.
+  binding from both sides. Capture layout identity/count, widget parents, focus
+  proxies, pane/model identity, splitter sizes and minimum size before/while/after
+  toggling. Preserve path/cursor/marks/sort/width/filter/scroll without reload. A
+  separate covered-navigation case must reveal new state, not restore the old.
+- Test off at startup and after disable: normal Tab, source filter/rename/selection,
+  Command Center, file operations, panels/dialogs and status ownership. Instrument
+  QuickView imports, settings, signal adapters, timers and I/O to prove off does
+  no feature work except command registration/session checks, once a blocked job
+  retires. Compare operation counts, not noisy millisecond startup thresholds.
+- Source Tab focuses canvas; canvas Tab/Shift+Tab/Escape returns source without
+  closing. Canvas clicks focus it; toolbar/scrollbars do not steal focus. Image
+  keys do not reach either list. Exercise canvas Tab/Backtab under a plain QWidget
+  parent to prove independence from MainWindow; use no custom ShortcutOverride.
+  Modifier-only presses keep canvas focus; Shift+arrows and Ctrl+wheel stay local.
+- Every other key calls unchanged Controller exactly once after source focus,
+  including unbound keys, toggle, Command Center cancel/execute, both command kinds
+  and custom overrides. Assert unbound keys reach neither list/filter nor the
+  nonexistent-shortcut handler, and cause no binding scan outside Controller.
+  Assert no automatic focus theft after dialogs/panels open. Verify unchanged
+  MainWindow tracking and explicit no-active-pane lookup while canvas is focused.
+  Programmatic target focus/navigation is not intercepted.
+- Test overlay bounds after splitter/window/central-layout changes, panel open/close
+  and minimize/restore, plus target show/hide. Include a splitter-only move with
+  unchanged target-relative geometry and no target `Move` event; assert the overlay
+  follows `target.mapTo(central, QPoint(0, 0))`. Verify the exact target/splitter
+  event filters and `splitterMoved` connection are removed on disable. A new/raised
+  target filter/status widget stays covered;
+  source, splitter handle, panels/dialogs and global status remain reachable.
+  Test source loading/reset, two independent windows, owner unload/window close,
+  removed adapters and stale delivery to a deleted receiver.
+- In a subprocess, close the app with a blocked fake read and prove it exits without
+  joining a loader. In-process event gates prove another window remains responsive
+  and can load independently. No sleep-based races or real hanging network calls.
+- Run the touched pane/filter/status/command regressions listed below. No full suite
+  or package build automatically.
 
 ### Images
 
 - Unit: Fit/100% at DPR 1/1.25/1.5/2; EXIF dimension swap; anchored zoom; pan clamping;
-  small images; preferences; all size thresholds; malformed headers/buffers;
-  stale, changed-file and canceled results.
+  small images; preferences; all size thresholds; malformed headers/null results;
+  stale, changed-file and canceled results. Resize/pan must never request decoding.
 - Qt/codec: generated JPEG/PNG/BMP; small licensed fixtures for EXIF and conditional
   formats. Assert pixels/alpha, `@2x`, first-frame-only, corruption, wrong suffix,
-  removed files and codec absence. Mandatory baseline codecs must not be skipped.
-- Native Qt: drag/wheel/arrows, resize/splitter, monitor changes and focus routing;
-  preserve source cursor/marks. Check 1:1 pixel extent/edges, not just nonblank output.
+  removed files, codec absence and rejection of installed SVG. Verify worker-created
+  QImage lifetime through queued handoff, format normalization and disposal;
+  mandatory codecs cannot skip.
+- Native Qt: canvas and command-based controls, resize/splitter and monitor changes;
+  preserve source cursor/marks and specified focus transitions. Check physical 1:1
+  extent and snapped edges, not just nonblank output. Large images/labels must not
+  change window minimum size or overflow the overlay at narrow widths.
 - Performance: 1/12/32 MP cold/warm loads, 200 cursor changes, repeated toggles and
-  event-gated slow reads. Assert one running/one pending job, no retained-buffer
-  growth, zero off-path work after retirement. Record load time/peak memory and
-  target GUI heartbeat gaps below 100 ms on the recorded machine while decoding.
+  event-gated slow reads/delivery. Assert bounded requests and no accumulated QImage
+  results or retained-buffer growth. Measure load time/peak memory and target GUI
+  heartbeat gaps below 100 ms on the recorded machine while decoding.
 
-  ### Commands and Manual Gates
+### Commands and Manual Gates
 
 ```powershell
-python -c "import build, subprocess, sys; sys.exit(subprocess.run([sys.executable, '-m', 'unittest', 'fman_unittest.test_quick_view', 'fman_unittest.test_quick_view_images', '-q'], env=build._environment(), timeout=120).returncode)"
-$env:QT_QPA_PLATFORM = 'windows'
-  python -c "import build, subprocess, sys; sys.exit(subprocess.run([sys.executable, '-m', 'unittest', 'fman_integrationtest.test_qt.QuickViewIT', 'fman_integrationtest.test_qt.QuickViewImagesIT', 'fman_integrationtest.test_qt.FilterBarIT', 'core.tests.commands.test___init__', '-q'], env=build._environment(), timeout=120).returncode)"
+python -c "import build, subprocess, sys; sys.exit(subprocess.run([sys.executable, '-m', 'unittest', 'fman_unittest.test_quick_view', 'fman_unittest.test_quick_view_images', 'fman_unittest.impl.test_status_bar', '-q'], env=build._environment(), timeout=120).returncode)"
+python -c "import build, subprocess, sys; env=build._environment(); env['QT_QPA_PLATFORM']='windows'; sys.exit(subprocess.run([sys.executable, '-m', 'unittest', 'fman_integrationtest.test_qt.QuickViewIT', 'fman_integrationtest.test_qt.QuickViewImagesIT', 'fman_integrationtest.test_qt.FilterBarIT', 'fman_integrationtest.test_qt.MainWindowIT', 'core.tests.commands.test___init__', '-q'], env=env, timeout=120).returncode)"
 ```
 
 Manual: `python build.py run` with disposable `ROYIFILEMANAGER_USER_SETTINGS`;
-  toggle from each side, browse delivered types, interact, close, restart, and verify
-  directory state and off-on-start behavior. Check transparency, large/small images,
-  100% and all four corners via panning. Inspect native Qt screenshots at
-  100%/150%/200% Windows scaling and a narrow window. Portable dependency/codec smoke
-  is a release gate when an artifact/build is authorized; no automatic freeze.
-  Record it as unverified until run. Name conditional-codec skips and advertise
-  those formats only after the delivered artifact passes.
+toggle from each side, browse images, Tab between source/canvas, use Command Center,
+open/cancel dialogs and panels, close and restart. Check transparency, small/large
+images, 100% and all corners via mouse, local keys and commands. Inspect native
+screenshots at 100%/150%/200% Windows scaling and a narrow window. Verify directory
+state, covered-target navigation, splitter interaction and off-on-start. Repeat the
+normal workflow with QuickView never enabled and after disabling it.
+Portable codec smoke remains a release gate when an artifact/build
+is authorized; DLL presence alone is not a decode pass. No automatic freeze.
+Name conditional-codec skips; advertise those formats only after artifact validation.
 
 ## Implementation Steps
 
-  1. Review the shared contract and image renderer together. Verify proposed Windows
-    `Ctrl+Q` against all bundled bindings; retain user binding precedence.
-  2. Implement shared state/request tests and the private pane-presentation adapter.
-    Immediately run the focused state test after its first substantive edit.
-  3. Wire toggle/focus/current-row events and restoration; run native QuickView tests
-    and touched pane/command regressions before adding media behavior.
-  4. Add bounded image loader/geometry tests; immediately run the focused unit module.
-  5. Add Qt image display, mode/zoom/pan and stale-safe delivery; run native tests.
-  6. Measure limits, verify codec collection and shared source smoke; record any
-    unavailable artifact gate explicitly.
-  7. Update README/Core usage and CHANGELOG for implemented behavior; complete this
-    task with exact validation results, dependencies and limitations. Leave
-    [videos](QuickView002.md) and [text-based files](QuickView003.md) pending, extending
-    the same viewport. Update relative links when moving the canonical document to
-    Done; do not duplicate its body in the index.
+1. Review the isolation contract, source-focus handoff and bounded loader shutdown.
+   Recheck Windows `Ctrl+Q` and retain user binding precedence.
+2. Implement state tests and the sibling overlay with placeholder content;
+   immediately run focused tests. No image loading yet. Prove layout identity,
+   target/splitter geometry listeners, panel open/close, ancestor-only movement,
+   canvas-owned Tab traversal and off-path behavior before connecting file I/O.
+3. Wire toggle, the SwitchPanes session branch, local command handoff and enabled-only
+   cursor/load adapters. Delegate all non-local keys to unchanged Controller after
+   source focus; no binding recognition in QuickView. Prove bound/unbound input and
+   Command Center behavior with native Qt and existing regressions. Stop for review
+   if shared routing needs edits.
+4. Add the daemon mailbox loader, QImage handoff and pure geometry; run their focused
+   tests, including blocked-read process exit, before connecting the actual renderer.
+5. Add the QAbstractScrollArea renderer, local controls and bindable image commands;
+   run image/native tests and the listed shared regressions.
+6. Measure limits, run source smoke and inspect codec delivery. Record unavailable
+   artifact gates explicitly; do not build packages without authorization.
+7. Update README/Core usage and CHANGELOG only after implementation, then complete
+   this task with validation results. Leave [videos](QuickView002.md) and
+   [text](QuickView003.md) pending their own revised focus/process designs. Update
+   relative links when moving this canonical file to Done; never keep a Plan copy.
 
 ## Acceptance Criteria
 
-  - One existing inactive pane displays the cursor image; there are always two real
-    panes, no third pane/window, and no per-type QuickView activation modes.
-  - Proposed binding and commands work from either source side and viewport focus;
-    original pane state restores without changing existing public APIs.
-  - Cursor-following behavior, focus ownership, stale-result rejection, no-op path,
-    bounded jobs, and failure states pass unit/native Qt tests.
+- One existing inactive pane displays the cursor image; there are always two real
+  panes, no third pane/window, and no per-type activation modes or public API change.
+- Tab focuses QuickView; Tab/Shift+Tab/Escape there returns source without closing.
+  Canvas traversal explicitly returns `False`; no custom ShortcutOverride handling.
+  Source browsing is unchanged. All non-local, non-modifier keys focus source before
+  unchanged dispatch; unbound keys are consumed. QuickView contains no binding
+  recognition. Command Center, dialogs and panels retain normal behavior.
+- Existing pane layouts, parents, focus proxies, models, status/active-pane tracking
+  and Controller dispatch are unmodified. No always-on filter or listener. Only
+  thin registration/lifecycle wiring and the SwitchPanes branch touch existing code.
+- The overlay changes no underlying state and intercepts no deliberate navigation
+  or file operation. Covered changes remain visible on close; no restore/reload.
+  Bounds cover only the target, including address bar and pane-local status/filter.
+  Target/splitter listeners keep these bounds through panel layout changes and
+  ancestor-only movement, and are absent after disposal.
+- Cursor-following, loading, generation rejection, close/unload and the disabled
+  no-op path pass focused tests. No unbounded request or decoded-result queue.
 - Fit and physical-pixel 100% work; mouse/keyboard panning reaches every image edge
-  at tested DPI scales. Resize does not silently reset 100%.
+  at tested DPI scales via local controls/bindable commands. Resize preserves 100%.
 - Baseline codecs, orientation, alpha, limits and inline errors pass focused tests.
-- Workers never access widgets/models; stale images never reappear; concurrency
-  and resource bounds hold across rapid navigation/toggle cycles.
-- No image-specific recurring work when off; resources release after retirement.
-- Shared focus/restoration/API gates pass; artifact codec verification is recorded
-  before release, not inferred from development tests.
-- This stage provides a usable shared foundation; later stages extend it without
-  replacement layouts or separate sessions. Dependencies are explicit.
-- No application implementation is claimed by these design documents. Completion
-  requires implementation review, exact validation results, and any unrun release
-  gate to be completed or explicitly accepted for deferral.
+- Workers access no widgets/models and never mutate a QImage after handoff. Stale
+  images never reappear; one active/one pending bound holds across toggle cycles.
+- Blocked loading does not hold up Qt shutdown/process exit or other windows.
+  After retirement, off has no image thread, queued work or recurring activity.
+- Artifact codec verification is recorded before release; development codecs and
+  existing plug-in DLLs alone do not establish delivered format support.
+- Design only until reviewed/implemented/tested. Record exact results and explicit
+  deferrals for any unrun gates; stages 002/003 remain separate future work.
+
+## Review Resolution
+
+| Review item | Decision |
+| --- | --- |
+| 1. No preview focus | Superseded by user's Tab-focus requirement. One canvas takes focus; ordinary commands explicitly focus source before dispatch. No global focus-owner override. |
+| 2. Hide instead of restore | Preserve the no-restoration goal, but supersede stacked pages with a sibling overlay. No layout/parent/focus-proxy changes. |
+| 3. Allow hidden navigation | Adopt covered navigation. Neither navigation nor programmatic focus is intercepted; Tab is handled by the session-aware SwitchPanes command/local canvas. |
+| 4. One ThreadPoolExecutor | Reject the literal proposal: pending work is unbounded and interpreter exit joins workers. Use one small daemon mailbox loader per window, no generic scheduler/weak-session registry. |
+| 5. Return QImage | Adopt exclusive handoff; remove RGBA transport copies, stride validation and retained backing bytes. |
+| 6. QAbstractScrollArea | Adopt; retain the one-line physical-origin rounding at 100%. Disabling smoothing and positioning pixels are separate concerns. |
+| 7. Defer later-stage machinery | Adopt. Only the small renderer boundary remains here; existing 002/003 focus assumptions must be revised before those stages proceed. |
+| 8. Dim old content while loading | Keep blank-on-change: simpler identity and lifetime rules, no old buffer alongside the new decode. |
+| Approval follow-up notes | Normalize image format once in loader and name automatic-fallback disabling; consolidate pan commands. Retain delivery acknowledgement: a one-slot request mailbox alone does not bound already-emitted Qt results. |
+| Minimum workflow impact | Existing host behavior is a constraint, not an invitation to add global protection/routing. Validate the placeholder overlay and ordinary command handoff before implementing image I/O. |
+| 2026-09-21: no canvas binding recognition | Adopt. Local keys stay local; every other non-modifier key focuses source and calls Controller once, consuming even unbound input. Toggle uses that ordinary dispatch path. |
+| 2026-09-21: exact geometry adapters | Adopt. Target Resize/Move/Show/Hide, splitter Resize/Move and splitterMoved; mapTo central on sync. Include panel layout and ancestor-only movement regressions. Never parent to Splitter. |
+| 2026-09-21: explicit canvas traversal | Adopt. Canvas focusNextPrevChild returns False; keyPressEvent handles Tab/Backtab, with no custom ShortcutOverride or parent-chain dependency. |
+
+Design checks on 2026-09-20: native Qt mouse clicking a NoFocus button preserved
+source focus; a worker-created QImage remained valid after handoff; a device-backed
+PNG decoded after content detection and explicit format pinning. An event-blocked
+executor accepted 200 pending jobs with `max_workers=1`; a separate child remained
+alive after `shutdown(wait=False)` and was killed/reaped by the probe. These are
+API/design probes, not implementation tests or portable-codec certification.
+
+Follow-up native Qt probes: a non-layout overlay accepted Tab/backtab/click/Escape,
+resized and retained covered widget state. On 2026-09-21, a central-widget sibling
+overlay using the existing `MainWindow._on_focus_changed` retained source status
+ownership. Unchanged `PluginSupport.get_active_pane()` returned none on the canvas
+and the source after explicit source-focus handoff. Run as an in-memory Qt probe
+via `python -` and a child interpreter using `build._environment()`; no application
+files changed. This validates the focus primitive, not real application shortcuts,
+Command Center, overlay geometry across docks, or all lifecycle paths. Those remain
+the placeholder-stage gates above. The earlier NoFocus approval does not cover
+this revision.
+
+2026-09-21 simplification check: an in-memory probe piped to `python -` launched
+a child with `build._environment()` and `QT_QPA_PLATFORM=windows`. A canvas under
+a plain QWidget passed Tab/Backtab/Escape and modifier/local-key focus checks with
+`focusNextPrevChild` returning `False` and `keyPressEvent`, without custom
+ShortcutOverride. Actual `Controller.handle_shortcut` with recording command stubs
+passed first-binding precedence, pane/application/toggle dispatch and unbound-key
+consumption without delivering keys to either list. Exact target/splitter adapters
+passed panel show/hide, splitter-only movement with no target Move event,
+splitterMoved and target show/hide. Both real pane children remained in place.
+These are design probes, not real Command Center/file-operation tests or production
+overlay lifecycle validation; the planned application gates remain required.
+
+Documentation validation: `git diff --check -- Plan/QuickView001.md`, required
+section checks, relative-link targets and append-only comparison against the full
+pre-edit reviewer history, including the restored record. No application,
+dependency, changelog, README or other stage-plan edits in this review response.
 
 ## Reviewers
 
@@ -510,3 +744,160 @@ unchanged below. Subsequent reviews apply to this combined initial stage.
   Steps / Acceptance Criteria lists are indented inconsistently; the PowerShell
   block has a stray leading indent on its third line. With items 1-7 applied, the
   Tests section should shrink accordingly before implementation starts.
+
+### 2026_09_20 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Claude Fable 5.1
+- Effort: Medium
+- Context Window: 1M
+- Outcome: Approved for implementation. The revision adopts items 1-3 and 5-7
+  (NoFocus viewport, `QStackedLayout` hide/show with no restoration, no navigation
+  interception, `QImage` handoff, `QAbstractScrollArea`, later-stage machinery
+  moved out) and the code paths it leaves untouched (`get_active_pane`,
+  `MainWindow._on_focus_changed`, controller dispatch) match the source. The
+  rejection of item 4 is correct: `concurrent.futures` registers an interpreter
+  exit hook that joins pool workers regardless of `shutdown(wait=False)`, so a
+  blocked native read would hang exit; a per-window daemon thread with a
+  one-slot mailbox is the simpler robust choice. Keeping blank-on-change
+  (item 8) is accepted. Referenced regressions (`MainWindowIT`, `FilterBarIT`,
+  `fman_unittest.impl.test_status_bar`) exist. Non-blocking notes for the
+  implementer:
+  1. "Keep the decoded format, without an unconditional RGBA conversion" trades
+     one conversion for a hidden per-paint one: the raster engine converts
+     `Indexed8`, `Grayscale8`, `RGB888` and similar sources on every
+     `drawImage`, i.e. an image-sized temporary per repaint while panning.
+     Convert once in the loader to `Format_ARGB32_Premultiplied` when
+     `hasAlphaChannel()` else `Format_RGB32`; simpler rule, no paint-time
+     buffers, and the 32 MP budget already assumes 32-bit pixels.
+  2. The delivery handshake ("do not start the next decode until the result is
+     accepted/discarded") is optional. With a one-slot mailbox the worst case
+     without it is displayed + one undelivered + one decoding; if that bound is
+     acceptable the condition round-trip can be dropped.
+  3. Eight image commands is fine; folding the four pan commands into one
+     `quick_view_pan` with `direction`/`large` arguments is an option if Command
+     Center noise matters.
+  4. When the format is pinned after detection, also call
+     `setAutoDetectImageFormat(False)` so a pinned handler that fails cannot fall
+     back; the text says this in prose, the step list should name the call.
+
+### 2026_09_20 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: High
+- Context Window: Not exposed by host
+- Outcome: Applied the simpler image-stage design: NoFocus mouse controls and
+  bindable pane commands, hide/show pages, one target-focus hook, QImage handoff
+  and QAbstractScrollArea. Removed global focus routing, restoration and future
+  process/dependency machinery; aligned tests and fixed list/command formatting.
+  Runtime probes disconfirmed the proposed executor's queue/shutdown assumptions,
+  so retained bounded latest-only daemon loading with queued delivery. Kept
+  blank-on-change and physical-origin rounding as small correctness safeguards.
+  Earlier review history is unchanged. Stages 002/003 need their own focus review;
+  this revision is ready for re-review, not application implementation approval.
+
+### 2026_09_21 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: High
+- Context Window: Not exposed by host
+- Outcome: Refined the user's overlay/Tab request around a strict integration
+  boundary: non-layout central-widget sibling, enabled-only adapters, one
+  SwitchPanes session branch and real source-focus handoff for ordinary shortcuts.
+  Removed proposed global active-pane/status overrides and aligned controls,
+  alternatives, runtime effects and test gates. A native probe exercised unchanged
+  host focus/lookup methods successfully. Preserved all earlier records; approval
+  of the previous NoFocus design is superseded. Design only, pending review and
+  application tests; codec, memory, blocked I/O and plug-in focus risks remain.
+
+### 2026_09_21 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Claude Fable 5.1
+- Effort: Medium
+- Context Window: 1M
+- Outcome: Restored record. This review of the NoFocus/stacked-page revision was
+  appended on 2026_09_21 and dropped when the file was rewritten from an older
+  copy; reviewer history is append-only, so it is re-recorded here in short form.
+  It approved that revision against the low-risk goal, inventoried the touched
+  code (`DirectoryPaneWidget` layout and `focus()`, Core registrations, one
+  binding) and recommended an overlay child plus event filters over a
+  `QStackedLayout` to avoid adapting `set_status_widget`, `FilterBar.reposition`
+  and `resizeEvent`. That approval is superseded by the overlay/Tab revision
+  reviewed below.
+
+### 2026_09_21 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Claude Fable 5.1
+- Effort: High
+- Context Window: 1M
+- Outcome: Approved with simplifications. The overlay/Tab revision keeps the
+  low-risk goal: existing code changes are Core registrations, one binding and
+  one session branch in `SwitchPanes`; `widgets.py`, `controller.py` and
+  `plugins/__init__.py` stay untouched. Verified against the source:
+  `MainWindow` uses a plain `QWidget` central container with a `QVBoxLayout`
+  holding the `Splitter` and the optional `PanelDock`, so a non-layout child of
+  `centralWidget()` is feasible (it must never be parented to the `Splitter`,
+  which adopts child widgets as panes); `MainWindow._on_focus_changed` only
+  promotes a pane that `isAncestorOf` the focused widget, so a sibling canvas
+  leaves the source active; `MainWindow.focusNextPrevChild` already returns
+  `False`, so Tab/Backtab reach the canvas `keyPressEvent` with no extra
+  traversal or `ShortcutOverride` handling; `Controller.handle_shortcut(
+  pane_widget, event)` is the complete binding-to-command dispatch used by the
+  file list. Simplifications requested before implementation:
+  1. **No binding recognition in the canvas.** Drop "the overlay adapter
+     recognizes bindings using existing sanitized settings and key-matching
+     utilities" and "recognize toggle by command identity". The canvas handles
+     its local keys (Tab, Shift+Tab, Escape, F, 1, +, -, arrows); for any other
+     key it focuses the source list and calls
+     `Controller.handle_shortcut(source_widget, event)`, consuming the event if
+     that returns `False`. The toggle then runs as an ordinary command on the
+     source pane and closes the session; Command Center sees a focused pane.
+     Zero binding logic lives in QuickView.
+  2. **Geometry sync is the one real integration risk.** A pane receives no
+     `Move` event when the splitter shifts inside the central widget (panel dock
+     opened/closed), so filtering the target alone is insufficient. State the
+     exact set: event filter on the target pane (`Resize`, `Move`, `Show`,
+     `Hide`), on the splitter (`Resize`, `Move`) and `splitterMoved`; recompute
+     with `target.mapTo(central, QPoint(0, 0))`. Keep the "panel open/close"
+     test as the regression for this.
+  3. `focusNextPrevChild` on the canvas should return `False` explicitly rather
+     than rely on inheritance from `MainWindow`, so the behaviour does not
+     depend on the parent chain.
+  Accepted as designed: sibling overlay instead of a pane child (status-bar
+  ownership and active-pane lookup unchanged), canvas focus via `switch_panes`,
+  covered navigation without interception, per-window daemon mailbox with
+  delivery acknowledgement, one-time `RGB32`/`ARGB32_Premultiplied`
+  normalization, consolidated `quick_view_pan`, `setAutoDetectImageFormat(False)`.
+  Residual note: a focused canvas makes `get_active_pane()` return `None`, the
+  same situation as a focused bottom panel today; documented, not patched.
+
+### 2026_09_21 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Medium
+- Context Window: Not exposed by host
+- Outcome: Incorporated all three requested simplifications: no QuickView binding
+  recognition, exact target/splitter geometry adapters and explicit canvas focus
+  traversal. Unbound non-local input now hands focus to source before Controller
+  dispatch; the canvas consumes unbound events. Modifier-only presses retain focus
+  for local chord/mouse controls. Native input/Controller and geometry probes passed.
+  Aligned input, implementation and acceptance gates; preserved the restored and
+  subsequent reviewer records. Design only; application implementation, native
+  workflow regressions and release gates remain pending.
