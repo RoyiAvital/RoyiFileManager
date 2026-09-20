@@ -6,6 +6,7 @@
 - [Find Files 003: Everything-Style Query Syntax](Plan/FindFiles003.md)
 - [Find Files Panel](Plan/FindFilesPanel.md)
 - [Flat View](Plan/FlatView.md)
+- [Improve Pane Scan](Plan/ImprovePaneScan.md)
 - [Migrate to PyQt6](Plan/MigrateToPyQt6.md)
 - [QuickView 001: Initial Design and Images](Plan/QuickView001.md)
 - [QuickView 002: Videos](Plan/QuickView002.md)

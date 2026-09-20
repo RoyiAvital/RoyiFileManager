@@ -22,6 +22,9 @@ Assessment on this codebase (2026_09_15):
 - High-DPI: not a Qt 6 exclusive. Qt 5.14+ supports
   `AA_EnableHighDpiScaling` plus the `PassThrough` rounding policy today; that
   improvement can ship as a separate small Qt 5 task.
+- Filesystem watching: not a Qt 6 exclusive. Qt 5.15 already contains
+  removable-drive handling; reassess the Windows disable independently of
+  migration (see [Windows Filesystem Watcher](#windows-filesystem-watcher)).
 - Maintenance: open-source Qt 5.15 is end of life; Qt 6 receives the Windows
   font, IME, DPI and dark-mode fixes. Real but not urgent while conda-forge
   ships `pyqt 5.15` for the pinned Python.
@@ -218,6 +221,41 @@ is the documented fallback only if the audit finds artefacts the user does not
 want fixed in this task; choosing it must be recorded here with the reason.
 Options C-F are rejected.
 
+### Windows Filesystem Watcher
+
+Assessment on 2026_09_20: the
+[local filesystem](../src/main/resources/base/Plugins/Core/core/fs/local/__init__.py)
+uses `StubFileSystemWatcher` on Windows. Its comment records excessive
+file/directory locks and blocked USB-drive ejection as the reasons. The stub
+does no native watching; updates come from application file-operation
+notifications, explicit refresh and
+[application reactivation](../src/main/python/fman/impl/widgets.py).
+External background changes can therefore remain unseen until refresh.
+
+Verified upstream evidence:
+
+- Qt added Windows removable-drive notifications on 2016-10-18, before Qt 6.
+  The [upstream change](https://code.qt.io/cgit/qt/qtbase.git/log/src/corelib/io/qfilesystemwatcher_win.cpp?h=6.10&qt=grep&q=WM_DEVICECHANGE&showmsg=1)
+  explicitly releases watched paths when Windows requests a volume lock for
+  removal, allowing ejection.
+- Both [Qt 5.15](https://code.qt.io/cgit/qt/qtbase.git/plain/src/corelib/io/qfilesystemwatcher_win.cpp?h=5.15)
+  and [Qt 6.10](https://code.qt.io/cgit/qt/qtbase.git/plain/src/corelib/io/qfilesystemwatcher_win.cpp?h=6.10)
+  contain the removable-drive listener. The
+  [Qt 6.10 watcher](https://code.qt.io/cgit/qt/qtbase.git/plain/src/corelib/io/qfilesystemwatcher.cpp?h=6.10)
+  releases watches for removal and restores them if the volume-lock request
+  fails.
+- Qt 6 has later fixes, including a
+  [2021 watcher crash fix](https://code.qt.io/cgit/qt/qtbase.git/log/src/corelib/io/qfilesystemwatcher_win.cpp?h=6.10&qt=grep&q=crashes&showmsg=1)
+  for invalidated `QHash` iterators. This is not evidence that every original
+  locking problem is resolved.
+
+Decision: keep the Windows stub during the binding migration. Its historical
+justification may be outdated even on Qt 5.15, but re-enabling watching is a
+separate behavior change, not a reason by itself to migrate. Source/history
+review is complete; native notification, locking and USB-ejection tests have
+not been run. Use the separate reassessment checks below before changing this
+policy. Keeping the stub adds no watcher threads, handles, timers or I/O.
+
 ### Packaging and Environment
 
 - `environment.yml`: `pyqt=6.*` (pin the minor that conda-forge ships for
@@ -332,6 +370,24 @@ Manual checks (record in Validation Results):
   packaged executable, confirm `QtSvg` icons render and 7-Zip/ripgrep paths
   resolve.
 
+### Watcher Reassessment (Separate Follow-up)
+
+These checks are prerequisites for a future re-enable decision, not migration
+acceptance gates while the stub remains. Start with the installed Qt 5.15;
+compare a pinned Qt 6 build only when available, recording exact versions.
+
+- In a disposable directory, keep the watcher application active while a
+  separate process creates, edits, renames and deletes files. Check native
+  signals and, in an integration probe, cache invalidation and pane updates
+  without an activation-triggered reload masking missed notifications.
+- From the separate process, rename/delete watched files and a watched empty
+  directory; confirm no access/sharing failures or hangs. Remove watches and
+  close the probe; verify handles and watcher threads are released.
+- On a disposable USB test drive, request safe ejection while watching it.
+  Check successful removal and loss-of-path handling; where safely
+  reproducible, check that failed ejection restores notifications. Record
+  unavailable hardware or untested cases explicitly, not as passes.
+
 ## Implementation Steps
 
 1. Add `fman/impl/util/qt/compat.py` with the helpers above (PyQt5 branch
@@ -418,3 +474,16 @@ Manual checks (record in Validation Results):
   `QtMultimedia`) the only concrete functional driver. Marked the task
   Deferred; recommended and user accepted implementing it only with the
   QuickLook feature.
+
+### 2026_09_20 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Medium
+- Context Window: Not exposed by host
+- Outcome: Documented the Windows watcher disable and upstream removable-drive
+  handling already present in Qt 5.15. Kept the migration's stub policy;
+  specified separate notification, locking and USB-ejection checks before
+  reconsidering it. Runtime watcher behavior remains unverified.

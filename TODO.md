@@ -36,3 +36,11 @@
 - [x] Add support for `EmEditor` as a text editor / viewer. Use the flags `-nr -sp -r` for view mode and `-nr -sp` for edit mode.
 - [x] Rename the file creation commands: "Edit new file" (`Shift+F4`) creates a file and opens it in the editor, "New file" (`Ctrl+N`) creates an empty file without opening the editor.
 - [ ] Evaluate using [`fd`](https://github.com/sharkdp/fd) to accelerate searching.
+- [ ] Use ISO Style date (`YYYY-mm-dd`) and 24 Hours format for time. Should be a tiny run time improvement.
+- [ ] Enable the file watching mechanism on Windows.
+- [ ] Implement [Commit `f3e48d2`](https://github.com/mherrmann/fman/commit/f3e48d23308689c4d3ffc90753a73bf6bb24a55b) from [`fman`](https://github.com/mherrmann/fman).
+
+## Performance
+
+List of small performance focused optimization.  
+Each task should be pretty localized and low risk.

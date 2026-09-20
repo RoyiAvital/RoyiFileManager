@@ -177,4 +177,35 @@ python src/misc/benchmark_fuzzy_search.py --max-files 50000 `
 	--query "power shell" C:\Windows C:\Program Files
 ```
 
+### Directory Listing Benchmark
+
+[benchmark_directory_listing.py](src/misc/benchmark_directory_listing.py) compares
+`os.listdir()` plus one `os.stat()` per entry with `os.scandir()` metadata reuse.
+It uses only the standard library, reads one directory level, and leaves files and
+application behavior unchanged. Pass the folder that feels slow:
+
+```powershell
+python src/misc/benchmark_directory_listing.py "C:\Path\To\Folder" --repeat 30 --warmup 2
+```
+
+Multiple folder arguments are supported; no arguments uses the current directory.
+Run order alternates; `--first scandir` reverses the initial order. Output includes
+first-observed time, median/min/max, absolute milliseconds saved and a time ratio.
+OS caches are not flushed: neither the first observation nor repeated runs prove
+cold-storage performance. Each run enumerates afresh without the application's cache.
+
+Names, directory flags, file sizes and modification times must agree across methods
+and runs. Links follow targets, with the application's missing-target fallback.
+Metadata errors or differences suppress the speedup and return exit code 1; use a
+quiet folder. This is not a full pane benchmark: icons, sorting, date formatting,
+Qt and plug-ins are excluded. Full identity fields are also excluded; on Windows,
+`DirEntry.stat()` cannot replace the application's complete `stat()` cache used by
+same-file checks and moves. A large ratio can still mean negligible absolute savings.
+
+Focused regression tests:
+
+```powershell
+python -m unittest src/unittest/python/fman_unittest/test_directory_listing_benchmark.py -v
+```
+
 See [UPSTREAM.md](UPSTREAM.md) for the upstream merge policy.
