@@ -1,6 +1,6 @@
-# Search File Content
+# Search Files
 
-Press **Alt+F7** in a local folder, or use **Search File Content** in the command
+Press **Alt+F7** in a local folder, or use **Search files** in the command
 palette. The Panel stays tied to that pane. A half-filled square marks it; hover for
 "Left pane" or "Right pane". Its folder follows that pane while idle. Changing
 the other pane has no effect.
@@ -91,15 +91,24 @@ filename regex. These are local measurements, not throughput guarantees.
 
 ## Settings and Distribution
 
-[SearchFileContent.json](SearchFileContent.json) supplies engine/recursion defaults.
+[SearchFiles.json](SearchFiles.json) is the settings entry point; engine and
+recursion defaults live in [search_files/__init__.py](search_files/__init__.py).
 The two modes (`name_mode`, `content_mode`), recursion and validated limits persist
 under `UserSettings`; queries and results are session-only. Mode values are
 `literal`, `glob` and `regex`, defaulting to filename Glob/content Literal.
 Old `name_regex`/`content_regex` booleans migrate automatically; valid new modes
-take precedence. Old keys are removed on the next settings save. Bundled mode
-keys are omitted so defaults cannot mask old user settings during migration.
+take precedence. Old keys are removed on the next settings save.
+Preferences from `SearchFileContent.json` remain readable as a fallback;
+explicit `SearchFiles.json` values take precedence. New preferences are saved
+to `SearchFiles (Windows).json` without modifying the legacy file. The bundled
+settings file is empty so defaults cannot mask migrated preferences.
 `encoding` accepts `auto` (UTF-8/UTF-16 BOM detection) or
 `windows-1252`. Limits may be lowered, not raised above the defaults.
+
+The command ID is `search_files`; the old `search_file_content` ID remains
+callable for custom bindings but is hidden from the command palette. When
+updating plug-ins manually, replace the old `SearchFileContent` folder with
+`SearchFiles` rather than keeping both copies. The public `fman` API is unchanged.
 
 Source execution uses conda-forge's installed `bin/rg.exe` under `sys.prefix`.
 PyInstaller includes that executable and the notices in [licenses](licenses)

@@ -251,7 +251,7 @@ operators (the README says so).
   its own dialog in Find Files 003.
 - **Controls row inside Quicksearch**: rejected; [UIElements](../Plan/UIElements.md)
   keeps the modal picker free of controls.
-- **Panel + Table** like Search File Content: two surfaces for a
+- **Panel + Table** like Search Files: two surfaces for a
   one-keystroke picker. Rejected.
 - **Smart-case**: an invisible mode switch inconsistent with the rest of the
   application. Rejected; RegEx in Find Files 003 covers case-sensitive needs.

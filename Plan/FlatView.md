@@ -364,7 +364,7 @@ Public pane-mode API tests (required additions to existing pane/Qt coverage):
 1. **P1: a synthetic scheme disables existing local-file features.**
    [CalculateFileHash](../src/main/resources/base/Plugins/CalculateFileHash/calculate_file_hash/__init__.py#L78)
    checks both pane and item URLs for `file://`;
-   [SearchFileContent](../src/main/resources/base/Plugins/SearchFileContent/search_file_content/__init__.py#L90)
+   [SearchFileContent](../src/main/resources/base/Plugins/SearchFiles/search_files/__init__.py#L90)
    and [directory size](../src/main/resources/base/Plugins/Core/core/directory_size/__init__.py)
    also gate on local URLs. These callers do not first call `resolve()`.
    [DragAndDrop](../src/main/python/fman/impl/model/drag_and_drop.py)

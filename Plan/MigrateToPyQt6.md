@@ -287,7 +287,7 @@ Focused validation commands (run after each step; the full suite only on
 request):
 
 ```powershell
-$env:PYTHONPATH="src/main/python;src/unittest/python;src/integrationtest/python;src/main/resources/base/Plugins/Core;src/main/resources/base/Plugins/SearchFileFuzzy;src/main/resources/base/Plugins/Favorites;src/main/resources/base/Plugins/CalculateFileHash;src/main/resources/base/Plugins/SearchFileContent"
+$env:PYTHONPATH="src/main/python;src/unittest/python;src/integrationtest/python;src/main/resources/base/Plugins/Core;src/main/resources/base/Plugins/SearchFileFuzzy;src/main/resources/base/Plugins/Favorites;src/main/resources/base/Plugins/CalculateFileHash;src/main/resources/base/Plugins/SearchFiles"
 $env:QT_QPA_PLATFORM="offscreen"
 python -m unittest fman_unittest.test_qt_binding
 python -m unittest fman_unittest.impl.util.qt.test_key_event fman_unittest.impl.test_status_bar

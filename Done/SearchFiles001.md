@@ -1,8 +1,11 @@
-# Search File Content 001
+# Search Files 001
+
+Renamed to Search Files on 2026-09-20. Dated review and validation records below
+retain the identifiers used at the time; current paths use `SearchFiles` / `search_files`.
 
 ## Task
 
-Add a bundled `SearchFileContent` plug-in with a compact search Panel and a
+Add a bundled `SearchFiles` plug-in with a compact search Panel and a
 reusable Table in a modal results dialog. Search inside files below the invoking
 pane's directory in the background, show progress in the main-window status bar,
 then present the collected results when the search ends. Fuzzy-filtering the
@@ -66,7 +69,7 @@ excluded. Suggestions below are not additional first-version acceptance gates.
 
 ### Panel and Placement
 
-Command `search_file_content`, title `Search File Content`, appears in the
+Command `search_files`, title `Search files`, appears in the
 palette with proposed binding `Alt+F7`; verify effective bindings before adding
 it. The plug-in calls the proposed `show_panel` service with plain control
 descriptors, callbacks and its registered UI owner/public pane. The host
@@ -688,7 +691,7 @@ Long scans use a dedicated on-demand runner,
 not the two shared lightweight UI/settings work slots.
 
 The live-search lease belongs to the persistent host Resource registry, not a
-reloadable plug-in module. Specifically, `settings_resource('SearchFileContent runner')`
+reloadable plug-in module. Specifically, `settings_resource('SearchFiles runner')`
 returns the named `Resource`, whose `try_claim()` slot returns an idempotent
 release callback or `None`; the runner releases it only after process/pipe/thread
 cleanup. This prevents a reloaded plug-in from starting a second worker while
@@ -832,7 +835,7 @@ packaging-manifest requirements. Leave 7-Zip acquisition and the lock unchanged.
 Source runs/tests use `Path(sys.prefix) / 'bin' / 'rg.exe'` directly, without
 metadata scans, version probes, hashes, downloads or PATH fallback.
 [RoyiFileManager.spec](../RoyiFileManager.spec) adds that executable to `binaries`
-under `resources/Plugins/SearchFileContent/bin`; PyInstaller performs its normal
+under `resources/Plugins/SearchFiles/bin`; PyInstaller performs its normal
 native dependency analysis. Its conda helper locates the package cache solely
 to copy `info/licenses` as ordinary data. No custom validation or generated
 integrity manifest remains. Frozen runs use the bundled plug-in `bin/rg.exe`.
@@ -975,9 +978,9 @@ Delivered size increases by the verified executable, licences and small SVGs.
 
 ### Focused Commands
 
-Implementation must add the planned `TableIT` and `SearchFileContentIT` classes
+Implementation must add the planned `TableIT` and `SearchFilesIT` classes
 to the existing Qt harness, unit coverage to the existing UI tests and one
-feature unit module, plus `test_search_file_content_engine.py` as the real-engine
+feature unit module, plus `test_search_files_engine.py` as the real-engine
 module. Its `test` prefix matches build.py's `test*.py` discovery; do not leave
 the engine checks only in a manually invoked smoke module. These names are planned, not
 claims that tests already exist. From the repository root, with the existing
@@ -991,12 +994,12 @@ $env:PYTHONPATH = @(
     'src/main/resources/base/Plugins/Favorites',
     'src/main/resources/base/Plugins/CalculateFileHash',
     'src/main/resources/base/Plugins/SearchFileFuzzy',
-    'src/main/resources/base/Plugins/SearchFileContent'
+    'src/main/resources/base/Plugins/SearchFiles'
 ) -join ';'
 python -m unittest fman_unittest.test_ui_elements fman_unittest.test_portable
-python -m unittest fman_unittest.test_search_file_content
-python -m unittest discover -s src/integrationtest/python -p test_search_file_content_engine.py
-python -m unittest fman_integrationtest.test_qt.TableIT fman_integrationtest.test_qt.SearchFileContentIT
+python -m unittest fman_unittest.test_search_files
+python -m unittest discover -s src/integrationtest/python -p test_search_files_engine.py
+python -m unittest fman_integrationtest.test_qt.TableIT fman_integrationtest.test_qt.SearchFilesIT
 python -m unittest fman_integrationtest.test_qt.PublicUiIT
 python -m unittest fman_unittest.impl.plugins.test_plugin fman_integrationtest.impl.plugins.test_plugin
 python -m unittest fman_integrationtest.test_qt.QuickListIT fman_integrationtest.test_qt.DockedPanelIT
@@ -1089,7 +1092,7 @@ manual run before claiming those behaviors verified.
   must never raise its hidden coordinator; default tool/QuickList behavior stays
   unchanged. Both modal=True/False return a non-Qt handle immediately; no nested
   dialog execution loop. Callback dispatch/model/delegate calls stay on Qt.
-- Status integration in SearchFileContentIT: initial Validating/Searching text,
+- Status integration in SearchFilesIT: initial Validating/Searching text,
   <=5 Hz counter updates, quiet-output activity, immediate terminal status and
   owner-only cleanup. Legacy messages and extended pane summaries coexist; the
   activity label still works with pane statistics disabled and starts no scans.
@@ -1213,7 +1216,7 @@ passes. Frozen execution is outside this source task as selected in review.
   on-demand settings transactions. Licensed icon rendering, panel-only layout,
   action-mode controls and status timers remain host-owned. Present the settled
   snapshot with file_path_column=0, captured base, default resolver and modal=True.
-  Run SearchFileContentIT/engine tests and Qt-free import/API guards plus focused
+  Run SearchFilesIT/engine tests and Qt-free import/API guards plus focused
   status/Panel/dock regressions. No plug-in Qt construction, signal access or
   private navigation/menu wiring.
 6. Complete build/resource wiring and document commands, pattern dialects,
@@ -1236,10 +1239,10 @@ done and reference the commit or record that resolves it.
 
 - [x] Keep the Panel form locked while a completed snapshot awaits deferred
   presentation. `SearchSession.completed` in
-  [search_file_content/__init__.py](../src/main/resources/base/Plugins/SearchFileContent/search_file_content/__init__.py)
+  [search_files/__init__.py](../src/main/resources/base/Plugins/SearchFiles/search_files/__init__.py)
   now re-enables the form on Table close, using `on_closed`, and rejects repeat
   Search while a Table is alive. Stop disables when the runner settles.
-- [x] Add a `SearchFileContentIT` case: search completes while the main window
+- [x] Add a `SearchFilesIT` case: search completes while the main window
   is inactive; Search stays disabled throughout deferred/modal results. Tested
   closing both before and after presentation.
 - [x] Align the Design text with the implemented deferral mechanism.
@@ -1248,7 +1251,7 @@ done and reference the commit or record that resolves it.
   while pending. The deliberate superset, coalesced work and subscription cleanup
   are now documented in Status Bar and Completion.
 - [x] Document in Design that the application-wide search lease is the
-  `try_claim()` slot of the named `Resource('SearchFileContent runner')`.
+  `try_claim()` slot of the named `Resource('SearchFiles runner')`.
 - [x] Document in Design that the Runner completion callback executes on the
   worker thread and marshals each handle call through `run_in_main_thread`.
 - [x] Decide the frozen-artifact gate: recorded as outside this source task;

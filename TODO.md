@@ -28,9 +28,11 @@
 - [ ] Add option to compare 2 files using external file comparison or integrate Meld view. See [SimpleCompare
 ](https://github.com/rjwojcicki/SimpleCompare).
 - [ ] Show System Process in a Pane with teh ability to kill a process. See [ProcessFS](https://github.com/mherrmann/ProcessFS).
-- [x] Bug: On launch the status bar shows `v1.7.5`. It should show the version from `base.json`.
+- [x] BUG: On launch the status bar shows `v1.7.5`. It should show the version from `base.json`.
 - [ ] Move to `PyQt6`.
 - [x] Add support for `Notepad 4` as a text editor / viewer. Use the flags `-ro -ns` for view mode and `-ns` for edit mode.
 - [x] Update `Notepad++` settings for viewer: `-multiInst -nosession -notabbar -ro` and for editor: `-multiInst -nosession -notabbar`.
 - [x] Update `CudaText` settings for viewer: `-r -n -ns -nh` and for editor: `-n -ns -nh`.
+- [x] Add support for `EmEditor` as a text editor / viewer. Use the flags `-nr -sp -r` for view mode and `-nr -sp` for edit mode.
+- [x] Rename the file creation commands: "Edit new file" (`Shift+F4`) creates a file and opens it in the editor, "New file" (`Ctrl+N`) creates an empty file without opening the editor.
 - [ ] Evaluate using [`fd`](https://github.com/sharkdp/fd) to accelerate searching.

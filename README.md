@@ -23,7 +23,7 @@ Repository-wide contribution and task-lifecycle requirements are defined in
 Significant additions compared with `fman`:
 
 - **Fuzzy File Search**: Find files with <kbd>Ctrl</kbd>+<kbd>F</kbd> or recursively with <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>. Supports fzf style exact terms, anchors, negation, `AND` / `OR` and match highlights. Using **Toggle search result metadata** adds additional metadata in search results. See [Usage, Syntax and Performance](src/main/resources/base/Plugins/SearchFileFuzzy/README.md).
-- **File Content Search**: Press <kbd>Alt</kbd>+<kbd>F7</kbd> for a [`ripgrep`](https://github.com/burntsushi/ripgrep) based file content search, or leave content empty to list files by name in Glob, Literal or RegEx mode. See [File Content Search Usage](src/main/resources/base/Plugins/SearchFileContent/README.md).
+- **Search Files**: Press <kbd>Alt</kbd>+<kbd>F7</kbd> for [`ripgrep`](https://github.com/burntsushi/ripgrep) based filename and content search in Glob, Literal or RegEx mode. Leave content empty to list files by name. See [Search Files Usage](src/main/resources/base/Plugins/SearchFiles/README.md).
 - **Pane Filter / Files Filter**: Type to filter file names with globs, anchors and negation with `fzf` inspired syntax. See [Pane Filter Usage](src/main/resources/base/Plugins/Core/README.md#pane-filter).
 - **UI Components**: New building blocks that expand what plug-ins can do. [Plug-in UI guide](Plan/UIElements.md#plug-in-api).
 - **Docked Panel**: Allows controlling states and operations. Exposed to be used by Plug-In's.
@@ -31,10 +31,10 @@ Significant additions compared with `fman`:
 - **Recent Commands**: <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> pins the last three commands run from the palette.
 - **Process Pane**: Run **Show processes** for a flat Name/PID list of the system running processes; select one process and press <kbd>F8</kbd> to force-terminate it, using current Windows permissions. See [Process Pane Usage](src/main/resources/base/Plugins/ProcessPane/README.md).
 - **Extended Status Bar**: Press <kbd>Ctrl</kbd>+<kbd>S</kbd> to cycle through disabled, active-pane, and per-pane file statistics.
-- **Sync Pane Location**: Send the inactive pane to the active pane's current folder from the Command Center.
+- **Sync pane location**: Send the inactive pane to the active pane's current folder from the Command Center.
 - **File Hash**: Press <kbd>Ctrl</kbd>+<kbd>H</kbd> for centered checksum output; use Calculate File Hash By to pick an algorithm in QuickSearch, then view the result. See [File Hash Calculation Usage](src/main/resources/base/Plugins/CalculateFileHash/README.md).
 - **Directory Size**: Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd> to toggle progressive directory size calculation in both panes, or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Enter</kbd> for a one time total of selected directories. See [Directory Size Usage](src/main/resources/base/Plugins/Core/README.md#directory-sizes).
-- **New Empty File**: Press <kbd>Ctrl</kbd>+<kbd>N</kbd> to create an empty file without opening an editor.
+- **New File**: Press <kbd>Ctrl</kbd>+<kbd>N</kbd> to create an empty file without opening an editor.
 - **Text Editor / Viewer**: Set external programs on <kbd>F4</kbd> / <kbd>F3</kbd>, configured through **Set text editor** / **Set text viewer** in the Command Center. See [Text Editor and Viewer Usage](src/main/resources/base/Plugins/Core/README.md#text-editor-and-viewer).
 - **Archive Transfers**: Extraction progress and cancellation, with verified output before source deletion when moving out of or between archives. See [Archive Transfers Usage](src/main/resources/base/Plugins/Core/README.md#archive-transfers).
 - **Unpack Archive**: Works like `Extract Here` in `7-Zip` / `WinRar`. See [Unpack Archive Usage](src/main/resources/base/Plugins/Core/README.md#unpack-archive).
@@ -82,7 +82,7 @@ retry of the failed workflow.
 
 Content search uses conda-forge's installed `bin/rg.exe` from the active Python
 prefix. PyInstaller bundles it with the notices under
-[SearchFileContent/licenses](src/main/resources/base/Plugins/SearchFileContent/licenses),
+[SearchFiles/licenses](src/main/resources/base/Plugins/SearchFiles/licenses),
 without requiring the conda package cache. Refresh these notices when updating
 ripgrep in the lock file. There are no custom downloads, version/hash checks or
 integrity manifests. Packaged searches use the bundled executable, not a system

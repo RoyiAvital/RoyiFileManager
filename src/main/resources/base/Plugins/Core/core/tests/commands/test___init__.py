@@ -303,7 +303,7 @@ class NewEmptyFileTest(TestCase):
 	def test_has_command_center_identifier_and_aliases(self):
 		self.assertEqual('new_empty_file', _get_command_name(NewEmptyFile))
 		self.assertEqual(
-			('New empty file', 'Create empty file', 'Touch'),
+			('New file', 'Create file', 'New empty file', 'Create empty file', 'Touch'),
 			NewEmptyFile.aliases
 		)
 	@patch('core.commands.touch')
@@ -504,6 +504,11 @@ class TextEditorCommandsTest(TestCase):
 		pane.get_file_under_cursor.assert_not_called()
 
 class CreateAndEditFileTest(TestCase):
+	def test_has_command_center_identifier_and_aliases(self):
+		self.assertEqual('create_and_edit_file', _get_command_name(CreateAndEditFile))
+		self.assertEqual(('Edit new file', 'Create and edit file'), CreateAndEditFile.aliases)
+		self.assertFalse(set(CreateAndEditFile.aliases) & set(NewEmptyFile.aliases))
+
 	@patch('core.commands.OpenWithEditor.__call__')
 	@patch('core.commands.show_alert')
 	@patch('core.commands.touch', side_effect=OSError(2, 'Folder vanished'))
@@ -558,6 +563,10 @@ class CreateAndEditFileTest(TestCase):
 		open_mock.assert_called_once_with('file:///folder/existing.txt')
 
 class ResetWindowGeometryTest(TestCase):
+	def test_has_command_center_identifier_and_alias(self):
+		self.assertEqual('reset_window_geometry', _get_command_name(ResetWindowGeometry))
+		self.assertEqual(('Reset window geometry',), ResetWindowGeometry.aliases)
+
 	def test_resets_active_session_window(self):
 		window = object()
 		session_manager = Mock()
@@ -576,7 +585,7 @@ class SyncPaneLocationTest(TestCase):
 		self.assertEqual(
 			'sync_pane_location', _get_command_name(SyncPaneLocation)
 		)
-		self.assertEqual(('Sync Pane Location',), SyncPaneLocation.aliases)
+		self.assertEqual(('Sync pane location',), SyncPaneLocation.aliases)
 	def test_syncs_opposite_pane_to_active_path(self):
 		left_pane = Mock()
 		right_pane = Mock()

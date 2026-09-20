@@ -4,9 +4,13 @@
 
 - [Filter Files 002: Multiple Terms (AND)](Plan/FilterFiles002.md)
 - [Find Files 003: Everything-Style Query Syntax](Plan/FindFiles003.md)
+- [Find Files Panel](Plan/FindFilesPanel.md)
 - [Flat View](Plan/FlatView.md)
 - [Migrate to PyQt6](Plan/MigrateToPyQt6.md)
-- [Search File Content 003: Extended Mode](Plan/SearchFileContent003.md)
+- [QuickView 001: Initial Design and Images](Plan/QuickView001.md)
+- [QuickView 002: Videos](Plan/QuickView002.md)
+- [QuickView 003: Text-Based Files](Plan/QuickView003.md)
+- [Search Files 003: Extended Mode](Plan/SearchFiles003.md)
 - [UI Elements](Plan/UIElements.md)
 
 ## Completed
@@ -29,8 +33,8 @@
 - [Process Pane](Done/ProcessPane.md)
 - [Recent Commands in Command Palette](Done/RecentCommandsInPalette.md)
 - [Release Workflow Hardening](Done/ReleaseWorkflowHardening.md)
-- [Search File Content 001](Done/SearchFileContent001.md)
-- [Search File Content 002: File Name Only Search](Done/SearchFileContent002.md)
+- [Search Files 001](Done/SearchFiles001.md)
+- [Search Files 002: File Name Only Search](Done/SearchFiles002.md)
 - [Self-Contained ZIP Tests](Done/SelfContainedZipTests.md)
 - [Status Bar](Done/StatusBar.md)
 - [Status Bar Active Background](Done/StatusBarActiveBackground.md)

@@ -142,7 +142,7 @@ def _environment():
 		ROOT / 'src' / 'main' / 'resources' / 'base' / 'Plugins' /
 		'CalculateFileHash',
 		ROOT / 'src' / 'main' / 'resources' / 'base' / 'Plugins' /
-		'SearchFileContent',
+		'SearchFiles',
 		ROOT / 'src' / 'main' / 'resources' / 'base' / 'Plugins' /
 		'ProcessPane'
 	]

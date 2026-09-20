@@ -14,6 +14,7 @@ PRESETS = (
 		('-multiInst', '-nosession', '-notabbar', '-ro')),
 	('CudaText', ('-n', '-ns', '-nh'), ('-r', '-n', '-ns', '-nh')),
 	('Notepad 4', ('-ns',), ('-ro', '-ns')),
+	('EmEditor', ('-nr', '-sp'), ('-nr', '-sp', '-r')),
 )
 MAX_COMMAND_UNITS = 32766
 SETTINGS = 'Core Settings.json'

@@ -173,6 +173,9 @@ class HashCommandTest(TestCase):
 		self.assertIsNone(self.session.complete.call_args.args[1])
 		self.assertIn('changed', self.session.complete.call_args.args[2])
 
+	def test_picker_command_label_has_no_ellipsis(self):
+		self.assertEqual('Calculate file hash by', self.plugin.CalculateFileHashBy.aliases[0])
+
 	def test_picker_cancel_and_captured_target(self):
 		with patch('calculate_file_hash.show_quicksearch', return_value=None):
 			self.plugin.CalculateFileHashBy(self.pane)()

@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
 
+### Added
+
+- [EmEditor](https://www.emeditor.com) preset in **Set text editor** and **Set text viewer**, using
+  `-nr -sp` for editing and `-nr -sp -r` for viewing.
+
+### Changed
+
+- Renamed the Favorites command to **Open favorites manager**, retaining
+  **Favorites Manager**, **Favorites**, and **Show favorites** as search aliases.
+  `Ctrl+B` and the `show_favorites` command identifier are unchanged.
+- Standardized Command Center capitalization for **Sync pane location** and
+  **Reset window geometry**; command identifiers and behavior are unchanged.
+- Removed the trailing ellipsis from **Calculate file hash by** in the Command Center.
+- Renamed **Search File Content** to **Search files** (`Alt+F7`), including the
+  results title, `SearchFiles` plug-in, `search_files` command and settings file.
+  Existing `search_file_content` bindings and preferences remain supported;
+  filename and content matching behavior is unchanged.
+- File creation commands are now named **New file** (`Ctrl+N`, create only)
+  and **Edit new file** (`Shift+F4`, create and open in the editor).
+  Command identifiers and shortcut behavior are unchanged.
+
 ## [0.6.4] - 2026-09-19
 
 API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.

@@ -375,7 +375,7 @@ class Runner:
 
 	def start(self, completed):
 		from fman.ui import settings_resource
-		release = settings_resource('SearchFileContent runner').try_claim()
+		release = settings_resource('SearchFiles runner').try_claim()
 		if release is None:
 			return False
 		def operation():
@@ -385,7 +385,7 @@ class Runner:
 				release()
 			completed(result)
 		try:
-			Thread(target=operation, name='content-search', daemon=True).start()
+			Thread(target=operation, name='file-search', daemon=True).start()
 		except Exception:
 			release()
 			raise

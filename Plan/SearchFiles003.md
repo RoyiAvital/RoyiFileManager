@@ -1,15 +1,15 @@
-# Search File Content 003: Extended Mode
+# Search Files 003: Extended Mode
 
 Status: Design only; review before implementation.
 
 ## Task
 
-Add **Extended** mode to Search File Content. Its exact tooltip is
+Add **Extended** mode to Search Files. Its exact tooltip is
 **Everything inspired mode**. Ripgrep searches first; only in Extended mode,
 collect Size and Date Modified for returned files. Filter the captured results
 with ordinary substring text and Everything-inspired `size:` / `dm:` conditions.
 
-Follow-up to [Search File Content 002](../Done/SearchFileContent002.md).
+Follow-up to [Search Files 002](../Done/SearchFiles002.md).
 
 ## Scope
 
@@ -44,7 +44,7 @@ Stop remains available. Persist only the toggle, not metadata or Table queries.
 
 ### Ownership And Data Flow
 
-1. [Runner](../src/main/resources/base/Plugins/SearchFileContent/search_file_content/engine.py)
+1. [Runner](../src/main/resources/base/Plugins/SearchFiles/search_files/engine.py)
    runs ripgrep and retains bounded accepted hits as today.
 2. After children are reaped and provisional binary matches discarded, Extended
    mode attempts one additional `os.stat(path, follow_symlinks=False)` per distinct
@@ -53,7 +53,7 @@ Stop remains available. Persist only the toggle, not metadata or Table queries.
 3. Capture logical `st_size` and last-write `st_mtime_ns` from the same stat result
    in a frozen metadata record shared by all hits of that path. Missing values
    are None, not zero. No path resolution or hard-link scan for deduplication.
-4. [SearchSession](../src/main/resources/base/Plugins/SearchFileContent/search_file_content/__init__.py)
+4. [SearchSession](../src/main/resources/base/Plugins/SearchFiles/search_files/__init__.py)
    passes raw metadata in immutable TableRow.value plus formatted display cells.
    Retain owner/generation guards. No metadata I/O on Qt.
 5. A small Qt-free parser in the search plug-in compiles the filter once per edit;
@@ -209,8 +209,8 @@ Required implementation checks, not claims about unimplemented behavior:
 Focused commands using [build.py](../build.py)'s environment:
 
 ```powershell
-python -c "import build, subprocess, sys; sys.exit(subprocess.call([sys.executable, '-m', 'unittest', 'fman_unittest.test_search_file_content', 'fman_integrationtest.test_search_file_content_engine', '-v'], env=build._environment()))"
-python -c "import build, subprocess, sys; sys.exit(subprocess.call([sys.executable, '-m', 'fman_integrationtest.qt_runner', 'fman_integrationtest.test_qt.SearchFileContentIT', 'fman_integrationtest.test_qt.TableIT', 'fman_integrationtest.test_qt.PanelIT'], env=build._environment()))"
+python -c "import build, subprocess, sys; sys.exit(subprocess.call([sys.executable, '-m', 'unittest', 'fman_unittest.test_search_files', 'fman_integrationtest.test_search_files_engine', '-v'], env=build._environment()))"
+python -c "import build, subprocess, sys; sys.exit(subprocess.call([sys.executable, '-m', 'fman_integrationtest.qt_runner', 'fman_integrationtest.test_qt.SearchFilesIT', 'fman_integrationtest.test_qt.TableIT', 'fman_integrationtest.test_qt.PanelIT'], env=build._environment()))"
 python -c "import build, subprocess, sys; sys.exit(subprocess.call([sys.executable, '-m', 'unittest', 'fman_unittest.test_ui_elements', 'fman_unittest.test_portable.PluginApiCompatibilityTest', '-v'], env=build._environment()))"
 ```
 

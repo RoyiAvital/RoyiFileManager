@@ -165,6 +165,10 @@ class FavoriteCommandTest(TestCase):
 				RemoveFromFavorites, RenameFavorite
 			)
 		})
+		self.assertEqual(
+			('Open favorites manager', 'Favorites Manager', 'Favorites', 'Show favorites'),
+			ShowFavorites.aliases
+		)
 
 	@patch('favorites.show_status_message')
 	@patch('favorites.save_json')

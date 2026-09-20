@@ -517,7 +517,7 @@ def _place_cursor_at(pane, file_url):
 
 class NewEmptyFile(DirectoryPaneCommand):
 
-	aliases = ('New empty file', 'Create empty file', 'Touch')
+	aliases = ('New file', 'Create file', 'New empty file', 'Create empty file', 'Touch')
 
 	def __call__(self):
 		file_url = _prompt_for_file(self.pane, 'Enter file name to create:')
@@ -533,7 +533,7 @@ class NewEmptyFile(DirectoryPaneCommand):
 
 class CreateAndEditFile(OpenWithEditor):
 
-	aliases = ('New file', 'Create file', 'Create and edit file')
+	aliases = ('Edit new file', 'Create and edit file')
 
 	def __call__(self, url=None):
 		file_to_edit = _prompt_for_file(
@@ -1906,7 +1906,7 @@ class SwitchPanes(DirectoryPaneCommand):
 		pane.focus()
 
 class SyncPaneLocation(DirectoryPaneCommand):
-	aliases = ('Sync Pane Location',)
+	aliases = ('Sync pane location',)
 
 	def __call__(self):
 		if not self.is_visible():
@@ -1996,7 +1996,7 @@ class Minimize(ApplicationCommand):
 		self.window.minimize()
 
 class ResetWindowGeometry(ApplicationCommand):
-	aliases = ('Reset Window Geometry',)
+	aliases = ('Reset window geometry',)
 	def __call__(self):
 		from fman.impl.application_context import get_application_context
 		get_application_context().session_manager.reset_window_geometry(

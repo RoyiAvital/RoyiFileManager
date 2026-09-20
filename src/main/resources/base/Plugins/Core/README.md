@@ -143,10 +143,12 @@ local, but later archive operations beneath it may hit the same parser limitatio
 
 - `F3` / **View**: open the file under the cursor in the configured viewer.
 - `F4` / **Edit**: open it in the independently configured editor.
-- `Shift+F4`: create a file, if missing, then open it in the editor.
+- `Shift+F4` / **Edit new file**: create a file, if missing, then open it in the editor.
+- `Ctrl+N` / **New file**: create an empty file without opening the editor.
+  Existing files are left unchanged.
 
 Press `Ctrl+Shift+P` and run **Set text editor** or **Set text viewer**.
-Choose Notepad++, CudaText, Notepad 4, or **Manual configuration**.
+Choose Notepad++, CudaText, Notepad 4, EmEditor, or **Manual configuration**.
 Browse to the program's `.exe`, or type/paste its path in the file picker.
 Presets need only the executable; Manual also asks for arguments, which may be
 empty. Cancel leaves settings unchanged. If a role is unset, F3/F4 only display
@@ -170,6 +172,7 @@ are literal; launches do not use a shell.
 | Notepad++ | `-multiInst -nosession -notabbar` | `-multiInst -nosession -notabbar -ro` |
 | CudaText | `-n -ns -nh` | `-r -n -ns -nh` |
 | Notepad 4 | `-ns` | `-ro -ns` |
+| EmEditor | `-nr -sp` | `-nr -sp -r` |
 
 These are convenience defaults, **not a read-only guarantee**.
 The user is responsible for the chosen program's behavior. Use Manual configuration to

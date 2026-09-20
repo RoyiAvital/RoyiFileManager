@@ -61,7 +61,7 @@ Excluded:
 - fzf syntax, a `fuzzy:` modifier inside the Everything grammar, or any other
   mixing of the two models; bundling or depending on fzf, Everything, `pfzy`,
   `luqum`, `everything-sdk` or any other package.
-- Content search (Search File Content keeps its Panel controls). No separate
+- Content search (Search Files keeps its Panel controls). No separate
   Extended toggle, Table columns or additional metadata-view setting here.
 - Creation time in the displayed second line: `dc:` is a filter only; the line
   stays modified date plus size, as in Find Files 002.
@@ -343,7 +343,7 @@ content providers and any online service are excluded from this task.
   a `show_quicksearch_extended` host API). Rejected: [UIElements](UIElements.md)
   keeps the modal picker free of controls, and the goal is reachable without
   host changes.
-- **Panel + Table** like Search File Content. Rejected: two surfaces for a
+- **Panel + Table** like Search Files. Rejected: two surfaces for a
   one-keystroke picker; slower interaction than the modal Quicksearch.
 - **fzf syntax for this dialog** (see the comparison in
   [Find Files 001](../Done/FindFiles001.md)): no regex or metadata, and its markers

@@ -6,7 +6,7 @@ Provide a small shared, themed toolkit available to application plug-ins.
 Priorities, in order: correctness, clean and simple UI, then performance.
 Status: the Favorites-required subset is implemented and source-tested; broader
 API names outside the revised three-component contract remain proposed. Frozen validation was skipped. Phase A serves
-QuickSearch/QuickList navigation, Favorites management and Search File Content; broader
+QuickSearch/QuickList navigation, Favorites management and Search Files; broader
 viewer/editor infrastructure requires separately approved consumer plans.
 
 The file-hash consumer additionally ships `fman.ui.OutputTextBox`: selectable
@@ -21,7 +21,7 @@ with composable results and preview surfaces for the following plug-in ideas:
 
 ### Content-search Table Revision
 
-The 2026_09_14 [Search File Content revision](../Done/SearchFileContent001.md) is the
+The 2026_09_14 [Search Files revision](../Done/SearchFiles001.md) is the
 canonical contract for the next shared element: Qt-free
 `show_table(get_rows=..., num_columns=..., columns_header=...)` returning a plain
 TableHandle, with immutable TableRow records, snapshot refresh, fuzzy filtering
@@ -119,7 +119,7 @@ custom-action records/callbacks but never create menus or access Qt objects.
 | F1 Shortcuts (reference only) | Existing independent dialog, unchanged; no Table migration | Existing binding collection, substring filtering, grouping and help-only behavior |
 | Simple text diff viewer and merger | Two text surfaces, coordinated scrolling, range highlights, hunk actions, dirty-state handling | Diff engine, alignment, merge decisions, conflict checks and saving |
 | QuickLook: images, Markdown, video, PDF and other files | Preview host, viewer controls, loading/error states, overlay or pane placement | Format detection, decoding/rendering providers and security policy |
-| File content search | Qt-free docked Panel, status-bar progress, then modal Table with File Path/Snippet columns; path-cell Copy Path / Go To | ripgrep, bounded result collection, filename/content semantics, captured base and immutable match payloads |
+| Search files | Qt-free docked Panel, status-bar progress, then modal Table with File Path/Snippet columns; path-cell Copy Path / Go To | ripgrep, bounded result collection, filename/content semantics, captured base and immutable match payloads |
 | File Rename / Replace (future) | Same modeless Table and interactive Qt-free Panel; source path role only, explicit snapshot refresh | Virtual-name computation, fixed source identities/base, conflict checks, explicit Apply, mutations and recovery |
 | Folder diff with hash-table comparison | Multi-column comparison results, filters, paired previews, explicit operation actions | Relative-path matching, hash algorithms, file identity, collision/error policy and synchronization |
 
@@ -165,7 +165,7 @@ Required target formats include images, Markdown, video and PDF, plus plain text
 - Correctness scenario: rapidly changing files never displays a late preview
   under the new file's title; closing/hiding releases or pauses media resources.
 
-#### 3. File Content Search with Table
+#### 3. Search Files with Table
 
 The user sets File Name Pattern, Content Pattern and Include Subdirectories in
 a Panel and explicitly starts Search. The status bar reports progress while
@@ -175,7 +175,7 @@ has an independent regex SVG toggle; recursion also uses an SVG toggle. Every
 search-panel button has a tooltip; the results surface has no explicit buttons.
 
 - Table uses the callable population/count/header contract in
-  [Search File Content](../Done/SearchFileContent001.md), with exactly File Path/Snippet
+  [Search Files](../Done/SearchFiles001.md), with exactly File Path/Snippet
   columns initially. One matching line is one row; metadata stays in its payload.
 - Single click selects row/current column without operating on files. The
   plug-in sets file_path_column=0 and folder_path_column=None. The host resolves
@@ -283,7 +283,7 @@ Excluded from this task:
 - Replacing the directory model, redesigning ordinary file operations, or
   changing existing Quicksearch click/Enter behavior and return values.
 - Automatic migration of other plans or global bindings for new elements;
-  Search File Content's explicit revision is a gate, not silently implied here.
+  Search Files's explicit revision is a gate, not silently implied here.
 
 Compatibility: preserve the public `fman` plug-in API from fman 1.7.5. The user
 explicitly requested reusable plug-in components: expose the implemented view,
@@ -903,7 +903,7 @@ of a plug-in operation. Sensitive previews must not be written to diagnostic log
   put SearchFileFuzzy operation options in the bottom Interaction Panel before
   implementing it. Do not change existing Quicksearch behavior or add its
   proposed extended API as a prerequisite for this toolkit.
-- [Search File Content](../Done/SearchFileContent001.md) is a consumer, not the owner of
+- [Search Files](../Done/SearchFiles001.md) is a consumer, not the owner of
   shared UI. Before integration, revise and review that task to replace the modal
   exec_dialog flow with the window panel/modeless tree-preview session, keep
   internal toolkit/PyQt imports confined to its adapter, and specify bounded
@@ -1065,7 +1065,7 @@ save/close and optional pane-replacement command routing. None is a Phase A gate
   through its persistent controller and the hash-action fixture; prove store
   concurrency and cancellation. The approved Favorites-first subset does not
   require the unused blocking convenience or hash fixture to ship first.
-3. Revise and review Search File Content's own plan for modeless placement,
+3. Revise and review Search Files's own plan for modeless placement,
   internal imports, bounded Qt QProcess production and focused tests. Do not
   begin its integration while those conflicts remain unresolved.
 4. Implement the window panel, tree/read-only preview and operation handle with
@@ -1110,7 +1110,7 @@ Phase A completion conditions:
   identities, Recent/Name/Path projection and tracked navigation contract.
 - Bounded confirmation and hash per-item actions capture exact targets; canceled
   or truncated display never changes the authorized target set.
-- Search File Content's revised plan is reviewed and its modeless window panel,
+- Search Files's revised plan is reviewed and its modeless window panel,
   tree/text integration passes; synthetic demos alone are not sufficient.
 - Worker and Qt producers pass bounds/cancellation/unload tests without blocking
   Qt. Picker waiters are released and unrelated pane shortcuts cannot leak.

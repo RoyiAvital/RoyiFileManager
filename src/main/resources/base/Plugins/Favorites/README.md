@@ -4,13 +4,14 @@ Favorites keeps a curated list of directory locations.
 
 ## Commands
 
-- `Ctrl+B`: Open or focus Favorites Manager for the invoking pane.
+- `Ctrl+B` / **Open favorites manager**: Open or focus Favorites Manager for the invoking pane.
 - `Add Current Folder to Favorites`: Add or promote the active pane's folder,
   regardless of which file is highlighted or selected. Individual files cannot
   be added.
 
 These are the two Favorites commands shown in the Command Center. The manager
-displays Name and Path in QuickList, with a fuzzy filter. Its separate action panel
+can also be found by the aliases **Favorites Manager**, **Favorites**, and
+**Show favorites**. It displays Name and Path in QuickList, with a fuzzy filter. Its separate action panel
 spans the main window immediately above the status bar; both file panes shrink to
 make room and recover that space when it closes.
 Action buttons adapt to the application width without growing indefinitely;

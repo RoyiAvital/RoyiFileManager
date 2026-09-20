@@ -295,6 +295,81 @@ class FilterBarIT(QtIT):
 		self.set_query('a' * 300)
 		self.assertEqual(255, len(self.run_in_app(pane._filter_bar._input.text)))
 
+	def test_file_creation_shortcuts_keep_editor_launch_separate(self):
+		from core.commands import CreateAndEditFile, NewEmptyFile, OpenWithEditor
+		from fman.impl.controller import Controller
+		from fman.impl.plugins.command_registry import PaneCommandRegistry
+		from fman.impl.plugins.key_bindings import KeyBindings
+		from fman.url import as_url
+		from pathlib import Path
+		from PyQt5.QtCore import QTimer
+		from PyQt5.QtTest import QTest
+		from unittest.mock import Mock, patch
+		import json
+		pane = self.panes[0]
+		completed = Event()
+		errors = Mock()
+		errors.report.side_effect = lambda *args: completed.set()
+		callback = Mock()
+		callback.after_command.side_effect = lambda *args: completed.set()
+		registry = self.run_in_app(PaneCommandRegistry, errors, callback)
+		bindings = KeyBindings()
+		for name, command in (
+			('new_empty_file', NewEmptyFile), ('create_and_edit_file', CreateAndEditFile),
+			('open_with_editor', OpenWithEditor), ('open', Mock())
+		):
+			registry.register_command(name, command)
+			bindings.register_command(name)
+		path = Path(__file__).parents[3] / 'main/resources/base/Plugins/Core/Key Bindings.json'
+		with path.open(encoding='utf-8') as stream:
+			self.assertEqual([], bindings.load([
+				binding for binding in json.load(stream)
+				if binding['command'] in registry.get_commands()
+			]))
+		public_pane = Mock(get_commands=registry.get_commands,
+			get_path=pane.get_location, get_file_under_cursor=pane.get_file_under_cursor,
+			place_cursor_at=pane.place_cursor_at)
+		public_pane.run_command.side_effect = lambda name, args: registry.execute_command(name, args, public_pane)
+		support = Mock(get_sanitized_key_bindings=bindings.get_sanitized_bindings)
+		controller = Controller(support, Mock(), Mock(), Mock())
+		self.run_in_app(controller.register_pane, pane, public_pane)
+		self.controller.handle_shortcut.side_effect = controller.handle_shortcut
+		def answer(dialog):
+			def accept():
+				dialog.setTextValue(filename)
+				QTest.keyClick(dialog, Qt.Key_Return)
+			QTimer.singleShot(0, accept)
+		self.run_in_app(self.window.before_dialog.connect, answer)
+		with patch('fman._get_ui', return_value=self.window), \
+			patch('core.commands.exists', side_effect=self.filesystem.exists), \
+			patch('core.commands.is_dir', side_effect=self.filesystem.is_dir), \
+			patch('core.commands.touch', side_effect=self.filesystem.touch), \
+			patch('core.text_editor.open_file') as open_file:
+			for filename, key, modifiers, command, existing in (
+				('new.txt', Qt.Key_N, Qt.ControlModifier, 'new_empty_file', False),
+				('existing.txt', Qt.Key_N, Qt.ControlModifier, 'new_empty_file', True),
+				('edit.txt', Qt.Key_F4, Qt.ShiftModifier, 'create_and_edit_file', False),
+			):
+				with self.subTest(shortcut=command, existing=existing):
+					target = self.root / filename
+					if existing:
+						target.write_bytes(b'Keep this content')
+					completed.clear()
+					public_pane.run_command.reset_mock()
+					open_file.reset_mock()
+					self.run_in_app(QTest.keyClick, pane._file_view, key, modifiers)
+					self.assertTrue(completed.wait(5), 'Creation command did not finish')
+					self.drain(pane)
+					errors.report.assert_not_called()
+					public_pane.run_command.assert_called_once_with(command, {})
+					self.assertEqual(b'Keep this content' if existing else b'', target.read_bytes())
+					if not existing:
+						self.assertEqual(as_url(target), pane.get_file_under_cursor())
+					if command == 'new_empty_file':
+						open_file.assert_not_called()
+					else:
+						open_file.assert_called_once_with(as_url(target), 'editor')
+
 	def test_full_update_performance(self):
 		from fman.impl.filter_pattern import compile_filter
 		from fman.impl.model.model import File
@@ -1739,7 +1814,7 @@ class TextEditorIT(QtIT):
 				self.assertEqual(QApplication.instance().thread(), QThread.currentThread())
 				if isinstance(dialog, Quicksearch):
 					self.dialogs.append('preset')
-					self.assertEqual(['Notepad++', 'CudaText', 'Notepad 4', 'Manual configuration'],
+					self.assertEqual(['Notepad++', 'CudaText', 'Notepad 4', 'EmEditor', 'Manual configuration'],
 						[item.value for item in dialog._curr_items[:-1]])
 					self.assertIn(dialog._curr_items[-1].value, ('Clear editor', 'Clear viewer'))
 					if self.cancel == 'preset':
@@ -1828,6 +1903,8 @@ class TextEditorIT(QtIT):
 			('Notepad++', 'viewer', SetTextViewer, ['-multiInst', '-nosession', '-notabbar', '-ro']),
 			('CudaText', 'editor', SetTextEditor, ['-n', '-ns', '-nh']),
 			('CudaText', 'viewer', SetTextViewer, ['-r', '-n', '-ns', '-nh']),
+			('EmEditor', 'editor', SetTextEditor, ['-nr', '-sp']),
+			('EmEditor', 'viewer', SetTextViewer, ['-nr', '-sp', '-r']),
 		):
 			with self.subTest(preset=preset, role=role):
 				self.selection = preset
@@ -1872,7 +1949,7 @@ class TextEditorIT(QtIT):
 			launch.assert_not_called()
 		self.assertEqual([], self.errors)
 
-class SearchFileContentIT(QtIT):
+class SearchFilesIT(QtIT):
 	def test_name_only_navigation_and_escape_focus(self):
 		from core import Name, Size, Modified, OpenDirectory
 		from core.fs.local import LocalFileSystem
@@ -1885,7 +1962,7 @@ class SearchFileContentIT(QtIT):
 		from fman.impl.plugins.plugin import FileSystemWrapper
 		from fman.impl.ui.facade import _hosts
 		from fman.impl.widgets import MainWindow
-		from search_file_content import DEFAULTS, SearchSession
+		from search_files import DEFAULTS, SearchSession
 		from pathlib import Path
 		from PyQt5.QtGui import QIcon
 		from PyQt5.QtTest import QTest
@@ -1902,7 +1979,7 @@ class SearchFileContentIT(QtIT):
 				filesystem.add_child(backend.scheme, FileSystemWrapper(backend, filesystem, errors))
 			for column in (Name(filesystem), Size(filesystem), Modified(filesystem), NullColumn()):
 				filesystem.register_column(column.get_qualified_name(), column)
-			plugin_root = Path(__file__).parents[3] / 'main/resources/base/Plugins/SearchFileContent'
+			plugin_root = Path(__file__).parents[3] / 'main/resources/base/Plugins/SearchFiles'
 			owner = UiOwner(resource_root=str(plugin_root))
 			def prepare():
 				main = MainWindow(QApplication.instance(), [], Mock(), Mock(), filesystem, 'null://')
@@ -1931,7 +2008,7 @@ class SearchFileContentIT(QtIT):
 					finally:
 						finished.set()
 				session.completed = observed
-				with patch('search_file_content.Runner') as runner:
+				with patch('search_files.Runner') as runner:
 					self.run_in_app(session.action, 'search', session.panel.snapshot())
 					runner.assert_not_called()
 				self.assertEqual('Enter a file name or content pattern.',
@@ -1952,6 +2029,7 @@ class SearchFileContentIT(QtIT):
 								self.assertIsNotNone(window)
 								QApplication.processEvents()
 								self.assertTrue(window.isVisible())
+								self.assertEqual('Search files', window.windowTitle())
 								self.assertEqual(('report.txt', ''), window.table.current_cell[0].cells)
 								self.assertIn('Complete: 1 files', window.summary.content)
 								window.disposed.connect(closed.set)
@@ -1999,7 +2077,7 @@ class SearchFileContentIT(QtIT):
 			from fman.url import as_url
 			from fman.impl.ui.facade import _hosts
 			from fman.impl.widgets import MainWindow
-			from search_file_content import DEFAULTS, SearchSession
+			from search_files import DEFAULTS, SearchSession
 			from PyQt5.QtCore import QPoint, pyqtSignal
 			from PyQt5.QtGui import QPalette
 			from PyQt5.QtWidgets import QWidget
@@ -2010,7 +2088,7 @@ class SearchFileContentIT(QtIT):
 				location_changed = pyqtSignal(object)
 				def get_location(self):
 					return self.location
-			plugin_root = Path(__file__).parents[3] / 'main/resources/base/Plugins/SearchFileContent'
+			plugin_root = Path(__file__).parents[3] / 'main/resources/base/Plugins/SearchFiles'
 			main = MainWindow(Mock(), [], Mock(), Mock(), Mock(), 'null://')
 			main.setStyleSheet((plugin_root.parents[1] / 'styles.qss').read_text())
 			window = Window(main, Mock())
@@ -2085,7 +2163,7 @@ class SearchFileContentIT(QtIT):
 						widgets[index].location_changed.emit(widgets[index])
 						self.assertEqual('C:\\next', session.root)
 						session.panel.update(values={'content': 'cuda'})
-						with patch('search_file_content.Runner') as runner:
+						with patch('search_files.Runner') as runner:
 							session.action('search', session.panel.snapshot())
 							self.assertTrue(stop.isEnabled())
 							self.assertEqual('#ff5252', stop.palette().color(QPalette.Active, QPalette.ButtonText).name())
@@ -2123,12 +2201,12 @@ class SearchFileContentIT(QtIT):
 		from fman.ui import UiOwner
 		from fman.impl.ui.facade import _hosts
 		from fman.impl.widgets import MainWindow
-		from search_file_content import DEFAULTS, SearchSession
+		from search_files import DEFAULTS, SearchSession
 		from PyQt5.QtWidgets import QWidget
 		from pathlib import Path
 		from tempfile import TemporaryDirectory
 		from unittest.mock import Mock
-		plugin_root = Path(__file__).parents[3] / 'main/resources/base/Plugins/SearchFileContent'
+		plugin_root = Path(__file__).parents[3] / 'main/resources/base/Plugins/SearchFiles'
 		for present in (False, True):
 			with self.subTest(present=present), TemporaryDirectory() as root:
 				Path(root, 'report.txt').write_text('needle', encoding='utf-8')
@@ -2196,12 +2274,12 @@ class SearchFileContentIT(QtIT):
 		from fman.ui import UiOwner
 		from fman.impl.ui.facade import _hosts
 		from fman.impl.widgets import MainWindow
-		from search_file_content import DEFAULTS, SearchSession
+		from search_files import DEFAULTS, SearchSession
 		from PyQt5.QtWidgets import QWidget
 		from pathlib import Path
 		from tempfile import TemporaryDirectory
 		from unittest.mock import Mock
-		plugin_root = Path(__file__).parents[3] / 'main/resources/base/Plugins/SearchFileContent'
+		plugin_root = Path(__file__).parents[3] / 'main/resources/base/Plugins/SearchFiles'
 		owner = UiOwner(resource_root=str(plugin_root))
 		with TemporaryDirectory() as root:
 			Path(root, 'report.txt').write_text('first\nneedle here\n', encoding='utf-8')
@@ -2364,7 +2442,7 @@ class TableIT(QtIT):
 			from PyQt5.QtWidgets import QWidget
 			from pathlib import Path
 			from unittest.mock import Mock
-			owner = UiOwner(resource_root=str(Path(__file__).parents[3] / 'main/resources/base/Plugins/SearchFileContent'))
+			owner = UiOwner(resource_root=str(Path(__file__).parents[3] / 'main/resources/base/Plugins/SearchFiles'))
 			main = MainWindow(Mock(), [], Mock(), Mock(), Mock(), 'null://')
 			pane = DirectoryPane(Window(main, Mock()), QWidget(main), Mock())
 			calls = []
@@ -2651,7 +2729,7 @@ class TableIT(QtIT):
 			from unittest.mock import Mock
 			main = MainWindow(Mock(), [], Mock(), Mock(), Mock(), 'null://')
 			pane = DirectoryPane(Window(main, Mock()), QWidget(main), Mock())
-			root = Path(__file__).parents[3] / 'main/resources/base/Plugins/SearchFileContent'
+			root = Path(__file__).parents[3] / 'main/resources/base/Plugins/SearchFiles'
 			owner = UiOwner(resource_root=str(root))
 			main.show()
 			main.activateWindow()

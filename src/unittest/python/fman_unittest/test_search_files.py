@@ -5,13 +5,66 @@ from tempfile import TemporaryDirectory
 from unittest import TestCase
 from unittest.mock import patch
 
-from search_file_content.engine import Collector, Options, Runner, command_fits, masks, records
+from search_files.engine import Collector, Options, Runner, command_fits, masks, records
 
 
 class SearchEngineTest(TestCase):
 	def test_search_command_label(self):
-		from search_file_content import SearchFileContent
-		self.assertEqual('Search files', SearchFileContent.aliases[0])
+		from fman.impl.plugins.command_registry import PaneCommandRegistry
+		from threading import Event
+		from unittest.mock import Mock
+		from search_files import SearchFiles, SearchFileContent
+		self.assertEqual('Search files', SearchFiles.aliases[0])
+		registry = PaneCommandRegistry(Mock(), Mock())
+		registry.register_command('search_files', SearchFiles)
+		registry.register_command('search_file_content', SearchFileContent)
+		pane = Mock()
+		pane.get_path.return_value = 'file:///C:/root'
+		self.assertTrue(registry.is_command_visible('search_files', pane))
+		self.assertFalse(registry.is_command_visible('search_file_content', pane))
+		completed = Event()
+		with patch.object(SearchFiles, '__call__', side_effect=completed.set) as search:
+			for command in ('search_file_content', 'search_files'):
+				completed.clear()
+				registry.execute_command(command, {}, pane)
+				self.assertTrue(completed.wait(2), 'Search command did not run')
+			self.assertEqual(2, search.call_count)
+
+	def test_settings_survive_plugin_rename(self):
+		from fman.impl.plugins.config import Config
+		from search_files import DEFAULTS, LEGACY_SETTINGS_NAME, SETTINGS_NAME, SearchSession, load_settings, settings_snapshot
+		from threading import Event, Lock
+		from types import SimpleNamespace
+		import search_files
+		plugin_root = Path(search_files.__file__).parents[1]
+		with TemporaryDirectory() as root:
+			config = Config('Windows')
+			config.add_dir(str(plugin_root))
+			config.add_dir(root)
+			legacy = {'recursive': False, 'max_rows': 37, 'name_regex': True, 'other': 7}
+			config.save_json(LEGACY_SETTINGS_NAME, legacy)
+			legacy_path = Path(root, 'SearchFileContent (Windows).json')
+			original = legacy_path.read_bytes()
+			with patch('search_files.load_json', side_effect=config.load_json), \
+				patch('search_files.save_json', side_effect=config.save_json):
+				self.assertEqual(dict(DEFAULTS, recursive=False, max_rows=37, name_mode='regex'),
+					settings_snapshot(load_settings()))
+				self.assertFalse(Path(root, 'SearchFiles (Windows).json').exists())
+				config.save_json(SETTINGS_NAME, {'recursive': True, 'name_mode': 'literal'})
+				settings = settings_snapshot(load_settings())
+				self.assertEqual(dict(DEFAULTS, max_rows=37, name_mode='literal'), settings)
+				session = SearchSession.__new__(SearchSession)
+				session.save_lock = Lock()
+				session.pending_settings = tuple(settings.items())
+				session.saving = True
+				session.owner = SimpleNamespace(active=True)
+				session.panel = SimpleNamespace(cancelled=Event())
+				session.save_preferences()
+			reloaded = Config('Windows')
+			reloaded.add_dir(str(plugin_root))
+			reloaded.add_dir(root)
+			self.assertEqual(dict(settings, other=7), reloaded.load_json(SETTINGS_NAME))
+			self.assertEqual(original, legacy_path.read_bytes())
 
 	def test_name_only_options(self):
 		for mode in ('glob', 'literal', 'regex'):
@@ -41,8 +94,8 @@ class SearchEngineTest(TestCase):
 		from fman.impl.ui.table_data import TableSchema
 		from fman.ui import TableRow
 		from fman.url import as_url
-		from search_file_content import Location
-		from search_file_content.engine import Limited
+		from search_files import Location
+		from search_files.engine import Limited
 		collector = Collector(Options('C:\\root', '', '*'))
 		with self.assertRaises(Limited):
 			for index in range(10000):
@@ -58,9 +111,9 @@ class SearchEngineTest(TestCase):
 			Collector(Options('C:\\root', '', '*')).accept_path('C:\\outside\\file.txt')
 
 	def test_pattern_mode_settings_migration(self):
-		from search_file_content import DEFAULTS, SETTINGS_NAME, settings_snapshot
-		import search_file_content
-		base = json.loads((Path(search_file_content.__file__).parents[1] / SETTINGS_NAME).read_text(encoding='utf-8'))
+		from search_files import DEFAULTS, SETTINGS_NAME, settings_snapshot
+		import search_files
+		base = json.loads((Path(search_files.__file__).parents[1] / SETTINGS_NAME).read_text(encoding='utf-8'))
 		self.assertEqual(DEFAULTS, settings_snapshot(base))
 		legacy = dict(base, name_regex=True, content_regex=True)
 		self.assertEqual('regex', settings_snapshot(legacy)['name_mode'])
@@ -73,7 +126,7 @@ class SearchEngineTest(TestCase):
 		self.assertEqual('literal', settings_snapshot({'content_mode': []})['content_mode'])
 
 	def test_mode_save_removes_old_flags_and_preserves_other_settings(self):
-		from search_file_content import DEFAULTS, SearchSession
+		from search_files import DEFAULTS, SearchSession
 		from threading import Event, Lock
 		from types import SimpleNamespace
 		session = SearchSession.__new__(SearchSession)
@@ -82,8 +135,8 @@ class SearchEngineTest(TestCase):
 		session.saving = True
 		session.owner = SimpleNamespace(active=True)
 		session.panel = SimpleNamespace(cancelled=Event())
-		with patch('search_file_content.load_json', return_value={'name_regex': True, 'content_regex': False, 'other': 7}), \
-				patch('search_file_content.save_json') as save:
+		with patch('search_files.load_json', return_value={'name_regex': True, 'content_regex': False, 'other': 7}), \
+				patch('search_files.save_json') as save:
 			session.save_preferences()
 			saved = save.call_args.args[1]
 			self.assertNotIn('name_regex', saved)
@@ -95,7 +148,7 @@ class SearchEngineTest(TestCase):
 	def test_content_glob_dialect(self):
 		import fnmatch
 		import re
-		from search_file_content.engine import glob_to_regex
+		from search_files.engine import glob_to_regex
 		patterns = ('*', '**', '*a*b*', '?', '[abc]', '[!abc]', '[a-z]', '[-a]', '[a-]',
 			'[]]', '[[]', '[*]', '[?]', '[&~|^]', 'a.b+(x){2}$', 'C:\\cuda', 'a/b', 'caf\u00e9*')
 		values = ('', 'a', 'b', 'x', 'a-b', 'ab', 'xaaby', ']', '[', '*', '?', '&', '^',
@@ -180,7 +233,7 @@ class SearchEngineTest(TestCase):
 			Options('C:\\root', 'text', content_mode='unknown')
 
 	def test_engine_resolution_uses_conda_or_bundle_without_io(self):
-		from search_file_content import engine
+		from search_files import engine
 		with patch.object(engine.sys, 'prefix', 'C:\\conda'), \
 				patch.object(engine.sys, 'frozen', False, create=True), \
 				patch.object(Path, 'open', side_effect=AssertionError('Unexpected verification I/O')), \
@@ -191,7 +244,7 @@ class SearchEngineTest(TestCase):
 
 	def test_bounded_pipes_malformed_output_and_cancellation(self):
 		import sys
-		from search_file_content.engine import Cancelled
+		from search_files.engine import Cancelled
 		runner = Runner(Options('C:\\root', 'needle'))
 		command = [sys.executable, '-c',
 			"import sys; sys.stderr.buffer.write(b'e'*262144); sys.stderr.flush(); "
@@ -238,7 +291,7 @@ class SearchEngineTest(TestCase):
 	def test_search_slot_survives_engine_reload(self):
 		from importlib import reload
 		from threading import Event
-		import search_file_content.engine as engine
+		import search_files.engine as engine
 		started, release, finished = Event(), Event(), Event()
 		runner = engine.Runner(engine.Options('C:\\root', 'needle'))
 		def blocked():
@@ -257,13 +310,13 @@ class SearchEngineTest(TestCase):
 			self.assertTrue(finished.wait(2))
 
 	def test_plugin_uses_plain_public_ui_only(self):
-		import search_file_content
-		for source in Path(search_file_content.__file__).parent.glob('*.py'):
+		import search_files
+		for source in Path(search_files.__file__).parent.glob('*.py'):
 			content = source.read_text(encoding='utf-8')
 			for forbidden in ('PyQt', 'fman.impl', '._widget', '.build(', '.show('):
 				self.assertNotIn(forbidden, content, str(source))
-		self.assertEqual(search_file_content.DEFAULTS, search_file_content.settings_snapshot(None))
-		self.assertEqual(10000, search_file_content.settings_snapshot({'max_rows': -1})['max_rows'])
+		self.assertEqual(search_files.DEFAULTS, search_files.settings_snapshot(None))
+		self.assertEqual(10000, search_files.settings_snapshot({'max_rows': -1})['max_rows'])
 
 	def test_masks_and_transport_bounds(self):
 		self.assertEqual(('*.txt', '!secret*'), masks('!secret*;*.txt'))
@@ -326,6 +379,6 @@ class SearchEngineTest(TestCase):
 	def test_cancelled_run_does_not_resolve_engine(self):
 		runner = Runner(Options('C:\\root', 'needle'))
 		runner.stop()
-		with patch('search_file_content.engine.resolve_engine') as resolve:
+		with patch('search_files.engine.resolve_engine') as resolve:
 			self.assertEqual('Stopped', runner.run().status)
 		resolve.assert_not_called()

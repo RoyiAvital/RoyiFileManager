@@ -7,7 +7,7 @@ from tempfile import TemporaryDirectory
 from unittest import TestCase
 
 
-class SearchFileContentEngineTest(TestCase):
+class SearchFilesEngineTest(TestCase):
 	@classmethod
 	def setUpClass(cls):
 		cls.executable = Path(sys.prefix) / 'bin' / 'rg.exe'
@@ -38,7 +38,7 @@ class SearchFileContentEngineTest(TestCase):
 		self.assertEqual(1, len(self.search()))
 
 	def test_name_only_modes_eligibility_recursion_and_limits(self):
-		from search_file_content.engine import Options, Runner
+		from search_files.engine import Options, Runner
 		self.write('report.txt', b'')
 		self.write('skip.txt', b'')
 		self.write('nested/report.txt', b'\x00binary')
@@ -69,28 +69,28 @@ class SearchFileContentEngineTest(TestCase):
 			self.assertEqual(set(), runner.children)
 
 	def test_name_only_preflight_processes_and_invalid_regex(self):
-		from search_file_content.engine import Options, Runner
+		from search_files.engine import Options, Runner
 		from unittest.mock import patch
 		for mode, pattern in (('glob', '*.txt'), ('literal', 'report'), ('regex', '^report')):
 			for content in ('', 'needle'):
 				with self.subTest(mode=mode, content=content):
 					runner = Runner(Options(str(self.root), content, pattern, name_mode=mode))
-					with patch('search_file_content.engine.subprocess.Popen', wraps=subprocess.Popen) as popen:
+					with patch('search_files.engine.subprocess.Popen', wraps=subprocess.Popen) as popen:
 						runner.preflight()
 					self.assertEqual(int(bool(content)) + int(mode != 'glob'), popen.call_count)
-		with patch('search_file_content.engine.subprocess.Popen', wraps=subprocess.Popen) as popen:
+		with patch('search_files.engine.subprocess.Popen', wraps=subprocess.Popen) as popen:
 			result = Runner(Options(str(self.root), '', '[', name_mode='regex')).run()
 			self.assertEqual('Error', result.status)
 			self.assertFalse(result.validated)
 			self.assertEqual(1, popen.call_count)
 			self.assertNotIn('--files', popen.call_args.args[0])
-		with patch('search_file_content.engine.subprocess.Popen') as popen:
+		with patch('search_files.engine.subprocess.Popen') as popen:
 			with self.assertRaises(ValueError):
 				Options(str(self.root), '')
 			popen.assert_not_called()
 
 	def test_name_only_live_progress_and_stop_while_enumerating(self):
-		from search_file_content.engine import Options, Runner
+		from search_files.engine import Options, Runner
 		from threading import Event, Thread
 		from unittest.mock import patch
 		for index in range(129):
@@ -116,7 +116,7 @@ class SearchFileContentEngineTest(TestCase):
 						finished.set()
 				with patch.object(runner, 'file_args', return_value=command), \
 						patch.object(runner, 'publish', side_effect=publish), \
-						patch('search_file_content.engine.subprocess.Popen', wraps=subprocess.Popen):
+						patch('search_files.engine.subprocess.Popen', wraps=subprocess.Popen):
 					worker = Thread(target=run, daemon=True)
 					worker.start()
 					try:

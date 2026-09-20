@@ -13,7 +13,7 @@
 version: 1
 metadata:
   content_hash:
-    win-64: 55a7ba15d835811314967c3687cd61f8f7675eb15a76ed54905aff882af34288
+    win-64: ea59d25353f41f557a140f0c3a8293f3ba4264bb4e7912dca9d2f047bc647ce6
   channels:
   - url: conda-forge
     used_env_vars: []
@@ -399,6 +399,20 @@ package:
   hash:
     md5: fcc02785e4da41e5f19f740e017b6ffb
     sha256: e3c35c7cee4e6db53de4ad1ca6d35b7aced263d21a6ee2dcdffe401135646ab2
+  category: main
+  optional: false
+- name: fd-find
+  version: 10.5.0
+  manager: conda
+  platform: win-64
+  dependencies:
+    ucrt: '>=10.0.20348.0'
+    vc: '>=14.3,<15'
+    vc14_runtime: '>=14.44.35208'
+  url: https://conda.anaconda.org/conda-forge/win-64/fd-find-10.5.0-h18a1a76_0.conda
+  hash:
+    md5: dd407ed12701113271cbe3932f0469cd
+    sha256: 272a75b9ede5c73da11c7cfe9fc4191b68a393f4b39182315bbf4ccdcb71878d
   category: main
   optional: false
 - name: filelock
@@ -1392,7 +1406,7 @@ package:
   category: main
   optional: false
 - name: pyinstaller
-  version: 6.22.2
+  version: 6.22.3
   manager: conda
   platform: win-64
   dependencies:
@@ -1409,10 +1423,10 @@ package:
     ucrt: '>=10.0.20348.0'
     vc: '>=14.3,<15'
     vc14_runtime: '>=14.44.35208'
-  url: https://conda.anaconda.org/conda-forge/win-64/pyinstaller-6.22.2-py314h05bb05a_0.conda
+  url: https://conda.anaconda.org/conda-forge/win-64/pyinstaller-6.22.3-py314h05bb05a_0.conda
   hash:
-    md5: 0ee02088f097a2824c8d0b6a15893aff
-    sha256: 2f4f7c7fe192a83f135c302cfd1075d73f7898622b65b956805034e668cd34a7
+    md5: 5d70f72900bc1a74f3615818b800fcb2
+    sha256: b244555898ba14da105b4da9bca07a7f044f825e9209c2b3e1c0bd47027814ce
   category: main
   optional: false
 - name: pyinstaller-hooks-contrib
@@ -1736,15 +1750,15 @@ package:
   category: main
   optional: false
 - name: semver
-  version: 3.0.4
+  version: 3.1.0
   manager: conda
   platform: win-64
   dependencies:
-    python: '>=3.10'
-  url: https://conda.anaconda.org/conda-forge/noarch/semver-3.0.4-pyhcf101f3_1.conda
+    python: '>=3.11'
+  url: https://conda.anaconda.org/conda-forge/noarch/semver-3.1.0-pyh5ded981_0.conda
   hash:
-    md5: 8e7be844ccb9706a999a337e056606ab
-    sha256: bea67173ed67c73cf16691ef72e58059492ac1ed1c880cfbeb6f1295c5add7d6
+    md5: 82ad3c5449650f22625ee569fe61c518
+    sha256: 982fe22d9c84d32fd0c87f6651b4013917ad381b640e93376a5c311b84c0dd7c
   category: main
   optional: false
 - name: send2trash

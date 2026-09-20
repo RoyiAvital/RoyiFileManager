@@ -155,7 +155,7 @@ class CalculateFileHash(DirectoryPaneCommand):
 
 
 class CalculateFileHashBy(CalculateFileHash):
-	aliases = ('Calculate file hash by...', 'File hash by algorithm')
+	aliases = ('Calculate file hash by', 'File hash by algorithm')
 
 	def __call__(self):
 		if HashController.owner is None or not HashController.owner.active:

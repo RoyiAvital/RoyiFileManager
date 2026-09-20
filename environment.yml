@@ -12,4 +12,5 @@ dependencies:
   - requests
   - ripgrep
   - fzf #<! For testing only
+  - fd-find #<! Find files with `fd` command
   - conda-lock

@@ -619,7 +619,7 @@ toggles; their labels/icons do not appear in value snapshots.
 Text-field labels align across rows using their styled size hints.
 `max_width` optionally caps the input in Qt logical pixels; it must be a
 positive integer or `None` (uncapped). Capped fields remain left-aligned and
-shrink within narrow Panels. Search File Content uses `max_width=480`.
+shrink within narrow Panels. Search Files uses `max_width=480`.
 In forms with at least one capped field, when each row starts with one capped
 field or label followed only by icon controls/actions, the trailing controls
 share a left-aligned column. Extra width stays after the controls. Other forms
@@ -635,7 +635,7 @@ The initial `value` must name an option. Each option has a tooltip and accessibl
 name; clicking the selected button leaves it selected and emits no change.
 Snapshots contain the selected string. Use `update(values={'mode': 'glob'})` to
 select silently, or `update(enabled={'mode': False})` to disable the entire group.
-An unknown value fails before any update is applied. Search File Content uses
+An unknown value fails before any update is applied. Search Files uses
 Choice for Literal/Glob/RegEx; Toggle remains for independent boolean settings.
 
 `PanelHandle.snapshot()` returns an immutable value mapping.

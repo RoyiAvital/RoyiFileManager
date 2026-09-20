@@ -15,7 +15,7 @@ def exercise(context, root, output, layout_only=False):
 	from fman.url import as_url
 	from PyQt5.QtCore import QPoint, Qt, QTimer
 	from PyQt5.QtWidgets import QApplication, QLabel
-	from search_file_content import SearchFileContent, SearchUI
+	from search_files import SearchFiles, SearchUI
 	gui = lambda function: run_in_main_thread(function)()
 	def wait_for(predicate, message):
 		ready = Event()
@@ -37,7 +37,12 @@ def exercise(context, root, output, layout_only=False):
 		wait_for(lambda: len(context.window.get_panes()) == 2 and all(
 			pane.get_path() == as_url(str(root)) for pane in context.window.get_panes()), 'Startup panes did not restore')
 		pane = context.window.get_panes()[0]
-		SearchFileContent(pane)()
+		assert pane.get_command_aliases('search_files')[0] == 'Search files'
+		assert 'search_file_content' in pane.get_commands(), 'Legacy search binding is unavailable'
+		bindings = context.key_bindings.get_sanitized_bindings()
+		assert next(binding for binding in bindings if binding['keys'] == ['Alt+F7'])['command'] == 'search_files'
+		pane.run_command('search_files')
+		wait_for(lambda: any(host.owner is SearchUI.owner for host in _hosts.values()), 'Search files panel did not open')
 		host = gui(lambda: next(host for host in _hosts.values() if host.owner is SearchUI.owner))
 		session = host.on_action.__self__
 		assert not gui(host.isVisible), 'Panel coordinator was shown'
@@ -104,7 +109,7 @@ def exercise(context, root, output, layout_only=False):
 		if layout_only:
 			session.panel.close()
 			pane = other
-			SearchFileContent(pane)()
+			SearchFiles(pane)()
 			host = gui(lambda: next(host for host in _hosts.values() if host.owner is SearchUI.owner))
 			session = host.on_action.__self__
 			output = output.with_name(output.stem + '-right.png')
@@ -114,7 +119,7 @@ def exercise(context, root, output, layout_only=False):
 			return
 		gui(lambda: host.controls['name_mode'][1].group.button(2).click())
 		gui(lambda: host.controls['content_mode'][1].group.button(1).click())
-		settings = root / 'UserSettings/Plugins/User/Settings/SearchFileContent (Windows).json'
+		settings = root / 'UserSettings/Plugins/User/Settings/SearchFiles (Windows).json'
 		wait_for(lambda: not session.saving, 'Search preferences did not settle')
 		saved = json.loads(settings.read_text(encoding='utf-8'))
 		assert saved['name_mode'] == 'regex' and saved['content_mode'] == 'glob'
@@ -132,6 +137,7 @@ def exercise(context, root, output, layout_only=False):
 		assert gui(lambda: host.controls['stop'][1].isEnabled()), 'Completed search disabled Stop'
 		window = gui(lambda: host.table_window)
 		wait_for(window.isVisible, 'Results did not become visible')
+		assert gui(window.windowTitle) == 'Search files', 'Incorrect results title'
 		assert session.table.current_cell[0].value.line == 2
 		assert not gui(host.activity_timer.isActive), 'Progress timer leaked'
 		gui(lambda: setattr(session.table, 'filter_text', 'txt'))
@@ -150,7 +156,7 @@ def exercise(context, root, output, layout_only=False):
 		assert session.root == str(target.parent), 'Root did not follow successful result navigation'
 		session.panel.close()
 		assert gui(lambda: context.main_window._panel_dock is None)
-		SearchFileContent(pane)()
+		SearchFiles(pane)()
 		reopened = gui(lambda: next(host for host in _hosts.values() if host.owner is SearchUI.owner)).on_action.__self__
 		assert reopened.panel.snapshot()['name_mode'] == 'regex'
 		assert reopened.panel.snapshot()['content_mode'] == 'glob'
@@ -175,10 +181,10 @@ def exercise(context, root, output, layout_only=False):
 
 def benchmark():
 	from unittest.mock import patch
-	from search_file_content.engine import Child, Options, Runner, resolve_engine
+	from search_files.engine import Child, Options, Runner, resolve_engine
 	from win32api import GetCurrentProcess
 	from win32process import GetProcessMemoryInfo
-	with TemporaryDirectory(prefix='content-search-benchmark-') as temporary:
+	with TemporaryDirectory(prefix='file-search-benchmark-') as temporary:
 		root = Path(temporary)
 		fixture_bytes = 0
 		for directory in range(100):
@@ -226,7 +232,7 @@ def benchmark():
 		subprocess.run(runner.content_args() + ['--iglob', '*.txt', '--', str(root)],
 			stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=True)
 		reports.append({'mode': 'direct-rg', 'seconds': perf_counter() - started})
-		output = Path('target/search-content-benchmark.json')
+		output = Path('target/search-files-benchmark.json')
 		output.parent.mkdir(parents=True, exist_ok=True)
 		output.write_text(json.dumps(reports, indent=2), encoding='utf-8')
 		print(json.dumps(reports, indent=2), flush=True)
@@ -237,7 +243,7 @@ def main():
 	if '--benchmark' in sys.argv:
 		return benchmark()
 	layout_only = '--layout-only' in sys.argv
-	with TemporaryDirectory(prefix='content-search-smoke-') as temporary:
+	with TemporaryDirectory(prefix='file-search-smoke-') as temporary:
 		root = Path(temporary)
 		(root / 'nested').mkdir()
 		(root / 'nested/report.txt').write_text('first line\nneedle content\n', encoding='utf-8')
@@ -248,7 +254,7 @@ def main():
 		_ = context.app
 		context.session_manager.is_first_run = False
 		sys.argv = [sys.argv[0], str(root), str(root)]
-		output = Path(os.environ.get('SEARCH_CONTENT_SMOKE_IMAGE', 'target/search-content-source.png')).resolve()
+		output = Path(os.environ.get('SEARCH_FILES_SMOKE_IMAGE', 'target/search-files-source.png')).resolve()
 		output.parent.mkdir(parents=True, exist_ok=True)
 		QTimer.singleShot(0, lambda: Thread(target=exercise, args=(context, root, output, layout_only), daemon=True).start())
 		return context.run()

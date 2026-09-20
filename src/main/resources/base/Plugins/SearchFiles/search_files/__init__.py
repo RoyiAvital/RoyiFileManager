@@ -5,16 +5,26 @@ from time import monotonic
 from fman import DirectoryPaneCommand, load_json, save_json, show_status_message
 from fman.ui import Action, Choice, Label, TableRow, TextField, Toggle, UiController, settings_resource, show_panel, show_table
 from fman.url import as_human_readable, as_url
-from search_file_content.engine import Options, Runner
+from search_files.engine import Options, Runner
 
 
-SETTINGS_NAME = 'SearchFileContent.json'
+SETTINGS_NAME = 'SearchFiles.json'
+LEGACY_SETTINGS_NAME = 'SearchFileContent.json'
 DEFAULTS = {'name_mode': 'glob', 'content_mode': 'literal', 'recursive': True,
 	'encoding': 'auto', 'max_rows': 10000, 'max_text_bytes': 16 * 1024 * 1024,
 	'max_file_lines': 200, 'max_file_bytes': 50 * 1024 * 1024}
 MODE_OPTIONS = (('literal', 'icons/text.svg', 'Literal text, case-insensitive'),
 	('glob', 'icons/asterisk.svg', 'Glob: * any text, ? one character, [ab] a set'),
 	('regex', 'icons/regex.svg', 'Regular expression (ripgrep syntax), case-insensitive'))
+
+
+def load_settings():
+	legacy = load_json(LEGACY_SETTINGS_NAME, default={})
+	current = load_json(SETTINGS_NAME, default={})
+	result = dict(legacy) if isinstance(legacy, dict) else {}
+	if isinstance(current, dict):
+		result.update(current)
+	return result
 
 
 def settings_snapshot(values):
@@ -102,7 +112,7 @@ class SearchSession:
 			if self.saving:
 				return
 			self.saving = True
-		Thread(target=self.save_preferences, name='content-search-settings', daemon=True).start()
+		Thread(target=self.save_preferences, name='file-search-settings', daemon=True).start()
 
 	def save_preferences(self):
 		resource = settings_resource(SETTINGS_NAME)
@@ -116,8 +126,7 @@ class SearchSession:
 				with resource.lock:
 					if not self.owner.active or self.panel.cancelled.is_set():
 						continue
-					loaded = load_json(SETTINGS_NAME, default={})
-					updated = dict(loaded) if isinstance(loaded, dict) else {}
+					updated = load_settings()
 					updated.pop('name_regex', None)
 					updated.pop('content_regex', None)
 					updated.update(values)
@@ -222,7 +231,7 @@ class SearchSession:
 		self.table = None
 
 
-class SearchFileContent(DirectoryPaneCommand):
+class SearchFiles(DirectoryPaneCommand):
 	aliases = ('Search files', 'Find text in files')
 
 	def is_visible(self):
@@ -237,9 +246,14 @@ class SearchFileContent(DirectoryPaneCommand):
 			return
 		try:
 			with settings_resource(SETTINGS_NAME).lock:
-				settings = settings_snapshot(load_json(SETTINGS_NAME, default={}))
+				settings = settings_snapshot(load_settings())
 		except (OSError, ValueError) as error:
 			show_status_message('Could not load search preferences: ' + str(error), timeout_secs=3)
 			settings = dict(DEFAULTS)
 		if owner.active:
 			SearchSession(owner, self.pane, as_human_readable(path), settings)
+
+
+class SearchFileContent(SearchFiles):
+	def is_visible(self):
+		return False

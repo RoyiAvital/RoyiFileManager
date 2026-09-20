@@ -1,8 +1,11 @@
-# Search File Content 002: File Name Only Search
+# Search Files 002: File Name Only Search
+
+Renamed to Search Files on 2026-09-20. Dated review and validation records below
+retain the identifiers used at the time; current paths use `SearchFiles` / `search_files`.
 
 ## Task
 
-Let Search File Content (`Alt+F7`) list files by name alone. When the Content
+Let Search Files (`Alt+F7`) list files by name alone. When the Content
 Pattern box is empty and the File Name Pattern box is not, Search returns one
 row per matching file instead of one row per matching line, using the same
 ripgrep engine, the same Glob / Literal / RegEx name modes, the same recursion
@@ -25,7 +28,7 @@ with `Content Pattern is required`. Users who want "every `*.log` under here" or
 "files whose name matches `^report_\d{4}`" have no ripgrep-backed option; the
 fuzzy search plug-in has no glob or regex mode.
 
-Follow-up to [Search File Content 001](../Done/SearchFileContent001.md).
+Follow-up to [Search Files 001](../Done/SearchFiles001.md).
 
 ## Scope
 
@@ -46,7 +49,7 @@ Included:
 - Results rows show the relative path in the File Path column and an empty
   Snippet column. Enter / Go To navigates to the file as today.
 - Bug 1: content Glob semantics in the engine
-  ([engine.py](../src/main/resources/base/Plugins/SearchFileContent/search_file_content/engine.py)).
+  ([engine.py](../src/main/resources/base/Plugins/SearchFiles/search_files/engine.py)).
 - Bugs 2 and 3: focus after the modal Table closes, in the Table host
   ([facade.py](../src/main/python/fman/impl/ui/facade.py)).
 - Bug 4: `TextField` label tooltip in `PanelForm.create` and the plug-in's
@@ -65,13 +68,14 @@ Excluded:
 
 Compatibility: preserves the public `fman` plug-in API from fman 1.7.5. The
 `Options` dataclass gains no field; only its validation relaxes. Existing
-`SearchFileContent.json` settings are unchanged.
+The search options are unchanged. Current preferences use `SearchFiles.json`
+with a fallback to legacy `SearchFileContent.json` overrides.
 
 ## Design
 
 Application changes are inside
-[search_file_content/engine.py](../src/main/resources/base/Plugins/SearchFileContent/search_file_content/engine.py)
-and [search_file_content/__init__.py](../src/main/resources/base/Plugins/SearchFileContent/search_file_content/__init__.py),
+[search_files/engine.py](../src/main/resources/base/Plugins/SearchFiles/search_files/engine.py)
+and [search_files/__init__.py](../src/main/resources/base/Plugins/SearchFiles/search_files/__init__.py),
 plus [facade.py](../src/main/python/fman/impl/ui/facade.py) for internal Table/Panel
 focus and tooltip behavior. Plug-in code uses only public APIs.
 
@@ -260,8 +264,8 @@ the two `TextField` tooltips are reworded for the new semantics:
 Focused commands using [build.py](../build.py)'s environment:
 
 ```powershell
-python -c "import build, subprocess, sys; sys.exit(subprocess.call([sys.executable, '-m', 'unittest', 'fman_unittest.test_search_file_content', 'fman_integrationtest.test_search_file_content_engine', '-v'], env=build._environment()))"
-python -c "import build, os, subprocess, sys; sys.exit(subprocess.call([sys.executable, '-m', 'unittest', 'fman_integrationtest.test_qt.SearchFileContentIT', 'fman_integrationtest.test_qt.TableIT', 'fman_integrationtest.test_qt.PanelIT', '-v'], env=dict(build._environment(), QT_QPA_PLATFORM='windows', QT_QPA_FONTDIR=os.path.join(os.environ['WINDIR'], 'Fonts'))))"
+python -c "import build, subprocess, sys; sys.exit(subprocess.call([sys.executable, '-m', 'unittest', 'fman_unittest.test_search_files', 'fman_integrationtest.test_search_files_engine', '-v'], env=build._environment()))"
+python -c "import build, os, subprocess, sys; sys.exit(subprocess.call([sys.executable, '-m', 'unittest', 'fman_integrationtest.test_qt.SearchFilesIT', 'fman_integrationtest.test_qt.TableIT', 'fman_integrationtest.test_qt.PanelIT', '-v'], env=dict(build._environment(), QT_QPA_PLATFORM='windows', QT_QPA_FONTDIR=os.path.join(os.environ['WINDIR'], 'Fonts'))))"
 ```
 
 - `Options`: empty content + name accepted; both empty rejected with the new
@@ -277,7 +281,7 @@ python -c "import build, os, subprocess, sys; sys.exit(subprocess.call([sys.exec
 - Preflight: names-only skips the content validation child (assert one
   fewer `Popen` via the existing fake); invalid regex still fails before
   enumeration.
-- `SearchFileContentIT`: empty Content + `*.txt` opens the Table with File
+- `SearchFilesIT`: empty Content + `*.txt` opens the Table with File
   Path filled, Snippet empty, status text `Complete: N files`, Go To
   navigates to the file.
 - Bug 1 (engine, real ripgrep): with content Glob over the line
@@ -287,7 +291,7 @@ python -c "import build, os, subprocess, sys; sys.exit(subprocess.call([sys.exec
   match `Commander` when written as `^Commande$` in RegEx (whole-line still
   available). `content_args` contains no `--line-regexp` in Glob mode.
   Literal and RegEx results are unchanged.
-- Bugs 2 and 3 (`SearchFileContentIT`): after Enter on a File Path cell the
+- Bugs 2 and 3 (`SearchFilesIT`): after Enter on a File Path cell the
   Table is closed, `QApplication.focusWidget()` is inside the target pane and
   `pane.get_file_under_cursor()` is the navigated file. After Escape, focus
   is on the File Name Pattern `QLineEdit`, not the Stop button, and the form
@@ -309,11 +313,11 @@ python -c "import build, os, subprocess, sys; sys.exit(subprocess.call([sys.exec
 2. Add `Collector.accept_path`; add the `names_only` short-circuit in
   `search_batch` and glob masks to the shared enumeration child;
    wire the branch in `run` and skip the content preflight child; engine tests.
-3. Adjust the status noun in `SearchSession`; extend `SearchFileContentIT`.
+3. Adjust the status noun in `SearchSession`; extend `SearchFilesIT`.
 4. Bug 1: drop `--line-regexp` and trim outer wildcard tokens, preserving a
   consuming wildcard-only pattern; engine tests.
 5. Bugs 2 and 3: add the `navigated` flag to `TableWindow`, run `on_closed`
-   before focusing, focus the pane after navigation; `SearchFileContentIT`
+   before focusing, focus the pane after navigation; `SearchFilesIT`
    cases.
 6. Bug 4: set the `TextField` label tooltip in `PanelForm.create`; update the
    plug-in's tooltip strings; `PanelIT` and plug-in tests.
@@ -339,7 +343,7 @@ python -c "import build, os, subprocess, sys; sys.exit(subprocess.call([sys.exec
   Escape, focus is on the first text field and the form is enabled.
 - Hovering the Content Pattern label or box shows its tooltip; the Glob mode
   button explains `*`, `?` and `[ab]`.
-- Focused tests pass. Application changes are confined to SearchFileContent and
+- Focused tests pass. Application changes are confined to SearchFiles and
   `fman/impl/ui/facade.py`, with focused tests, usage/changelog updates and this
   task's completion/index bookkeeping.
 
@@ -431,7 +435,7 @@ python -c "import build, os, subprocess, sys; sys.exit(subprocess.call([sys.exec
     error.** Bug 1 converts `*` / `**` to an empty regex. Against one 100,000-character
     line, the proposed conversion made ripgrep emit 100,001 submatches and about
     4.88 MB of JSON. The existing 1 MiB record bound in
-    [engine.py](../src/main/resources/base/Plugins/SearchFileContent/search_file_content/engine.py)
+    [engine.py](../src/main/resources/base/Plugins/SearchFiles/search_files/engine.py)
     then returned `Error: Search transport record exceeds its size limit.` with
     no rows; the current `.*` whole-line search returned one complete result.
     Define wildcard-only behavior explicitly and preserve a nonempty consuming
