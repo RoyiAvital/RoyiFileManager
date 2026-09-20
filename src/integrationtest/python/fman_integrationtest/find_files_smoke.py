@@ -118,9 +118,9 @@ def exercise(context, root, output):
 		window = gui(lambda: host.table_window)
 		wait_for(window.isVisible, 'Results were not presented')
 		assert gui(window.windowTitle) == 'Find files'
-		assert gui(lambda: window.table.counts.text()) == 'Showing 2 / 2 files'
+		assert gui(lambda: window.table.counts.text()) == 'Showing 2 / 2 entries'
 		gui(lambda: setattr(session.table, 'filter_text', 'report'))
-		wait_for(lambda: window.table.counts.text() == 'Showing 1 / 2 files', 'Filtered counter did not update')
+		wait_for(lambda: window.table.counts.text() == 'Showing 1 / 2 entries', 'Filtered counter did not update')
 		gui(lambda: window.grab().save(str(output)))
 		table = session.table
 		gui(lambda: window.activate_cell(*table.current_cell))

@@ -366,6 +366,78 @@ content providers and any online service are excluded from this task.
   `everything-sdk` requires a running Everything). Rejected: repository
   policy against new packages, and none implements the needed grammar.
 
+### Evaluated Alternative: voidtools Everything as the Engine (2026_09_20)
+
+Added by review. Everything executes this exact grammar natively over a resident
+index, so it was evaluated as a replacement for the Python parser and matcher.
+Probes ran on this machine with a portable Everything 1.4.1.1032 using
+[src/misc/everything_probe.py](../src/misc/everything_probe.py); Everything 1.5
+was tried first and found to have moved the HTTP server into a plugin.
+
+**Facts established**
+
+- Licence: Everything's `License.txt` is the MIT licence (plus a BSD notice for
+  PCRE); bundling the executable with its notice is permitted.
+- Delivery: the SDK DLL is optional. `Everything.exe` exposes `WM_COPYDATA` IPC
+  (documented struct protocol, addressable by instance), a built-in loopback HTTP
+  JSON server (1.4 only) and the `es.exe` CLI. The Lite build has none of these.
+- Instances: Everything is single-instance per *name*. A named instance
+  (`-instance RoyiFileManager -startup -config <ini>`) has its own ini, database,
+  tray icon and IPC class `EVERYTHING_TASKBAR_NOTIFICATION_(RoyiFileManager)`.
+  With the user's own unnamed instance running (pid 40872), ours (pid 30248) ran
+  beside it, answered its own index, and its `-exit` left the user's process,
+  window class and `Everything.ini` untouched. The unnamed instance must never be
+  started by the application, or the user's later launch is swallowed by it.
+- Privileges: `run_as_admin=0` with every `auto_include_*_volumes=0` and a
+  `folders=` list gives folder indexing as a standard user with no UAC prompt;
+  NTFS/ReFS volume indexing is the part that needs admin or the Everything
+  service and was excluded by the user.
+- Configuration lives entirely in the `-config` ini and `db_location`; nothing
+  is written beside the executable.
+
+**Runtime measurements** (loopback HTTP JSON, 100 results with path, size and
+date columns, 30 runs per query, warm)
+
+| Setup | Index | Build | Working set | Query median | Query min |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Repository + `C:\Windows` folder indexes | 328,673 entries | ~10 s | 50 MiB | 16 ms | 0.4-0.7 ms |
+| Fixed drives C:, D:, E:, F: as folder indexes | 242 MiB database | several minutes (not completed within the probe) | 157 MiB while walking | - | - |
+
+Medians were flat at ~16 ms for substring, wildcard, `ext:`/`size:`, `dm:`,
+`regex:`, OR and path-scoped queries alike, with minimums under 1 ms: the 16 ms
+is Everything's HTTP path waking on the 15.6 ms Windows timer tick, not matching
+cost. The `WM_COPYDATA` IPC route avoids the tick and is expected near 1 ms.
+Either is faster than the shipped fuzzy `get_items` (19-103 ms per keystroke on
+75k entries).
+
+**Comparison with this design's Python engine**
+
+| Stage | Python (this design) | Everything (named instance, folder index) |
+| --- | --- | --- |
+| Opening the dialog | Walk the pane subtree first: ~90 ms / 50k, ~250 ms / 100k entries, seconds on network shares; 50k cap | None; the index is resident |
+| Keystroke, substring/wildcard | 10-15 ms at 50k, linear | <1 ms real work, flat to millions |
+| Keystroke, regex | Python `re` over all entries, not cancellable on Qt | C regex in another process |
+| Size/date filters, sorting | Python over collected metadata | Indexed fields |
+| Scope | Pane subtree on any scheme, always current | Pre-indexed roots only; live while running, stale for offline changes until a rescan |
+| Footprint | None | Second process, 50 MiB (330k) to several hundred MiB (all drives), startup rescan I/O |
+
+**Why it was not adopted for this task**
+
+The scope here is reactivity *at the pane's path*, possibly recursive. A resident
+index must know its roots in advance; indexing every fixed drive costs minutes,
+hundreds of MiB and a rescan per launch, and still misses removable and network
+drives, `zip://` and other schemes (automatic volume inclusion is the admin-only
+NTFS path; 1.4 cannot add a folder index at runtime, and 1.5's `-add-folder` walks
+the folder exactly as Python would). Covering those cases would require a Python
+fallback beside Everything, i.e. two engines and the parser this alternative was
+meant to remove. The on-demand Python walk is the correct model for a scoped
+search: any drive, share or archive, always fresh, cost proportional to the
+folder. The per-keystroke difference between the two is below perception.
+
+Everything remains the right engine for a *different* feature, "find anything on
+my indexed drives as you type", where predefined roots are natural; the probe
+script and the facts above are the groundwork for such a task.
+
 ## Runtime Effects
 
 - Startup: registers two commands; no metadata I/O, scans, timers or workers.
@@ -566,3 +638,25 @@ Records before 2026_09_17 belong to the combined document
   task and renderer behavior. The four grammar/ordering decisions remain open;
   this is a design-only revision, not implementation approval or a claim that
   the proposed Everything behavior has passed tests.
+
+### 2026_09_20 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Claude Fable 5.1
+- Effort: High
+- Context Window: 1M
+- Outcome: Evaluated replacing the Python parser/matcher with voidtools
+  Everything at the user's request; recorded the findings under Alternatives
+  ("Evaluated Alternative: voidtools Everything as the Engine") and added
+  `src/misc/everything_probe.py`. Verified with live probes: MIT licence,
+  DLL-free access (IPC, 1.4 HTTP JSON, `es.exe`), named-instance isolation
+  beside the user's running Everything, standard-privilege folder indexing
+  without UAC, ~16 ms HTTP query medians with sub-millisecond minimums on a
+  328k-entry index, 50 MiB working set, and a multi-minute/242 MiB build for
+  all fixed drives. Conclusion agreed with the user: for path-scoped search the
+  resident-index model cannot cover removable drives, shares or archive schemes
+  without a Python fallback, so this design keeps its Python engine; Everything
+  is reserved for a possible separate machine-wide search feature. Design only;
+  no application code changed.

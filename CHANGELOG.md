@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
 
+## [0.7.1] - 2026-09-20
+
+API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
+
+### Added
+
+- Independent **Set file comparator** / **Set folder comparator** wizards with
+  [Meld](https://meldmerge.org), [Beyond Compare](https://www.scootersoftware.com), [WinMerge](https://github.com/winmerge/winmerge), [SmartSynchronize](https://www.syntevo.com/smartsynchronize) and manual configuration.
+  **Compare files** uses an active-pane marked pair or one file per pane;
+  **Compare folders** uses the two current folders. Launches are fire-and-forget,
+  with no default shortcuts, shell, automatic merge or synchronization.
+
+### Fixed
+
+- Find Files cancellation reports **Stopped**, not **Error**, when terminating fd
+  leaves a partial output record. Completed matches remain available.
+- Find Files result counts use **entries** rather than **files**, including for
+  folder and link results.
+
 ## [0.7.0] - 2026-09-20
 
 API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.

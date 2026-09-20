@@ -1,10 +1,11 @@
 from dataclasses import replace
 from io import BytesIO
 import os
+from threading import Event
 from unittest import TestCase
 from unittest.mock import patch
 
-from find_files.engine import Collector, Options, Result, arguments, count_text, date_arguments, records, size_bytes, split_list
+from find_files.engine import Collector, Options, Result, Runner, arguments, count_text, date_arguments, records, size_bytes, split_list
 
 
 class FindFilesTest(TestCase):
@@ -140,6 +141,32 @@ class FindFilesTest(TestCase):
 			with self.assertRaises(ValueError):
 				list(records(BytesIO(raw)))
 
+	def test_truncated_output_respects_cancellation(self):
+		for cancellation in (None, 'stop', 'external'):
+			with self.subTest(cancellation=cancellation), patch('find_files.engine.Child') as child_type:
+				cancelled = Event()
+				runner = Runner(self.options, cancelled)
+				chunks = iter((b'complete.txt\0unfinished', b''))
+				def read_chunk(count):
+					chunk = next(chunks)
+					if not chunk:
+						if cancellation == 'stop':
+							runner.stop()
+						elif cancellation == 'external':
+							cancelled.set()
+					return chunk
+				child = child_type.return_value
+				child.process.stdout.read.side_effect = read_chunk
+				child.finish.return_value = (0, '')
+				result = runner.run()
+				self.assertEqual('Stopped' if cancellation else 'Error', result.status)
+				self.assertEqual('' if cancellation else 'Incomplete fd output record.', result.reason)
+				self.assertFalse(result.complete)
+				self.assertEqual(1, result.total)
+				self.assertEqual(['complete.txt'], [hit.relative_path for hit in result.rows])
+				self.assertEqual(result.status, runner.progress.phase)
+				child.finish.assert_called_once_with()
+
 	def test_exact_count_after_table_fills(self):
 		collector = Collector(replace(self.options, max_rows=2))
 		for index in range(20000):
@@ -148,8 +175,8 @@ class FindFilesTest(TestCase):
 		self.assertEqual(2, len(collector.rows))
 		self.assertTrue(collector.limited)
 		result = Result(tuple(collector.rows), collector.total, True, True, 'Complete', '')
-		self.assertEqual('Showing 2 / 20,000 files (Maximum table size reached)', count_text(2, result))
-		self.assertEqual('Showing 1 / 20,000 files (Maximum table size reached)', count_text(1, result))
+		self.assertEqual('Showing 2 / 20,000 entries (Maximum table size reached)', count_text(2, result))
+		self.assertEqual('Showing 1 / 20,000 entries (Maximum table size reached)', count_text(1, result))
 		self.assertIn('total incomplete', count_text(2, replace(result, complete=False, status='Stopped')))
 
 	def test_byte_capacity_exact_capacity_and_paths(self):

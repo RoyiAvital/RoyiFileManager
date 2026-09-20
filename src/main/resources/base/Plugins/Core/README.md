@@ -187,6 +187,62 @@ restart. Clearing an already-unset role does not save again. The roles are
 independent. Existing legacy editor launch mappings, including their `{file}`
 templates and `cwd`/`shell` options, still work until explicitly reconfigured.
 
+## File and Folder Comparators
+
+Use **Set file comparator** and **Set folder comparator** in Command Center
+(`Ctrl+Shift+P`). Choose Meld, Beyond Compare, WinMerge, SmartSynchronize or
+**Manual configuration**, then select the installed `.exe`. The two roles are
+independent; no tool is installed or detected automatically. Manual setup also
+asks for Windows-quoted arguments. Do not include path placeholders: two absolute
+paths are appended as separate arguments, without a shell or variable expansion.
+
+| Preset | File arguments | Folder arguments | Window behavior |
+| --- | --- | --- | --- |
+| Meld | None | None | Uses default new-window behavior; no `--newtab`. |
+| Beyond Compare | `/solo` | `/solo` | Requests a separate instance. |
+| WinMerge | `/s- /u` | `/s- /u /r` | Requests a separate instance; folders recurse. |
+| SmartSynchronize | None | None | Uses two-path invocation; separate-window behavior is unverified. |
+
+**Compare files** chooses operands as follows:
+
+- Exactly two marked entries in the active pane: compare that pair in stable
+	filename order, ignoring the other pane. Both must be files.
+- Otherwise use one file from each pane: its marked file, or its cursor file
+	when nothing is marked. Keep physical left/right pane order, regardless of focus.
+- More than two active marks, multiple opposite marks in cross-pane mode, missing
+	files or folders selected as files are errors. No same-name guessing or fallback.
+
+**Compare folders** always compares the two panes' current folders, in left/right
+order, ignoring marks and cursors. Open child folders in both panes first to compare
+them. These commands have no default shortcuts; custom bindings can use
+`compare_files` and `compare_folders`. The existing **Compare directories** command
+is different: it only marks names missing from the opposite pane.
+
+Only existing local filesystem paths, including accessible UNC shares and links,
+are accepted. Aliases of the same filesystem object are rejected. If a filesystem
+or drive provider does not expose a usable file identity (`st_ino` is zero),
+comparison stops with "Cannot determine the identity"; path spelling alone cannot
+reliably detect aliases. Binary files may be passed through, but available views
+and formats depend on the external tool.
+Archives and other virtual locations are not extracted or downloaded.
+
+Launches are fire-and-forget: capture the pair once, validate it off the UI thread,
+then start the program without waiting for exit or interpreting comparison results.
+Later navigation does not retarget or cancel that pair. Slow validation supports
+Cancel; a blocked filesystem call must return before cancellation finishes, and
+only one validation per window can be pending. After launch, the comparator is
+independent. No automatic merge, synchronization, pane refresh or process monitoring
+is added; user-directed edits in the external program remain possible.
+
+Canceling setup leaves settings unchanged. **Clear file comparator** or
+**Clear folder comparator**, last in the respective setup list, clears only that
+role. Unconfigured commands point to setup without opening it automatically.
+Settings persist as `file_comparator` / `folder_comparator` objects containing
+`executable` and `arguments` in user-layer Core Settings JSON. Clearing stores `null`;
+other roles and editor/viewer settings are preserved. A concurrent change to the
+same role during setup requires retrying. Preset switches follow vendor CLI
+documentation; verify behavior with the installed version, especially new windows.
+
 ## Examples
 
 * [Key Bindings.json](Key%20Bindings.json) defines the default key bindings

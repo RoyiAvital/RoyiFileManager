@@ -2,25 +2,19 @@
 
 `RoyiFileManager` is a Windows only, portable fork of the [`fman`](https://github.com/mherrmann/fman) 
 (By [Michael Herrmann](https://github.com/mherrmann)) dual pane file manager. 
-It retains the `fman` plug-in API so existing plug-ins can be used
-without changing their imports.
 
+The _File Manager_ focuses on:
+ - Minimalistic and focused UI.
+ - Commands through _Command Center_.
+ - Keyboard oriented workflow.
+ - Advanced search tools with reactivity.
+ - Easy integration of 3rd party tools (Editors, File Comparison, etc...)
+
+As `fman` states, it is inspired by [SublimeText](https://en.wikipedia.org/wiki/Sublime_Text).
+
+Currently, the _File Manager_ retains the `fman` plug-in API so existing plug-ins can be used
+without changing their imports.  
 See the [Plug In API Reference](PlugIn.md) for legacy APIs and new extensions.
-
-The window opens at 1280 x 800 logical pixels on first launch and restores its
-saved geometry afterward. Its enforced minimum is 960 x 600, including on
-high-DPI displays; it does not shrink below that minimum on smaller screens.
-
-## Planning and Implementation Workflow
-
-The [`Plan.md`](Plan.md) file is the task index. Each pending task has one standalone
-document under [Plan](Plan/), and completed tasks move to [Done](Done/). Task
-documents record design and review provenance, alternatives, runtime effects,
-tests, acceptance criteria, implementation provenance, and validation results.
-
-Repository-wide contribution and task-lifecycle requirements are defined in
-[AGENTS.md](AGENTS.md). Completed user-visible work must also be reflected in
-[CHANGELOG.md](CHANGELOG.md).
 
 ## Features
 
@@ -41,6 +35,7 @@ Significant additions compared with `fman`:
 - **Directory Size**: Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd> to toggle progressive directory size calculation in both panes, or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Enter</kbd> for a one time total of selected directories. See [Directory Size Usage](src/main/resources/base/Plugins/Core/README.md#directory-sizes).
 - **New File**: Press <kbd>Ctrl</kbd>+<kbd>N</kbd> to create an empty file without opening an editor.
 - **Text Editor / Viewer**: Set external programs on <kbd>F4</kbd> / <kbd>F3</kbd>, configured through **Set text editor** / **Set text viewer** in the Command Center. See [Text Editor and Viewer Usage](src/main/resources/base/Plugins/Core/README.md#text-editor-and-viewer).
+- **File / Folder Comparators**: Configure independent external tools with **Set file comparator** / **Set folder comparator**, then run **Compare files** / **Compare folders**. Presets include Meld, Beyond Compare, WinMerge and SmartSynchronize. See [Comparator Usage](src/main/resources/base/Plugins/Core/README.md#file-and-folder-comparators).
 - **Archive Transfers**: Extraction progress and cancellation, with verified output before source deletion when moving out of or between archives. See [Archive Transfers Usage](src/main/resources/base/Plugins/Core/README.md#archive-transfers).
 - **Unpack Archive**: Works like `Extract Here` in `7-Zip` / `WinRar`. See [Unpack Archive Usage](src/main/resources/base/Plugins/Core/README.md#unpack-archive).
 
@@ -63,6 +58,17 @@ missing. The lock can also be generated manually:
 ```powershell
 conda-lock lock -f environment.yml -p win-64
 ```
+
+## Planning and Implementation Workflow
+
+The [`Plan.md`](Plan.md) file is the task index. Each pending task has one standalone
+document under [Plan](Plan/), and completed tasks move to [Done](Done/). Task
+documents record design and review provenance, alternatives, runtime effects,
+tests, acceptance criteria, implementation provenance, and validation results.
+
+Repository-wide contribution and task-lifecycle requirements are defined in
+[AGENTS.md](AGENTS.md). Completed user-visible work must also be reflected in
+[CHANGELOG.md](CHANGELOG.md).
 
 ## Tests and Packaging
 
@@ -216,5 +222,27 @@ Focused regression tests:
 ```powershell
 python -m unittest src/unittest/python/fman_unittest/test_directory_listing_benchmark.py -v
 ```
+
+### Everything Search Backend Probe
+
+[everything_probe.py](src/misc/everything_probe.py) evaluates
+[voidtools Everything](https://www.voidtools.com/) as a search backend. It runs a
+portable Everything 1.4 executable as a *named* background instance with standard
+privileges and folder indexing only, queries it through the built-in loopback HTTP
+JSON API and reports index build time, memory, per-query latency and instance
+isolation. Settings and the database are written to the work directory, never
+beside the executable, and the instance is exited at the end. Standard library only.
+
+```powershell
+python src/misc/everything_probe.py --exe "D:\Tools\Everything\Everything.exe"
+python src/misc/everything_probe.py --exe ... --all-drives --build-timeout 1800
+python src/misc/everything_probe.py --exe ... --collision
+```
+
+Everything 1.5 moved the HTTP server into a plugin, so use a 1.4 build. Everything
+prints nothing to a console and opens its options window on an unknown switch. The
+`--collision` check verifies that a user's own unnamed Everything instance keeps
+running untouched beside ours. Findings are recorded in
+[Find Files 003](Plan/FindFiles003.md).
 
 See [UPSTREAM.md](UPSTREAM.md) for the upstream merge policy.

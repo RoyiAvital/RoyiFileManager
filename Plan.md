@@ -24,6 +24,7 @@
 - [Directory Size](Done/DirectorySize.md)
 - [Favorites 001](Done/Favorites001.md)
 - [Favorites 002: Favorites Manager](Done/Favorites002.md)
+- [File and Folder Comparators](Done/FileAndFolderComparators.md)
 - [Filter Files 001](Done/FilterFiles001.md)
 - [Find Files 001: fzf-Style Query Syntax](Done/FindFiles001.md)
 - [Find Files 002: Result Metadata](Done/FindFiles002.md)

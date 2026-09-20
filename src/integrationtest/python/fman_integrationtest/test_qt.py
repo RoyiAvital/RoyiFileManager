@@ -13,6 +13,8 @@ from PyQt5.QtWidgets import QApplication
 from threading import Event
 from unittest import TestCase
 
+import sys
+
 class QtIT(TestCase):
 	def run(self, result=None):
 		from PyQt5.QtCore import QEventLoop, QThread, QTimer
@@ -1966,6 +1968,234 @@ class TextEditorIT(QtIT):
 			launch.assert_not_called()
 		self.assertEqual([], self.errors)
 
+class ComparatorIT(QtIT):
+	def setUp(self):
+		from core import Name, Size, Modified
+		from core.commands import CompareFiles, CompareFolders, SetFileComparator, SetFolderComparator
+		from core.fs.local import LocalFileSystem
+		from fman import DirectoryPane, Window
+		from fman.impl.plugins.builtin import NullFileSystem, NullColumn
+		from fman.impl.plugins.command_registry import PaneCommandRegistry
+		from fman.impl.plugins.config import Config
+		from fman.impl.plugins.mother_fs import MotherFileSystem
+		from fman.impl.plugins.plugin import FileSystemWrapper, _get_command_name
+		from fman.impl.theme import Theme
+		from fman.impl.widgets import MainWindow
+		from fman.url import as_url
+		from pathlib import Path
+		from PyQt5.QtGui import QIcon, QPalette
+		from tempfile import TemporaryDirectory
+		from unittest.mock import Mock, patch
+		self.directory = TemporaryDirectory()
+		self.addCleanup(self.directory.cleanup)
+		self.root = Path(self.directory.name)
+		self.left_root, self.right_root = self.root / 'left', self.root / 'right'
+		for root in (self.left_root, self.right_root):
+			root.mkdir()
+			(root / 'a.txt').write_text('first')
+			(root / 'b.txt').write_text('second')
+			(root / 'child').mkdir()
+		self.config = Config('Windows')
+		self.config.add_dir(str(self.root / 'settings'))
+		self.config.save_json('Core Settings.json', {
+			'file_comparator': {'executable': sys.executable, 'arguments': []},
+			'folder_comparator': {'executable': sys.executable, 'arguments': []}})
+		self.errors = Mock()
+		self.filesystem = MotherFileSystem(Mock(get_icon=Mock(return_value=QIcon())))
+		for backend in (LocalFileSystem(), NullFileSystem()):
+			self.filesystem.add_child(backend.scheme, FileSystemWrapper(backend, self.filesystem, self.errors))
+		for column in (Name(self.filesystem), Size(self.filesystem), Modified(self.filesystem), NullColumn()):
+			self.filesystem.register_column(column.get_qualified_name(), column)
+		def prepare():
+			theme = Theme(Mock(), [])
+			theme.load(str(Path(__file__).parents[3] / 'main/resources/base/Plugins/Core/Theme.css'))
+			self.main = MainWindow(QApplication.instance(), [], theme, QPalette(), self.filesystem, 'null://')
+			self.main.set_controller(Mock(handle_shortcut=Mock(return_value=False), handle_nonexistent_shortcut=Mock(return_value=False)))
+			registry = PaneCommandRegistry(self.errors, Mock())
+			for command in (CompareFiles, CompareFolders, SetFileComparator, SetFolderComparator):
+				registry.register_command(_get_command_name(command), command)
+			self.window = Window(self.main, registry)
+			self.left = DirectoryPane(self.window, self.main.add_pane(), registry)
+			self.right = DirectoryPane(self.window, self.main.add_pane(), registry)
+			self.window._panes = [self.left, self.right]
+			self.main.resize(960, 600)
+			self.main.show()
+		self.run_in_app(prepare)
+		self.addCleanup(self.close_window)
+		for target, kwargs in (
+			('fman._get_ui', {'return_value': self.main}),
+			('fman._get_plugin_support', {'return_value': self.config}),
+			('fman.fs._get_mother_fs', {'return_value': self.filesystem}),
+			('core.comparator.show_alert', {}), ('core.comparator.Popen', {})):
+			patcher = patch(target, **kwargs)
+			mock = patcher.start()
+			self.addCleanup(patcher.stop)
+			if target.endswith('Popen'):
+				self.launch = mock
+			elif target.endswith('show_alert'):
+				self.alert = mock
+		for pane, root in ((self.left, self.left_root), (self.right, self.right_root)):
+			loaded = Event()
+			pane.set_path(as_url(root), callback=loaded.set)
+			self.assertTrue(loaded.wait(5))
+			pane.place_cursor_at(as_url(root / 'a.txt'))
+
+	def close_window(self):
+		from core.comparator import _pending
+		def close():
+			models = [pane._widget._model.sourceModel() for pane in (self.left, self.right)]
+			for model in models:
+				model.shutdown()
+			self.main.close()
+			return models
+		for model in self.run_in_app(close):
+			model._worker._thread.join(5)
+			self.assertFalse(model._worker._thread.is_alive())
+		self.run_in_app(self.main.deleteLater)
+		self.assertEqual({}, _pending)
+		self.errors.report.assert_not_called()
+
+	def test_real_marks_cursors_folder_roots_and_registration(self):
+		from core.commands import CompareFiles, CompareFolders
+		from fman.url import as_url
+		for identifier, label in (('compare_files', 'Compare files'), ('compare_folders', 'Compare folders'),
+			('set_file_comparator', 'Set file comparator'), ('set_folder_comparator', 'Set folder comparator')):
+			self.assertEqual((label,), self.left.get_command_aliases(identifier))
+		for pane in (self.left, self.right):
+			pane.focus()
+			CompareFiles(pane)()
+			self.launch.assert_called_with(args=[sys.executable, str(self.left_root / 'a.txt'), str(self.right_root / 'a.txt')], shell=False)
+		self.left.select([as_url(self.left_root / 'b.txt')])
+		CompareFiles(self.right)()
+		self.assertEqual([str(self.left_root / 'b.txt'), str(self.right_root / 'a.txt')], self.launch.call_args.kwargs['args'][-2:])
+		self.left.select([as_url(self.left_root / 'a.txt')])
+		self.right.select([as_url(self.right_root / 'child')])
+		CompareFiles(self.left)()
+		self.assertEqual([str(self.left_root / 'a.txt'), str(self.left_root / 'b.txt')], self.launch.call_args.kwargs['args'][-2:])
+		CompareFolders(self.right)()
+		self.assertEqual([str(self.left_root), str(self.right_root)], self.launch.call_args.kwargs['args'][-2:])
+		self.alert.assert_not_called()
+
+	def test_snapshot_on_qt_and_metadata_off_qt(self):
+		from core.comparator import compare, validate_operands
+		from PyQt5.QtCore import QThread
+		from unittest.mock import patch
+		selected = self.left.get_selected_files
+		def inspect_snapshot():
+			self.assertEqual(QApplication.instance().thread(), QThread.currentThread())
+			return selected()
+		def inspect_metadata(*args):
+			self.assertNotEqual(QApplication.instance().thread(), QThread.currentThread())
+			return validate_operands(*args)
+		with patch.object(self.left, 'get_selected_files', side_effect=inspect_snapshot), \
+			patch('core.comparator.validate_operands', side_effect=inspect_metadata):
+			compare(self.left, 'file')
+		self.launch.assert_called_once()
+
+	def _blocked_validation(self, cancel):
+		from core.comparator import compare, validate_operands
+		from fman import submit_task
+		from fman.url import as_url
+		from threading import Thread
+		from unittest.mock import patch
+		entered, release, finished = Event(), Event(), Event()
+		tasks, failures = [], []
+		def submit(task):
+			tasks.append(task)
+			submit_task(task)
+		def blocked(*args):
+			entered.set()
+			if not release.wait(5):
+				raise RuntimeError('Validation release timed out')
+			validate_operands(*args)
+		def run():
+			try:
+				compare(self.left, 'file')
+			except BaseException as error:
+				failures.append(error)
+			finally:
+				finished.set()
+		with patch('core.comparator.validate_operands', side_effect=blocked), patch('core.comparator.submit_task', side_effect=submit):
+			thread = Thread(target=run)
+			thread.start()
+			try:
+				self.assertTrue(entered.wait(5))
+				self.assertTrue(self.run_in_app(lambda: self.main.isVisible()))
+				compare(self.right, 'file')
+				self.assertIn('still validating', self.alert.call_args.args[0])
+				self.assertEqual(1, len(tasks))
+				if cancel:
+					self.run_in_app(tasks[0]._dialog.request_cancel)
+				else:
+					loaded = Event()
+					self.left.set_path(as_url(self.right_root), callback=loaded.set)
+					self.assertTrue(loaded.wait(5))
+			finally:
+				release.set()
+				self.assertTrue(finished.wait(5))
+				thread.join(5)
+		self.assertEqual([], failures)
+		if cancel:
+			self.launch.assert_not_called()
+		else:
+			self.assertEqual([str(self.left_root / 'a.txt'), str(self.right_root / 'a.txt')], self.launch.call_args.kwargs['args'][-2:])
+
+	def test_pending_validation_is_bounded_and_snapshot_survives_navigation(self):
+		self._blocked_validation(False)
+
+	def test_cancel_blocked_validation_releases_slot(self):
+		from core.comparator import compare
+		self._blocked_validation(True)
+		compare(self.left, 'folder')
+		self.launch.assert_called_once()
+
+	def test_wizard_dialogs_cancel_presets_manual_clear_and_persistence(self):
+		from core.commands import SetFileComparator, SetFolderComparator
+		from core.comparator import PRESETS
+		from fman.impl.plugins.config import Config
+		from fman.impl.quicksearch import Quicksearch
+		from fman.impl.widgets import Prompt
+		from PyQt5.QtCore import QTimer
+		from unittest.mock import patch
+		selection, canceled = 'Manual configuration', False
+		errors = []
+		def on_dialog(dialog):
+			def answer():
+				try:
+					if canceled:
+						dialog.reject()
+					elif isinstance(dialog, Quicksearch):
+						self.assertEqual([preset[0] for preset in PRESETS], [item.value for item in dialog._curr_items[:4]])
+						dialog._query.setText(selection)
+						dialog._on_return_pressed()
+					elif isinstance(dialog, Prompt):
+						dialog.setTextValue('--literal "two words"')
+						dialog.accept()
+					else:
+						self.fail('Unexpected comparator dialog')
+				except BaseException as error:
+					errors.append(error)
+					dialog.reject()
+			QTimer.singleShot(0, answer)
+		self.run_in_app(self.main.before_dialog.connect, on_dialog)
+		with patch('fman.impl.widgets.QFileDialog.getOpenFileName', return_value=(sys.executable, 'Applications (*.exe)')):
+			for command, role in ((SetFileComparator, 'file'), (SetFolderComparator, 'folder')):
+				for selection in [preset[0] for preset in PRESETS] + ['Manual configuration']:
+					command(self.left)()
+					reloaded = Config('Windows')
+					reloaded.add_dir(str(self.root / 'settings'))
+					expected = ['--literal', 'two words'] if selection == 'Manual configuration' else list(next(preset for preset in PRESETS if preset[0] == selection)[2 if role == 'file' else 3])
+					self.assertEqual(expected, reloaded.load_json('Core Settings.json')[role + '_comparator']['arguments'])
+				canceled = True
+				command(self.left)()
+				canceled = False
+				selection = 'Clear %s comparator' % role
+				command(self.left)()
+				self.assertIsNone(self.config.load_json('Core Settings.json')[role + '_comparator'])
+		self.assertEqual([], errors)
+		self.alert.assert_not_called()
+		self.launch.assert_not_called()
+
 class FindFilesIT(QtIT):
 	def setUp(self):
 		from core import Name, Size, Modified, OpenDirectory
@@ -2190,11 +2420,11 @@ class FindFilesIT(QtIT):
 			window = self.host.table_window
 			self.assertTrue(window.isVisible())
 			self.assertEqual('Find files', window.windowTitle())
-			self.assertEqual('Showing 3 / 3 files', window.table.counts.text())
+			self.assertEqual('Showing 3 / 3 entries', window.table.counts.text())
 			self.assertFalse(self.host.controls['pattern'][1].isEnabled())
 			self.session.table.filter_text = 'report'
 			QApplication.processEvents()
-			self.assertEqual('Showing 1 / 3 files', window.table.counts.text())
+			self.assertEqual('Showing 1 / 3 entries', window.table.counts.text())
 			window.open_menu(*window.table.current_cell, window.rect().center())
 			next(action for action in window.menu.actions() if action.text() == 'Copy Path').trigger()
 			self.assertEqual(str(self.root / 'report.txt'), QApplication.clipboard().text())
@@ -2208,6 +2438,7 @@ class FindFilesIT(QtIT):
 			self.assertEqual(as_url(self.root / 'report.txt'), self.pane.get_file_under_cursor())
 			self.search(type='d', max_results=None)
 			window = self.run_in_app(lambda: self.host.table_window)
+			self.assertEqual('Showing 1 / 1 entries', self.run_in_app(window.table.counts.text))
 			closed.clear()
 			self.run_in_app(window.disposed.connect, closed.set)
 			self.run_in_app(QTest.keyClick, window.table.view, Qt.Key_Return)

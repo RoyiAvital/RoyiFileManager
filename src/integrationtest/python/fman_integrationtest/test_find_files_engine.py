@@ -128,7 +128,7 @@ class FindFilesEngineTest(TestCase):
 		def observe(raw):
 			accept(raw)
 			seen.set()
-		command = [sys.executable, '-c', "import os,threading; os.write(1,b'match.txt\\0'); threading.Event().wait()"]
+		command = [sys.executable, '-c', "import os,threading; os.write(1,b'match.txt\\0unfinished'); threading.Event().wait()"]
 		results = []
 		def run():
 			results.append(runner.run())
@@ -145,6 +145,9 @@ class FindFilesEngineTest(TestCase):
 				self.assertLess(monotonic() - started, 1)
 				self.assertIsNotNone(process.poll())
 				self.assertEqual('Stopped', results[0].status)
+				self.assertEqual('', results[0].reason)
+				self.assertEqual(1, results[0].total)
+				self.assertEqual(['match.txt'], [hit.relative_path for hit in results[0].rows])
 			finally:
 				runner.stop()
 				thread.join(5)

@@ -238,7 +238,7 @@ class Result:
 
 
 def count_text(shown, result):
-	message = 'Showing {:,} / {:,} files'.format(shown, result.total)
+	message = 'Showing {:,} / {:,} entries'.format(shown, result.total)
 	if result.table_limited:
 		message += ' (Maximum table size reached)'
 	if not result.complete:
@@ -400,7 +400,10 @@ class Runner:
 		except Cancelled:
 			complete, status = False, 'Stopped'
 		except Exception as error:
-			complete, status, reason = False, 'Error', str(error)
+			if self.stopped.is_set() or self.cancelled is not None and self.cancelled.is_set():
+				complete, status, reason = False, 'Stopped', ''
+			else:
+				complete, status, reason = False, 'Error', str(error)
 		finally:
 			self.publish(status)
 		rows = tuple(sorted(self.collector.rows, key=lambda hit: (hit.relative_path.casefold(), hit.relative_path)))

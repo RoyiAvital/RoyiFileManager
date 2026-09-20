@@ -441,6 +441,30 @@ class SetTextViewer(SetTextEditor):
 	aliases = ('Set text viewer',)
 	role = 'viewer'
 
+class SetFileComparator(DirectoryPaneCommand):
+	aliases = ('Set file comparator',)
+	role = 'file'
+
+	def __call__(self):
+		from core.comparator import configure
+		configure(self.role)
+
+class SetFolderComparator(SetFileComparator):
+	aliases = ('Set folder comparator',)
+	role = 'folder'
+
+class CompareFiles(DirectoryPaneCommand):
+	aliases = ('Compare files',)
+	role = 'file'
+
+	def __call__(self):
+		from core.comparator import compare
+		compare(self.pane, self.role)
+
+class CompareFolders(CompareFiles):
+	aliases = ('Compare folders',)
+	role = 'folder'
+
 def _show_app_open_dialog(caption):
 	return show_file_open_dialog(
 		caption, _get_applications_directory(),

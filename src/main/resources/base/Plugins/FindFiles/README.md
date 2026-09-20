@@ -37,13 +37,17 @@ capacity are separate: the table retains at most 10,000 rows
 and 16 MiB text/payload; excess paths are counted without querying their metadata.
 For an uncapped 20,000-match run the footer reads:
 
-`Showing 10,000 / 20,000 files (Maximum table size reached)`
+`Showing 10,000 / 20,000 entries (Maximum table size reached)`
 
+Counts use **entries** for every Type, including files, folders and links.
 Filtering changes the numerator, not the run's denominator. Reaching an enabled
-search limit, stopping, or encountering traversal errors explicitly marks the
-total incomplete. No approximate full-tree total is invented. Uncapped searches
-continue traversing after the table fills. Stop stays enabled and red, matching
-Search Files; it cancels an active search and does nothing while idle.
+search limit, stopping, or encountering traversal errors marks the total incomplete.
+Any fd traversal warning, even one inaccessible folder with a successful exit,
+marks the result **Incomplete** because matches may be missing. Successfully
+collected entries remain available; no approximate full-tree total is invented.
+Uncapped searches continue traversing after the table fills. Stop stays enabled
+and red, matching Search Files; it cancels an active search and does nothing while
+idle. Cancellation reports **Stopped** even if terminating fd cuts off a record.
 
 Results show Path, Size and Modified. Directory sizes stay blank; unavailable
 metadata does not remove matches. Enter/double-click a Path or use **Go To** to

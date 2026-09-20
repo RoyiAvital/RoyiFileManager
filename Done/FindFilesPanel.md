@@ -280,6 +280,10 @@ it for dash-prefixed names despite `--strip-cwd-prefix=always`. Do not allow
 absolute/parent-escaping output records to become navigation targets.
 Preserve unusual valid names; malformed/nonrepresentable
 records produce an explicit diagnostic, not silent byte corruption.
+After child cleanup, cancellation takes precedence over generic transport errors:
+a Stop or external cancellation that truncates a record reports `Stopped`, with
+no transport-error reason. Without cancellation, truncated output remains `Error`.
+Retain complete records already accepted in either case; never accept the fragment.
 
 Emit `--max-results=N` only for an enabled Maximum results field. Count every
 returned path but retain at most 10,000 rows / 16 MiB of Table text/payload,
@@ -289,6 +293,8 @@ denominator is shown. fd 10.5.0 has no count option; an exact total requires a
 successful complete traversal. Reaching an explicit search limit conservatively
 marks the count incomplete, even when it might equal the full total. Stop/errors
 also mark counts incomplete. Use `--show-errors` to report traversal warnings.
+Any stderr warning, including one inaccessible folder with exit 0, marks the run
+`Incomplete`: the total covers collected entries, not necessarily all matches.
 Empty exit 0 is valid; nonzero exits report bounded stderr or a fallback error.
 
 Because fd's parallel order is nondeterministic, sort collected rows by
@@ -315,7 +321,7 @@ Path come from the Table's path role; for folder rows Go To enters the folder
 `get_details` shows the absolute path. The Table's fuzzy filter narrows the
 displayed rows without re-running `fd`.
 
-Count text updates as the Table filter changes: `Showing xx / yy files`, where
+Count text updates as the Table filter changes: `Showing xx / yy entries`, where
 xx is visible retained rows and yy is the match count from the run. Append
 `(Maximum table size reached)` when matches could not be retained. Completed
 uncapped runs have exact totals; stopped, failed or search-limited runs append
@@ -637,6 +643,20 @@ python -m unittest fman_integrationtest.test_qt.FindFilesIT fman_integrationtest
 - Outcome: Confirmed Stop parity also requires the enabled state, not just
   normal-mode icon equality. Retain Search Files' idle no-op behavior.
 
+### 2026_09_20 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Medium
+- Context Window: Not exposed by host
+- Outcome: Accepted the implementation review's three follow-ups. A deterministic
+  truncated-stream regression reproduced `Error` for both Stop and external
+  cancellation; the uncanceled case correctly remains an error. Use `entries`
+  for all result Types and document that even an exit-0 traversal warning makes
+  the total incomplete. Keep existing warning semantics and child cleanup.
+
 ## Implementer
 
 ### 2026_09_20 - GitHub Copilot
@@ -690,6 +710,60 @@ python -m unittest fman_integrationtest.test_qt.FindFilesIT fman_integrationtest
 - Outcome: Kept Stop enabled. Existing tests verify idle no-op, active button
   cancellation and native enabled-state/icon parity. All four FindFilesIT
   tests and the native smoke passed.
+
+### 2026_09_20 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Claude Fable 5.1
+- Effort: High
+- Context Window: 1M
+- Outcome: Implementation matches the approved design; approved, released in
+  v0.7.0. Re-ran offscreen: `test_find_files`, `test_ui_elements`,
+  `test_portable`, `test_find_files_engine` (real fd 10.5.0) and
+  `FindFilesIT`/`SearchFilesIT`/`TableIT`/`PanelIT`/`PublicUiIT`, 80 tests OK,
+  2 documented skips. Verified: `arguments()` emits the tabulated flags, `--`
+  before the pattern, cwd-only invocation, equals-form values and the 24,000
+  UTF-16 unit check; inclusive date bounds via previous-day
+  `23:59:59.999999999` and next-midnight `--changed-before` with local-boundary
+  validation; exact decimal size units with unsigned 64-bit overflow rejection;
+  `--ignore-vcs --no-require-git` / `--no-ignore-vcs` mapping; `./` prefix
+  normalization and root-escape rejection in `Collector.accept`; bounded
+  retention with exact counting; deterministic sort; link-aware `enrich` with
+  missing-target fallback; single runner claim held through enrichment; stale
+  generation checks in `completed`/`refresh_root`/`dispose`; settings copied
+  under the resource lock. Declarations present: spec `fd.exe` data entry,
+  `build.py` test path, `fd-find 10.5.0 h18a1a76_0` licences and README note,
+  `Shift+F7` binding, `fman.ui` exports and PlugIn.md sections for the four
+  new descriptors, `entry_path_column` and `get_count_text`, CHANGELOG entry,
+  Plan/Done move and index. Probes: six Stop attempts on `%WINDIR%` all
+  reported `Stopped`; a warm 270,927-record `WinSxS` run completed in 2.4 s
+  including 10,000 stats, so Python per-record overhead is negligible (the
+  13.9 s figure above includes tracemalloc and a cold fixture). Notes, not
+  fixes: (1) `Runner.run` orders `except Cancelled` before `except Exception`,
+  but a kill that leaves no complete record in the buffer makes `records()`
+  raise `Incomplete fd output record` before `check()` runs, surfacing as
+  `Error`; check `stopped`/`cancelled` in the generic handler for robustness.
+  (2) `count_text` says `files` for every Type, including Folders; `entries`
+  would match the progress text. (3) Any `--show-errors` warning (one denied
+  folder) marks the whole count `Incomplete` - by design, worth a README line.
+  Packaged smoke remains unrun as documented.
+
+### 2026_09_20 - GitHub Copilot
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Medium
+- Context Window: Not exposed by host
+- Outcome: Addressed all three review suggestions. Cancellation now takes
+  precedence over generic runner errors while preserving complete records;
+  uncanceled malformed output still reports `Error`. Counts use `entries`, with
+  mixed and folder-only Qt assertions. Documented warning-driven incomplete
+  totals and added Unreleased fixes. Focused validation: 26 passed, 2 expected
+  skips; native smoke passed. Historical review records remain unchanged.
 
 ## Validation Results
 
@@ -829,3 +903,35 @@ All four panel tests passed, including idle no-op and active cancellation.
 The native comparison includes enabled state and the corresponding icon mode;
 Find Files now matches Search Files while idle. Diagnostics and diff checks
 are clear. No full suite or packaging build was run.
+
+### Implementation Review Follow-up (2026_09_20)
+
+The first direct unittest invocation could not import `fman_unittest` because the
+terminal lacked the repository Python path. Rerunning through `build._environment()`
+reproduced two failures: Stop and external cancellation both returned `Error` for
+a truncated record. The uncanceled case passed. After the fix all cases passed,
+including retained complete records and child cleanup. A four-test intermediate
+gate also passed: cancellation, table capacity, real process Stop and Qt counts.
+
+Exact decisive commands:
+
+```powershell
+python -c "import build, subprocess, sys; sys.exit(subprocess.run([sys.executable, '-m', 'unittest', 'fman_unittest.test_find_files.FindFilesTest.test_truncated_output_respects_cancellation'], env=build._environment()).returncode)"
+python -c "import build, subprocess, sys; env=build._environment(); env['QT_QPA_PLATFORM']='offscreen'; sys.exit(subprocess.run([sys.executable, '-m', 'unittest', 'fman_unittest.test_find_files', 'fman_integrationtest.test_find_files_engine', 'fman_integrationtest.test_qt.FindFilesIT'], env=env).returncode)"
+python -c "import build, subprocess, sys; env=build._environment(); env['QT_QPA_PLATFORM']='windows'; sys.exit(subprocess.run([sys.executable, '-m', 'fman_integrationtest.find_files_smoke'], env=env).returncode)"
+git diff --check
+git diff --check -- CHANGELOG.md Done/FindFilesPanel.md src/main/resources/base/Plugins/FindFiles src/unittest/python/fman_unittest/test_find_files.py src/integrationtest/python/fman_integrationtest/test_find_files_engine.py src/integrationtest/python/fman_integrationtest/test_qt.py src/integrationtest/python/fman_integrationtest/find_files_smoke.py
+```
+
+Final focused gate: 28 tests, 26 passed and 2 expected skips (Windows link
+privileges and opt-in large-tree performance). Includes real fd searches,
+partial-record process termination, blocked metadata cancellation, exit-0
+warnings/nonzero errors, and mixed/folder-only filtered counters. Native smoke
+passed at 100% scaling and 960/1280/1440 widths with real plug-in discovery,
+persistence, `entries` counts and navigation. Changed-file diagnostics are clear;
+existing offscreen font/window-manager warnings remain non-failing. No full suite,
+large-tree benchmark rerun, freeze or packaged smoke was performed.
+
+The global diff check reported existing trailing whitespace at root README line 16,
+outside this follow-up; it was left untouched. The scoped diff check covering every
+follow-up file passed.
