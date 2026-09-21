@@ -13,7 +13,7 @@
 version: 1
 metadata:
   content_hash:
-    win-64: ea59d25353f41f557a140f0c3a8293f3ba4264bb4e7912dca9d2f047bc647ce6
+    win-64: a961b091333589f7da5086e43c91e453a261142f86fe7c927d53b0700a9b74d9
   channels:
   - url: conda-forge
     used_env_vars: []
@@ -1337,15 +1337,15 @@ package:
   category: main
   optional: false
 - name: platformdirs
-  version: 4.11.8
+  version: 4.11.11
   manager: conda
   platform: win-64
   dependencies:
     python: '>=3.11'
-  url: https://conda.anaconda.org/conda-forge/noarch/platformdirs-4.11.8-pyh5ded981_0.conda
+  url: https://conda.anaconda.org/conda-forge/noarch/platformdirs-4.11.11-pyh5ded981_0.conda
   hash:
-    md5: 48e9ecf08b0578a4313f13b2e2b0fd72
-    sha256: 8cbae1fed8437e63c9bcc691927402edb3809fccb26b15eb095df7dd2eb73e5f
+    md5: 8fbbcac647ae8d387f011d2f0fe9041c
+    sha256: ba9e3a7ba041b569fb1c369ad5d16e47d79a0768b7a3a9bf469a5730c1c90cd8
   category: main
   optional: false
 - name: ply
@@ -1831,16 +1831,17 @@ package:
     sha256: bc86861086db65c9b56dd6a1605755f41a9875b94fc3b69e137f686700d91aa1
   category: main
   optional: false
-- name: tinycss
-  version: '0.4'
+- name: tinycss2
+  version: 1.5.1
   manager: conda
   platform: win-64
   dependencies:
-    python: '>=3.9'
-  url: https://conda.anaconda.org/conda-forge/noarch/tinycss-0.4-pyhd8ed1ab_1003.conda
+    python: '>=3.10'
+    webencodings: '>=0.4'
+  url: https://conda.anaconda.org/conda-forge/noarch/tinycss2-1.5.1-pyhcf101f3_0.conda
   hash:
-    md5: 60cb959b4e837616523ef12fb7c065eb
-    sha256: 991bb70421de035660ba678384852a29a02ee4af3a9e5c6a579bc5aad692faf7
+    md5: c0d0b883e97906f7524e2aac94be0e0d
+    sha256: 7c803480dbfb8b536b9bf6287fa2aa0a4f970f8c09075694174eb4550a4524cd
   category: main
   optional: false
 - name: tk
@@ -2032,6 +2033,18 @@ package:
   hash:
     md5: e73db224203e56b25e040446fa1584db
     sha256: de93eed364f14f08f78ff41994dfe22ff018521c4702e432630d10c0eb0eff6b
+  category: main
+  optional: false
+- name: webencodings
+  version: 0.5.1
+  manager: conda
+  platform: win-64
+  dependencies:
+    python: '>=3.9'
+  url: https://conda.anaconda.org/conda-forge/noarch/webencodings-0.5.1-pyhd8ed1ab_3.conda
+  hash:
+    md5: 2841eb5bfc75ce15e9a0054b98dcd64d
+    sha256: 19ff205e138bb056a46f9e3839935a2e60bd1cf01c8241a5e172a422fed4f9c6
   category: main
   optional: false
 - name: win_inet_pton

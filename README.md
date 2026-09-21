@@ -55,6 +55,9 @@ conda activate RoyiFileManager
 python build.py run
 ```
 
+After updating an existing checkout, refresh its runtime dependencies with
+`conda env update -f environment.yml` before running it.
+
 The environment intentionally constrains PyQt to the 5.15 branch. Other
 packages use compatibility bounds rather than patch pins. Local `freeze`
 generates the Windows release lock when it is missing or older than

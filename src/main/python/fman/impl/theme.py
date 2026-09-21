@@ -1,6 +1,5 @@
 from collections import OrderedDict
-from fman.impl.util.css import parse_css, CSSEngine
-from tinycss.parsing import ParseError
+from fman.impl.util.css import parse_css, CSSEngine, CSSParseError
 
 class Theme:
 
@@ -34,7 +33,7 @@ class Theme:
 			f_contents = f.read()
 		try:
 			new_rules = parse_css(f_contents)
-		except ParseError as e:
+		except CSSParseError as e:
 			raise ThemeError(
 				'CSS Parse error in file %s at line %d, column %d: %s'
 				% (css_file_path, e.line, e.column, e.reason)

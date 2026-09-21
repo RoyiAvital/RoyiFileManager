@@ -22,11 +22,19 @@ API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
   stale-result rejection, inline errors and limits of 128 MP / 65,536 pixels per
   edge / 64 MiB encoded. Starts off and remembers explicit Fit/100% preferences.
 
+### Changed
+
+- Replaced the unmaintained `tinycss` theme parser with `tinycss2`, removing its
+  Python 3.14 syntax warning while preserving application styling. Invalid
+  themes retain file/line/column diagnostics with updated parser reason text.
+
 ### Fixed
 
 - Avoid recalculating every file-list row height on metadata updates in large
   folders, preventing repeated UI stalls and delayed image previews. Uniform
   row heights still follow font and theme changes.
+- Qt tests now use a nonblocking completion notification to avoid a deadlock when 
+  the event loop exits before worker cleanup.
 
 ## [0.7.1] - 2026-09-20
 

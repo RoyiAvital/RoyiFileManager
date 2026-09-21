@@ -8,7 +8,7 @@ dependencies:
   - pywin32
   - pywinpty
   - send2trash
-  - tinycss
+  - tinycss2>=1.5,<2
   - requests
   - ripgrep
   - fzf #<! For testing only

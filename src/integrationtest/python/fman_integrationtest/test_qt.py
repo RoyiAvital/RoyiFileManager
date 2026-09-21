@@ -17,7 +17,7 @@ import sys
 
 class QtIT(TestCase):
 	def run(self, result=None):
-		from PyQt5.QtCore import QEventLoop, QThread, QTimer
+		from PyQt5.QtCore import QEventLoop, QMetaObject, QThread, QTimer
 		from threading import Thread
 		if _QtApp._app is None or QThread.currentThread() != _QtApp._app.thread():
 			return super().run(result)
@@ -27,7 +27,7 @@ class QtIT(TestCase):
 			try:
 				results.append(super(QtIT, self).run(result))
 			finally:
-				_QtApp.run(loop.quit)
+				QMetaObject.invokeMethod(loop, 'quit', Qt.QueuedConnection)
 		worker = Thread(target=execute)
 		QTimer.singleShot(0, worker.start)
 		loop.exec_()
@@ -35,6 +35,46 @@ class QtIT(TestCase):
 		return results[0]
 	def run_in_app(self, f, *args, **kwargs):
 		return _QtApp.run(f, *args, **kwargs)
+
+class QtHarnessIT(QtIT):
+	def test_completion_after_event_loop_exits(self):
+		import subprocess
+		from textwrap import dedent
+		script = '''
+from fman_integrationtest.test_qt import QtIT, _QtApp
+from PyQt5.QtCore import QEventLoop, QThread
+from threading import Event
+from unittest import TestResult
+from unittest.mock import patch
+import faulthandler
+
+faulthandler.dump_traceback_later(10)
+loop_returned = Event()
+class EarlyExitLoop(QEventLoop):
+	def exec_(self):
+		result = super().exec_()
+		loop_returned.set()
+		return result
+class CompletedCase(QtIT):
+	def runTest(self):
+		self.assertIsNot(QThread.currentThread(), _QtApp._app.thread())
+		self.run_in_app(lambda: self.assertEqual(
+			_QtApp._app.thread(), QThread.currentThread()))
+		self.run_in_app(loop.quit)
+		self.assertTrue(loop_returned.wait(5))
+_QtApp.start()
+loop = EarlyExitLoop()
+result = TestResult()
+with patch('PyQt5.QtCore.QEventLoop', return_value=loop):
+	CompletedCase().run(result)
+assert result.wasSuccessful(), result.errors + result.failures
+assert result.testsRun == 1
+_QtApp.shutdown()
+'''
+		result = subprocess.run(
+			[sys.executable, '-X', 'faulthandler', '-c', dedent(script)],
+			capture_output=True, text=True, timeout=15)
+		self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
 class SortedFileSystemModelIT(SortedFileSystemModelAT, QtIT):
 	pass
