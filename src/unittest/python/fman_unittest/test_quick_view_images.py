@@ -4,11 +4,6 @@ from fman.impl.quick_view_images import (
 )
 from unittest import TestCase
 from unittest.mock import Mock
-from unittest import skipUnless
-
-import os
-import subprocess
-import sys
 
 
 class ImageGeometryTest(TestCase):
@@ -41,68 +36,3 @@ class ImageGeometryTest(TestCase):
 		for url in ('zip://archive/file.png', 'https://example/file.png', ''):
 			self.assertIsNone(load_image(ImageRequest(1, url), lambda: False, resolve).image)
 		resolve.assert_not_called()
-
-
-@skipUnless(os.environ.get('QUICK_VIEW_PERFORMANCE_TESTS') == '1' and sys.platform == 'win32', 'Opt-in Windows image memory measurement')
-class ImageMemoryTest(TestCase):
-	def test_128mp_peak_in_fresh_process(self):
-		from pathlib import Path
-		from tempfile import TemporaryDirectory
-		from PyQt5.QtGui import QImage, QColor
-		with TemporaryDirectory() as temporary:
-			path = Path(temporary) / '128mp.png'
-			image = QImage(16000, 8000, QImage.Format_ARGB32)
-			image.fill(QColor(30, 100, 170, 128))
-			self.assertTrue(image.save(str(path), 'PNG'))
-			del image
-			code = '''
-from fman.impl.quick_view_images import ImageLoader, ImageRequest, load_image, MAX_IMAGE_BYTES
-from fman.url import as_url
-from time import perf_counter
-from PyQt5.QtCore import QCoreApplication, QObject, QTimer, Qt, pyqtSignal
-import sys, win32api, win32process
-app = QCoreApplication([])
-class Delivery(QObject):
-	ready = pyqtSignal()
-delivery = Delivery()
-loader = ImageLoader(delivery.ready.emit, lambda request, canceled: load_image(request, canceled, lambda url: url))
-results = []
-ticks = []
-timer = QTimer()
-timer.setInterval(10)
-timer.timeout.connect(lambda: ticks.append(perf_counter()))
-timer.start()
-def receive():
-	packet = loader.take_result()
-	if packet is not None:
-		results.append(packet[1])
-		ticks.append(perf_counter())
-		app.quit()
-delivery.ready.connect(receive, Qt.QueuedConnection)
-handle = win32api.GetCurrentProcess()
-before = win32process.GetProcessMemoryInfo(handle)['WorkingSetSize']
-started = perf_counter()
-ticks.append(started)
-loader.submit(ImageRequest(loader.invalidate(), as_url(sys.argv[1])))
-QTimer.singleShot(90000, app.quit)
-app.exec_()
-assert results, 'Image delivery timed out'
-result = results.pop()
-assert result.image is not None, result.message
-assert result.image.sizeInBytes() == MAX_IMAGE_BYTES
-assert (result.image.width(), result.image.height()) == (16000, 8000)
-assert result.image.pixelColor(15999, 7999).alpha() == 128
-memory = win32process.GetProcessMemoryInfo(handle)
-max_gap = max(later - earlier for earlier, later in zip(ticks, ticks[1:]))
-print('128 MP: %.3f s; buffer %.2f MiB; incremental peak %.2f MiB; max Qt heartbeat gap %.1f ms' %
-    (perf_counter() - started, result.image.sizeInBytes() / 1048576,
-	(memory['PeakWorkingSetSize'] - before) / 1048576, max_gap * 1000), flush=True)
-loader.close()
-del result
-print('After release: %.2f MiB above baseline' %
-    ((win32process.GetProcessMemoryInfo(handle)['WorkingSetSize'] - before) / 1048576), flush=True)
-assert max_gap < .1, 'Qt heartbeat gap exceeded the 100 ms target'
-'''
-			result = subprocess.run([sys.executable, '-c', code, str(path)], capture_output=True, text=True, timeout=120)
-			self.assertEqual(0, result.returncode, result.stderr)
-			print(result.stdout, end='')

@@ -64,6 +64,19 @@ class MotherFileSystem:
 				iterator = CachedIterator(iterator)
 			return iterator
 		return child.cache.query(path, 'iterdir', compute_value)
+	def get_snapshot_scanner(self, url, columns):
+		if not all(
+			callable(getattr(column, 'text', None)) and callable(getattr(column, 'keys', None))
+			for column in columns):
+			raise TypeError('Pane columns must implement text(listing, index) and keys(listing, ascending)')
+		child, path = self._split(url)
+		def scan(check):
+			from fman.listing import Listing
+			listing = child.scan(path, check)
+			if not isinstance(listing, Listing) or listing.location != url:
+				raise TypeError('Filesystem scan must return a Listing for ' + url)
+			return listing
+		return scan
 	def query(self, url, fs_method_name):
 		child, path = self._split(url)
 		return getattr(child, fs_method_name)(path)

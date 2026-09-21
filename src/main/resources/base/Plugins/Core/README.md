@@ -1,7 +1,7 @@
 # Core
 The Core plugin implements most RoyiFileManager features, including copying
-files and navigating to folders. It retains the public `fman` plug-in API for
-compatibility with existing plug-ins.
+files and navigating to folders. Its providers and columns use the snapshot
+contract; command and file-operation signatures remain unchanged.
 
 ## Pane Filter
 
@@ -38,9 +38,10 @@ matching is not implemented; spaces supplied as filter text remain literal.
 Windows local panes reuse ordinary entries' own hidden attributes from directory
 enumeration. After another application changes these attributes, press `Ctrl+R`
 to refresh; toggling hidden-file visibility alone need not rescan the directory.
-Roots, UNC paths, links/reparse entries (including cloud placeholders), and
-unavailable attributes retain the existing Qt visibility checks. Full file
-metadata and file-operation behavior are unchanged.
+Links and other reparse entries carry their own hidden attributes. Local
+NTFS/ReFS scans use bulk native records; other local paths use provider-owned
+enumeration. Display snapshots never replace authoritative file-operation
+metadata or identity checks.
 
 ## QuickView
 

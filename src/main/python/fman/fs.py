@@ -78,6 +78,8 @@ class FileSystem:
 		self._file_changed_callbacks_lock = Lock()
 	def get_default_columns(self, path):
 		return 'core.Name',
+	def scan(self, path, check_canceled):
+		raise NotImplementedError('Filesystem providers must implement scan(path, check_canceled)')
 	def name(self, path):
 		"""
 		Displayed by the Name column.
@@ -179,7 +181,11 @@ class FileSystem:
 				self._file_changed_callbacks[path].append(callback)
 			except KeyError:
 				self._file_changed_callbacks[path] = [callback]
-				self.watch(path)
+				try:
+					self.watch(path)
+				except BaseException:
+					del self._file_changed_callbacks[path]
+					raise
 	def _remove_file_changed_callback(self, path, callback):
 		with self._file_changed_callbacks_lock:
 			try:
@@ -200,9 +206,15 @@ def cached(fs_method):
 	return wrapper
 
 class Column:
+	keys_depend_on_external_data = True
+
 	@classmethod
 	def get_qualified_name(cls): # For internal use
 		return cls.__module__ + '.' + cls.__name__
+	def text(self, listing, index):
+		raise NotImplementedError('Pane columns must implement text(listing, index) without I/O')
+	def keys(self, listing, ascending):
+		raise NotImplementedError('Pane columns must implement keys(listing, ascending)')
 	def get_str(self, url):
 		raise NotImplementedError()
 	def get_sort_value(self, url, is_ascending):

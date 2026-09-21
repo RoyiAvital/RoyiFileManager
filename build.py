@@ -181,6 +181,14 @@ def test():
 		_run_test_directory(test_directory, environment)
 
 
+def measure():
+	_require_windows()
+	launcher = ROOT / 'src' / 'performancetest' / 'run.py'
+	return subprocess.run(
+		[sys.executable, str(launcher), 'measure'], cwd=ROOT
+	).returncode
+
+
 def _run_test_directory(test_directory, environment, *, traceback_after=120, timeout=600):
 	print('Running tests in %s (timeout: %s seconds)' % (test_directory, timeout), flush=True)
 	runner = (
@@ -299,6 +307,7 @@ def publish():
 COMMANDS = {
 	'clean': clean,
 	'freeze': freeze,
+	'measure': measure,
 	'package': package,
 	'publish': publish,
 	'release': publish,
@@ -307,12 +316,14 @@ COMMANDS = {
 }
 
 
-def main():
+def main(argv=None):
 	parser = argparse.ArgumentParser(description='Build RoyiFileManager.')
-	parser.add_argument('command', choices=sorted(COMMANDS))
-	args = parser.parse_args()
-	COMMANDS[args.command]()
+	commands = parser.add_subparsers(dest='command', required=True)
+	for command in sorted(COMMANDS):
+		commands.add_parser(command)
+	args = parser.parse_args(argv)
+	return COMMANDS[args.command]()
 
 
 if __name__ == '__main__':
-	main()
+	sys.exit(main())

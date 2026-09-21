@@ -31,12 +31,15 @@ class Snapshot:
 		self._refresh_lock = Lock()
 
 	def refresh(self, enumerate_processes):
+		return tuple(path for path, record in self.capture(enumerate_processes))
+
+	def capture(self, enumerate_processes):
 		with self._refresh_lock:
 			records = tuple(enumerate_processes())
 			with self._lock:
 				self._generation += 1
 				self._records = {record.path(self._generation): record for record in records}
-				return tuple(self._records)
+				return tuple(self._records.items())
 
 	def get(self, path):
 		with self._lock:

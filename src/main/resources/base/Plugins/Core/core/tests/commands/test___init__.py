@@ -23,41 +23,13 @@ class HiddenFileFilterTest(TestCase):
 		self.platform = patch('core.commands.PLATFORM', 'Windows')
 		self.platform.start()
 		self.addCleanup(self.platform.stop)
-	def test_cached_flags_skip_qt_on_repeated_passes(self):
+	def test_url_checks_use_qt_without_querying_provider_cache(self):
 		for hidden in (True, False):
-			with patch('core.commands.query', return_value=hidden) as query, \
-				patch('core.commands.is_hidden', side_effect=AssertionError):
+			with patch('core.commands.query', side_effect=AssertionError), \
+				patch('core.commands.is_hidden', return_value=hidden) as fallback:
 				for _ in range(3):
 					self.assertIs(not hidden, _hidden_file_filter('file://C:/entry'))
-				self.assertEqual(3, query.call_count)
-	def test_unknown_and_oserror_use_qt(self):
-		for result in (None, OSError('unavailable')):
-			for hidden in (True, False):
-				with patch('core.commands.query', return_value=None,
-					side_effect=result) as query, \
-					patch('core.commands.is_hidden', return_value=hidden) as fallback:
-					self.assertIs(not hidden, _hidden_file_filter('file://C:/entry'))
-					fallback.assert_called_once_with('C:/entry')
-	def test_provider_without_private_method_falls_back(self):
-		provider = object()
-		with patch('core.commands.query', side_effect=lambda *args:
-			getattr(provider, '_pane_hidden_state')('C:/entry')), \
-			patch('core.commands.is_hidden', return_value=True) as fallback:
-			self.assertFalse(_hidden_file_filter('file://C:/entry'))
-			fallback.assert_called_once()
-	def test_errors_inside_existing_method_propagate(self):
-		class Provider:
-			def _pane_hidden_state(self, path):
-				return self.bug
-		for error in (AttributeError('bug'), ValueError('bug'), RuntimeError('bug')):
-			with patch('core.commands.query', side_effect=error), \
-				patch('core.commands.is_hidden', side_effect=AssertionError):
-				with self.assertRaises(type(error)):
-					_hidden_file_filter('file://C:/entry')
-		with patch('core.commands.query', side_effect=lambda *args:
-			Provider()._pane_hidden_state('entry')):
-			with self.assertRaises(AttributeError):
-				_hidden_file_filter('file://C:/entry')
+				self.assertEqual(3, fallback.call_count)
 	def test_nonlocal_and_mac_volumes_bypass_local_checks(self):
 		for platform, url in (('Windows', 'zip://archive/entry'),
 			('Mac', 'file:///Volumes')):

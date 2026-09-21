@@ -19,6 +19,12 @@ class CompositeItemDelegate(QStyledItemDelegate):
 		self._items.append(item)
 	def remove(self, item):
 		self._items.remove(item)
+	def paint(self, painter, option, index):
+		for item in self._items:
+			paint_item = getattr(item, 'paint_item', None)
+			if paint_item is not None and paint_item(painter, option, index):
+				return
+		super().paint(painter, option, index)
 	def initStyleOption(self, option, index):
 		super().initStyleOption(option, index)
 		if not index.isValid():

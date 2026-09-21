@@ -377,6 +377,8 @@ class QuickViewSession(QObject):
 		self.closed = False
 		self._connections = []
 		self._loading_location = False
+		self._snapshot_reset = False
+		self._content_token = None
 		self._url = None
 		settings = load_json('QuickView.json', default={})
 		self.preferred_mode = settings.get('image_mode', 'fit') if isinstance(settings, dict) else 'fit'
@@ -394,8 +396,9 @@ class QuickViewSession(QObject):
 		self._connect(self.overlay.close_requested, self.close)
 		self._connect(self.overlay.canvas.image_action, self.image_action)
 		self._connect(source._file_view.selectionModel().currentChanged, self.cursor_changed)
-		self._connect(source._model.modelAboutToBeReset, self._reset)
-		self._connect(source._model.modelReset, self.cursor_changed)
+		self._connect(source._model.modelAboutToBeReset, self._model_resetting)
+		self._connect(source._model.modelReset, self._model_reset_done)
+		self._connect(source._model.snapshot_committed, self._snapshot_committed)
 		self._connect(source._model.location_changed, self._location_changed)
 		self._connect(source._model.location_loaded, self._location_loaded)
 		self._connect(source.destroyed, self.shutdown)
@@ -414,6 +417,24 @@ class QuickViewSession(QObject):
 	def _reset(self, *_):
 		self._url = ''
 		self._clear('Loading folder')
+	def _model_resetting(self):
+		self._snapshot_reset = hasattr(self.source._model.sourceModel(), '_displayed')
+		if not self._snapshot_reset:
+			self._reset()
+	def _model_reset_done(self):
+		if not self._snapshot_reset:
+			self.cursor_changed()
+	def _snapshot_committed(self, *_):
+		self._snapshot_reset = False
+		self.cursor_changed()
+	def _cursor_token(self):
+		model = self.source._model.sourceModel()
+		listing = getattr(model, '_displayed', None)
+		row = self.source._file_view.currentIndex().row()
+		if listing is not None and 0 <= row < len(model._visible):
+			entry = model._visible[row]
+			return listing.scope, listing.identity(entry), listing.sizes[entry], listing.mtimes_ns[entry]
+		return None
 
 	def _location_changed(self, *_):
 		self._loading_location = True
@@ -430,11 +451,13 @@ class QuickViewSession(QObject):
 		self.overlay.canvas.set_image(None, self.preferred_mode, message)
 
 	def cursor_changed(self, *_):
-		if self.closed or self._loading_location:
+		if self.closed or self._loading_location or self._snapshot_reset:
 			return
 		url = self.source.get_file_under_cursor()
-		if url == self._url:
+		token = self._cursor_token()
+		if url == self._url and token == self._content_token:
 			return
+		self._content_token = token
 		self._url = url
 		self._clear('Loading' if url else 'No file selected')
 		self.overlay.set_title(basename(url) if url else 'QuickView')

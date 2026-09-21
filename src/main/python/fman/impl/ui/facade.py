@@ -440,6 +440,7 @@ class PanelSession(ToolWindow):
 		self.state = HandleState()
 		super().__init__(pane.window._widget, owner)
 		self.main, self.pane = pane.window._widget, pane
+		self._main_closing = False
 		self.on_change, self.on_action, self.on_closed = on_change, on_action, on_closed
 		self.controls, self.icon_bytes, self.icon_controls = {}, {}, []
 		self.icon_labels = []
@@ -617,6 +618,7 @@ class PanelSession(ToolWindow):
 	def eventFilter(self, watched, event):
 		if watched is self.main:
 			if event.type() == QEvent.Close:
+				self._main_closing = True
 				self.close()
 			elif event.type() in (QEvent.PaletteChange, QEvent.StyleChange):
 				for control, name in self.icon_controls:
@@ -626,6 +628,7 @@ class PanelSession(ToolWindow):
 		return False
 
 	def cleanup(self):
+		target = self.main._active_pane or self.pane._widget
 		self.state.cancelled.set()
 		self.state.open = False
 		_hosts.pop(self.state.key, None)
@@ -641,6 +644,16 @@ class PanelSession(ToolWindow):
 		callback, self.on_closed = self.on_closed, None
 		self.on_change = self.on_action = None
 		_finished_callback(callback, self.owner)
+		if self._main_closing or not self.owner.active or sip.isdeleted(self.main) or not self.main.isVisible():
+			return
+		if self.main._panel_dock is not None or QApplication.activeModalWidget() not in (None, self):
+			return
+		active = QApplication.activeWindow()
+		if active not in (None, self.main, self, self.table_window):
+			return
+		if isinstance(target, QWidget) and not sip.isdeleted(target) and target.isVisible() and target.isEnabled():
+			self.main.activateWindow()
+			target.setFocus(Qt.OtherFocusReason)
 
 
 class TableWindow(ToolWindow):

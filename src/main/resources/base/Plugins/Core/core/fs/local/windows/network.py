@@ -46,6 +46,13 @@ class NetworkFileSystem(FileSystem):
 					yield tail
 			elif not path:
 				yield subpath
+	def scan(self, path, check_canceled):
+		from fman.listing import Listing
+		names = []
+		for name in self.iterdir(path):
+			check_canceled()
+			names.append(name)
+		return Listing.create(self.scheme + path, names, is_dir=(True,) * len(names))
 	def _iter_handle(self, handle, already_visited=None):
 		if already_visited is None:
 			already_visited = set()

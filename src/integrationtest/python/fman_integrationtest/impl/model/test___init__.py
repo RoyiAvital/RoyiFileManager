@@ -22,6 +22,31 @@ class SortedFileSystemModelAT: # Instantiated in fman_integrationtest.test_qt
 	def test_location_after_init(self):
 		self.assertEqual('null://', self._model.get_location())
 		self.assertEqual((self._null_column,), self._model.get_columns())
+	def test_archive_root_and_deep_implicit_folders_use_snapshot_model(self):
+		from core import Modified
+		from core.fs.zip import ZipFileSystem
+		from fman.impl.model.listing import ListingModel
+		from pathlib import Path
+		from tempfile import TemporaryDirectory
+		from zipfile import ZipFile
+		self._register_column(Modified(self._fs))
+		self._fs.add_child('zip://', ZipFileSystem(suffixes={'.zip'}))
+		with TemporaryDirectory() as temporary:
+			archive = Path(temporary).resolve() / 'listing.zip'
+			with ZipFile(archive, 'w') as output:
+				output.writestr('deep/one/two/three/four/file.txt', b'abc')
+				output.writestr('file.txt', b'payload')
+			root = 'zip://' + archive.as_posix()
+			self._set_location(root)
+			self.assertIsInstance(self.run_in_app(self._model.sourceModel), ListingModel)
+			self.assertEqual(['deep', 'file.txt'], self._get_first_column())
+			self.assertEqual('7 B', self._get_data()[1][1])
+			self._set_location(root + '/deep/one/two')
+			self.assertEqual(['three'], self._get_first_column())
+			self._set_location(root + '/deep/one/two/three/four')
+			self.assertEqual(['file.txt'], self._get_first_column())
+			self.assertEqual('3 B', self._get_data()[0][1])
+			self._set_location('null://')
 	def test_local_hidden_attributes_shared_panes_toggle_refresh_and_events(self):
 		if sys.platform != 'win32':
 			self.skipTest('Windows entry attributes')
@@ -32,7 +57,8 @@ class SortedFileSystemModelAT: # Instantiated in fman_integrationtest.test_qt
 		from tempfile import TemporaryDirectory
 		from unittest.mock import patch
 		from PyQt5.QtCore import QThread, QItemSelectionModel
-		from PyQt5.QtWidgets import QTableView, QApplication
+		from PyQt5.QtWidgets import QApplication
+		from fman.impl.view import FileListView
 		from win32file import SetFileAttributes
 		self._timeout = 5
 		with TemporaryDirectory() as temporary:
@@ -50,7 +76,7 @@ class SortedFileSystemModelAT: # Instantiated in fman_integrationtest.test_qt
 			wrong_threads = []
 			def create_views():
 				for model in models:
-					view = QTableView()
+					view = FileListView(None, lambda *args: None)
 					view.setModel(model)
 					views.append(view)
 					model.add_filter(_hidden_file_filter)
@@ -100,10 +126,7 @@ class SortedFileSystemModelAT: # Instantiated in fman_integrationtest.test_qt
 					self.assertFalse(any(wrong_threads))
 				finally:
 					for model in models:
-						source = self.run_in_app(model.sourceModel)
-						source.shutdown()
-						source._worker._thread.join(5)
-						self.assertFalse(source._worker._thread.is_alive())
+						self.run_in_app(model.shutdown)
 					self.run_in_app(lambda: [view.deleteLater() for view in views])
 	def test_navigation_away_from_blocked_local_scan_rejects_stale_rows(self):
 		if sys.platform != 'win32':
@@ -121,18 +144,17 @@ class SortedFileSystemModelAT: # Instantiated in fman_integrationtest.test_qt
 			provider = LocalFileSystem()
 			self._fs.add_child('file://', provider)
 			self._register_column(Modified(self._fs))
-			class Entries:
-				def __enter__(self):
-					return self
-				def __exit__(self, *args):
-					pass
-				def __iter__(self):
-					started.set()
+			finished = Event()
+			scan = provider.scan
+			def blocked(path, check):
+				started.set()
+				try:
 					if not resume.wait(5):
 						raise TimeoutError('blocked scan not released')
-					yield SimpleNamespace(name='entry', stat=lambda **kwargs:
-						SimpleNamespace(st_file_attributes=32))
-			with patch('core.fs.local.os.scandir', return_value=Entries()):
+					return scan(path, check)
+				finally:
+					finished.set()
+			with patch.object(provider, 'scan', side_effect=blocked):
 				self._model.set_location(as_url(root))
 				old = self.run_in_app(self._model.sourceModel)
 				try:
@@ -141,12 +163,12 @@ class SortedFileSystemModelAT: # Instantiated in fman_integrationtest.test_qt
 					provider.cache.clear(splitscheme(as_url(root))[1])
 				finally:
 					resume.set()
-					old._worker._thread.join(5)
-				self.assertFalse(old._worker._thread.is_alive())
+					self.assertTrue(finished.wait(5))
 				self.assertTrue(old._shutdown)
 				self.assertEqual('stub://dir', self._model.get_location())
 				self.assertEqual(['subdir'], self._get_first_column())
-				self.assertIsNone(provider._pane_hidden_state(splitscheme(as_url(root / 'entry'))[1]))
+				with self.assertRaises(KeyError):
+					provider.cache.get(splitscheme(as_url(root / 'entry'))[1], 'stat')
 	def _tracked_location(self, url, callback=None):
 		from fman.impl.navigation import NavigationRequest, tracking
 		finished = Event()
@@ -165,14 +187,19 @@ class SortedFileSystemModelAT: # Instantiated in fman_integrationtest.test_qt
 	def test_tracked_empty_and_same_path_navigation(self):
 		self.assertEqual('success', self._tracked_location('stub://dir')[0])
 		self.assertEqual('success', self._tracked_location('stub://dir')[0])
+	def test_disappearance_after_tracked_navigation_falls_back(self):
+		self.assertEqual('success', self._tracked_location('stub://dir')[0])
+		self._stubfs._items.pop('dir')
+		self._model.reload()
+		self._wait_until(lambda: self._model.get_location() == 'stub://',
+			'A completed navigation request swallowed the refresh failure')
 	def test_superseded_before_init_releases_waiter(self):
 		from unittest.mock import patch
-		from fman.impl.model.model import Model
 		from fman.impl.navigation import NavigationRequest, tracking
 		from fman.impl.ui import submit_work
 		for attempt in range(3):
 			request = NavigationRequest(lambda *args: None)
-			with patch.object(Model, 'start'):
+			with patch.object(self._model._snapshot_scans, 'submit'):
 				with tracking(request):
 					self._model.set_location('stub://dir')
 			old_model = self.run_in_app(self._model.sourceModel)
@@ -181,7 +208,8 @@ class SortedFileSystemModelAT: # Instantiated in fman_integrationtest.test_qt
 			self._set_location('stub://')
 			self.assertTrue(request.settled.wait(1))
 			self.assertTrue(finished.wait(1))
-			self.assertTrue(old_model._shutdown)
+			self.assertEqual(old_model is not self.run_in_app(self._model.sourceModel), old_model._shutdown)
+			self.assertEqual('stub://', self._model.get_location())
 			self.assertFalse(request.begin_initialization())
 	def test_column_failure_preserves_displayed_model(self):
 		from unittest.mock import patch
@@ -194,23 +222,34 @@ class SortedFileSystemModelAT: # Instantiated in fman_integrationtest.test_qt
 		self.assertFalse(old_model._shutdown)
 		self._set_location('stub://dir')
 		self.assertTrue(old_model._shutdown)
+	def test_invalid_optional_column_preserves_configuration(self):
+		from types import SimpleNamespace
+		self._set_location('stub://')
+		source = self.run_in_app(self._model.sourceModel)
+		self._fs.register_column('invalid', SimpleNamespace(get_qualified_name=lambda: 'invalid'))
+		with self.assertRaisesRegex(TypeError, 'snapshot text and keys'):
+			self.run_in_app(self._model.set_extra_columns, 'owner', {'stub://': ('invalid',)},
+				'core.Name', True, lambda: None)
+		self.assertEqual({}, self._model._extra_columns)
+		self.assertIs(source, self.run_in_app(self._model.sourceModel))
+		self.assertEqual((self._name_column, self._size_column), self._model.get_columns())
 	def test_tracked_iterator_failure_is_not_success(self):
 		from unittest.mock import patch
-		def denied(url):
-			yield '0'
+		def denied(path, check):
 			raise PermissionError('listing denied')
-		with patch.object(self._fs, 'iterdir', side_effect=denied):
+		with patch.object(self._stubfs, 'scan', side_effect=denied):
 			outcome, message = self._tracked_location('stub://')
 		self.assertEqual('failure', outcome)
 		self.assertIn('listing denied', message)
 	def test_tracked_initial_error_and_cursor_failure(self):
 		from unittest.mock import patch
-		with patch('fman.impl.model.worker.sys.excepthook') as exception_hook:
-			with patch.object(self._fs, 'iterdir', side_effect=PermissionError('denied')) as iterdir:
+		with patch('sys.excepthook') as exception_hook:
+			with patch.object(self._stubfs, 'scan', side_effect=PermissionError('denied')) as scan:
 				outcome, message = self._tracked_location('stub://')
 			self.assertEqual('failure', outcome)
 			self.assertIn('denied', message)
-			iterdir.assert_called_once_with('stub://')
+			scan.assert_called_once()
+			self.assertEqual('', scan.call_args.args[0])
 			exception_hook.assert_not_called()
 		def missing_cursor():
 			raise ValueError('File disappeared')
@@ -218,8 +257,8 @@ class SortedFileSystemModelAT: # Instantiated in fman_integrationtest.test_qt
 	def test_set_location(self):
 		inited = Event()
 		self._model.set_location('stub://', callback=inited.set)
-		self.assertEqual('stub://', self._model.get_location())
 		self._wait_for(inited)
+		self.assertEqual('stub://', self._model.get_location())
 		self._expect_column_headers(['Name', 'Size'])
 		self.assertEqual(
 			(self._name_column, self._size_column), self._model.get_columns()
@@ -233,7 +272,8 @@ class SortedFileSystemModelAT: # Instantiated in fman_integrationtest.test_qt
 		rows = self._get_data()[:self._NUM_VISIBLE_ROWS]
 		icons = self._get_data(DecorationRole)[:self._NUM_VISIBLE_ROWS]
 		self.assertEqual(('dir', ''), rows[0])
-		self.assertEqual((self._folder_icon, None), icons[0])
+		self.assertFalse(icons[0][0].isNull())
+		self.assertIsNone(icons[0][1])
 		self.assertEqual(
 			[
 				(str(i), '%d B' % self._files[str(i)]['size'])
@@ -241,14 +281,9 @@ class SortedFileSystemModelAT: # Instantiated in fman_integrationtest.test_qt
 			],
 			rows[1:]
 		)
-		self.assertEqual(
-			[(self._file_icon, None)] * (self._NUM_VISIBLE_ROWS - 1), icons[1:]
-		)
+		self.assertTrue(all(not icon.isNull() and other is None for icon, other in icons[1:]))
 	def _load_visible_rows(self):
-		loaded = Event()
-		load_rows = run_in_main_thread(self._model.load_rows)
-		load_rows(range(self._NUM_VISIBLE_ROWS), callback=loaded.set)
-		self._wait_for(loaded)
+		self._drain_initialization()
 	def test_remove_current_dir(self):
 		self._set_location('stub://dir')
 		with self._wait_for_signal(self._model.location_loaded):
@@ -295,13 +330,7 @@ class SortedFileSystemModelAT: # Instantiated in fman_integrationtest.test_qt
 		}
 		self._files['']['files'].append('new')
 		self._fs.file_added.trigger('stub://new')
-		self.assertTrue(
-			'new' in [r[0] for r in self._get_data()],
-			'Should have processed new file synchronously to support use case:'
-			' 1. Create file.txt'
-			' 2. place cursor at file.txt. '
-			'Without synchronous processing, step 2. would fail.'
-		)
+		self._wait_until(lambda: 'new' in self._get_first_column(), 'New file was not published')
 	def test_file_removed(self):
 		self.test_set_location()
 		self._stubfs.delete('0')
@@ -365,10 +394,8 @@ class SortedFileSystemModelAT: # Instantiated in fman_integrationtest.test_qt
 		self._wait_for(loaded)
 		self._drain_initialization()
 	def _drain_initialization(self):
-		drained = Event()
-		model = self.run_in_app(self._model.sourceModel)
-		model._worker.submit(1, drained.set)
-		self.assertTrue(drained.wait(2), 'Model initialization did not drain')
+		self.drain_model(self._model)
+	@run_in_main_thread
 	def _get_data(self, role=DisplayRole):
 		result = []
 		for row in range(self._model.rowCount()):
@@ -430,12 +457,9 @@ class SortedFileSystemModelAT: # Instantiated in fman_integrationtest.test_qt
 			SortedFileSystemModel, None, self._fs, 'null://'
 		)
 		self._drain_initialization()
-		self._timeout = None if _is_debugger_attached() else .2
+		self._timeout = None if _is_debugger_attached() else 5
 	def tearDown(self):
-		model = self._model.sourceModel()
-		model.shutdown()
-		model._worker._thread.join(2)
-		self.assertFalse(model._worker._thread.is_alive())
+		self.run_in_app(self._model.shutdown)
 		super().tearDown()
 	def _register_column(self, instance):
 		self._fs.register_column(instance.get_qualified_name(), instance)
@@ -452,8 +476,6 @@ class SortedFileSystemModelAT: # Instantiated in fman_integrationtest.test_qt
 		end_time = time() + (self._timeout or sys.float_info.max)
 		while time() < end_time:
 			if condition():
-				break
-			if self._get_data()[:2] == [('dir', ''), ('0', '87 B')]:
 				break
 			sleep(.1)
 		else:

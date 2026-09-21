@@ -1,13 +1,16 @@
 # File System and Pane Architecture 001: Columnar Snapshots
 
-Status: Design exploration with a measured proof of concept; not scheduled.
+Status: Implementation in progress; one snapshot pane for every bundled provider,
+with native optimization focused on NTFS/ReFS (2026_09_21).
 Breaks the fman 1.7.5 plug-in API by design (user decision, 2026_09_21).
-Latest review: promising snapshot direction, not approved for adoption until the
-[review findings](#review-findings) are resolved. PoC timings are observations,
-not worst-case bounds or verified application-compatibility results.
+Latest review response: correctness findings addressed and safe overhead removed;
+[review response and measurements](#review-response-and-measurements) are below.
+Adoption remains blocked by the [open gates](#open-adoption-gates). PoC timings
+are observations, not worst-case bounds or verified compatibility results.
 The [current-matcher experiment](#current-matcher-experiment) now reuses production
 matching code in the PoC. Its measured query costs supersede the simplified
-matchers' timings for compatibility-preserving use; application code is unchanged.
+matchers' timings. Production implementation and validation are now underway;
+the original PoC timings below are historical, not application guarantees.
 
 ## Task
 
@@ -35,8 +38,8 @@ Measured on the reference folder, real Windows platform plug-in, warm cache:
 | Full refresh after a file operation | incremental `RecordFiles` on the Qt thread, seconds for large folders | 334 ms (rescan + sort) |
 | Process working set after paint | 807 MiB | 131 MiB (37 MiB baseline) |
 
-The PoC hits the target with a 2–4x margin, so the design below does not need
-compiled extensions, background indexing or caching beyond the snapshot itself.
+Later reviews disproved the original inference that these PoC timings establish
+application performance. Adoption depends on the real application checks below.
 
 ## Scope
 
@@ -45,17 +48,108 @@ local Windows provider's scan, columns, Filter Bar, Fuzzy Find (in-folder), sort
 refresh after operations, icons, hidden files, and the replacement plug-in API
 for these concerns.
 
-Excluded: file-operation implementations (copy/move/delete keep their code and
-`Task`s; only how the pane learns about the result changes), archives and other
-providers beyond the contract they must implement, QuickView, panels, Command
-Palette, Everything integration, and the migration of shipped plug-ins beyond
-listing what they must change.
+Included provider migration: local files, archives, drive/network roots, processes
+and the empty startup provider. They share a listing contract, not an enumeration
+algorithm. QuickView and optional columns must continue working with resets.
+
+Excluded: rewriting copy/move/delete tasks, adding new remote providers, changing
+panels or Command Palette, and Everything integration. Operation-time metadata
+and authorization remain independent of display snapshots.
 
 Compatibility: **breaks** the public `fman` plug-in API for file systems, columns
 and pane listing access (details under Plug-in API). Commands, key bindings,
 settings, `show_quicksearch`, `show_alert`, panels and the `Task` API are unchanged.
 
 ## Design
+
+### Implementation Decisions (2026_09_21)
+
+The user authorized implementation with correctness and fewer edge cases ahead
+of performance, incorporating all later reviews. These decisions supersede
+conflicting exploratory proposals below:
+
+- Use one virtual snapshot model for every bundled provider. The user explicitly
+  authorized removing the old design and breaking plug-in APIs; no runtime
+  legacy switch, row-model fallback or automatic old-provider adapter remains.
+- Use native 128-bit bulk enumeration on supported local NTFS/ReFS volumes.
+  Other local paths use a provider-owned scandir scan with unknown identity.
+  Archives, drives, network roots and processes implement their own acquisition.
+- Keep production filter/fuzzy semantics and Core formatting. Do not substitute
+  the PoC regex or unsafe incremental narrowing. Pane projection work stays off
+  Qt; the restored Quicksearch dialog retains its existing query callback model.
+- Validate immutable tuple columns and packed 128-bit IDs. Reconciliation uses
+  directory/volume scope, object ID and creation time, exact name first, then
+  IDs unique in both complete snapshots. Ambiguous hardlinks and replacements
+  do not inherit marks. Identity remains UI continuity, not operation authority.
+- Keep authoritative operation queries and cache invalidation separate from
+  display snapshots. Rescans coalesce mutation events and reject stale results.
+- Reproduce the pre-change application only in benchmark children, extracted
+  from Git commit `56e840a`. This is test instrumentation, not shipped fallback.
+  Required adoption gates remain open. No PoC timing is an implementation result.
+
+### Current Ownership and Data Flow
+
+- `fman.listing.Listing` detaches and validates tuple columns, packed 128-bit IDs,
+  scope, optional display labels and immutable scalar provider columns. Unknown
+  size/time is `None`; missing identity is zero and never inferred from a name.
+- `FileSystem.scan(path, check_canceled)` runs off Qt and returns one complete
+  listing. Ordinary NTFS/ReFS entries need no child stat. Only symlinks/junctions
+  use followed metadata; cloud and other reparse tags are not followed blindly.
+  Failed target reads retain the link's own metadata. Native cancellation checks
+  occur at each 64 KiB batch and before each followed link.
+- `ListingModel` owns the displayed snapshot on Qt. Worker projections supply
+  ordered visible indices, row lookup and conservative identity remapping.
+  Every revision is checked before commit. Text and icons are bounded lazy caches.
+- Per pane: at most two navigation scans, one refresh, one cooperative projection
+  worker and a bounded lazy icon lane. Each work lane has at most one latest
+  pending request. Stale work is canceled or rejected; blocked native calls can
+  outlive cancellation but cannot publish into a newer location.
+- Observation covers scan-to-watch handoff. Mutation events coalesce rescans;
+  operation caches are invalidated independently. Failed scans do not publish
+  partial rows. Navigation error callbacks and tracked requests retain their
+  explicit failure/supersession behavior.
+- Columns implement `text(listing, index)` on Qt without I/O and
+  `keys(listing, ascending)` on a worker. Optional columns update the current
+  source. Filters capture plain state through `snapshot_filter()` on Qt.
+  Snapshot-only sort columns opt out of external-metadata reprojection; other
+  columns retain conservative invalidation. Filters can select batches with
+  bounded cancellation, preserving input order and scalar-predicate semantics.
+- Production Filter Bar grammar, fuzzy ranking and UTF-16 highlights remain.
+  No prefix-only incremental narrowing is assumed. In-folder Find reuses the
+  snapshot for indexing but retains the separate Quicksearch dialog, including
+  fuzzy/fzf syntax, metadata descriptions and Enter/Escape behavior. Recursive
+  and reparse traversal use the same dialog with their existing indexer.
+- No persistence format changes. Settings stay under UserSettings; no registry
+  writes or dependencies added. Commands and authoritative operation checks
+  remain separate from UI identity continuity.
+
+### Isolated Follow-up Experiment (2026_09_21)
+
+The user requested side-code validation before merging two residual optimizations.
+[benchmark_snapshot_followup.py](../src/misc/benchmark_snapshot_followup.py) patches
+only its own process and verifies unchanged application-source hashes.
+
+- For equal location/scope, names, packed IDs and creation times, return `None`
+  instead of an identity dictionary only after proving every ID nonzero. Search
+  for zero runs with 16-byte alignment; cross-boundary padding is not an unknown
+  identity. Check cancellation between searches. Mixed/unknown IDs retain the
+  existing conservative mapping. The view treats `None` as unchanged indices,
+  with no lazy per-mark identity work on Qt.
+- Windows `LocalFileSystem.watch/unwatch` return before Qt dispatch. Non-Windows
+  watcher calls remain Qt-bound; subscription bookkeeping, app events and
+  scan-to-watch handoff are unchanged. No new I/O, background work or persistence.
+- Rejected alternatives: blindly treating equal unknown IDs as stable, moving
+  identity checks into Qt lookups, and skipping application subscriptions.
+- Merge gates: differential identity/cancellation cases; existing focused Qt and
+  provider tests; preserved all-selected marks/cursor/scroll; faster preparation
+  without a Qt-commit regression; Windows no-dispatch and non-Windows Qt-affinity
+  regressions after merge. No full measurement-catalog or adoption claim.
+
+### Superseded First Proposal
+
+The remainder of the original Design section is retained as historical review
+context. In particular, name-based identity, Qt-thread matching, automatic legacy
+adapters, inferred performance bounds and incremental narrowing are not adopted.
 
 ### One idea
 
@@ -171,9 +265,10 @@ Both are `narrow(candidates: list[int], query) -> list[int]` over
 - Incremental rule: if the new query extends the previous one in the same mode,
   narrow the previous result; otherwise narrow `order`. That is the whole cache.
 
-The in-folder Fuzzy Find (`Ctrl+F`) becomes a mode of the same pane view rather
-than a separate Quicksearch over a separately built index; the recursive variant
-(`Ctrl+Shift+F`) keeps its own indexer but can reuse `Listing.scan` per directory.
+The earlier proposal to make in-folder Fuzzy Find a pane mode is superseded:
+`Ctrl+F` retains the separate Quicksearch UI, with snapshot-backed indexing when
+available. The Filter Bar remains substring/glob matching, not fuzzy search.
+The recursive variant (`Ctrl+Shift+F`) retains its own indexer and Quicksearch UI.
 
 ### Plug-in API (breaking)
 
@@ -200,9 +295,9 @@ the adapter until they do.
 - **Keep `fs_cache.Cache` and seed it from scandir (LazyStat)**: removes the
   stat syscalls but keeps 202k cache nodes, the row objects and every invalidation
   rule. Rejected for "no cache heavy" — the snapshot makes the cache redundant.
-- **Compiled extension / RapidFuzz / SQLite index**: unnecessary; pure Python
-  with C-level primitives (`scandir`, `sorted`, `str.__contains__`, `re`) is
-  10–40x inside the target.
+- **Compiled extension / RapidFuzz / SQLite index**: not introduced. Existing
+  semantics and dependencies take priority; measured GIL stalls remain an open
+  performance concern, not proof that pure Python meets every target.
 - **Everything as the listing backend**: measured elsewhere (Find Files 003);
   not applicable to arbitrary paths, archives or shares.
 - **Chunked/progressive first paint**: not needed at 0.42 s; revisit only if a
@@ -214,19 +309,20 @@ the adapter until they do.
 
 ## Runtime Effects
 
-- Startup: none; nothing is built until a pane navigates.
-- Navigation to the reference folder: 180 ms scan + 153 ms sort on the worker,
-  ~80 ms on the Qt thread (model reset + first paint). Working set +94 MiB for
-  202k entries (lists of `str`/`int`, natural-sort keys are transient).
-- Steady state: zero background work. Filter/fuzzy keystroke ≤ 31 ms worst case
-  on the Qt thread, typically ≤ 6 ms; reset+paint 2–6 ms. Sort switch 25–175 ms.
-- After a file operation in a 202k folder: one rescan (334 ms) on the worker; in
-  ordinary folders it is invisible. No timers, watchers or polling.
-- Cancellation: generation counter on the worker; a superseded scan's result is
-  dropped. `scandir` itself is not interruptible mid-call; the worker checks the
-  generation between entries (cheap) so a navigation away is honoured within a
-  few milliseconds.
-- Disabled/no-op path: not applicable; this replaces the pane model.
+- Startup creates an empty model; real navigation performs provider I/O and a
+  worker projection before populated paint. No per-row metadata loading tail.
+- Idle panes do not scan or match. Directory change subscriptions remain active;
+  Windows uses the existing stub watcher. Optional status/preview work remains
+  opt-in. Lazy icons use bounded queues and caches.
+- Refresh temporarily holds old/new snapshots and reconciliation maps. Full-set
+  fuzzy indexing adds normalized candidates; measure peak, not just settled RSS.
+- Cancellation checkpoints exist between native batches, provider records and
+  projection phases. Python sorting and blocked OS calls are not interruptible;
+  generations prevent stale publication but do not establish a latency bound.
+- No new processes in ordinary local navigation. Archive providers retain their
+  existing 7-Zip process lifecycle. Benchmarks use isolated child processes.
+- Disabled path: not applicable to the pane replacement itself. No compatibility
+  engine runs in parallel; disabled optional features must do no feature work.
 
 ## Tests
 
@@ -245,9 +341,9 @@ python src/misc/pane_arch_poc.py "<large folder>" --platform windows
 
 Required before adoption:
 
-- Unit: `PaneState` transitions (navigate, filter, sort, refresh) preserve cursor
-  and marks by entry/name; adapter `scan` from a legacy provider equals a native
-  `scan`; every shipped column's `text`/`keys` equal today's `get_str`/sort order
+- Unit: transitions preserve cursor and marks by verified identity, reject
+  replacements/ambiguous renames, and validate each provider's immutable scan;
+  every shipped column's `text`/`keys` equals prior formatting and sort order
   on a fixture folder (golden comparison of the full row order).
 - Qt integration: Filter Bar and Fuzzy Find on a 200k synthetic listing keep
   arrow-to-paint under 16 ms; file operation → rescan → cursor/marks intact; two
@@ -262,11 +358,11 @@ Required before adoption:
 1. Freeze golden fixtures from the current application: full row order and
    column texts for a fixture folder in each sort mode, with and without hidden
    files. These make every later step verifiable.
-2. Add `Listing` and `LocalFileSystem.scan` (from the PoC), plus the legacy
-   adapter `scan_from_iterdir(fs, path)`; unit tests against the fixtures.
+2. Add validated `Listing` and provider-owned scans; verify native NTFS/ReFS
+  identity, link semantics and unknown-identity acquisition separately.
 3. Add `PaneState` and the virtual `ListingModel`; port the three built-in
-   columns to `text`/`keys`. Wire it into `DirectoryPaneWidget` behind a module
-   switch so both models can be compared on the same folder during migration.
+  columns to `text`/`keys`. Wire it into `DirectoryPaneWidget` without a legacy
+  switch; isolate historical comparisons outside the production path.
 4. Port the Filter Bar to `narrow`; then the in-folder Fuzzy Find. Golden tests
    for both grammars.
 5. Route file-operation completion and refresh to "rescan the affected pane";
@@ -287,10 +383,11 @@ Required before adoption:
   in every sort mode, hidden on/off; junction and drive-root visibility identical
   to `QFileInfo`.
 - Cursor and marks survive filter, sort, refresh and file operations by identity.
-- No metadata cache, watcher, timer or background job exists outside the one
-  worker job per pane; nothing runs when the user is idle.
-- The `FileSystem`/`Column` contract fits on one page of `PlugIn.md`; a legacy
-  provider works through the adapter unchanged, only slower.
+- No per-entry display cache tree or metadata loading tail; bounded work lanes,
+  event-driven invalidation and no idle polling. Authoritative operation caches
+  remain, as required by the later safety review.
+- The `FileSystem`/`Column` migration contract fits on one page of `PlugIn.md`;
+  all bundled providers implement it. Old plug-ins must migrate explicitly.
 
 ## Review Findings
 
@@ -954,6 +1051,234 @@ collects garbage outside each timer and discards results between samples.
   user), and the minimal `(id, name)` reconciliation rule. Design only; no
   application or PoC code changed.
 
+### 2026_09_21 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: High
+- Context Window: Not exposed by host
+- Outcome: User authorized NTFS/ReFS implementation incorporating every later
+  review. Correctness takes precedence over initial performance targets; retain
+  production matchers, immutable native identity, authoritative operation checks
+  and unsupported-provider fallback. Adoption tests remain required, not waived.
+
+### 2026_09_21 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: High
+- Context Window: Not exposed by host
+- Outcome: Incorporated the user's explicit approval to remove the old design
+  and migrate every bundled provider with breaking APIs. One snapshot consumer,
+  provider-specific acquisition, no automatic compatibility adapter. Historical
+  baseline runs only from a temporary Git archive. Performance and edge-case
+  adoption gates remain open; earlier fallback recommendations are superseded.
+
+### 2026_09_21 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Claude Fable 5.1
+- Effort: High
+- Context Window: 1M
+- Outcome: Implementation review focused on correctness, edge cases and
+  performance. **Approved for continued adoption work; not for closing the
+  task** (the implementer's open gates stand). Re-ran both documented gates:
+  `fman_integrationtest.test_qt` 182 OK; unit/provider/command batch 425 OK,
+  7 skips. Read `fman/listing.py`, `core/fs/local/windows/listing.py`,
+  `LocalFileSystem.scan`, `impl/model/listing.py`, `impl/model/__init__.py`,
+  `listing_icons.py`, the view's snapshot capture/restore, Core columns and the
+  filter snapshots. Live probes of the native scan: `C:/ProgramData`,
+  `C:/Users`, `C:/`, `E:/` (ReFS), System32 and the reference folder all match
+  `os.listdir` exactly with 128-bit IDs for every entry; the deny-ACL legacy
+  junctions are followed without error; 202,603 entries scan in 291 ms.
+  Verified correct: `FILE_ID_EXTD_DIR_INFO` layout and unpack order (88-byte
+  header), `.`/`..` skipped, record bounds validated, `ERROR_NO_MORE_FILES`
+  termination, NTFS/ReFS + `FILE_SUPPORTS_OPEN_BY_FILE_ID` gate, UNC and
+  unsupported-error fallback to `scandir`, scope = volume serial + directory
+  ID, reconcile by `(id, created)` with exact name first then IDs unique in
+  both snapshots, filter state captured on Qt (`snapshot_filter`) which closes
+  the Filter Bar race, `_order_cache` reuse so a keystroke re-filters without
+  re-sorting, pending cursor target for create/rename, icons resolved off the
+  paint path with reparse/offline/recall entries never touched, selection
+  restored as contiguous ranges.
+  Findings, none blocking:
+  1. **Followed-link errors abort the whole listing.** In both the native scan
+     and `_scan_entries`, the followed `os.stat` for a symlink/junction handles
+     only `FileNotFoundError`; any other `OSError` (access denied on the target,
+     unreachable network target) propagates and the directory fails to list.
+     The old per-entry path degraded to `is_dir=False`. Catch `OSError`, keep
+     the entry with its own record. Could not reproduce with a deny-RA ACL
+     (Windows still answers the attribute query), so this is a robustness fix.
+  2. **`refresh_files` always re-projects and resets.** DirectorySize results
+     trigger `update()` → full sort + `beginResetModel` + selection/scroll
+     restore for every delivery, even when the sort column is Name. When the
+     sort column does not depend on the changed values, clearing the text cache
+     and emitting `dataChanged` for visible rows is enough; re-project only
+     when sorting by Size. Cheap change, avoids reset churn in folders with
+     many subdirectories.
+  3. **`Modified.keys` builds 202k `datetime` objects; `Size.keys` builds
+     per-character `ord` tuples for directories.** Sorting on the raw
+     `mtimes_ns` integers (`-1` for `None`) and on lowercase name strings is
+     equivalent and several times cheaper; `sorted()` is the one uncancellable,
+     GIL-holding step (measured up to 134 ms Qt stall on all-marked name sort),
+     so key cost is the lever.
+  4. **PaneRendering001 machinery is now dead weight.** `iterdir` still runs
+     `scandir` + per-entry `cache.put` (539 ms at 202k) to feed
+     `_pane_hidden_state`, but the pane reads `listing.attributes` directly.
+     Revert `iterdir` to `os.listdir` and remove `_EntryAttributesCache`; the
+     URL form of `_hidden_file_filter` only needs the `QFileInfo` fallback.
+  5. **`project()` cancellation check uses the entry index** (`index % 256`)
+     rather than the loop counter; statistically fine, not strictly bounded.
+  6. **`Listing` rejects names containing a backslash** — legal on POSIX; a
+     Windows-first decision, but it should be stated in `PlugIn.md`.
+  7. The Mac `/Volumes` exception exists only in the URL filter, not in the
+     snapshot filter (`attributes & 2`). Windows-only impact none; note it.
+  8. Documentation drift: the record says 184/427 tests; today's runs give
+     182/425. Update the numbers when the gates are re-run.
+  Performance evidence in Validation Results is sound and matches the
+  reviewed code paths; the remaining gates (16 ms p95 under load, 250 MiB
+  peak) are Python sort/key cost and marked-state restoration, which items 2–3
+  partly address.
+
+### 2026_09_21 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Claude Fable 5.1
+- Effort: Medium
+- Context Window: 1M
+- Outcome: Follow-up to the implementation review at the user's request:
+  measured the removable per-pass overhead on the 202,603-entry reference
+  folder (in-process probe against the implemented modules, warm cache). The
+  native enumeration itself is ~200 ms; everything below is Python work on top
+  of it and executes identically on every platform — a Windows-only focus does
+  not remove it, it only means it can be optimised without parity concerns.
+
+  | Overhead | Measured | Removal | Saves |
+  | --- | ---: | --- | ---: |
+  | `iterdir` still runs `scandir` + `cache.put` per entry for `_pane_hidden_state` (PaneRendering001 leftover; the pane reads `listing.attributes`) | 539 ms per `iterdir` call | Revert to `os.listdir`; delete `_EntryAttributesCache` and the URL branch of `_hidden_file_filter` | 539 ms per caller (Search plug-ins, `fs.iterdir`) |
+  | Hidden filter via `all(predicate(...) for predicate in filters)` in `project()` | 44.6 ms per projection (every keystroke, sort, rescan) | No filters → `visible = order`; let a filter expose a vector form so hidden becomes `[i for i in order if not attributes[i] & 2]` (5.5 ms) | ~40 ms per keystroke |
+  | `Name.keys` regex `sub` + lambda per name | 131 ms per sort/rescan | Cheaper key with identical order (`re.split` + `int`) or cache keys per listing | 60–80 ms per rescan |
+  | `Modified.keys` builds 202k `datetime`s | 59 ms | Raw `mtimes_ns` ints, `-1` for `None` (10.5 ms, same order) | ~50 ms |
+  | `Listing.__post_init__` validation (8 full passes) | 45 ms per scan | Trust bundled scanners; validate third-party providers only; keep the length check | ~40 ms per scan |
+  | `reconcile()` on an unchanged rescan (16-byte slices + tuple compares per entry) | 60 ms per refresh | Short-circuit when `names`, `identities`, `created_ns` are equal (4 ms) → identity mapping | ~55 ms per refresh |
+  | `check_canceled()` per record in `scan()` | 20–30 ms | Once per 64 KiB batch, as `batches()` already does | ~25 ms |
+  | `ListingIcons.key()` with `PureWindowsPath(name).suffix`, computed twice per painted cell | ~3 µs × cells per repaint | `rpartition('.')`, compute once | paint-path hygiene |
+  | `ScanObservation`/`FileWatcher.start()` per navigation | one worker→Qt `run_in_main_thread` round trip | Skip on Windows: the watcher is a stub | removes a sync point |
+
+  Only the last row and the `_scan_entries` dot-name branch are actually
+  platform-specific. Reference for `sorted()` itself once keys exist: 7.9 ms —
+  key construction, not sorting, is the cost. Net effect if applied: a Filter
+  Bar keystroke drops from ~70 ms of framework work plus matcher to ~15 ms
+  plus matcher; a rescan after an operation loses ~200 ms of ~560 ms; peak
+  memory shrinks with the per-keystroke `rows` dicts and key tuples. Items are
+  each a few lines and order-preserving except `Name.keys`, which needs the
+  golden-order check because of the `%06d` padding quirk. No code changed.
+
+### 2026_09_21 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Not exposed by host
+- Effort: High
+- Context Window: Not exposed by host
+- Outcome: Addressed both Fable review records. Accepted correctness fixes and
+  order-preserving optimizations; retained full validation, notification handoff
+  and Size ordering. Rejected raw timestamp ordering and timestamp caches after
+  parity analysis and measured distinct-timestamp regressions. Final comparison
+  validates 499 compatible metrics; adoption gates remain open.
+
+### 2026_09_21 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Claude Fable 5.1
+- Effort: Medium
+- Context Window: 1M
+- Outcome: Reviewed the response to my two records; **approved**. Verified in
+  code: followed-link `os.stat` now catches `OSError` and keeps the entry's own
+  record in both the native scan and `_scan_entries`; per-record
+  `check_canceled()` replaced by per-batch and per-link checks; `iterdir` is
+  `os.listdir` again and `_EntryAttributesCache`/`_pane_hidden_state` are gone;
+  `refresh_files` repaints via `dataChanged` unless the sort column declares
+  `keys_depend_on_external_data` (default `True`, Name/Modified opt out, Size
+  stays dependent — the right default for third-party columns); hidden filter
+  exposes `filter_indices` with 256-row batches and keeps the Mac `/Volumes`
+  exception; `reconcile` short-circuits on equal names/IDs/creation times;
+  `Name.keys` uses split/rejoin — checked byte-identical to the old `sub`
+  form on 20,012 names including 7-digit runs, Unicode digits, empty and
+  punctuation-heavy names; `PlugIn.md` documents the backslash rule,
+  `filter_indices` and `keys_depend_on_external_data`. Re-ran both gates:
+  Qt 184 OK, unit/provider/command 410 OK (7 skips), matching the record.
+  Dispositions I disagreed with and accept: keeping `Listing` validation
+  (45 ms on the worker, not Qt — a fair trade for one safety boundary);
+  rejecting raw-nanosecond Modified keys (parity with local-time ordering
+  across DST and microsecond ties is a legitimate choice; chronological order
+  would be the more correct behaviour if parity is ever dropped); keeping the
+  watcher handoff (my suggestion concerned only the stub OS watcher, and the
+  application-level callbacks are indeed required). Residual notes, none
+  blocking: the unchanged-rescan fast path still materialises a 202k-entry
+  identity dict (~20 ms) where a sentinel would do; `refresh_files` emits one
+  `dataChanged` over the whole visible range, which Qt clips to the viewport
+  but is worth knowing when reading profiles; the new `src/performancetest`
+  harness and `build.py measure` were not reviewed in depth here. Adoption
+  gates remain as the implementer recorded.
+
+### 2026_09_21 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Not exposed by host
+- Effort: High
+- Context Window: Not exposed by host
+- Outcome: Reviewed the isolated sentinel and Windows no-op dispatch prototypes
+  before application edits. 500 differential identity cases and 249 existing
+  checks pass (three expected skips). Nine alternating 200,000-entry Qt reset
+  pairs preserve all marks, cursor and scroll; median commit 24.774 -> 19.775 ms.
+  Source hashes unchanged. Approve the two narrow merges subject to dedicated
+  production regressions; broader architecture adoption remains pending.
+
+### 2026_09_21 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Not exposed by host
+- Effort: Medium
+- Context Window: Not exposed by host
+- Outcome: Reviewed refresh benchmark coverage: eight deterministic selection
+  patterns on both synthetic folder sizes, real reload through new-snapshot
+  completed paint, and unchanged snapshot/order/marks/cursor/scroll assertions.
+  Setup and correctness checks are untimed. The single overview value equally
+  weights 16 case medians; detailed cases retain regressions. Process peaks are
+  cumulative, not refresh-only allocations. Existing loaded-input and memory
+  adoption gates remain open; earlier harness records are not comparable.
+
+### 2026_09_21 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Not exposed by host
+- Effort: Medium
+- Context Window: Not exposed by host
+- Outcome: User requires the 0.8.1 Quicksearch experience for current-folder Find.
+  Reuse the existing snapshot-indexing branch and production fuzzy matcher;
+  remove only the command's in-pane diversion. Keep Filter Bar syntax distinct.
+  Verify dialog query/highlight/metadata/accept/cancel behavior and no rescan.
+  Retarget fuzzy timing to Quicksearch and revise its workload identity; preserve
+  historical measurements without claiming comparable latency or closed gates.
+
 ## Implementer
 
 ### 2026_09_21 - GitHub Copilot
@@ -970,7 +1295,382 @@ collects garbage outside each timer and discards results between samples.
   and C root, plus file-only/all-results scopes and isolated highlight costs.
   Only the PoC experiment is implemented; production architecture remains pending.
 
+### 2026_09_21 - GitHub Copilot
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: High
+- Context Window: Not exposed by host
+- Outcome: Implemented immutable listings, native NTFS/ReFS 128-bit scans,
+  virtual panes, bounded work, production filter/Find integration and bundled
+  provider migration. Removed the incremental engine. Verified native source
+  startup/restart, provider/operation regressions and real application A/B parity.
+  Adoption remains incomplete: loaded interaction and peak-memory gates below
+  are not all met. No release or completion approval is implied.
+
+### 2026_09_21 - GitHub Copilot
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: Not exposed by host
+- Effort: High
+- Context Window: Not exposed by host
+- Outcome: Implemented link-error isolation, metadata repaint without unnecessary
+  resets, batch filtering, bounded cancellation, removal of enumeration caches,
+  exact-order Name keys, bound datetime conversion, unchanged-snapshot
+  reconciliation and single-pass icon keys. Qt gate: 184 passed. Focused
+  unit/provider/command gate: 410 run, seven expected skips. Final snapshot
+  regressions: 36 passed. Full measurement catalog: nine workloads, three fresh
+  processes each, all passed. Task remains pending adoption.
+
+### 2026_09_21 - GitHub Copilot
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: Not exposed by host
+- Effort: High
+- Context Window: Not exposed by host
+- Outcome: Merged the two separately validated prototypes: known-identity
+  unchanged-index sentinel and Windows-only no-op watcher dispatch bypass.
+  Dedicated identity/alignment/cancellation, selection and thread-affinity
+  regressions pass. Post-merge focused gate: 255 checks, three expected skips.
+  Actual merged functions retain the isolated performance gains; no claim of
+  satisfying the broader loaded-input or peak-memory adoption gates.
+
+### 2026_09_21 - GitHub Copilot
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: Not exposed by host
+- Effort: High
+- Context Window: Not exposed by host
+- Outcome: Added small/large native refresh workloads with eight selection
+  patterns, completed-paint and memory measurements, and unchanged-state checks.
+  Added the single Refresh / Selection report/table aggregate while retaining
+  individual timings and guarded comparisons. Focused correctness: 44 passed.
+  Full catalog: eleven workloads times three processes passed, including 48
+  refresh observations. This establishes a refresh baseline, not a speedup claim
+  or completion of the architecture adoption gates.
+
+### 2026_09_21 - GitHub Copilot
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: Not exposed by host
+- Effort: Medium
+- Context Window: Not exposed by host
+- Outcome: Restored snapshot-backed fuzzy Quicksearch for Ctrl+F without changing
+  the Filter Bar matcher. Retargeted fuzzy UI benchmarks to the dialog and bumped
+  their revision. Focused search/filter/panel checks: 168 tests, two expected
+  skips. Native Windows dialog/focus checks: three passed. Both fuzzy sizes and
+  small Filter Bar benchmark smoke passed. Architecture remains pending adoption.
+
 ## Validation Results
+
+### Restored Find Dialog and Panel Focus
+
+The two TODO bugs are fixed: Ctrl+F opens the fuzzy Quicksearch dialog, and Escape
+on Search files / Find files with fd restores the last active pane after cleanup.
+Snapshot-backed indexing retains fuzzy subsequence matching, fzf operators,
+highlights, metadata descriptions, Enter acceptance and Escape cancellation.
+Tests require no provider rescan for a suitable snapshot. The shared panel close
+path checks for closed windows, replaced panels, other active dialogs and deleted
+or disabled target widgets before restoring focus. Filter Bar retains its
+substring/glob grammar; full fzf query operators were not part of that grammar.
+
+Commands run from the existing application environment:
+
+```powershell
+python -c "import build, subprocess, sys, os; env=build._environment(); env['QT_QPA_PLATFORM']='offscreen'; env['QT_QPA_FONTDIR']=os.path.join(os.environ['WINDIR'],'Fonts'); tests=['fman_unittest.test_search_file_fuzzy','fman_unittest.impl.test_filter_pattern','fman_unittest.test_filter_find_benchmark','fman_integrationtest.test_qt.SearchFileSyntaxIT','fman_integrationtest.test_qt.SearchFileMetadataIT','fman_integrationtest.test_qt.FilterBarIT','fman_integrationtest.test_qt.SnapshotFilterBarIT','fman_integrationtest.test_qt.TableIT','fman_integrationtest.test_qt.FindFilesIT','fman_integrationtest.test_qt.SearchFilesIT']; sys.exit(subprocess.run([sys.executable, '-m', 'unittest', *tests], env=env, timeout=180).returncode)"
+python -c "import build, subprocess, sys, os; env=build._environment(); env['QT_QPA_PLATFORM']='windows'; env['QT_QPA_FONTDIR']=os.path.join(os.environ['WINDIR'],'Fonts'); sys.exit(subprocess.run([sys.executable, '-m', 'unittest', 'fman_integrationtest.test_qt.TableIT.test_panel_escape_returns_focus_to_last_active_pane', 'fman_integrationtest.test_qt.FindFilesIT.test_escape_closes_both_search_panels_and_focuses_pane', 'fman_integrationtest.test_qt.SearchFileMetadataIT.test_reserved_rows_reorder_filter_accept_and_cancel'], env=env, timeout=180).returncode)"
+python src/performancetest/run.py suite --test 'fuzzy.*' --test filter.small --repeat 1
+```
+
+Outcomes: 168 focused tests, two skips (opt-in external fzf reference and
+unavailable directory-symlink creation); three native Windows checks passed.
+The three native benchmark workloads passed UI/algorithm count parity in
+`target/performance/runs/229865b2-179e-4b65-86a5-11a525c3cccf.json`.
+These are one-process smoke checks, not a version-history update or evidence of
+improved speed. Fuzzy test revision 2 and changed harness prevent comparison
+against earlier in-pane results. No full correctness suite, full measurement
+suite, packaging, dependencies or environments were created.
+
+### Refresh / Selection Baseline
+
+The refresh-enabled catalog run is
+`UserSettings/Performance/runs/89b9c834-e23f-439c-9581-8e828cbd0424.json`.
+All eleven workloads passed three fresh-process repetitions on Windows/NTFS.
+The 48 refresh observations preserve exact selection counts, cursor, scroll,
+snapshot columns and row order. Setup and correctness checks are outside timing;
+no files change and no input is injected during reload. Both sizes include no
+marks, first/middle/last single marks, a 10% middle block, 100 scattered marks,
+all except the cursor, and all entries. All work remains demand-only.
+
+| Refresh Result | Measured Value |
+| --- | ---: |
+| Mean of 16 case medians | 482.95 ms |
+| Small-folder case-median range | 8.22-10.15 ms |
+| Large-folder case-median range | 938.85-978.24 ms |
+| Large-folder all-selected Qt commit median | 29.58 ms |
+| Large-folder all-selected process peak median | 307.41 MiB |
+
+The process peak includes startup and preceding cases, not isolated refresh
+allocation. Full row-text fingerprinting is omitted before these cases to avoid
+artificially warming every formatted cell. Native reload checks compare immutable
+snapshot columns and row order after completed paint. The catalog/harness changed;
+do not compare this baseline to earlier runs using the strict comparison command.
+No ReFS rerun, cold-cache claim, changed-folder refresh, loaded-input p95 gate,
+full correctness suite or packaging run. The task remains pending adoption.
+
+Focused checks, from the existing application Python environment:
+
+```powershell
+python -c "import build, subprocess, sys; sys.exit(subprocess.run([sys.executable, '-m', 'unittest', 'fman_unittest.test_filter_find_benchmark', 'fman_unittest.test_pane_rendering_benchmark'], env=build._environment()).returncode)"
+python src/performancetest/run.py suite --test refresh.small --repeat 1
+python build.py measure
+```
+
+The small-fixture native smoke passed all eight cases. The focused unit gate
+passed 44 tests without skips; the full measurement passed 33 fresh-process
+workloads. Raw-record inspection also verified all 48 selected counts against
+the pattern definitions and confirmed the 16-case aggregate and eleven-row
+overview. Diagnostics reported no errors in the changed benchmark/report code.
+Generated HTML passed browser checks at 1440 and 390 pixels: eleven overview
+rows, all 16 refresh paint metrics, correct aggregate range, nonblank chart,
+no page errors or page-width overflow. The changelog value was checked against
+the retained record's aggregation. `git diff --check` passed with only existing
+line-ending warnings.
+
+### Isolated Follow-up Results
+
+Application sources remained unchanged throughout prototype testing (SHA-256
+checks). The final prototype passed 500 differential identity cases and 249
+existing checks with three expected skips. Only then were the two application
+changes merged. Post-merge gate: 255 checks, three expected skips (local-provider
+environment/platform prerequisites), without prototype substitutions. Native
+NTFS/ReFS provider checks are included; mocked non-Windows watcher calls verify
+Qt affinity but do not constitute a native non-Windows run.
+
+Nine alternating warm pairs use 200,000 synthetic entries, separately allocated
+equal names/ID columns, and assert equivalent restored state. Watcher timing is
+per registration/removal pair from a worker while Qt services its event loop.
+The all-selected commit probe executes the real Qt model reset/restore path,
+with icon loading disabled equally in both variants:
+
+| Measurement | Retained Baseline | Merged |
+| --- | ---: | ---: |
+| Identity preparation, one selected entry | 22.067 ms | 2.955 ms |
+| Identity preparation plus lookup, all selected | 31.638 ms | 9.913 ms |
+| Actual Qt commit, all selected | 24.388 ms | 19.303 ms |
+| Watch registration/removal pair | 0.0615 ms | 0.0005 ms |
+| Remap shallow object size | 10,485,848 bytes | 16 bytes (`None` singleton) |
+
+All 200,000 marks, cursor and scroll survive each Qt commit. The avoided roughly
+10 MiB dictionary is an object-size result, not a measured process-peak reduction.
+Watch dispatch gains are small in absolute time; neither probe measures whole
+navigation latency. Keep earlier full-catalog numbers unchanged: `build.py measure`
+was not rerun for this narrow follow-up. No full correctness suite or packaging.
+
+Raw observations under `target/diagnostics/`: `snapshot-followup-prototype.json`,
+`snapshot-followup-qt-prototype-final.json`, `snapshot-followup-merged.json`, and
+`snapshot-followup-qt-merged.json`. The runner stores source hashes with results;
+current output also records the experiment hash and merged/prototype selection.
+
+Commands, from the existing application Python environment:
+
+```powershell
+python src/misc/benchmark_snapshot_followup.py --qt-tests
+python src/misc/benchmark_snapshot_followup.py --measure --output target/diagnostics/snapshot-followup-prototype.json
+python src/misc/benchmark_snapshot_followup.py --qt-restore --repeat 9 --output target/diagnostics/snapshot-followup-qt-prototype-final.json
+python src/misc/benchmark_snapshot_followup.py --qt-tests --merged
+python src/misc/benchmark_snapshot_followup.py --measure --merged --output target/diagnostics/snapshot-followup-merged.json
+python src/misc/benchmark_snapshot_followup.py --qt-restore --merged --repeat 9 --output target/diagnostics/snapshot-followup-qt-merged.json
+```
+
+Use new output filenames for reruns: raw records are not overwritten. Initial
+runner failures were corrected before merge: missing inherited subprocess paths,
+absent disk fixture, explicit standalone Qt startup and callback binding. The
+prototype's first zero-run shortcut was safely too conservative; alignment-aware
+search fixed the missed optimization and has cross-boundary/unknown-ID regressions.
+The first production Qt regression used the wrong fixture location accessor;
+corrected and rerun successfully. No failures are hidden by skips.
+
+### Review Response and Measurements
+
+Disposition of the implementation findings and all nine overhead proposals:
+
+| Area | Decision |
+| --- | --- |
+| Followed-link failures | Catch target `OSError` in both scanners and retain own metadata; directory enumeration failures still propagate. |
+| Metadata delivery | Name/Modified repaint without worker projection or model reset. Size and custom columns default to reprojection through `keys_depend_on_external_data=True`. Cursor/marks are covered by Qt tests. |
+| Name keys | Split/rejoin numeric runs into the same `%06d` strings, including Unicode digits, leading zeros and long numbers. Do not replace historical order with integer natural sorting. |
+| Modified keys | Bind the datetime converter once. Raw nanoseconds change local-time/DST order and microsecond ties; `-1` is not below every valid pre-epoch timestamp. Dictionary and adjacent-value caches were tried and discarded after 26% and 11% distinct-timestamp regressions. |
+| Size keys | Retain direction-dependent code-point tuples and DirectorySize ranks. Plain lowercase strings change descending directory order and cannot replace the mixed rank contract directly. |
+| Enumeration cache | Delete `_EntryAttributesCache`, `_pane_hidden_state` and its URL-filter branch. `iterdir` uses `os.listdir`; operation caches remain independent. Historical benchmark-only code remains isolated. |
+| Projection/hidden filtering | No-filter projections reuse cached order. Optional batch predicates remove per-row generator overhead. Scalar cancellation counts visited rows, not entry IDs; hidden batches check every 256 rows. Preserve the Mac root `/Volumes` exception. |
+| Listing validation | Retain validation for bundled and third-party providers. Trusting bundled output bypasses the shared immutability/type/name safety boundary for a speed-only gain. |
+| Reconciliation | Fast-path equal names, packed IDs and creation times after checking scope/location. Exclude unknown IDs, preserve exact-name hardlinks and check cancellation every 256 entries. |
+| Native scan checkpoints | Check each 64 KiB batch and every followed link, instead of every ordinary record. Blocking native calls still cannot be interrupted mid-call. |
+| Icons | Compute suffix/key once and avoid full paths for shared extension icons. Retain `PureWindowsPath` semantics rather than introduce another suffix parser. Shell arguments and queue bounds are tested. |
+| Scan observation/watchers | Retain subscriptions and handoff. The Windows OS watcher stub does not remove application file-added/removed notifications or other providers' change callbacks. |
+| POSIX names | Document the Windows-first rejection of literal backslashes in `PlugIn.md`; no expansion of platform scope. |
+| Validation counts | Current gates are 184 Qt and 410 unit/provider/command checks, seven skips. Private-cache tests were removed/replaced; historical counts below are not current claims. |
+
+Final before/after records, both `Unreleased`, on the same machine, NTFS,
+fixtures, harness and configuration:
+
+- Before: `UserSettings/Performance/runs/c3b25fff-6aef-4e93-b1b8-aabcb034d9a0.json`.
+- Final: `UserSettings/Performance/runs/da05f2e0-ca6c-443f-914e-10df3e0a3ac4.json`.
+- Intermediate experiment: `c37bdd5b-a158-4aff-9a90-c4978299f70a`, retained but
+  superseded after removing timestamp caching. No harness changes during comparison.
+
+| Overview Median | Before ms | Final ms | Change |
+| --- | ---: | ---: | ---: |
+| Small pane first paint | 42.04 | 44.14 | +5.0% |
+| Large pane first paint | 1218.72 | 1030.26 | -15.5% |
+| Small Filter Bar, slowest query | 9.38 | 9.72 | +3.6% |
+| Large Filter Bar, slowest query | 374.67 | 332.28 | -11.3% |
+| Small Fuzzy Find, slowest query | 10.78 | 11.68 | +8.4% |
+| Large Fuzzy Find, slowest query | 486.90 | 476.94 | -2.0% |
+| Recursive Find, slowest query | 91.10 | 89.82 | -1.4% |
+| Small QuickView first preview | 116.98 | 109.73 | -6.2% |
+| Large QuickView first preview | 122.56 | 118.74 | -3.1% |
+| Navigation aggregate | 7.15 | 6.79 | -5.0% |
+
+All eight large Filter Bar query medians improve by 11.3%-40.4%. Other small
+movements are not conclusive from three process samples: QuickView was slower
+in the intermediate run, and several ranges overlap. No statistical-significance
+claim. Memory did not improve: large Fuzzy peak is 286.99 -> 289.30 MiB, and
+large-pane settled working set is 175.43 -> 176.58 MiB. The catalog does not
+revalidate the all-marked loaded-input p95 gate; adoption remains incomplete.
+
+Hot-path probes assert equal results and alternate old/new order over seven warm
+pairs on the canonical 200,000-entry fixture. Old enumeration uses the removed
+cache implementation from `56e840a`; other probes reproduce the pre-review
+algorithms. Unchanged reconciliation excludes the old no-op checkpoint overhead.
+Timestamp probes use eleven pairs on repeated and distinct synthetic values.
+These timings isolate function costs, not complete user interactions:
+
+| Hot Path | Before ms | Final ms |
+| --- | ---: | ---: |
+| `iterdir` | 531.68 | 82.87 |
+| Name keys | 730.46 | 545.09 |
+| Hidden filtering | 34.81 | 6.04 |
+| Unchanged reconciliation | 52.43 | 20.70 |
+| Modified keys, repeated timestamps | 49.93 | 43.58 |
+| Modified keys, distinct timestamps | 49.32 | 43.37 |
+
+Exact focused commands, from the existing application Python environment:
+
+```powershell
+python -c "import build, subprocess, sys, os; env=build._environment(); env['QT_QPA_PLATFORM']='offscreen'; env['QT_QPA_FONTDIR']=os.path.join(os.environ['WINDIR'], 'Fonts'); sys.exit(subprocess.run([sys.executable, '-m', 'unittest', 'fman_integrationtest.test_qt', 'fman_integrationtest.impl.model.test___init__'], env=env, timeout=180).returncode)"
+python -c "import build, subprocess, sys; modules=['fman_unittest.test_listing','fman_unittest.test_process_pane','fman_unittest.test_search_file_fuzzy','fman_unittest.impl.plugins.test_mother_fs','fman_unittest.impl.plugins.test_plugin','fman_unittest.impl.test_fs_cache','fman_unittest.test_pane_rendering_benchmark','core.tests.fs.test_local','core.tests.fs.test_zip','core.tests.commands.test___init__']; sys.exit(subprocess.run([sys.executable, '-m', 'unittest', *modules], env=build._environment(), timeout=240).returncode)"
+python -c "import build, subprocess, sys; sys.exit(subprocess.run([sys.executable, '-m', 'unittest', 'fman_unittest.test_listing'], env=build._environment(), timeout=120).returncode)"
+python build.py measure
+python src/performancetest/run.py suite --compare UserSettings/Performance/runs/c3b25fff-6aef-4e93-b1b8-aabcb034d9a0.json UserSettings/Performance/runs/da05f2e0-ca6c-443f-914e-10df3e0a3ac4.json
+```
+
+All passed; comparison accepts all 499 metrics. Qt emits expected offscreen
+platform warnings; seven unit/provider skips cover opt-in/platform/environment
+prerequisites. No full correctness suite, clean/freeze, installs, new environments
+or Registry writes. Mac behavior has mocked parity coverage, not a native Mac run.
+The generated `UserSettings/Performance/index.html` was opened by `measure`.
+
+### Initial Production Integration (Historical)
+
+- `fman_integrationtest.test_qt`: 184 passed after migrating old worker fixtures.
+  Includes actual ProcessPane commands/unload, ZIP deep implicit folders, two-pane
+  hidden state, navigation cancellation/errors, reset selection/editor/drag
+  handling, Filter/Find, QuickView, directory-size columns and hosted result focus.
+- Focused unit/provider/command batch below: 427 run, 10 expected skips (opt-in
+  checks and environment/platform prerequisites). No failures. Following the
+  archive cutoff removal, reran the full archive module: 101 run, 2 skips.
+- Benchmark wrapper after mode migration: 8 passed. Identity/provider Find:
+  100 run, 5 expected skips. Final native QuickView smoke passed both source
+  and fresh-process restart, with disposable settings and snapshot-worker cleanup.
+- Earlier failing fixture assumptions were migrated, not suppressed: old worker
+  barriers, iterator fault injection and synchronous mutation expectations.
+  Real failures fixed included post-navigation refresh errors, watch-registration
+  rollback and successful result-navigation focus ordering.
+
+Run from the existing application Python environment; no installation, full
+`build.py test`, clean/freeze/package or Registry writes were performed:
+
+```powershell
+python -c "import build, subprocess, sys, os; env=build._environment(); env['QT_QPA_PLATFORM']='offscreen'; env['QT_QPA_FONTDIR']=os.path.join(os.environ['WINDIR'], 'Fonts'); sys.exit(subprocess.run([sys.executable, '-m', 'unittest', 'fman_integrationtest.test_qt'], env=env, timeout=180).returncode)"
+python -c "import build, subprocess, sys; modules=['fman_unittest.test_listing','fman_unittest.test_process_pane','fman_unittest.test_search_file_fuzzy','fman_unittest.impl.plugins.test_mother_fs','fman_unittest.impl.plugins.test_plugin','fman_unittest.impl.test_fs_cache','fman_unittest.test_pane_rendering_benchmark','core.tests.fs.test_local','core.tests.fs.test_zip','core.tests.commands.test___init__']; sys.exit(subprocess.run([sys.executable, '-m', 'unittest', *modules], env=build._environment(), timeout=240).returncode)"
+python -c "import build, subprocess, sys; sys.exit(subprocess.run([sys.executable, '-m', 'unittest', 'core.tests.fs.test_zip'], env=build._environment(), timeout=240).returncode)"
+python -c "import build, subprocess, sys, os; env=build._environment(); env['QT_QPA_PLATFORM']='windows'; env['QT_QPA_FONTDIR']=os.path.join(os.environ['WINDIR'], 'Fonts'); sys.exit(subprocess.run([sys.executable, '-m', 'fman_integrationtest.quick_view_smoke'], env=env, timeout=150).returncode)"
+python -m unittest src/unittest/python/fman_unittest/test_pane_rendering_benchmark.py
+```
+
+### Application Performance
+
+Three alternating fresh-process pairs per folder; native Qt, warm OS caches,
+hidden filtering enabled, QuickView/status disabled. Historical sources and
+resources come from `56e840a72e4eda0cf957c1b1bd19fe905f00dcd0` in temporary storage,
+not a production compatibility switch. All 24 ordered row/text fingerprints
+matched, settings were isolated and error lists were empty.
+
+| Folder | Entries | First Paint ms, Old/New | Metadata Ready ms, Old/New | Settled MiB, Old/New |
+| --- | ---: | ---: | ---: | ---: |
+| CelebAAligned | 202,603 | 5663.4 / 583.4 | 11497.9 / 570.6 | 771.3 / 165.6 |
+| System32 | 4,757 | 219.4 / 53.9 | 345.8 / 41.1 | 116.2 / 89.0 |
+| WinSxS | 24,315 | 862.9 / 218.9 | 1607.4 / 203.5 | 197.0 / 98.7 |
+| C root | 19 | 86.2 / 31.6 | 88.0 / 24.5 | 96.6 / 87.3 |
+
+Reference-folder post-paint Qt commit work: 1511.0 ms to zero; metadata tail:
+5834.5 ms to zero. These are folder-loading, not application-startup timings.
+Raw paired evidence: `target/diagnostics/fs-pane-unified-final.json`.
+
+A separate full-candidate interaction run retained all 202,603 marks, with no
+errors. Default Find cap is 50,000 inspected entries; this stress run raises it
+to one million and therefore indexes all reference entries.
+
+| Phase | Completed Paint ms | Arrow-to-Paint p95 ms | Maximum ms |
+| --- | ---: | ---: | ---: |
+| Filter | 259.1 | 17.0 | 28.8 |
+| Clear filter | 137.0 | 11.4 | 15.6 |
+| Full-candidate Find | 1142.8 | 12.0 | 38.1 |
+| Exit Find | 141.1 | 14.2 | 15.4 |
+| Modified sort | 191.3 | 20.3 | 57.5 |
+| Refresh | 830.7 | 14.8 | 125.7 |
+| Name sort, all marked | 287.0 | 36.2 | 134.1 |
+
+Idle arrow-to-paint p95: 6.7 ms. Interaction peak: 285.1 MiB, down from the
+earlier 332.2 MiB run after avoiding full identity ambiguity tables on ordinary
+refresh. Raw evidence: `target/diagnostics/fs-pane-interactions-unified.json`.
+Input sampling acknowledges one posted arrow at a time, not held-key backlog;
+short phases include follow-on settled samples. Maxima remain important.
+
+Reproduction (set the first argument to the reference folder):
+
+```powershell
+python src/misc/benchmark_pane_rendering.py "<reference-folder>" "$env:WINDIR/System32" "$env:WINDIR/WinSxS" C:/ --baseline current --repeat 3 --output target/diagnostics/fs-pane-unified-final.json
+python -c "import build, subprocess, sys, os; env=build._environment(); env['QT_QPA_PLATFORM']='windows'; env['QT_QPA_FONTDIR']=os.path.join(os.environ['WINDIR'], 'Fonts'); sys.exit(subprocess.run([sys.executable, '-m', 'fman_integrationtest.pane_rendering_benchmark', sys.argv[1], '--child', 'snapshot', '--interactions', '--output', 'target/diagnostics/fs-pane-interactions-unified.json'], env=env, timeout=180).returncode)" "<reference-folder>"
+```
+
+### Open Adoption Gates
+
+- Not all loaded interaction phases meet 16 ms p95; peak interaction memory
+  exceeds 250 MiB. Python sort/key generation, large marked-state restoration
+  and snapshot validation remain measured costs, not solved by worker dispatch.
+- Held-key backlog, two simultaneous large panes with optional services,
+  adversarial full-scale queries and broader mixed-entry workload measurements.
+- Live cloud/offline/access-denied/removable/network cases, icon DPI/association
+  behavior and external drag automation. Native NTFS/ReFS identity and ordinary
+  file-operation regressions passed; these do not substitute for the remaining
+  environment-specific checks.
+- Portable artifact smoke was not requested or run. Keep this task in Plan;
+  do not move it to Done until adoption gates pass or are explicitly revised.
+
+### Earlier PoC
 
 - Immediate first-edit check: `fman_unittest.test_pane_arch_poc.FilterTest`,
   eight tests passed, including the bounded adversarial child.

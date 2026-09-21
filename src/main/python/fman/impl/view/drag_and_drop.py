@@ -49,6 +49,7 @@ class DragAndDrop(QTableView):
 			# that the dragged items are also rendered as being selected.
 			selection = self.selectionModel().selection()
 			current = self.selectionModel().currentIndex()
+			generation = getattr(self, '_view_generation', None)
 			try:
 				self.selectionModel().clear()
 				# When dragging items that have actually been selected by the
@@ -61,8 +62,9 @@ class DragAndDrop(QTableView):
 				)
 				super().startDrag(supportedActions)
 			finally:
-				self.selectionModel().select(selection, QISM.ClearAndSelect)
-				self.selectionModel().setCurrentIndex(current, QISM.NoUpdate)
+				if generation == getattr(self, '_view_generation', None):
+					self.selectionModel().select(selection, QISM.ClearAndSelect)
+					self.selectionModel().setCurrentIndex(current, QISM.NoUpdate)
 	def dropEvent(self, event):
 		modifiers = event.keyboardModifiers()
 		if is_mac():

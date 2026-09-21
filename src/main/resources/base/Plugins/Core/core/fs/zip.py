@@ -78,6 +78,34 @@ class _7ZipFileSystem(FileSystem):
 						yield name
 						already_yielded.add(name)
 				candidate = parent
+	def scan(self, path, check_canceled):
+		from contextlib import closing
+		from fman.listing import Listing
+		path_in_zip = self._split(path)[1].rstrip('/')
+		prefix = path_in_zip + '/' if path_in_zip else ''
+		entries = {}
+		with closing(self._iter_infos(path, cache=False)) as infos:
+			for info in infos:
+				check_canceled()
+				if not info.path.startswith(prefix):
+					continue
+				relative = info.path[len(prefix):].rstrip('/')
+				if not relative:
+					continue
+				name, separator, remainder = relative.partition('/')
+				if separator:
+					entries.setdefault(name, (True, None, None))
+				else:
+					try:
+						modified = None if info.mtime is None else round(info.mtime.timestamp() * 1_000_000_000)
+					except (OSError, OverflowError, ValueError):
+						modified = None
+					entries[name] = info.is_dir, info.size_bytes, modified
+		check_canceled()
+		return Listing.create(self.scheme + path, entries,
+			is_dir=(value[0] for value in entries.values()),
+			sizes=(value[1] for value in entries.values()),
+			mtimes_ns=(value[2] for value in entries.values()))
 	def is_dir(self, existing_path):
 		zip_path, path_in_zip = self._split(existing_path)
 		if not path_in_zip:
@@ -226,26 +254,20 @@ class _7ZipFileSystem(FileSystem):
 			else:
 				return path[:split_point], path[split_point:].lstrip('/')
 		raise filenotfounderror(self.scheme + path) from None
-	def _iter_infos(self, path):
+	def _iter_infos(self, path, cache=True):
 		zip_path, path_in_zip = self._split(path)
 		self._raise_filenotfounderror_if_not_exists(zip_path)
 		args = ['l', '-ba', '-slt', zip_path]
 		if path_in_zip:
 			args.append(path_in_zip)
-		# We can hugely improve performance by making 7-Zip exclude children of
-		# the given directory. Unfortunately, this has a drawback: If you have
-		# a/b.txt in an archive but no separate entry for a/, then excluding */*
-		# filters out a/. We thus exclude */*/*/*. This works for all folders
-		# that contain at least one subdirectory with a file.
-		exclude = (path_in_zip + '/' if path_in_zip else '') + '*/*/*/*'
-		args.append('-x!' + exclude)
 		with _7zip(args, kill=True) as process:
 			stdout_lines = process.stdout_lines
 			file_info = self._read_file_info(stdout_lines)
 			if path_in_zip and not file_info:
 				raise filenotfounderror(self.scheme + path)
 			while file_info:
-				self._put_in_cache(zip_path, file_info)
+				if cache:
+					self._put_in_cache(zip_path, file_info)
 				yield file_info
 				file_info = self._read_file_info(stdout_lines)
 	def _raise_filenotfounderror_if_not_exists(self, zip_path):

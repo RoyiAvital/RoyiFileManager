@@ -6,12 +6,12 @@ from fman.impl.view.move_without_updating_selection import \
 	MoveWithoutUpdatingSelection
 from fman.impl.view.resize_cols_to_contents import ResizeColumnsToContents
 from fman.impl.view.single_row_mode import SingleRowMode
-from PyQt5.QtCore import QEvent, QItemSelectionModel as QISM, QRect, Qt, \
+from PyQt5.QtCore import QEvent, QItemSelection, QItemSelectionModel as QISM, QPointF, QRect, Qt, \
 	pyqtSignal, QRectF
 from PyQt5.QtGui import QPen, QContextMenuEvent, QKeySequence, QPainterPath, \
-	QRegion
+	QRegion, QTextLayout, QTextCharFormat, QPalette, QDrag
 from PyQt5.QtWidgets import QTableView, QLineEdit, QVBoxLayout, QStyle, \
-	QStyledItemDelegate, QProxyStyle, QHeaderView, QToolTip, QMenu, QAction
+	QStyledItemDelegate, QStyleOptionViewItem, QProxyStyle, QHeaderView, QToolTip, QMenu, QAction
 
 class FileListView(
 	SingleRowMode, MoveWithoutUpdatingSelection, DragAndDrop,
@@ -37,6 +37,10 @@ class FileListView(
 		self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 		self.setContextMenuPolicy(Qt.DefaultContextMenu)
 		self._urls_being_loaded = []
+		self._snapshot_state = None
+		self._view_generation = 0
+		self._pending_snapshot_restore = None
+		self._pending_cursor = None
 	def contextMenuEvent(self, event):
 		index = self.indexAt(event.pos())
 		updated_selection = False
@@ -121,7 +125,19 @@ class FileListView(
 		if index.isValid():
 			return self.model().url(index)
 	def place_cursor_at(self, file_url):
-		self.setCurrentIndex(self.model().find(file_url))
+		try:
+			index = self.model().find(file_url)
+		except ValueError:
+			source = self.model().sourceModel()
+			from fman.url import dirname
+			if hasattr(source, '_displayed') and dirname(file_url) == source.get_location():
+				self._pending_cursor = source, file_url, source._scan_revision + (not source._scanning)
+				if not source._scanning:
+					source.reload()
+				return
+			raise
+		self._pending_cursor = None
+		self.setCurrentIndex(index)
 	def edit_name(self, file_url, selection_start=0, selection_end=None):
 		def on_editor_shown(editor):
 			set_selection(editor, selection_start, selection_end)
@@ -141,13 +157,82 @@ class FileListView(
 		if old_model:
 			self._disconnect_signals(old_model)
 		super().setModel(model)
+		old_header_selection = getattr(self, '_header_selection_model', None)
+		header = self.horizontalHeader()
+		self._header_selection_model = QISM(model, header)
+		header.setSelectionModel(self._header_selection_model)
+		if old_header_selection is not None:
+			old_header_selection.deleteLater()
 		self._connect_signals(model)
 	def _connect_signals(self, model):
 		model.sort_order_changed.connect(self._on_sort_order_changed)
 		model.transaction_ended.connect(self._on_transaction_ended)
+		if hasattr(model, 'snapshot_about_to_commit'):
+			model.snapshot_about_to_commit.connect(self._capture_snapshot_state)
+			model.snapshot_committed.connect(self._restore_snapshot_state)
 	def _disconnect_signals(self, model):
 		model.sort_order_changed.disconnect(self._on_sort_order_changed)
 		model.transaction_ended.disconnect(self._on_transaction_ended)
+		if hasattr(model, 'snapshot_about_to_commit'):
+			model.snapshot_about_to_commit.disconnect(self._capture_snapshot_state)
+			model.snapshot_committed.disconnect(self._restore_snapshot_state)
+	def _capture_snapshot_state(self):
+		if self._pending_snapshot_restore is not None:
+			self._snapshot_state, self._pending_snapshot_restore = self._pending_snapshot_restore, None
+			return
+		self._snapshot_state = self.snapshot_state()
+	def snapshot_state(self):
+		source = self.model().sourceModel()
+		current = self.currentIndex().row()
+		entry = source._visible[current] if 0 <= current < len(source._visible) else None
+		selected = set()
+		for selection in self.selectionModel().selection():
+			selected.update(source._visible[selection.top():selection.bottom() + 1])
+		return source._displayed, entry, current, selected, self.verticalScrollBar().value()
+	def _restore_snapshot_state(self, projection):
+		if self._snapshot_state is None:
+			return
+		previous, entry, old_row, selected, scroll = self._snapshot_state
+		self._snapshot_state = None
+		same = previous is projection.listing or projection.remap is None
+		def row_of(entry):
+			return projection.rows.get(entry if same else projection.remap.get(entry))
+		rows = sorted(row for entry in selected if (row := row_of(entry)) is not None)
+		selection = QItemSelection()
+		start = end = None
+		for row in rows:
+			if end is not None and row != end + 1:
+				selection.select(self.model().index(start, 0), self.model().index(end, self.model().columnCount() - 1))
+				start = None
+			if start is None:
+				start = row
+			end = row
+		if start is not None:
+			selection.select(self.model().index(start, 0), self.model().index(end, self.model().columnCount() - 1))
+		self.selectionModel().select(selection, QISM.ClearAndSelect)
+		row = row_of(entry) if entry is not None else None
+		if projection.preferred is not None and (row is None or not
+			projection.listing.display_names[projection.visible[row]].lower().startswith(projection.prefix)):
+			row = projection.rows[projection.preferred]
+		if row is None and self.model().rowCount():
+			row = min(max(old_row, 0), self.model().rowCount() - 1)
+		if row is not None:
+			self.setCurrentIndex(self.model().index(row, 0))
+		self.verticalScrollBar().setValue(scroll)
+		if self._pending_cursor:
+			source, url, scan_revision = self._pending_cursor
+			if source is self.model().sourceModel():
+				try:
+					index = self.model().find(url)
+				except ValueError:
+					if source._scan_revision >= scan_revision and not source._scanning and not source._dirty \
+						and projection.listing is source._listing:
+						self._pending_cursor = None
+				else:
+					self._pending_cursor = None
+					self.setCurrentIndex(index)
+			else:
+				self._pending_cursor = None
 	def _on_sort_order_changed(self, column, order):
 		self.sortByColumn(column, order)
 	def _on_transaction_ended(self):
@@ -200,6 +285,10 @@ class FileListView(
 			except ValueError:
 				pass
 	def _on_model_reset(self):
+		self._view_generation += 1
+		self._dragged_index = None
+		if self.state() == self.DraggingState:
+			QDrag.cancel()
 		self._urls_being_loaded = []
 		super()._on_model_reset()
 	def _init_vertical_header(self):
@@ -255,6 +344,42 @@ def set_selection(qlineedit, selection_start, selection_end=None):
 class FileListItemDelegate(QStyledItemDelegate):
 
 	editor_shown = pyqtSignal(QLineEdit)
+
+	def paint_item(self, painter, option, index):
+		highlights = index.data(Qt.UserRole + 1)
+		if not highlights:
+			return False
+		option = QStyleOptionViewItem(option)
+		view = option.widget
+		view.itemDelegate().initStyleOption(option, index)
+		style = view.style()
+		text_rect = style.subElementRect(QStyle.SE_ItemViewItemText, option, view).adjusted(2, 0, -2, 0)
+		text = option.fontMetrics.elidedText(option.text, option.textElideMode, text_rect.width())
+		option.text = ''
+		style.drawControl(QStyle.CE_ItemViewItem, option, painter, view)
+		layout = QTextLayout(text, option.font)
+		formats = []
+		for position in highlights:
+			if formats and formats[-1].start + formats[-1].length == position:
+				formats[-1].length += 1
+			else:
+				segment = QTextLayout.FormatRange()
+				segment.start, segment.length = position, 1
+				segment.format = QTextCharFormat()
+				segment.format.setFontUnderline(True)
+				formats.append(segment)
+		layout.setFormats(formats)
+		layout.beginLayout()
+		line = layout.createLine()
+		line.setLineWidth(max(0, text_rect.width()))
+		layout.endLayout()
+		painter.save()
+		painter.setClipRect(text_rect)
+		role = QPalette.HighlightedText if option.state & QStyle.State_Selected else QPalette.Text
+		painter.setPen(option.palette.color(role))
+		layout.draw(painter, QPointF(text_rect.x(), text_rect.y() + (text_rect.height() - line.height()) / 2))
+		painter.restore()
+		return True
 
 	def eventFilter(self, editor, event):
 		if not editor:

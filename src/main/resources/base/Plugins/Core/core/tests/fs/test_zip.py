@@ -16,7 +16,6 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import Event, enumerate as enumerate_threads
 from io import BytesIO
-from time import monotonic
 from unicodedata import normalize
 from unittest import TestCase
 from unittest.mock import Mock, patch
@@ -509,30 +508,24 @@ class SevenZipExecutableTest(TestCase):
 			self.assertEqual(['cancel.zip'], os.listdir(directory))
 			self.assertIsNotNone(children[0].poll())
 			self.assertTrue(children[0].stdout.closed)
-	def test_copy_verification_timing(self):
+	def test_copy_verification_preserves_contents(self):
 		with TemporaryDirectory() as directory:
 			root = Path(directory)
-			archive = root / 'timing.zip'
+			archive = root / 'copy.zip'
 			with ZipFile(archive, 'w') as writer:
-				writer.writestr('payload.bin', b'x' * (8 * 1024 * 1024))
-			started = monotonic()
+				writer.writestr('payload.bin', b'verified payload')
 			_run_7zip(['x', str(archive), '-o' + str(root / 'baseline')])
-			baseline = monotonic() - started
-			started = monotonic()
 			Extract(StubFS(), str(archive), '', str(root / 'verified'), verify_output=True)()
-			verified = monotonic() - started
 			self.assertEqual(_tree_digest(root / 'baseline', lambda: None),
 				_tree_digest(root / 'verified', lambda: None))
-			print('8 MiB baseline extraction %.3fs; staged/verified extraction %.3fs' % (baseline, verified))
-	def test_multi_item_move_verification_cost(self):
+
+	def test_multi_item_move_hash_read_budget(self):
 		with TemporaryDirectory() as directory:
 			root = Path(directory)
-			archive = root / 'timing.zip'
-			output = root / 'output'
+			archive, output = root / 'move.zip', root / 'output'
 			output.mkdir()
-			payload = b'x' * (3 * 1024 * 1024)
-			retained = b'y' * (4 * 1024 * 1024)
-			names = ['item-%02d.bin' % number for number in range(20)]
+			payload, retained = b'moved payload', b'retained payload'
+			names = ('first.bin', 'second.bin')
 			with ZipFile(archive, 'w') as writer:
 				for name in names:
 					writer.writestr(name, payload)
@@ -545,8 +538,7 @@ class SevenZipExecutableTest(TestCase):
 				with original_open(path, *args, **kwargs) as stream:
 					def read(*read_args):
 						data = stream.read(*read_args)
-						kind = 'archive' if path == archive else 'output'
-						read_bytes[kind] += len(data)
+						read_bytes['archive' if path == archive else 'output'] += len(data)
 						return data
 					proxy = Mock(wraps=stream)
 					proxy.read.side_effect = read
@@ -554,30 +546,19 @@ class SevenZipExecutableTest(TestCase):
 			def measured_digest(path, check):
 				with patch.object(Path, 'open', counted_open):
 					return _tree_digest(path, check)
-			samples = []
-			print('20-item Move, 64 MiB stored ZIP payload; Python hash-read bytes only')
 			for name in names:
 				read_bytes.update(archive=0, output=0)
 				archive_size = archive.stat().st_size
-				started = monotonic()
 				with patch('core.fs.zip._tree_digest', side_effect=measured_digest):
 					filesystem.move(as_url(archive, 'zip://') + '/' + name, as_url(output / name))
-				elapsed = monotonic() - started
-				self.assertEqual(2 * archive_size, read_bytes['archive'])
-				self.assertEqual(2 * len(payload), read_bytes['output'])
+				self.assertEqual(dict(archive=2 * archive_size, output=2 * len(payload)), read_bytes)
 				self.assertEqual(payload, (output / name).read_bytes())
-				samples.append((elapsed, read_bytes['archive'], read_bytes['output']))
-				print('%s %.3fs archive=%d output=%d' % (name, *samples[-1]))
 			with ZipFile(archive) as reader:
 				self.assertEqual(['retained.bin'], reader.namelist())
 				self.assertEqual(retained, reader.read('retained.bin'))
 			self.assertEqual(set(names), {path.name for path in output.iterdir()})
-			self.assertEqual({'timing.zip', 'output'}, {path.name for path in root.iterdir()})
-			print('Total %.3fs archive=%d output=%d' % (
-				sum(sample[0] for sample in samples),
-				sum(sample[1] for sample in samples),
-				sum(sample[2] for sample in samples)
-			))
+			self.assertEqual({'move.zip', 'output'}, {path.name for path in root.iterdir()})
+
 	def test_real_7z_and_tar_extraction(self):
 		for suffix, filesystem_type in (('.7z', SevenZipFileSystem), ('.tar', TarFileSystem)):
 			with self.subTest(suffix=suffix), TemporaryDirectory() as directory:
@@ -591,11 +572,9 @@ class SevenZipExecutableTest(TestCase):
 					list(command.progress_records(lambda: None))
 				filesystem = filesystem_type(StubFS(), {suffix})
 				output = root / 'out'
-				started = monotonic()
 				filesystem.copy(as_url(archive, filesystem.scheme), as_url(output))
 				self.assertEqual(_tree_digest(source, lambda: None),
 					_tree_digest(output / 'source', lambda: None))
-				print(suffix, 'extraction seconds:', round(monotonic() - started, 3))
 	def test_extract_pipe_progress(self):
 		with TemporaryDirectory() as directory:
 			archive = Path(directory, 'progress.zip')

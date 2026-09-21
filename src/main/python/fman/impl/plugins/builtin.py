@@ -88,6 +88,11 @@ class NullFileSystem(FileSystem):
 		return NullColumn.get_qualified_name(),
 	def iterdir(self, path):
 		return []
+	def scan(self, path, check_canceled):
+		from fman.listing import Listing
+		check_canceled()
+		self.is_dir(path)
+		return Listing.create(self.scheme + path, ())
 	def is_dir(self, existing_path):
 		if not existing_path:
 			return True
@@ -98,6 +103,10 @@ class NullFileSystem(FileSystem):
 class NullColumn(Column):
 
 	display_name = 'null'
+	def text(self, listing, index):
+		return ''
+	def keys(self, listing, ascending):
+		return (0,) * len(listing.names)
 
 	def get_str(self, url):
 		return ''

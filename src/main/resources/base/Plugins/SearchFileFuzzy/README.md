@@ -1,9 +1,13 @@
 # Find Files
 
-Finds files by name from the active pane without modifying the pane's file model or
-the main window. Local searches build a fresh index with `os.scandir` for every
-invocation, so changes made by other programs are reflected in the results.
-Other filesystem schemes use the public fman filesystem API.
+Finds files by name in a separate Quicksearch dialog. Current-folder Find reuses
+the committed pane snapshot when possible without changing the pane's filter,
+marks or columns. Press Enter to accept a result or Escape to cancel. Refresh
+with `Ctrl+R` to include external changes before opening Find.
+
+Recursive searches, folders containing reparse entries and panes without a ready
+snapshot build their index through traversal, using the same dialog. Local
+traversal uses `os.scandir`; other schemes use their provider APIs.
 
 ## Commands
 
@@ -25,18 +29,18 @@ directories are pruned together with all of their descendants.
 
 ## Result Metadata
 
-Run **Toggle find result metadata** from the Command Center (`Ctrl+Shift+P`)
-to show or hide a second line containing the local modified date and size, for
+Run **Toggle find result metadata** from the Command Center (`Ctrl+Shift+P`).
+Quicksearch shows a second line with modified date and size, for
 example `2026-09-18 12:34, 1.2 MiB`. It is off by default, persists under
 `UserSettings`, and applies to the next search. Dates use `YYYY-MM-DD HH:MM`;
 sizes use the pane's configured units. An empty file displays `0 B`.
 
-Every result reserves two lines while enabled. Unsupported or unreadable values
+In Quicksearch, every result reserves two lines while enabled. Unsupported or unreadable values
 are omitted; when neither is available, the second line is blank. File links
 show target metadata, falling back to link metadata for missing targets, like
 the pane. ZIP and other providers supply metadata when supported.
 
-Metadata is captured once during indexing, never during typing. Long indexing
+Quicksearch metadata is captured once during indexing, never during typing. Long indexing
 shows the existing cancellable progress dialog; canceling it reports
 `Find files canceled.` Navigation or pane closure silently discards pending
 results. A search started before the pane finishes loading can also be discarded
@@ -49,6 +53,9 @@ subscriptions.
 
 Fuzzy mode supports [fzf extended-search syntax](https://github.com/junegunn/fzf#search-syntax).
 Matching terms are highlighted in the displayed relative path.
+This is separate from the pane Filter Bar, which retains substring/glob matching
+with `*`, `?`, character classes, `^`/`$` anchors, leading `!` and backslash escapes.
+The Filter Bar does not interpret fuzzy subsequences, term AND/OR or quote operators.
 
 | Query | Meaning |
 | --- | --- |
@@ -169,21 +176,18 @@ finally { Remove-Item Env:FZF_REFERENCE_TESTS }
 
 The reference check requires `fzf` on `PATH`, ignores user fzf defaults, uses
 UTF-8 NUL-separated input/output and fails on a mismatch or missing executable.
-It never downloads or installs anything. Timing and memory measurements are
-opt-in via `SEARCH_PERFORMANCE_TESTS=1` and the `SearchPerformanceTest` class.
+It never downloads or installs anything. Timing and memory workloads are outside
+verification discovery and run only through the dedicated performance launcher:
 
 ```powershell
-$env:SEARCH_PERFORMANCE_TESTS="1"
-try { python -m unittest fman_unittest.test_search_file_fuzzy.SearchPerformanceTest }
-finally { Remove-Item Env:SEARCH_PERFORMANCE_TESTS }
+python src/performancetest/run.py suite --test "filter.*" --test "fuzzy.*" --test recursive.tree --profile
+python src/performancetest/run.py legacy-search
 ```
 
 The metadata benchmark creates and removes a temporary 50,000-file tree:
 
 ```powershell
-$env:SEARCH_METADATA_PERFORMANCE_TESTS="1"
-try { python -m unittest fman_unittest.test_search_file_fuzzy.SearchMetadataPerformanceTest }
-finally { Remove-Item Env:SEARCH_METADATA_PERFORMANCE_TESTS }
+python src/performancetest/run.py legacy-metadata
 ```
 
 ## Settings

@@ -1125,19 +1125,28 @@ def _hidden_file_filter(url):
 	scheme, path = splitscheme(url)
 	if scheme != 'file://':
 		return True
-	if PLATFORM == 'Windows':
-		try:
-			hidden = query(url, '_pane_hidden_state')
-		except AttributeError as error:
-			if error.name != '_pane_hidden_state' \
-				or getattr(type(error.obj), '_pane_hidden_state', None) is not None:
-				raise
-		except OSError:
-			pass
-		else:
-			if isinstance(hidden, bool):
-				return not hidden
 	return not is_hidden(path)
+
+def _snapshot_hidden_file_filter():
+	mac = PLATFORM == 'Mac'
+	def predicate(listing, index):
+		return not listing.attributes[index] & 2 or (
+			mac and listing.location == 'file:///' and listing.names[index] == 'Volumes')
+	def filter_indices(listing, order, check):
+		attributes = listing.attributes
+		visible = []
+		for start in range(0, len(order), 256):
+			check()
+			batch = order[start:start + 256]
+			if mac and listing.location == 'file:///':
+				visible.extend(index for index in batch if predicate(listing, index))
+			else:
+				visible.extend([index for index in batch if not attributes[index] & 2])
+		return visible
+	predicate.filter_indices = filter_indices
+	return predicate
+
+_hidden_file_filter.snapshot_filter = _snapshot_hidden_file_filter
 
 class _OpenInPaneCommand(DirectoryPaneCommand):
 	def __call__(self):

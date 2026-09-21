@@ -55,6 +55,7 @@ class DirectoryPaneWidget(QWidget):
 		super().__init__(parent)
 		self._location_bar = LocationBar(self)
 		self._model = SortedFileSystemModel(self, fs, null_location)
+		self.destroyed.connect(self._model.shutdown)
 		self._model.file_renamed.connect(self._on_file_renamed)
 		self._model.files_dropped.connect(self._on_files_dropped)
 		self._file_view = FileListView(
@@ -127,6 +128,12 @@ class DirectoryPaneWidget(QWidget):
 	@run_in_main_thread
 	def get_location(self):
 		return self._model.get_location()
+	@run_in_main_thread
+	def get_listing(self):
+		return getattr(self._model.sourceModel(), '_displayed', None)
+	@run_in_main_thread
+	def find_in_listing(self, search, query='', metadata=False, accepted=None):
+		return self._filter_bar.begin_search(search, query, metadata, accepted)
 	def set_location(
 		self, url, sort_column='', ascending=True, callback=None, onerror=None
 	):
@@ -273,8 +280,14 @@ class DirectoryPaneWidget(QWidget):
 		location = self.get_location()
 		self._model.refresh_files(tuple(url for url in urls if dirname(url) == location))
 	def _on_doubleclicked(self, index):
+		if self._filter_bar._search_session is not None:
+			self._filter_bar.finish_search(True)
+			return
 		self._controller.on_doubleclicked(self, self._model.url(index))
 	def _on_key_pressed(self, event):
+		if self._filter_bar._search_session is not None and event.key() in (Qt.Key_Return, Qt.Key_Enter, Key_Escape):
+			self._filter_bar.finish_search(event.key() != Key_Escape)
+			return True
 		if self._filter_bar.isVisible() and event.key() == Key_Backspace:
 			self._filter_bar.handle_keypress(event)
 			return True
@@ -291,6 +304,7 @@ class DirectoryPaneWidget(QWidget):
 	def _on_files_dropped(self, *args):
 		self._controller.on_files_dropped(self, *args)
 	def _on_location_changed(self, url):
+		self._filter_bar.finish_search(restore=False)
 		self._filter_bar.close()
 		self._location_bar.setText(as_human_readable(url))
 		self.status_changed.emit()
@@ -323,13 +337,61 @@ class FilterBar(QFrame):
 		self._input.setFocusPolicy(NoFocus)
 		self._matcher = compile_filter('')
 		self._active = False
+		self._search_session = None
+		self._accepted_search = None
 		self._model.add_filter(self._accepts)
 		self._model.files_changed.connect(self.publish_count)
+		self._model.snapshot_committed.connect(self._search_committed)
 		file_view.verticalScrollBar().rangeChanged.connect(
 			self._on_scroll_range_changed
 		)
 	def is_active(self):
 		return self._active
+	def begin_search(self, search, query, metadata, accepted):
+		source = self._model.sourceModel()
+		if getattr(source, '_displayed', None) is None:
+			return False
+		view = self._file_view
+		if self._search_session is not None and self._search_session[0] is source:
+			previous_query, state, hidden = self._search_session[2:5]
+		else:
+			previous_query, state = self._input.text(), view.snapshot_state()
+			hidden = tuple(view.isColumnHidden(index) for index in range(self._model.columnCount()))
+		self._search_session = source, search, previous_query, state, hidden, accepted
+		for index in range(1, len(hidden)):
+			view.setColumnHidden(index, not metadata)
+		self._input.setPlaceholderText('Find files')
+		self._input.setText(query)
+		self._on_text_changed(query)
+		self.show()
+		view.setFocus()
+		return True
+	def finish_search(self, accept=False, restore=True):
+		if self._search_session is None:
+			return
+		source, search, query, state, hidden, accepted = self._search_session
+		self._search_session = None
+		view = self._file_view
+		url = view.get_file_under_cursor() if accept else None
+		self._accepted_search = None
+		source._search = None
+		for index, was_hidden in enumerate(hidden):
+			if index < self._model.columnCount():
+				view.setColumnHidden(index, was_hidden)
+		self._input.setPlaceholderText('')
+		if restore and source is self._model.sourceModel():
+			source._restore_from = state[0]
+			view._pending_snapshot_restore = state
+			self._input.setText(query)
+			self._on_text_changed(query)
+			if url is not None and accepted is not None:
+				self._accepted_search = source, url, accepted
+	def _search_committed(self, result):
+		if self._accepted_search is not None:
+			source, url, accepted = self._accepted_search
+			self._accepted_search = None
+			if source is self._model.sourceModel():
+				accepted(url)
 	def handle_keypress(self, event):
 		if event.key() == Key_Escape:
 			self.close()
@@ -340,11 +402,13 @@ class FilterBar(QFrame):
 		result = query != query_before
 		# Prevent Arrow-Left/-Right from changing the cursor position:
 		self._input.setCursorPosition(len(query))
-		self.setVisible(bool(query))
+		self.setVisible(bool(query) or self._search_session is not None)
 		if result:
 			self._select_row_with_prefix(query)
 		return result
 	def _select_row_with_prefix(self, query):
+		if hasattr(self._model.sourceModel(), '_displayed'):
+			return
 		query_lower = query.lower()
 		m = self._model
 		def has_required_prefix(index):
@@ -359,6 +423,9 @@ class FilterBar(QFrame):
 				self._file_view.setCurrentIndex(idx)
 				break
 	def close(self):
+		if self._search_session is not None:
+			self.finish_search()
+			return
 		self.hide()
 		self._input.setText('')
 	def reposition(self, scroll_bar_visible=None):
@@ -375,7 +442,10 @@ class FilterBar(QFrame):
 	def _on_text_changed(self, text):
 		was_active = self._active
 		self._matcher = compile_filter(text)
-		self._active = bool(text)
+		self._active = bool(text) or self._search_session is not None
+		if self._search_session is not None:
+			source, search = self._search_session[:2]
+			source._search = search, text
 		self.setVisible(self._active)
 		self._model.sourceModel().update()
 		if self._active:
@@ -388,6 +458,11 @@ class FilterBar(QFrame):
 				len(self._model.sourceModel().get_rows()))
 	def _accepts(self, url):
 		return not self._active or self._matcher.matches(basename(url))
+	def snapshot_filter(self):
+		matcher, active = self._matcher, self._active
+		return lambda listing, index: not active or matcher.matches(listing.display_names[index])
+	def snapshot_prefix(self):
+		return self._input.text().lower()
 
 class MainWindow(QMainWindow):
 
@@ -643,7 +718,12 @@ class MainWindow(QMainWindow):
 			self.clear_status_message()
 	def _on_filter_changed(self, text, matched, total):
 		if self.sender() is self._active_pane:
-			self.show_status_message('Filter "%s": %d of %d items' % (text, matched, total))
+			mode = 'Find' if self._active_pane._filter_bar._search_session is not None else 'Filter'
+			message = '%s "%s": %d of %d items' % (mode, text, matched, total)
+			session = self._active_pane._filter_bar._search_session
+			if session is not None and getattr(session[1], 'max_entries', total) < total:
+				message += '; first %d entries searched' % session[1].max_entries
+			self.show_status_message(message)
 			self._status_bar_text.setTextFormat(Qt.PlainText)
 			self._status_bar_text.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
 			self._status_bar_text.setWordWrap(True)
@@ -676,6 +756,8 @@ class MainWindow(QMainWindow):
 			self.remove_bottom_panel(dock.panel)
 		self._clear_extended_status_bar()
 		self.closed.emit()
+		for pane in self._panes:
+			pane._model.shutdown()
 	@run_in_main_thread
 	def show_overlay(self, overlay):
 		overlay.resize(overlay.sizeHint())

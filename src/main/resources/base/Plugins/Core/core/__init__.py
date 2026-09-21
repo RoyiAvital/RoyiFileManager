@@ -1,3 +1,4 @@
+from builtins import zip as zip_columns
 from core.commands import *
 from core.fs import *
 from core import directory_size
@@ -14,15 +15,26 @@ from PyQt5.QtCore import QLocale, QDateTime
 import fman.fs
 import re
 
-_DIGITS = re.compile(r'\d+')
+_DIGITS = re.compile(r'(\d+)')
 
 # Define here so get_default_columns(...) can reference it as core.Name:
 class Name(Column):
+	keys_depend_on_external_data = False
+
 	def __init__(self, fs=fman.fs):
 		super().__init__()
 		self._fs = fs
 	def get_str(self, url):
 		return self._fs.query(url, 'name')
+	def text(self, listing, index):
+		return listing.display_names[index]
+	def keys(self, listing, ascending):
+		result = []
+		for name, is_dir in zip_columns(listing.display_names, listing.is_dir):
+			parts = _DIGITS.split(name.lower())
+			parts[1::2] = ['%06d' % int(part) for part in parts[1::2]]
+			result.append((is_dir ^ ascending, ''.join(parts)))
+		return tuple(result)
 	def get_sort_value(self, url, is_ascending):
 		try:
 			is_dir = self._fs.is_dir(url)
@@ -81,9 +93,28 @@ class Size(Column):
 		return is_dir ^ is_ascending, minor
 	def _get_size(self, url):
 		return self._fs.query(url, 'size_bytes')
+	def text(self, listing, index):
+		if listing.is_dir[index]:
+			value = directory_size.get_value(listing.location.rstrip('/') + '/' + listing.names[index])
+			return value[0] if value is not None else ''
+		return '' if listing.sizes[index] is None else format_size(listing.sizes[index])
+	def keys(self, listing, ascending):
+		result = []
+		for index, name in enumerate(listing.names):
+			is_dir = listing.is_dir[index]
+			if is_dir:
+				value = directory_size.get_value(listing.location.rstrip('/') + '/' + name)
+				minor = (value[1],) if value is not None else tuple(
+					ord(character) if ascending else -ord(character) for character in name.lower())
+			else:
+				minor = listing.sizes[index] or 0
+			result.append((is_dir ^ ascending, minor))
+		return tuple(result)
 
 # Define here so get_default_columns(...) can reference it as core.Modified:
 class Modified(Column):
+	keys_depend_on_external_data = False
+
 	def __init__(self, fs=fman.fs):
 		super().__init__()
 		self._fs = fs
@@ -120,3 +151,23 @@ class Modified(Column):
 		return is_dir ^ is_ascending, mtime or datetime.min
 	def _get_mtime(self, url):
 		return self._fs.query(url, 'modified_datetime')
+	def text(self, listing, index):
+		if listing.mtimes_ns[index] is None:
+			return ''
+		try:
+			mtime = datetime.fromtimestamp(listing.mtimes_ns[index] / 1_000_000_000)
+			timestamp = mtime.timestamp()
+		except (OSError, OverflowError, ValueError):
+			return ''
+		mtime_qt = QDateTime.fromMSecsSinceEpoch(int(timestamp * 1000))
+		return mtime_qt.toString(QLocale().dateTimeFormat(QLocale.ShortFormat).replace('yyyy', 'yy'))
+	def keys(self, listing, ascending):
+		result = []
+		convert, minimum = datetime.fromtimestamp, datetime.min
+		for is_dir, modified in zip_columns(listing.is_dir, listing.mtimes_ns):
+			try:
+				mtime = minimum if modified is None else convert(modified / 1_000_000_000)
+			except (OSError, OverflowError, ValueError):
+				mtime = minimum
+			result.append((is_dir ^ ascending, mtime))
+		return tuple(result)

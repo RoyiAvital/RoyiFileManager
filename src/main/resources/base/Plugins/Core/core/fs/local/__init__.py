@@ -1,11 +1,9 @@
 from core.trash import move_to_trash
 from core.util import filenotfounderror
-from contextlib import contextmanager
 from datetime import datetime
 from errno import ENOENT
 from fman import PLATFORM, Task
 from fman.fs import FileSystem, cached
-from fman.impl.fs_cache import Cache
 from fman.impl.util.qt.thread import run_in_main_thread
 from fman.url import as_url, splitscheme, as_human_readable, join, basename, \
 	dirname
@@ -15,8 +13,7 @@ from os.path import islink, samestat, isabs, splitdrive
 from pathlib import Path
 from PyQt5.QtCore import QFileSystemWatcher
 from shutil import copystat
-from stat import S_ISDIR, S_IWRITE, FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_REPARSE_POINT
-from threading import Lock
+from stat import S_ISDIR, S_IWRITE
 
 import errno
 import os
@@ -27,61 +24,49 @@ if PLATFORM == 'Windows':
 
 _COPY_BUFFER_SIZE = 1024 * 1024
 
-class _EntryAttributesCache(Cache):
-	def __init__(self):
-		super().__init__()
-		self._scans = {}
-		self._scan_lock = Lock()
-		self._lookup_directory = None
-	@contextmanager
-	def collect_entry_attributes(self, path):
-		path = path.rstrip('/')
-		token = object()
-		with self._scan_lock:
-			directory = self._root.update_child(path)
-			self._scans[path] = token
-		prefix_length = len(path) + 1
-		def publish(entry_path, attributes):
-			with self._scan_lock:
-				if self._scans.get(path) is token:
-					directory.update_child(entry_path[prefix_length:]).put(
-						'_entry_attributes', attributes)
-		try:
-			yield publish
-		finally:
-			with self._scan_lock:
-				if self._scans.get(path) is token:
-					del self._scans[path]
-	def get_entry_attributes(self, path):
-		directory_path, name = path.rsplit('/', 1)
-		with self._scan_lock:
-			cached = self._lookup_directory
-			if cached is None or cached[0] != directory_path:
-				cached = directory_path, self._root.get_child(directory_path)
-				self._lookup_directory = cached
-			return cached[1].get_child(name).get('_entry_attributes')
-	def clear(self, path):
-		with self._scan_lock:
-			self._lookup_directory = None
-			cleared = path.rstrip('/')
-			for directory in tuple(self._scans):
-				if not cleared or directory == cleared \
-					or directory.startswith(cleared + '/') \
-					or cleared.startswith(directory + '/'):
-					del self._scans[directory]
-			super().clear(path)
-
 class LocalFileSystem(FileSystem):
 
 	scheme = 'file://'
 
 	def __init__(self):
 		super().__init__()
-		if PLATFORM == 'Windows':
-			self.cache = _EntryAttributesCache()
 		self._watcher = None
 	def get_default_columns(self, path):
 		return 'core.Name', 'core.Size', 'core.Modified'
+	def scan(self, path, check_canceled):
+		os_path = self._url_to_os_path(path)
+		if not self._isabs(os_path):
+			raise filenotfounderror(path)
+		if PLATFORM == 'Windows':
+			from core.fs.local.windows.listing import scan
+			listing = scan(self.scheme + path, os_path, check_canceled)
+			if listing is not None:
+				return listing
+		return self._scan_entries(path, os_path, check_canceled)
+	def _scan_entries(self, path, os_path, check_canceled):
+		from fman.listing import Listing
+		names, directories, sizes, modified, attributes = ([] for field in range(5))
+		with os.scandir(os_path) as entries:
+			for entry in entries:
+				check_canceled()
+				try:
+					own = entry.stat(follow_symlinks=False)
+					metadata = own
+					if entry.is_symlink() or getattr(own, 'st_reparse_tag', 0) == 0xa0000003:
+						try:
+							metadata = os.stat(entry.path)
+						except OSError:
+							pass
+				except FileNotFoundError:
+					continue
+				names.append(entry.name)
+				directories.append(S_ISDIR(metadata.st_mode))
+				sizes.append(metadata.st_size)
+				modified.append(metadata.st_mtime_ns)
+				attributes.append(getattr(own, 'st_file_attributes', 2 if entry.name.startswith('.') else 0))
+		check_canceled()
+		return Listing.create(self.scheme + path, names, is_dir=directories,
+			sizes=sizes, mtimes_ns=modified, attributes=attributes)
 	def exists(self, path):
 		os_path = self._url_to_os_path(path)
 		return self._isabs(os_path) and Path(os_path).exists()
@@ -89,33 +74,7 @@ class LocalFileSystem(FileSystem):
 		os_path = self._url_to_os_path(path)
 		if not self._isabs(os_path):
 			raise filenotfounderror(path)
-		if not _supports_entry_attributes(path.rstrip('/')):
-			return os.listdir(os_path)
-		names = []
-		with self.cache.collect_entry_attributes(path) as publish:
-			with os.scandir(os_path) as entries:
-				for entry in entries:
-					names.append(entry.name)
-					try:
-						attributes = getattr(entry.stat(follow_symlinks=False),
-							'st_file_attributes', None)
-					except OSError:
-						attributes = None
-					if type(attributes) is not int \
-						or attributes & FILE_ATTRIBUTE_REPARSE_POINT:
-						attributes = None
-					publish(path.rstrip('/') + '/' + entry.name, attributes)
-		return names
-	def _pane_hidden_state(self, path):
-		if not _supports_entry_attributes(path) or len(path) <= 3:
-			return None
-		try:
-			attributes = self.cache.get_entry_attributes(path)
-		except KeyError:
-			return None
-		if attributes is None:
-			return None
-		return bool(attributes & FILE_ATTRIBUTE_HIDDEN)
+		return os.listdir(os_path)
 	def is_dir(self, existing_path):
 		# Like Python's isdir(...) except raises FileNotFoundError if the file
 		# does not exist and OSError if there is another error.
@@ -343,11 +302,17 @@ class LocalFileSystem(FileSystem):
 		else:
 			size = self.size_bytes(src_path) if measure_size else 0
 			yield CopyFile(self, src_url, dst_url, size)
-	@run_in_main_thread
 	def watch(self, path):
+		if PLATFORM != 'Windows':
+			self._watch(path)
+	def unwatch(self, path):
+		if PLATFORM != 'Windows':
+			self._unwatch(path)
+	@run_in_main_thread
+	def _watch(self, path):
 		self._get_watcher().addPath(self._url_to_os_path(path))
 	@run_in_main_thread
-	def unwatch(self, path):
+	def _unwatch(self, path):
 		self._get_watcher().removePath(self._url_to_os_path(path))
 	def _get_watcher(self):
 		# Instantiate QFileSystemWatcher as late as possible. It requires a
@@ -389,13 +354,6 @@ class LocalFileSystem(FileSystem):
 		# Python's isabs(...) says \\host\share is *not* absolute. But for our
 		# purposes, it is. So add some extra logic to handle this case:
 		return isabs(os_path) or splitdrive(os_path)[0]
-
-def _supports_entry_attributes(path):
-	return PLATFORM == 'Windows' and len(path) >= 2 \
-		and path[0] in 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz' \
-		and path[1] == ':' and '\\' not in path \
-		and (len(path) == 2 or path[2] == '/' and all(
-			part not in ('', '.', '..') for part in path[3:].split('/')))
 
 class CopyFile(Task):
 	def __init__(self, fs, src_url, dst_url, size_bytes):

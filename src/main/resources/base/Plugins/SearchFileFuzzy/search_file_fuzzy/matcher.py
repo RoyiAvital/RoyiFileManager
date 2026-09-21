@@ -37,8 +37,15 @@ def _split_camel_case(value):
 	return ''.join(result)
 
 
+def _checked(values, check):
+	for index, value in enumerate(values):
+		if check is not None and index % 256 == 0:
+			check()
+		yield value
+
+
 class Matcher:
-	def __init__(self, entries, mode='fuzzy', max_results=100):
+	def __init__(self, entries, mode='fuzzy', max_results=100, check_canceled=None):
 		if mode not in ('fuzzy', 'regular'):
 			raise ValueError('Search mode must be "fuzzy" or "regular".')
 		self._entries = list(entries)
@@ -46,33 +53,37 @@ class Matcher:
 		self._max_results = max(1, int(max_results))
 		self._normalized = [
 			(normalize(entry.name), normalize(entry.relative_path))
-			for entry in self._entries
+			for entry in _checked(self._entries, check_canceled)
 		]
 		self._literal_paths = [
 			_literal(entry.relative_path.replace('/', '\\'))
-			for entry in self._entries
+			for entry in _checked(self._entries, check_canceled)
 		] if mode == 'fuzzy' else []
 
-	def __call__(self, query):
+	def __call__(self, query, check_canceled=None):
+		if check_canceled is not None:
+			check_canceled()
 		if self._mode == 'fuzzy' and _OPERATORS.search(query):
-			return self._extended(_prepare(parse(query)))
+			return self._extended(_prepare(parse(query)), check_canceled)
 		query = normalize(query)
 		if not query:
 			return self._entries[:self._max_results]
 		if self._mode == 'regular':
-			return self._regular(query)
-		return self._fuzzy(query)
+			return self._regular(query, check_canceled)
+		return self._fuzzy(query, check_canceled)
 
-	def matches(self, query):
+	def matches(self, query, check_canceled=None):
+		if check_canceled is not None:
+			check_canceled()
 		if self._mode == 'regular':
-			return [(entry, []) for entry in self(query)]
+			return [(entry, []) for entry in self(query, check_canceled)]
 		groups = _prepare(parse(query)) if _OPERATORS.search(query) else None
-		entries = self._extended(groups) if groups is not None else self(query)
+		entries = self._extended(groups, check_canceled) if groups is not None else self(query, check_canceled)
 		return [
-			(entry, self._highlights(entry, query, groups)) for entry in entries
+			(entry, self._highlights(entry, query, groups)) for entry in _checked(entries, check_canceled)
 		]
 
-	def _extended(self, groups):
+	def _extended(self, groups, check_canceled=None):
 		if not groups:
 			return self._entries[:self._max_results]
 		ranked = any(
@@ -80,7 +91,7 @@ class Matcher:
 			for group in groups for term, predicate, score_text in group
 		)
 		result = []
-		for index, path in enumerate(self._literal_paths):
+		for index, path in enumerate(_checked(self._literal_paths, check_canceled)):
 			selected = _select(groups, path)
 			if selected is None:
 				continue
@@ -133,18 +144,18 @@ class Matcher:
 				]
 		return sorted({unit for position in positions for unit in mapping[position]})
 
-	def _regular(self, query):
+	def _regular(self, query, check_canceled=None):
 		result = []
-		for entry, (_, relative_path) in zip(self._entries, self._normalized):
+		for entry, (_, relative_path) in _checked(zip(self._entries, self._normalized), check_canceled):
 			if query in relative_path:
 				result.append(entry)
 				if len(result) == self._max_results:
 					break
 		return result
 
-	def _fuzzy(self, query):
+	def _fuzzy(self, query, check_canceled=None):
 		scored = []
-		for index, (name, relative_path) in enumerate(self._normalized):
+		for index, (name, relative_path) in enumerate(_checked(self._normalized, check_canceled)):
 			score = max(
 				_score(query, name, filename=True),
 				_score(query, relative_path, filename=False)

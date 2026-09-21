@@ -36,6 +36,8 @@
 - [ ] Enable the file watching mechanism on Windows.
 - [x] Implement [Commit `f3e48d2`](https://github.com/mherrmann/fman/commit/f3e48d23308689c4d3ffc90753a73bf6bb24a55b) from [`fman`](https://github.com/mherrmann/fman).
 - [x] Update naming to match the logic: "Find files" -> Find files by their names or metadata, "Search files" -> Searches file by their content and metadata.
+- [x] BUG: When closing a panel ("Search files" / "Find files with `fd`") with <kbd>Esc</kbd> the focus does not return to the last active pane.
+- [x] BUG: <kbd>Ctrl</kbd>+<kbd>F</kbd> ("Find files in current folder") does not yield the UI from version `0.8.1` (Quick Search based).
 
 ## Performance
 

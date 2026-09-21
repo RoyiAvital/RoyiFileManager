@@ -7,7 +7,127 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-API compatibility: Preserves the public `fman` plug-in API from fman 1.7.6.
+API compatibility: Breaks the fman 1.7.5 filesystem, column and pane-filter
+extension contracts. Providers must implement `scan(path, check_canceled)`;
+columns must implement `text(listing, index)` and `keys(listing, ascending)`;
+custom pane filters must capture a snapshot predicate. There is no old-model
+fallback. Commands, URL-based file operations, settings and Task signatures
+remain unchanged. See [migration contracts](PlugIn.md#filesystems-and-columns).
+
+### Added
+
+- Dedicated, demand-only performance tests with a commented YAML catalog,
+  stable test/query IDs and immutable per-run JSON records attributed to the
+  application version, source, harness, dependencies and machine configuration.
+  Comparisons reject incompatible fixtures, definitions and environments.
+  Run them with `python build.py measure`, separately from `python build.py test`;
+  the full suite updates its `X.Y.Z` or `Unreleased` result and opens an offline
+  HTML report. History survives `clean`, and failed runs preserve successful
+  version results. Eleven overview rows include aggregated Navigation and
+  Refresh / Selection latency;
+  previous-version comparisons, charts and detailed timings expose regressions.
+- Reproducible synthetic 256-file and 200,000-file folders and a 50,000-file
+  recursive tree replace the private CelebA dependency for new benchmarks.
+  Fixtures include challenging names, valid PNG/JPEG/BMP images, fixed metadata
+  and content-hash validation. Historical CelebA timings remain historical.
+- Native Filter Bar, Fuzzy Find, recursive Find and small/large-folder QuickView
+  workloads record runtime, completed paints, active event-loop stalls and
+  memory. QuickView checks pixels, rapid navigation, controls, error states and
+  cleanup. Page Up/Down, Home/End and simulated wheel scrolling have separate
+  movement/paint latency measurements with QuickView off and on. Heavy speed
+  tests are outside regular correctness verification; CPU profiles run separately.
+
+### Changed
+
+- Replaced per-row incremental pane loading with immutable snapshots and one
+  virtual model for all bundled providers. Local NTFS/ReFS enumeration captures
+  full 128-bit identities and display metadata in bulk; provider-specific scans
+  support archives, drives, network roots and processes. Refresh rejects stale
+  results and keeps operation-time metadata checks separate from display data.
+  Unreadable link targets retain their own entry metadata. Traversal clients use
+  lightweight name enumeration without populating a redundant attributes cache.
+  Unchanged refreshes with verified identities avoid a full identity-remapping
+  dictionary. Windows no-op OS watching skips Qt dispatch while retaining
+  application notifications and scan-to-watch handoff.
+- Filter Bar projections run off the Qt thread with existing substring/glob
+  semantics. `Ctrl+F` retains the Quicksearch dialog and fuzzy/`fzf` matching,
+  using the current pane snapshot for indexing when possible. Enter accepts a
+  result; Escape cancels without changing the pane's filter, marks or columns.
+- Icons and formatted cell text load lazily through bounded caches. Marked
+  selection no longer makes the unhighlighted header inspect every selected cell
+  during painting. External metadata delivery repaints without resetting the pane
+  when the active sort depends only on the snapshot.
+
+#### Performance Report
+
+Earlier `Unreleased` snapshot, measured on 2026-09-21 with `python build.py measure`.
+Windows/NTFS, warm caches, three fresh-process runs per test. Small folders contain
+256 files; large folders contain 200,000 files; recursive search uses 50,000 files.
+
+| Test                      	| Run Time (ms) 	|
+|---------------------------	|---------------	|
+| Pane Load - Small Folder  	| 44.14         	|
+| Pane Load - Large Folder  	| 1030.26       	|
+| Filter Bar - Small Folder 	| 9.72          	|
+| Filter Bar - Large Folder 	| 332.28        	|
+| Fuzzy Find - Small Folder 	| 11.68         	|
+| Fuzzy Find - Large Folder 	| 476.94        	|
+| Recursive Find            	| 89.82         	|
+| QuickView - Small Folder  	| 109.73        	|
+| QuickView - Large Folder  	| 118.74        	|
+| Navigation                	| 6.79          	|
+| Refresh / Selection       	| 482.95        	|
+
+Pane Load and QuickView report median time to first populated paint and first
+preview paint, respectively. Search rows report the slowest query's median time
+to paint. Navigation is the mean of 28 action medians covering Page Up/Down,
+Home/End and wheel scrolling across both folder sizes, with QuickView off/on.
+These are observed interaction timings, not total benchmark execution times.
+
+Refresh / Selection is the mean of 16 unchanged-refresh case medians: eight
+selection patterns in both folder sizes, three fresh-process repetitions each.
+Patterns cover no marks, first/middle/last single marks, a 10% middle block,
+100 scattered marks, all except the cursor, and all entries. Timing starts after
+selection setup and ends after the new snapshot paints; snapshot data, row order,
+marks, cursor and scroll must be preserved. Its value uses the extended-suite run;
+the other rows retain their earlier same-day measurements. Detailed timings and
+cumulative process peak memory are available in the HTML report.
+The Fuzzy Find rows predate restoration of the Quicksearch dialog and do not
+measure its current performance.
+
+#### Performance Compared With 0.8.1
+
+Three alternating fresh-process pairs per folder on Windows, warm OS caches,
+hidden filtering enabled, QuickView and extended status disabled. Baseline:
+the pre-change application from commit `56e840a`, extracted only by the benchmark.
+All 24 runs passed ordered row/text parity and settings-isolation checks.
+
+**CelebA Folder - 202,603 Entries**
+
+| Measurement                     	| Version `0.8.1` 	| Snapshot Implementation 	| Time Reduction 	|
+|---------------------------------	|-----------------	|-------------------------	|----------------	|
+| First Populated Pane Paint      	| 5.663 s         	| 0.583 s                 	| 89.7%          	|
+| Metadata Loading Complete       	| 11.498 s        	| 0.571 s                 	| 95.0%          	|
+| Total Post Paint Qt Commit Work 	| 1.511 s         	| 0 s                     	| 100%           	|
+
+Metadata is ready before first paint, with no loading tail. Settled working set
+fell from **771.3 MiB to 165.6 MiB** (78.5%). System32 first paint fell from
+219 ms to 54 ms; WinSxS (24,315 entries) from 863 ms to 219 ms; C: root from
+86 ms to 32 ms. These are directory-loading measurements, not application-startup
+or cold-storage guarantees.
+
+Heavy interaction remains an open performance gate: a separate 202,603-entry
+full-candidate Find/sort/refresh run peaked at 285 MiB, and selected-all sorting
+had 36 ms arrow-to-paint p95. Initial loading gains do not establish uniformly
+frame-budget interaction. Reproduction and open gates are recorded in
+[FSPaneArch001](Plan/FSPaneArch001.md).
+
+### Fixed
+
+- Closing the Search files or Find files with fd panel with Escape returns
+  keyboard focus to the last active pane after panel cleanup.
+- Archive panes include deeply implied directories even when the archive has
+  no explicit parent-directory records.
 
 ## [0.8.1] - 2026-09-21
 

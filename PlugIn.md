@@ -28,13 +28,16 @@ contracts whose details matter when extending the application.
 | Module | Purpose | Status |
 | --- | --- | --- |
 | [fman](src/main/python/fman/__init__.py) | Commands, listeners, pane/window handles, settings, dialogs, tasks | Legacy API plus additive host features |
-| [fman.fs](src/main/python/fman/fs.py) | Filesystem operations, filesystem providers, columns | Legacy API |
+| [fman.fs](src/main/python/fman/fs.py) | Filesystem operations, filesystem providers, columns | Operation signatures retained; snapshot provider/column migration required |
+| [fman.listing](src/main/python/fman/listing.py) | Immutable display snapshots | New provider contract |
 | [fman.url](src/main/python/fman/url.py) | Application URL manipulation | Legacy API |
 | [fman.clipboard](src/main/python/fman/clipboard.py) | Text and file clipboard operations | Legacy API |
 | [fman.ui](src/main/python/fman/ui.py) | QuickList, Panel, controls, hosting, settings binding, navigation | Provisional RoyiFileManager extension |
 
-The upstream fman 1.7.5 plug-in API is preserved. `FMAN_VERSION` is the upstream
-compatibility value, not a feature-negotiation version for `fman.ui`. Consult
+The upstream fman 1.7.5 listing/column contracts are not preserved. Implement
+the snapshot methods below; old per-row display methods are not an adapter.
+`FMAN_VERSION` is a historical upstream value, not a compatibility or
+feature-negotiation guarantee for this fork. Consult
 [CHANGELOG.md](CHANGELOG.md) for extension changes and migration notes.
 
 - Do not import `fman.impl`, access private host fields such as `_widget` or
@@ -176,6 +179,8 @@ construct them with internal widgets yourself.
 | `get_selected_files()` | Selected file URLs; current highlight is separate. |
 | `get_file_under_cursor()` | Current file URL, or no current value. |
 | `get_path()` | Current directory URL, not a native path. |
+| `get_listing()` | Current immutable `fman.listing.Listing`, or `None` before commit. Retaining it retains that snapshot's memory. |
+| `find_in_listing(search, query='', metadata=False, accepted=None)` | Start in-pane Find; return false if no snapshot is ready. `search(listing, query, check_canceled)` runs on a worker and returns `(entry_indices, highlights_by_entry)` with UTF-16 highlight offsets. `accepted(url)` runs on Qt after accepting and restoring normal projection. |
 | `set_path(dir_url, callback=None, onerror=host_default)` | Request a directory change, honoring location rewrite listeners. `callback()` signals initialization; do not treat it as a complete navigation outcome. |
 | `reload()` | Reload the pane's location. |
 | `edit_name(file_url, selection_start=0, selection_end=None)` | Start inline name editing and select the specified text range. |
@@ -432,7 +437,8 @@ receive full source/destination URLs so they can negotiate cross-scheme transfer
 | Provider member | Contract/default |
 | --- | --- |
 | `scheme = 'example://'` | Unique registered URL scheme. Base default is empty and should be overridden. |
-| `iterdir(path)` | Implement for browsable directories; yield child names as strings. Not supplied by the base class. |
+| `scan(path, check_canceled)` | Required for pane browsing; return a complete `fman.listing.Listing` whose location is `scheme + path`. Runs off Qt; call cancellation between bounded units of work and close resources on failure/cancellation. |
+| `iterdir(path)` | Yield child names for operation/traversal clients. Panes do not call it or automatically adapt it to `scan`. |
 | `get_default_columns(path)` | Qualified column identifiers; default `('core.Name',)`. |
 | `name(path)` | Display name; default final slash-separated path component. |
 | `is_dir(existing_path)` | Override to distinguish directories and raise on missing entries. Base returns `False`. |
@@ -454,6 +460,40 @@ must override it to guarantee trash semantics; do not rely on this default to
 protect recoverability. This reference describes the implementation and does
 not silently change that behavior.
 
+### Snapshot Migration
+
+Return `Listing.create(location, names, ...)`. Names are unique immediate child
+keys without separators, NUL, `.` or `..`; they form action URLs. `labels` can
+provide separate display strings. All columns are detached into immutable tuples.
+This is a Windows-first contract: both `/` and `\` are rejected, including a
+literal backslash in an otherwise valid POSIX filename.
+Use `is_dir`, `sizes`, `mtimes_ns`, own `attributes`, `created_ns`, and optional
+`extra=((column_name, scalar_values), ...)`. Missing size/time is `None`, not zero.
+Provider extras allow only `None`, strings, numbers, booleans and bytes.
+
+Stable identity is optional: `identities` contains exactly 16 bytes per entry,
+and `scope` is `(volume_id, directory_id_bytes16)`. Unknown IDs are zero. Only
+verified nonzero identity, scope and creation-time matches preserve marks across
+refresh. Ambiguous renamed hardlinks and replacements do not inherit marks;
+unknown-identity providers still preserve state across filter/sort of the same
+snapshot. Never invent identity from names or use display identity to authorize
+file operations.
+
+Providers own acquisition strategy: native directory records, archive indexes,
+process records or network enumeration all feed the same model. No Qt objects
+belong in a listing. Scans may overlap; shared provider state must be protected.
+Raise on failure instead of returning partial or stale results.
+
+Custom pane filters must expose `snapshot_filter()` on the callable or its bound
+owner. The host calls it on Qt; return a worker-safe predicate
+`predicate(listing, index)` capturing plain immutable state, not widgets.
+The predicate must not perform filesystem I/O. Old URL-only filters are rejected.
+It may also expose `filter_indices(listing, order, check_canceled)`, returning
+the same accepted indices in their input order. Check cancellation between
+bounded chunks. Predicates must be side-effect-free; evaluation order and call
+counts are not guaranteed. The bundled hidden filter uses this batch path and
+preserves the Mac root `/Volumes` exception.
+
 ### Caching and Metadata
 
 `@fman.fs.cached` wraps a provider method of shape `method(self, path)`. Results
@@ -464,8 +504,10 @@ expose `self.cache` with `put(path, attr, value)`, `get(path, attr)`,
 its implementation class.
 
 Custom metadata methods can be consumed through `query(url, method_name)`. Agree
-on method names and value types with your columns; there is no universal promise
-that every filesystem supports a method such as `size`.
+on method names and value types with operation clients; there is no universal
+promise that every filesystem supports a method such as `size`. Enumeration
+snapshots never populate authoritative operation caches. Operation clients still
+need fresh identity/permission checks before acting.
 
 ### Columns
 
@@ -473,15 +515,17 @@ Subclass `fman.fs.Column` and expose the class in your package namespace.
 
 | Member | Contract |
 | --- | --- |
-| `get_str(url)` | Required display string for an entry. |
-| `get_sort_value(url, is_ascending)` | Comparable sort value; default is `get_str(url).lower()`. The host reverses order for descending sorts, so normally do not reverse it yourself. |
+| `text(listing, index)` | Required display string; called lazily on Qt. Read snapshot/configuration data only; no I/O or widget mutation. |
+| `keys(listing, ascending)` | Required sequence of one comparable key per entry; computed on a worker. The host reverses order for descending sorts. Direction-dependent grouping must account for that reversal. |
+| `keys_depend_on_external_data` | Defaults to `True`. Set `False` only when keys depend solely on the snapshot and direction; external metadata delivery then repaints without re-sorting or resetting the pane. Bundled Name/Modified opt out; Size remains dependent. |
 | `display_name` | Property used for the heading; defaults to the class name. |
 
 The host identifier is `module.ClassName`; providers return these identifiers
 from `get_default_columns`. `get_qualified_name()` exists for host registration
 and is marked internal-use in the source. Columns should return consistent,
-comparable types and keep display/sort work bounded; use provider metadata/cache
-rather than manipulating Qt models.
+comparable types and keep display/sort work bounded. Do not manipulate Qt models
+or query per-path metadata for display. Legacy `get_str`/`get_sort_value` helpers
+are not called by the pane.
 
 ## URL Helpers
 

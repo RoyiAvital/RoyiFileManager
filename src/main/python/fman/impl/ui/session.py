@@ -239,6 +239,7 @@ class NavigationHandle:
 def navigate(pane, url, on_done, *, window, check=None, timeout=30):
 	require_ui_thread()
 	from fman.impl.navigation import NavigationRequest
+	from fman.impl.util.qt.thread import is_in_main_thread
 	from PyQt5.QtCore import QTimer
 	if timeout <= 0:
 		raise ValueError('Navigation timeout must be positive.')
@@ -252,7 +253,12 @@ def navigate(pane, url, on_done, *, window, check=None, timeout=30):
 		if manages_busy:
 			window.set_busy(False)
 		on_done(outcome, message)
-	request = NavigationRequest(lambda *result: window.post(completed, *result),
+	def deliver(*result):
+		if is_in_main_thread():
+			window._deliver((completed, result))
+		else:
+			window.post(completed, *result)
+	request = NavigationRequest(deliver,
 		lambda: window.alive.is_set() and window.owner.active)
 	handle = NavigationHandle(request)
 	window.disposed.connect(handle.cancel)

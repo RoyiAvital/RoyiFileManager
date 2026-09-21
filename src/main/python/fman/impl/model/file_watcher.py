@@ -10,19 +10,28 @@ class FileWatcher:
 		with self._lock:
 			self._fs.file_added.add_callback(self._on_file_added)
 			self._fs.file_removed.add_callback(self._on_file_removed)
-			self._fs.add_file_changed_callback(
-				self._model.get_location(), self._on_file_changed
-			)
+			try:
+				self._fs.add_file_changed_callback(
+					self._model.get_location(), self._on_file_changed
+				)
+			except BaseException:
+				self._fs.file_removed.remove_callback(self._on_file_removed)
+				self._fs.file_added.remove_callback(self._on_file_added)
+				raise
 	def shutdown(self):
 		with self._lock:
 			try:
 				self._fs.remove_file_changed_callback(
 					self._model.get_location(), self._on_file_changed
 				)
-				self._fs.file_removed.remove_callback(self._on_file_removed)
-				self._fs.file_added.remove_callback(self._on_file_added)
 			except (ValueError, FileNotFoundError):
 				pass
+			for event, callback in ((self._fs.file_removed, self._on_file_removed),
+				(self._fs.file_added, self._on_file_added)):
+				try:
+					event.remove_callback(callback)
+				except ValueError:
+					pass
 	def _on_file_added(self, url):
 		if self._is_in_root(url):
 			self._model.notify_file_added(url)

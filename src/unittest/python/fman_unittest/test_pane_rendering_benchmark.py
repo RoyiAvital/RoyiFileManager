@@ -16,8 +16,32 @@ if SPEC is None or SPEC.loader is None:
 benchmark = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(benchmark)
 
+PANE_SPEC = importlib.util.spec_from_file_location('pane_measurement',
+	SCRIPT.parents[1] / 'performancetest/python/fman_performancetest/pane_rendering_benchmark.py')
+pane_measurement = importlib.util.module_from_spec(PANE_SPEC)
+PANE_SPEC.loader.exec_module(pane_measurement)
+
 
 class PaneRenderingBenchmarkTest(TestCase):
+	def test_refresh_selection_patterns(self):
+		for count in (8, 256, 200000):
+			for pattern in pane_measurement.REFRESH_SELECTIONS:
+				with self.subTest(count=count, pattern=pattern):
+					cursor, ranges = pane_measurement.refresh_selection(pattern, count)
+					self.assertTrue(0 <= cursor < count)
+					selected = {row for first, last in ranges for row in range(first, last + 1)}
+					self.assertEqual(len(selected), sum(last - first + 1 for first, last in ranges))
+					self.assertTrue(all(0 <= first <= last < count for first, last in ranges))
+					expected = {'none': 0, 'single-first': 1, 'single-middle': 1, 'single-last': 1,
+						'middle-block': max(1, count // 10), 'scattered': min(100, count),
+						'all-except-current': count - 1, 'all': count}[pattern]
+					self.assertEqual(expected, len(selected))
+					if pattern == 'all-except-current':
+						self.assertNotIn(cursor, selected)
+		for pattern, count in (('unknown', 256), ('none', 0)):
+			with self.assertRaises(ValueError):
+				pane_measurement.refresh_selection(pattern, count)
+
 	def records(self, labels=('large',), baseline='before', repeat=3):
 		return [dict(label=label, mode=mode, iteration=iteration, entries=12, rows=10,
 			fingerprint=label, errors=[], settings_isolated=True, show_hidden=False,
@@ -26,9 +50,8 @@ class PaneRenderingBenchmarkTest(TestCase):
 			for label in labels for mode in (baseline, 'after') for iteration in range(1, repeat + 1)]
 
 	def test_default_directories(self):
-		with patch.dict(benchmark.os.environ, {'WINDIR': r'X:\Windows'}):
-			self.assertEqual([Path(r'D:\TMP\CelebAAligned'), Path(r'X:\Windows') / 'System32',
-				Path(r'X:\Windows') / 'WinSxS'], benchmark.default_directories())
+		self.assertEqual([benchmark.ROOT / 'target/performance/fixtures' / identity / 'data'
+			for identity in ('flat-small-v1', 'flat-large-v1')], benchmark.default_directories())
 
 	def test_summary_uses_medians_and_handles_no_loading_samples(self):
 		rows = self.records()
@@ -37,6 +60,15 @@ class PaneRenderingBenchmarkTest(TestCase):
 		for row in rows:
 			row['loading_paints_ms'] = {'count': 0}
 		self.assertIn('n/a -> n/a', benchmark.summarize(rows, ['large'], 'before', 3, False))
+
+	def test_current_comparison_requires_snapshot_samples(self):
+		rows = self.records(baseline='current')
+		with self.assertRaises(ValueError):
+			benchmark.summarize(rows, ['large'], 'current', 3, False)
+		for row in rows:
+			if row['mode'] == 'after':
+				row['mode'] = 'snapshot'
+		self.assertIn('| large | 12 |', benchmark.summarize(rows, ['large'], 'current', 3, False))
 
 	def test_invalid_or_incomplete_results_withhold_summary(self):
 		for field, value in [('fingerprint', 'changed'), ('rows', 9), ('entries', 13),
@@ -74,7 +106,7 @@ class PaneRenderingBenchmarkTest(TestCase):
 			def run(command, **kwargs):
 				self.assertEqual(benchmark.ROOT, kwargs['cwd'])
 				self.assertEqual({'test': 'environment'}, kwargs['env'])
-				self.assertEqual([benchmark.sys.executable, '-m', 'fman_integrationtest.pane_rendering_benchmark',
+				self.assertEqual([benchmark.sys.executable, '-m', 'fman_performancetest.pane_rendering_benchmark',
 					*[str(folder.resolve()) for folder in folders], '--baseline', 'reviewed', '--repeat', '1',
 					'--output', str(output.resolve()), '--show-hidden'], command)
 				output.write_text(json.dumps(rows), encoding='utf-8')

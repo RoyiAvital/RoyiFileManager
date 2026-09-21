@@ -1,0 +1,64 @@
+# Human-maintained definitions. The runner never rewrites this file.
+schema_version: 1
+suite_id: royifilemanager.desktop
+suite_revision: 3
+protocol:
+  repetitions: 3
+  cache: warm
+  viewport: [1280, 800]
+  dpi_scale: 1
+  metadata: false
+  max_entries: 1000000000
+  max_results: 100
+  navigation_keys: [page-up, page-down, home, end]
+  navigation_repetitions: 5
+  wheel: {delta: 120, scroll_lines: 3, burst_events: 10}
+  # One unchanged reload per case and fresh-process repetition. Selection setup
+  # is untimed; reload dispatch through completed paint is timed. Memory peaks
+  # are process high-water marks, cumulative across these ordered cases.
+  refresh_selections: [none, single-first, single-middle, single-last, middle-block, scattered, all-except-current, all]
+  # Profiles are separate runs and are never included in timing summaries.
+  notes: Fresh process per test repetition; fixture verification precedes timing.
+fixtures:
+  flat-small-v1: {revision: 1, kind: flat, files: 256, seed: 1729}
+  flat-large-v1: {revision: 1, kind: flat, files: 200000, seed: 1729}
+  recursive-v1: {revision: 1, kind: recursive, files: 50000, seed: 1730}
+queries:
+  filter:
+    - {id: substring-report, text: report}
+    - {id: prefix-common, text: '^common'}
+    - {id: suffix-txt, text: '.txt$'}
+    - {id: negative-tmp, text: '!tmp'}
+    - {id: repeated-wildcard-miss, text: '?*?*?*?*?*?*?*?Z'}
+    - {id: repeated-star-miss, text: 'a*a*a*a*a*a*a*a*Z'}
+    - {id: literal-brackets, text: '\[draft\]'}
+    - {id: unicode-fold, text: strasse}
+  fuzzy:
+    - {id: subsequence-report, text: rpt}
+    - {id: multi-term, text: report pdf}
+    - {id: prefix-negative, text: '^common !missing'}
+    - {id: mixed-operators, text: "'report .pdf$ | .txt$ !tmp"}
+    - {id: repeated-subsequence-miss, text: abababababababababababababababZ}
+    - {id: unicode-fold, text: strasse}
+    - {id: exact-miss, text: '^missing$'}
+  recursive:
+    - {id: branch-prefix, text: '^branch_03'}
+    - {id: branch-extension, text: '^branch_02 .py$'}
+    - {id: subsequence-report, text: rpt}
+    - {id: repeated-subsequence-miss, text: abababababababababababababababZ}
+    - {id: unicode-fold, text: strasse}
+    - {id: exact-miss, text: '^missing$'}
+tests:
+  - {id: pane.load.small, revision: 1, workload: pane, fixture: flat-small-v1}
+  - {id: pane.load.large, revision: 1, workload: pane, fixture: flat-large-v1}
+  - {id: refresh.small, revision: 1, workload: refresh, fixture: flat-small-v1}
+  - {id: refresh.large, revision: 1, workload: refresh, fixture: flat-large-v1}
+  - {id: filter.small, revision: 1, workload: filter, fixture: flat-small-v1}
+  - {id: filter.large, revision: 1, workload: filter, fixture: flat-large-v1}
+  # Current-folder Find uses the snapshot-backed Quicksearch dialog, not pane filtering.
+  - {id: fuzzy.small, revision: 2, workload: fuzzy, fixture: flat-small-v1}
+  - {id: fuzzy.large, revision: 2, workload: fuzzy, fixture: flat-large-v1}
+  - {id: recursive.tree, revision: 1, workload: recursive, fixture: recursive-v1}
+  # Both sizes run identical image actions; the other pane stays small and empty.
+  - {id: quickview.small, revision: 1, workload: quickview, fixture: flat-small-v1}
+  - {id: quickview.large, revision: 1, workload: quickview, fixture: flat-large-v1}

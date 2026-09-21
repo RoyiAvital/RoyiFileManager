@@ -13,16 +13,16 @@ The _File Manager_ focuses on:
  - Easy **integration** of 3rd party tools (Editors, File Comparison, etc...).
  - Developed and verified on **Windows OS**.
 
-Currently, the _File Manager_ retains the `fman` plug-in API so existing plug-ins can be used.  
-The API is also extended with new features and capabilities.  
-See the [Plug In API Reference](PlugIn.md) for legacy APIs and new extensions.
+Commands and file-operation APIs retain their `fman` signatures. Filesystem,
+column and custom pane-filter plug-ins must migrate to the snapshot contract;
+there is no legacy pane fallback. See the [Plug In API Reference](PlugIn.md).
 
 ## Features
 
 Significant additions compared with `fman`:
 
-- **Performance**: Improved navigation performance on large folders. Optimized the reactivity operations (Filtering / Finding).
-- **Fuzzy Find Files**: Find files by name with <kbd>Ctrl</kbd>+<kbd>F</kbd> or recursively with <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>. Supports [`fzf`](https://github.com/junegunn/fzf) style exact terms, anchors, negation, `AND` / `OR` and match highlights. Using **Toggle find result metadata** adds metadata to results. See [Usage, Syntax and Performance](src/main/resources/base/Plugins/SearchFileFuzzy/README.md).
+- **Snapshot Panes**: Bulk NTFS/ReFS listing, virtual rows and background filter/find projections. All bundled providers share the snapshot model; see [measured gains and remaining limits](CHANGELOG.md#performance-compared-with-081).
+- **Fuzzy Find Files**: Open the Quicksearch dialog with <kbd>Ctrl</kbd>+<kbd>F</kbd> or search recursively with <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>. Supports [`fzf`](https://github.com/junegunn/fzf) style exact terms, anchors, negation, `AND` / `OR` and match highlights, separately from the substring/glob Filter Bar. Using **Toggle find result metadata** adds metadata to results. See [Usage, Syntax and Performance](src/main/resources/base/Plugins/SearchFileFuzzy/README.md).
 - **Search Files**: Press <kbd>Alt</kbd>+<kbd>F7</kbd> for [`ripgrep`](https://github.com/burntsushi/ripgrep) based filename and content search in Glob, Literal or RegEx mode. Leave content empty to list files by name. See [Search Files Usage](src/main/resources/base/Plugins/SearchFiles/README.md).
 - **Find Files with `fd`**: Press <kbd>Shift</kbd>+<kbd>F7</kbd> for [`fd`](https://github.com/sharkdp/fd) based filename search with date, size, type and traversal filters. See [Find Files Usage](src/main/resources/base/Plugins/FindFiles/README.md).
 - **Pane Filter / Files Filter**: Type to filter file names with globs, anchors and negation with [`fzf`](https://github.com/junegunn/fzf) inspired syntax. See [Pane Filter Usage](src/main/resources/base/Plugins/Core/README.md#pane-filter).
@@ -233,6 +233,22 @@ These are synchronous query calls, not real keyboard-latency measurements.
 The simplified regex can stall on adversarial inputs; use current mode for those.
 See [measurements and limits](Plan/FSPaneArch001.md#current-matcher-experiment).
 
+For the isolated unchanged-refresh and Windows watcher A/B experiment, use the
+existing application Python environment:
+
+```powershell
+python src/misc/benchmark_snapshot_followup.py --qt-tests --merged
+python src/misc/benchmark_snapshot_followup.py --measure --merged
+python src/misc/benchmark_snapshot_followup.py --qt-restore --merged
+```
+
+These compare a retained baseline with the merged implementation using synthetic
+200,000-entry snapshots; no disk fixture is needed. Omit `--merged` to exercise
+the process-local prototypes. Application source files are never edited by the
+runner. `--repeat` controls alternating pairs (default nine); optional `--output`
+writes a new JSON file and refuses to overwrite one. The probes are separate
+from `build.py measure` and do not establish end-to-end latency or memory limits.
+
 ### Directory Listing Benchmark
 
 [benchmark_directory_listing.py](src/misc/benchmark_directory_listing.py) compares
@@ -266,18 +282,20 @@ python -m unittest src/unittest/python/fman_unittest/test_directory_listing_benc
 
 ### Pane Rendering Benchmark
 
-[benchmark_pane_rendering.py](src/misc/benchmark_pane_rendering.py) runs the usual
-three-folder comparison: `D:\TMP\CelebAAligned`, `%WINDIR%\System32` and
-`%WINDIR%\WinSxS`. Use the existing application Python environment on Windows:
+[benchmark_pane_rendering.py](src/misc/benchmark_pane_rendering.py) compares the
+prepared 256-file and 200,000-file synthetic folders. Use the existing
+application Python environment on Windows:
 
 ```powershell
+python src/performancetest/run.py suite --test "pane.*" --prepare-only
 python src/misc/benchmark_pane_rendering.py
 ```
 
 The runner sets up application import paths automatically, performs three
 alternating baseline/current pairs per folder, and prints median first-paint,
-completion and loading arrow-to-paint timings. The default baseline reproduces
-the 0.8.0 listing path. Raw samples go to
+completion and loading arrow-to-paint timings. The default compares the snapshot
+implementation with pre-change commit `56e840a`, extracted into temporary storage.
+Git and that commit must be available; `--baseline-ref` overrides it. Raw samples go to
 `target/diagnostics/pane-rendering-three-folders.json`; `--output` changes that
 destination. A missing folder, failed child or row/metadata mismatch returns
 nonzero; invalid comparisons do not produce a summary. OS caches are not flushed.
@@ -286,19 +304,57 @@ Folder arguments override the defaults; `--repeat 1` is a shorter smoke run:
 
 ```powershell
 python src/misc/benchmark_pane_rendering.py --baseline reviewed --repeat 1
-python src/misc/benchmark_pane_rendering.py "D:\TMP\CelebAAligned" "C:\Windows\System32" "C:\Windows\WinSxS" --show-hidden
+python src/misc/benchmark_pane_rendering.py "C:\Path\To\Folder" --show-hidden
 python -m unittest src/unittest/python/fman_unittest/test_pane_rendering_benchmark.py -v
 ```
 
-[pane_rendering_benchmark.py](src/integrationtest/python/fman_integrationtest/pane_rendering_benchmark.py)
+[pane_rendering_benchmark.py](src/performancetest/python/fman_performancetest/pane_rendering_benchmark.py)
 measures actual pane loading and arrow-to-paint latency in isolated fresh
-processes. `--baseline before` compares against no hidden-attribute cache;
-`--baseline reviewed` compares against its earlier full-path lookup implementation.
-Both compare with current code. Use `--repeat 3`, `--show-hidden` for the
+processes. `--baseline current` compares the historical application with snapshots.
+`--baseline before` and `--baseline reviewed` retain historical hidden-cache
+experiments within the extracted application, not comparisons with snapshots.
+Use `--repeat 3`, `--show-hidden` for the
 filter-off control, and `--output` to retain JSON results. Child-only
 `--rows-output` records final rows after timing to diagnose parity differences.
-Run through `build._environment()` as shown in the
-[validated commands and timings](Done/PaneRendering001.md#follow-up-validation-and-reproduction).
+Run directly through `python src/performancetest/run.py pane` with folder arguments.
+Historical CelebA results are not comparable to the new synthetic baseline.
+
+### Repeatable Performance Suite
+
+Performance workloads live under [src/performancetest](src/performancetest/README.md),
+outside verification discovery. Definitions and comments live in
+[catalog.yaml](src/performancetest/catalog.yaml); each run writes a new JSON record
+with application version, source/harness hashes, environment, fixture hashes and
+raw samples. The runner never rewrites the YAML or an existing result.
+
+```powershell
+python build.py measure
+```
+
+`python build.py test` runs correctness verification; `python build.py measure`
+runs the full performance suite, updates the version result, generates an offline
+HTML report and opens it in the browser. No workload/profile selection is needed.
+Results and `index.html` live under `UserSettings/Performance`, surviving `clean`.
+Version identifiers are `X.Y.Z` for clean matching release tags, or `Unreleased`;
+the source version and commit are retained separately. Reruns replace the version's
+current result but preserve raw runs. Failed runs never replace successful results.
+
+The report has eleven overview rows, including Refresh / Selection and a Navigation
+aggregate of Page Up/Down, Home/End and wheel scrolling. Previous-version comparisons, charts
+and detailed measurements use compatible results only; the first run establishes
+a baseline. The original `src/performancetest/run.py suite` remains available for
+developer diagnostics without updating this version history.
+
+The default suite uses three fresh processes per test, synthetic 256-file and
+200,000-file folders, and a 50,000-file recursive tree. It measures real pane
+loading, Filter Bar, Quicksearch Fuzzy Find, recursive Find (`Ctrl+Shift+F`) and
+QuickView image paints, responsiveness and memory. Page Up/Down, Home/End and
+mouse-wheel latency are measured in both normal and QuickView-enabled panes.
+Refresh / Selection averages 16 unchanged-refresh case medians: eight selection
+patterns in both folder sizes, from no marks through scattered and all-marked
+selections. Reload-to-completed-paint timings check snapshot, marks, cursor and
+scroll preservation; per-case timings and process peak memory remain in the report.
+See the [protocol and result format](src/performancetest/README.md).
 
 ### Everything Search Backend Probe
 

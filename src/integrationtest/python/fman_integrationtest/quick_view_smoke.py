@@ -117,15 +117,20 @@ def exercise(context, root, restart):
 		traceback.print_exc()
 	finally:
 		def stop_models():
-			models = [pane._widget._model.sourceModel() for pane in context.window.get_panes()]
+			models = [pane._widget._model for pane in context.window.get_panes()]
 			for model in models:
 				model.shutdown()
 			return models
-		for model in gui(stop_models):
-			model._worker._thread.join(5)
-			if model._worker._thread.is_alive():
-				code = 1
-		gui(lambda: context.app.exit(code))
+		try:
+			models = gui(stop_models)
+			wait_for(lambda: all(not lane._active for model in models for lane in
+				(model._snapshot_scans, model._snapshot_refreshes, model._snapshot_views)),
+				'Snapshot workers did not stop')
+		except BaseException:
+			traceback.print_exc()
+			code = 1
+		finally:
+			gui(lambda: context.app.exit(code))
 
 
 def run_application(root, restart):

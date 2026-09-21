@@ -14,6 +14,22 @@ class StubFileSystem(FileSystem):
 		self._default_columns = default_columns
 	def get_default_columns(self, path):
 		return self._default_columns
+	def scan(self, path, check_canceled):
+		from fman.listing import Listing
+		if not self.exists(path):
+			raise FileNotFoundError(path)
+		prefix = normalize(path).rstrip('/')
+		prefix = prefix + '/' if prefix else ''
+		names, records = [], []
+		for key, record in self._items.items():
+			check_canceled()
+			if key.startswith(prefix) and key != prefix and '/' not in key[len(prefix):]:
+				names.append(key[len(prefix):])
+				records.append(record)
+		return Listing.create(self.scheme + path, names,
+			is_dir=[record.get('is_dir', False) for record in records],
+			sizes=[record.get('size', 1) for record in records],
+			mtimes_ns=[int(record.get('mtime', 1473339041.0) * 1e9) for record in records])
 	def exists(self, path):
 		return normalize(path) in self._items
 	def iterdir(self, path):

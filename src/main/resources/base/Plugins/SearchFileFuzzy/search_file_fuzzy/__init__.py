@@ -8,7 +8,7 @@ from fman import ApplicationCommand, DirectoryPaneCommand, QuicksearchItem, \
 from fman.impl.status_bar import format_size
 from fman.url import as_human_readable
 
-from search_file_fuzzy.indexer import build_index
+from search_file_fuzzy.indexer import build_index, index_listing
 from search_file_fuzzy.matcher import Matcher
 
 
@@ -93,7 +93,14 @@ def _search(pane, recursive, mode=None, query='', metadata=None):
 		index = None
 		indexing_error = None
 		try:
-			if stale is None:
+			from fman.listing import Listing
+			getter = getattr(pane, 'get_listing', None)
+			listing = getter() if not recursive and callable(getter) else None
+			if isinstance(listing, Listing) and listing.location == root_url and not any(
+				attributes & 0x400 for attributes in listing.attributes):
+				index = index_listing(listing, max_entries=options['max_entries'],
+					include_hidden=options['include_hidden'], collect_metadata=settings['show_metadata'])
+			elif stale is None:
 				index = build_index(root_url, **options)
 			else:
 				task = _IndexFiles(root_url, options, stale)

@@ -169,6 +169,10 @@ class DirectoryPane:
 	# TODO: Rename to get_location()
 	def get_path(self):
 		return self._widget.get_location()
+	def get_listing(self):
+		return self._widget.get_listing()
+	def find_in_listing(self, search, query='', metadata=False, accepted=None):
+		return self._widget.find_in_listing(search, query, metadata, accepted)
 	# TODO: Rename to set_location(...)
 	def set_path(self, dir_url, callback=None, onerror=_set_path_onerror):
 		from fman.impl.navigation import current_request

@@ -32,6 +32,15 @@ class DrivesFileSystem(FileSystem):
 		if self.exists(existing_path):
 			return True
 		raise filenotfounderror(existing_path)
+	def scan(self, path, check_canceled):
+		from fman.listing import Listing
+		names, labels = [], []
+		column = DriveName()
+		for name in self.iterdir(path):
+			check_canceled()
+			names.append(name)
+			labels.append(column.get_str(self.scheme + name))
+		return Listing.create(self.scheme + path, names, is_dir=(True,) * len(names), labels=labels)
 	def exists(self, path):
 		return not path or path in self._get_drives() or path == self.NETWORK
 	def _get_drives(self):
@@ -46,6 +55,11 @@ class DrivesFileSystem(FileSystem):
 class DriveName(Column):
 
 	display_name = 'Name'
+	def text(self, listing, index):
+		return listing.display_names[index]
+	def keys(self, listing, ascending):
+		return tuple((name == DrivesFileSystem.NETWORK, label.lower())
+			for name, label in zip(listing.names, listing.display_names))
 
 	def get_str(self, url):
 		scheme, path = splitscheme(url)

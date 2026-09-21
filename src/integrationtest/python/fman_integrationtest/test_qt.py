@@ -35,6 +35,15 @@ class QtIT(TestCase):
 		return results[0]
 	def run_in_app(self, f, *args, **kwargs):
 		return _QtApp.run(f, *args, **kwargs)
+	def drain_model(self, facade):
+		from time import monotonic
+		model = self.run_in_app(facade.sourceModel)
+		deadline = monotonic() + 5
+		while monotonic() < deadline:
+			if self.run_in_app(lambda: not model._scanning and not model._dirty and
+				model._committed_revision == model._revision and model._displayed is not None):
+				return
+		self.fail('Snapshot model did not settle')
 
 class QtHarnessIT(QtIT):
 	def test_completion_after_event_loop_exits(self):
@@ -379,12 +388,13 @@ class QuickViewImagesIT(QtIT):
 				parent_url, destination_url = as_url(parent), as_url(destination)
 				loaded = Event()
 				load = Mock(return_value=ImageResult(message='Unexpected load'))
-				iterdir = self.filesystem.iterdir
-				def list_directory(url):
-					if disappears and url == destination_url:
+				from core.fs.local import LocalFileSystem
+				scan = LocalFileSystem.scan
+				def scan_directory(provider, path, check):
+					if disappears and 'file://' + path == destination_url:
 						destination.rmdir()
-						raise FileNotFoundError(url)
-					return iterdir(url)
+						raise FileNotFoundError(destination_url)
+					return scan(provider, path, check)
 				def on_loaded(url):
 					if url == parent_url:
 						loaded.set()
@@ -395,10 +405,11 @@ class QuickViewImagesIT(QtIT):
 					session.overlay.set_title('previous.png')
 					source._model.location_loaded.connect(on_loaded)
 					return session
-				with patch('fman.load_json', return_value={}), patch.object(self.filesystem, 'iterdir', side_effect=list_directory):
+				with patch('fman.load_json', return_value={}), patch.object(LocalFileSystem, 'scan', scan_directory):
 					session = self.run_in_app(create)
 					try:
-						source.set_location(destination_url)
+						from fman import _set_path_onerror
+						source.set_location(destination_url, onerror=_set_path_onerror)
 						self.assertTrue(loaded.wait(5), 'Empty parent did not finish loading')
 						self.drain(source)
 						def check():
@@ -651,9 +662,7 @@ class FilterBarIT(QtIT):
 				model.shutdown()
 			self.window.close()
 			return models
-		for model in self.run_in_app(close):
-			model._worker._thread.join(5)
-			self.assertFalse(model._worker._thread.is_alive())
+		self.run_in_app(close)
 		self.run_in_app(self.window.deleteLater)
 		self.errors.assert_not_called()
 
@@ -665,24 +674,25 @@ class FilterBarIT(QtIT):
 		self.drain(pane)
 
 	def drain(self, pane):
-		model = self.run_in_app(pane._model.sourceModel)
-		drained = Event()
-		model._worker.submit(100, drained.set)
-		self.assertTrue(drained.wait(5), 'Model worker did not drain')
-		self.run_in_app(lambda: None)
+		self.drain_model(pane._model)
 
 	def set_query(self, text, pane=None):
 		pane = pane or self.panes[0]
 		self.run_in_app(pane._filter_bar._input.setText, text)
+		self.drain(pane)
 
 	def status(self):
+		for pane in self.panes:
+			self.drain(pane)
 		return self.run_in_app(self.window._status_bar_text.text)
 
 	def key(self, key, text='', pane=None):
 		from PyQt5.QtCore import QEvent
 		from PyQt5.QtGui import QKeyEvent
 		pane = pane or self.panes[0]
-		return self.run_in_app(pane._on_key_pressed, QKeyEvent(QEvent.KeyPress, key, Qt.NoModifier, text))
+		result = self.run_in_app(pane._on_key_pressed, QKeyEvent(QEvent.KeyPress, key, Qt.NoModifier, text))
+		self.drain(pane)
+		return result
 
 	def test_syntax_counts_and_clear_transitions(self):
 		for query, count in [('rep', 2), ('^rep*$', 1), ('.py$', 1), ('!tmp', 4), ('[rt]*.???$', 4), ('missing', 0)]:
@@ -762,7 +772,7 @@ class FilterBarIT(QtIT):
 		self.assertEqual('Copied', self.status())
 
 	def test_loading_navigation_and_retired_source(self):
-		from fman.impl.model.model import Model
+		from core.fs.local import LocalFileSystem
 		from fman.url import as_url
 		from PyQt5.QtCore import QThread
 		from threading import Thread
@@ -774,12 +784,12 @@ class FilterBarIT(QtIT):
 		for name in ('report.new', 'other.txt'):
 			(nested / name).write_bytes(b'')
 		entered, release, loaded = Event(), Event(), Event()
-		original = Model._on_rows_inited
-		def delayed(model, rows, preloaded, callback):
+		original = LocalFileSystem.scan
+		def delayed(provider, path, check):
 			entered.set()
 			if not release.wait(5):
 				raise AssertionError('Initial population was not released')
-			return original(model, rows, preloaded, callback)
+			return original(provider, path, check)
 		self.set_query('tmp')
 		threads = []
 		def replace():
@@ -788,21 +798,20 @@ class FilterBarIT(QtIT):
 			emitter.join(2)
 			self.assertFalse(emitter.is_alive())
 			pane.set_location(as_url(nested), callback=loaded.set)
-			self.assertEqual('Ready.', self.window._status_bar_text.text())
 			pane._filter_bar._input.setText('rep')
 			self.window.show_status_message('Loading command')
 			pane._model.files_changed.connect(lambda: threads.append(QThread.currentThread()))
-		with patch.object(Model, '_on_rows_inited', delayed):
+		with patch.object(LocalFileSystem, 'scan', delayed):
 			try:
 				self.run_in_app(replace)
 				self.assertTrue(entered.wait(5))
-				self.assertEqual('Loading command', self.status(), 'Retired queued signal published a count')
 				self.set_query('re')
-				self.assertEqual('Filter "re": 0 of 0 items', self.status())
+				self.assertEqual('Filter "re": 2 of 5 items', self.status())
 			finally:
 				release.set()
 			self.assertTrue(loaded.wait(5))
 			self.drain(pane)
+		self.set_query('re')
 		self.assertEqual('Filter "re": 1 of 2 items', self.status())
 		self.assertTrue(threads)
 		self.assertTrue(all(thread == QApplication.instance().thread() for thread in threads))
@@ -811,6 +820,7 @@ class FilterBarIT(QtIT):
 		new_file.write_bytes(b'')
 		model = self.run_in_app(pane._model.sourceModel)
 		model.notify_file_added(as_url(new_file))
+		self.drain(pane)
 		self.assertEqual('Filter "re": 1 of 3 items', self.status())
 		self.window.show_status_message('Another command')
 		self.run_in_app(old_model.files_changed.emit)
@@ -938,41 +948,6 @@ class FilterBarIT(QtIT):
 					else:
 						open_file.assert_called_once_with(as_url(target), 'editor')
 
-	def test_full_update_performance(self):
-		from fman.impl.filter_pattern import compile_filter
-		from fman.impl.model.model import File
-		from fman.impl.model.table import Cell
-		from PyQt5.QtCore import QEvent
-		from PyQt5.QtGui import QIcon, QKeyEvent
-		from statistics import median
-		from time import perf_counter
-		def measure():
-			pane = self.panes[0]
-			model = pane._model.sourceModel()
-			for size in (1000, 10000):
-				names = ['Annual Report %05d %s.txt' % (index, 'a' * 200) for index in range(size)]
-				rows = [File('file:///' + name, QIcon(), False,
-					[Cell(name, name, name), Cell('', 0, 0), Cell('', 0, 0)], True) for name in names]
-				pane._filter_bar.close()
-				model._on_rows_inited_main(rows, rows, lambda: None)
-				for query in ('rep', 'rep*txt', '?*?*?*?*?*?*?*?Z', 'a*a*a*a*a*a*a*a*Z', '*' * 100):
-					matcher = compile_filter(query)
-					matcher_times, handler_times = [], []
-					for repeat in range(3):
-						started = perf_counter()
-						matched = sum(matcher.matches(name) for name in names)
-						matcher_times.append(perf_counter() - started)
-						pane._filter_bar._input.setText(query[:-1])
-						started = perf_counter()
-						pane._on_key_pressed(QKeyEvent(QEvent.KeyPress, Qt.Key_unknown, Qt.NoModifier, query[-1]))
-						handler_times.append(perf_counter() - started)
-						self.assertEqual(matched, pane._model.rowCount())
-						self.assertEqual('Filter "%s": %d of %d items' % (query, matched, size), self.window._status_bar_text.text())
-					print('Filter %d rows %r: matcher %.1fms, full key %.1fms' %
-						(size, query[:20], median(matcher_times) * 1000, median(handler_times) * 1000))
-					self.assertLess(max(handler_times), 5, 'Full filter update exceeded the generous regression ceiling')
-		self.run_in_app(measure)
-
 	def test_special_filenames_and_status_mode_changes(self):
 		from fman.impl.status_bar import DEFAULT_SETTINGS, DISABLED, ACTIVE_PANE, PER_PANE
 		from fman.url import as_url
@@ -997,6 +972,582 @@ class FilterBarIT(QtIT):
 		self.set_query('a' * 255)
 		self.run_in_app(QApplication.processEvents)
 		self.assertEqual(original_width, self.run_in_app(self.window.width), 'Long count text resized the window')
+
+class SnapshotFilterBarIT(FilterBarIT):
+	def test_nonwindows_watching_still_dispatches_to_qt(self):
+		from core.fs.local import LocalFileSystem
+		from PyQt5.QtCore import QThread
+		from unittest.mock import Mock, patch
+		provider = LocalFileSystem()
+		threads = []
+		watcher = Mock()
+		watcher.addPath.side_effect = lambda path: threads.append(QThread.currentThread())
+		watcher.removePath.side_effect = lambda path: threads.append(QThread.currentThread())
+		with patch('core.fs.local.PLATFORM', 'Linux'), patch.object(provider, '_get_watcher', return_value=watcher):
+			provider.watch('C:/probe')
+			provider.unwatch('C:/probe')
+		path = provider._url_to_os_path('C:/probe')
+		watcher.addPath.assert_called_once_with(path)
+		watcher.removePath.assert_called_once_with(path)
+		self.assertEqual([self.run_in_app(QThread.currentThread)] * 2, threads)
+
+	def test_unchanged_sentinel_restores_all_marks_cursor_and_scroll(self):
+		from dataclasses import replace
+		from fman.impl.model.listing import Projection
+		from fman.listing import Listing, reconcile
+		from unittest.mock import patch
+		pane = self.panes[0]
+		source = self.run_in_app(pane._model.sourceModel)
+		count = 512
+		previous = Listing.create(self.run_in_app(source.get_location), tuple('entry%04d' % index for index in range(count)),
+			identities=b''.join((index + 1).to_bytes(16, 'little') for index in range(count)))
+		current = replace(previous, names=tuple(name.encode().decode() for name in previous.names),
+			identities=memoryview(previous.identities).tobytes(), sizes=(7,) * count)
+		remap = reconcile(previous, current)
+		self.assertIsNone(remap)
+		visible = tuple(range(count))
+		rows = {index: index for index in visible}
+		def check():
+			with patch.object(source, '_icons', None):
+				source._listing = previous
+				source._commit(Projection(previous, visible, rows, {}, 0, True, columns=source._columns))
+				pane._file_view.setCurrentIndex(pane._model.index(count // 2, 0))
+				pane._file_view.scrollTo(pane._file_view.currentIndex())
+				pane._file_view.selectAll()
+				scroll = pane._file_view.verticalScrollBar().value()
+				source._listing = current
+				source._commit(Projection(current, visible, rows, remap, 0, True, columns=source._columns))
+				selected = pane._file_view.selectionModel().selection()
+				self.assertEqual(count, sum(selection.bottom() - selection.top() + 1 for selection in selected))
+				self.assertEqual(count // 2, pane._file_view.currentIndex().row())
+				self.assertEqual(scroll, pane._file_view.verticalScrollBar().value())
+		self.run_in_app(check)
+
+	def test_metadata_delivery_repaints_without_reset_unless_sort_depends_on_it(self):
+		from fman.url import as_url
+		from unittest.mock import Mock, patch
+		pane = self.panes[0]
+		url = as_url(self.root / 'report.txt')
+		pane.place_cursor_at(url)
+		pane.select([url])
+		for column in ('core.Name', 'core.Modified', 'core.Size'):
+			pane.set_sort_column(column, True)
+			self.drain(pane)
+			model = self.run_in_app(pane._model.sourceModel)
+			reset, changed = Mock(), Mock()
+			self.run_in_app(model.modelReset.connect, reset)
+			self.run_in_app(model.dataChanged.connect, changed)
+			try:
+				with patch.object(model._view_jobs, 'submit', wraps=model._view_jobs.submit) as submit:
+					pane.refresh_files([url])
+					self.drain(pane)
+					if column == 'core.Size':
+						submit.assert_called_once()
+						reset.assert_called_once()
+					else:
+						submit.assert_not_called()
+						reset.assert_not_called()
+						self.assertTrue(any(args[2] == [Qt.DisplayRole] for args, kwargs in changed.call_args_list))
+				self.assertEqual(url, pane.get_file_under_cursor())
+				self.assertEqual([url], pane.get_selected_files())
+			finally:
+				self.run_in_app(model.modelReset.disconnect, reset)
+				self.run_in_app(model.dataChanged.disconnect, changed)
+
+	def test_missing_cursor_request_expires_after_refresh(self):
+		from fman.url import as_url
+		pane = self.panes[0]
+		target = self.root / 'later.txt'
+		pane.place_cursor_at(as_url(target))
+		self.drain(pane)
+		previous = pane.get_file_under_cursor()
+		self.assertIsNone(self.run_in_app(lambda: pane._file_view._pending_cursor))
+		target.write_bytes(b'later')
+		pane.reload()
+		self.drain(pane)
+		self.assertEqual(previous, pane.get_file_under_cursor())
+
+	def test_refresh_cancels_editor_and_invalidates_drag_index(self):
+		from fman.url import as_url
+		from PyQt5.QtWidgets import QLineEdit
+		from unittest.mock import Mock
+		pane = self.panes[0]
+		url = as_url(self.root / 'report.txt')
+		renamed = Mock()
+		def begin():
+			pane._model.file_renamed.connect(renamed)
+			pane._file_view._dragged_index = pane._model.find(url)
+			pane.edit_name(url)
+			editor = pane._file_view.findChild(QLineEdit, 'editor')
+			self.assertIsNotNone(editor)
+			editor.setText('not-committed.txt')
+		self.run_in_app(begin)
+		pane.reload()
+		self.drain(pane)
+		renamed.assert_not_called()
+		self.assertIsNone(self.run_in_app(lambda: pane._file_view._dragged_index))
+		self.assertNotEqual(pane._file_view.EditingState, self.run_in_app(pane._file_view.state))
+		self.assertTrue((self.root / 'report.txt').exists())
+
+	def test_native_mutations_refresh_both_panes_and_operation_cache(self):
+		from fman.url import as_url
+		first, second = self.panes
+		created = as_url(self.root / 'created.txt')
+		copied = as_url(self.root / 'copied.txt')
+		moved = as_url(self.root / 'moved.txt')
+		folder = as_url(self.root / 'created-folder')
+		self.filesystem.touch(created)
+		self.filesystem.mkdir(folder)
+		for pane in self.panes:
+			self.drain(pane)
+			self.assertTrue(self.run_in_app(pane._model.find, created).isValid())
+			self.assertTrue(self.run_in_app(pane._model.find, folder).isValid())
+		metadata = self.filesystem.query(created, 'stat')
+		self.assertNotEqual(0, metadata.st_ino)
+		self.assertNotEqual(0, metadata.st_dev)
+		first.select([created])
+		self.filesystem.copy(created, copied)
+		self.filesystem.move(created, moved)
+		for pane in self.panes:
+			self.drain(pane)
+			self.assertTrue(self.run_in_app(pane._model.find, copied).isValid())
+			self.assertTrue(self.run_in_app(pane._model.find, moved).isValid())
+		self.assertEqual([moved], first.get_selected_files())
+		self.assertEqual([], second.get_selected_files())
+		for url in (copied, moved, folder):
+			self.filesystem.delete(url)
+		for pane in self.panes:
+			self.drain(pane)
+			self.assertEqual(5, self.run_in_app(pane._model.rowCount))
+			self.assertEqual([], pane.get_selected_files())
+
+	def test_window_close_retires_blocked_navigation_and_observation(self):
+		from core.fs.local import LocalFileSystem
+		from fman.impl.model.listing import ScanObservation
+		from fman.impl.navigation import NavigationRequest, tracking
+		from fman.url import as_url
+		from unittest.mock import patch
+		folder = self.root / 'pending-close'
+		folder.mkdir()
+		entered, release, cleaned = Event(), Event(), Event()
+		outcomes = []
+		request = NavigationRequest(lambda *args: outcomes.append(args))
+		original, original_close = LocalFileSystem.scan, ScanObservation.close
+		def delayed(provider, path, check):
+			entered.set()
+			if not release.wait(5):
+				raise TimeoutError('Scan not released')
+			return original(provider, path, check)
+		def close(observation):
+			original_close(observation)
+			if observation._location == as_url(folder):
+				cleaned.set()
+		with patch.object(LocalFileSystem, 'scan', delayed), patch.object(ScanObservation, 'close', close):
+			try:
+				with tracking(request):
+					self.panes[0]._model.set_location(as_url(folder))
+				self.assertTrue(entered.wait(5))
+				self.run_in_app(self.window.close)
+				self.assertTrue(request.settled.wait(5))
+				self.assertEqual([('superseded', '')], outcomes)
+			finally:
+				release.set()
+			self.assertTrue(cleaned.wait(5))
+		self.assertTrue(all(pane._model._closed for pane in self.panes))
+
+	def test_icon_suffix_parsed_once_and_shell_arguments_preserved(self):
+		from fman.impl.model.listing_icons import ListingIcons
+		from fman.listing import Listing
+		from pathlib import PureWindowsPath
+		from unittest.mock import patch
+		names = ('README', '.config', '..config', '.config.json', 'entry.',
+			'entry.TXT', 'program.EXE', 'shortcut.lnk', 'folder.ext')
+		listing = Listing.create('file://C:/icons', names, is_dir=(False,) * 8 + (True,))
+		icons = self.run_in_app(ListingIcons)
+		try:
+			def check_icons():
+				with patch('fman.impl.model.listing_icons.Thread'), \
+					patch('fman.impl.model.listing_icons.PureWindowsPath', wraps=PureWindowsPath) as parse:
+					for index, name in enumerate(names):
+						self.assertFalse(icons.icon(listing, index).isNull())
+						self.assertEqual(index + 1, parse.call_count)
+						suffix = PureWindowsPath(name).suffix.lower()
+						individual = listing.is_dir[index] or suffix in ('.exe', '.lnk', '.ico', '.url') or not suffix
+						path = 'C:\\icons\\' + name
+						key = (path, listing.identity(index), None) if individual else suffix
+						self.assertEqual((path if individual else 'file' + suffix, 0, not individual), icons._pending[key])
+			self.run_in_app(check_icons)
+		finally:
+			self.run_in_app(icons.close)
+			self.run_in_app(icons.deleteLater)
+
+	def test_icon_queue_bounds_pending_and_undelivered_results(self):
+		from dataclasses import replace
+		from fman.impl.model.listing_icons import ListingIcons
+		from threading import get_ident
+		started, release, delivered = Event(), Event(), Event()
+		threads = []
+		def loader(*args):
+			threads.append(get_ident())
+			started.set()
+			if not release.wait(5):
+				raise TimeoutError('Icon not released')
+			return None
+		icons = self.run_in_app(ListingIcons, None, loader)
+		listing = self.panes[0].get_listing()
+		count = 300
+		listing = replace(listing, names=tuple('file.ext%d' % index for index in range(count)),
+			is_dir=(False,) * count, sizes=(0,) * count, mtimes_ns=(0,) * count,
+			attributes=(0,) * count, created_ns=(0,) * count, identities=b'\0' * (count * 16))
+		try:
+			def request():
+				for index in range(count):
+					self.assertFalse(icons.icon(listing, index).isNull())
+				with icons._lock:
+					self.assertLessEqual(len(icons._pending) + len(icons._inflight), 128)
+			self.run_in_app(request)
+			self.assertTrue(started.wait(5))
+			self.assertNotEqual(self.run_in_app(get_ident), threads[0])
+			self.run_in_app(icons.changed.connect, lambda *_: delivered.set())
+			release.set()
+			self.assertTrue(delivered.wait(5))
+		finally:
+			release.set()
+			self.run_in_app(icons.close)
+			self.run_in_app(icons.deleteLater)
+
+	def test_fuzzy_find_mode_restores_filter_marks_cursor_and_metadata_columns(self):
+		from search_file_fuzzy.indexer import ListingSearch
+		from fman.url import as_url
+		from unittest.mock import Mock
+		pane = self.panes[0]
+		self.set_query('rep')
+		original = as_url(self.root / 'report.txt')
+		pane.place_cursor_at(original)
+		pane.select([original])
+		accepted = Mock()
+		self.assertTrue(pane.find_in_listing(ListingSearch(max_results=1), 'script', False, accepted))
+		self.drain(pane)
+		self.assertEqual(1, self.run_in_app(pane._model.rowCount))
+		self.assertEqual(as_url(self.root / 'script.py'), pane.get_file_under_cursor())
+		self.assertIn('Find "script": 1', self.status())
+		self.assertEqual(tuple(range(6)), self.run_in_app(lambda: pane._model.index(0, 0).data(Qt.UserRole + 1)))
+		self.assertFalse(self.run_in_app(pane._file_view.grab).isNull())
+		self.assertTrue(self.run_in_app(pane._file_view.isColumnHidden, 1))
+		self.set_query('Annual')
+		self.assertEqual(as_url(self.root / 'Annual Report.pdf'), pane.get_file_under_cursor())
+		pane.find_in_listing(ListingSearch(max_results=1), 'report', False, accepted)
+		self.drain(pane)
+		self.key(Qt.Key_Escape)
+		self.assertEqual('rep', self.run_in_app(pane._filter_bar._input.text))
+		self.assertEqual(original, pane.get_file_under_cursor())
+		self.assertEqual([original], pane.get_selected_files())
+		self.assertFalse(self.run_in_app(pane._file_view.isColumnHidden, 1))
+		accepted.assert_not_called()
+		pane.find_in_listing(ListingSearch(mode='regular'), 'Annual', True, accepted)
+		self.drain(pane)
+		self.key(Qt.Key_Return)
+		accepted.assert_called_once_with(as_url(self.root / 'Annual Report.pdf'))
+		self.assertEqual('rep', self.run_in_app(pane._filter_bar._input.text))
+
+	def test_initial_handoff_rescans_only_when_mutated(self):
+		from core.fs.local import LocalFileSystem
+		from fman.url import as_url
+		from unittest.mock import patch
+		pane = self.panes[0]
+		original = LocalFileSystem.scan
+		for mutate in (False, True):
+			folder = self.root / ('dirty' if mutate else 'clean')
+			folder.mkdir()
+			(folder / 'first.txt').touch()
+			entered, release, loaded = Event(), Event(), Event()
+			calls = []
+			def delayed(provider, path, check):
+				listing = original(provider, path, check)
+				if path == as_url(folder)[7:]:
+					calls.append(path)
+					if len(calls) == 1:
+						entered.set()
+						if not release.wait(5):
+							raise TimeoutError('Handoff not released')
+				return listing
+			with patch.object(LocalFileSystem, 'scan', delayed):
+				try:
+					pane.set_location(as_url(folder), callback=loaded.set)
+					self.assertTrue(entered.wait(5))
+					if mutate:
+						self.filesystem.touch(as_url(folder / 'second.txt'))
+				finally:
+					release.set()
+				self.assertTrue(loaded.wait(5))
+				self.drain(pane)
+			self.assertEqual(2 if mutate else 1, len(calls))
+			self.assertEqual(2 if mutate else 1, self.run_in_app(pane._model.rowCount))
+
+	def test_tracked_superseded_scan_cannot_replace_returned_location(self):
+		from core.fs.local import LocalFileSystem
+		from fman.impl.navigation import NavigationRequest, tracking
+		from fman.url import as_url
+		from unittest.mock import patch
+		pane = self.panes[0]
+		folder = self.root / 'pending'
+		folder.mkdir()
+		entered, release, retired, loaded = Event(), Event(), Event(), Event()
+		outcomes = []
+		request = NavigationRequest(lambda *args: outcomes.append(args))
+		original = LocalFileSystem.scan
+		def delayed(provider, path, check):
+			if path == as_url(folder)[7:]:
+				entered.set()
+				try:
+					if not release.wait(5):
+						raise TimeoutError('Scan not released')
+					return original(provider, path, check)
+				finally:
+					retired.set()
+			return original(provider, path, check)
+		with patch.object(LocalFileSystem, 'scan', delayed):
+			try:
+				with tracking(request):
+					pane._model.set_location(as_url(folder))
+				self.assertTrue(entered.wait(5))
+				pane.set_location(as_url(self.root), callback=loaded.set)
+				self.assertTrue(loaded.wait(5))
+				self.assertTrue(request.settled.wait(5))
+				self.assertEqual([('superseded', '')], outcomes)
+			finally:
+				release.set()
+			self.assertTrue(retired.wait(5))
+		self.drain(pane)
+		self.assertEqual(as_url(self.root), pane.get_location())
+		self.assertEqual([('superseded', '')], outcomes)
+
+	def test_custom_filter_requires_snapshot_contract_without_replacing_model(self):
+		pane = self.panes[0]
+		old = self.run_in_app(pane._model.sourceModel)
+		predicate = lambda url: url.endswith('.txt')
+		with self.assertRaises(TypeError):
+			self.run_in_app(pane._model.add_filter, predicate)
+		predicate.snapshot_filter = lambda: lambda listing, index: listing.names[index].endswith('.txt')
+		self.run_in_app(pane._model.add_filter, predicate)
+		self.drain_model(pane._model)
+		self.assertIs(old, self.run_in_app(pane._model.sourceModel))
+		self.assertFalse(old._shutdown)
+		self.assertEqual(1, self.run_in_app(pane._model.rowCount))
+
+	def test_quick_view_retains_image_across_unchanged_snapshot_commits(self):
+		from fman.impl.quick_view import QuickViewSession
+		from fman.url import as_url
+		from PyQt5.QtGui import QImage
+		from unittest.mock import patch
+		import os
+		pane = self.panes[0]
+		path = self.root / 'report.txt'
+		pane.place_cursor_at(as_url(path))
+		with patch('fman.load_json', return_value={}):
+			session = self.run_in_app(QuickViewSession, self.window, pane, self.panes[1])
+		def install_image():
+			session.timer.stop()
+			image = QImage(4, 4, QImage.Format_RGB32)
+			image.fill(Qt.red)
+			session.overlay.canvas.set_image(image)
+			return session.generation
+		generation = self.run_in_app(install_image)
+		try:
+			self.set_query('rep')
+			pane.set_sort_column('core.Size', False)
+			self.drain(pane)
+			pane.reload()
+			self.drain(pane)
+			self.assertEqual(generation, self.run_in_app(lambda: session.generation))
+			self.assertIsNotNone(self.run_in_app(lambda: session.overlay.canvas.image))
+			modified = path.stat().st_mtime_ns + 2_000_000_000
+			os.utime(path, ns=(modified, modified))
+			pane.reload()
+			self.drain(pane)
+			self.assertGreater(self.run_in_app(lambda: session.generation), generation)
+		finally:
+			self.run_in_app(session.shutdown)
+
+	def test_refresh_does_not_cancel_pending_navigation(self):
+		from core.fs.local import LocalFileSystem
+		from fman.url import as_url
+		from unittest.mock import patch
+		pane = self.panes[0]
+		nested = self.root / 'nested'
+		nested.mkdir()
+		(nested / 'new.txt').touch()
+		entered, release, loaded = Event(), Event(), Event()
+		original = LocalFileSystem.scan
+		def delayed(provider, path, check):
+			if path == as_url(nested)[7:]:
+				entered.set()
+				if not release.wait(5):
+					raise TimeoutError('Navigation scan not released')
+			return original(provider, path, check)
+		with patch.object(LocalFileSystem, 'scan', delayed):
+			try:
+				pane.set_location(as_url(nested), callback=loaded.set)
+				self.assertTrue(entered.wait(5))
+				(self.root / 'arrived.txt').touch()
+				pane.reload()
+				self.drain(pane)
+				self.assertEqual(as_url(self.root), pane.get_location())
+				self.assertEqual(7, self.run_in_app(pane._model.rowCount))
+			finally:
+				release.set()
+			self.assertTrue(loaded.wait(5), 'Refresh canceled the requested navigation')
+		self.drain(pane)
+		self.assertEqual(as_url(nested), pane.get_location())
+		self.assertEqual(1, self.run_in_app(pane._model.rowCount))
+
+	def test_selection_rename_replacement_hidden_and_scope(self):
+		from fman.url import as_url
+		pane = self.panes[0]
+		original = self.root / 'report.txt'
+		renamed = self.root / 'renamed.txt'
+		pane.place_cursor_at(as_url(original))
+		pane.select([as_url(original)])
+		original.rename(renamed)
+		pane.reload()
+		self.drain(pane)
+		self.assertEqual([as_url(renamed)], pane.get_selected_files())
+		self.assertEqual(as_url(renamed), pane.get_file_under_cursor())
+		self.set_query('script')
+		self.assertEqual([], pane.get_selected_files())
+		self.set_query('')
+		self.assertEqual([], pane.get_selected_files())
+		pane.select([as_url(renamed)])
+		renamed.rename(self.root / 'kept-object.txt')
+		renamed.write_bytes(b'replacement')
+		pane.reload()
+		self.drain(pane)
+		self.assertEqual([as_url(self.root / 'kept-object.txt')], pane.get_selected_files())
+		self.assertNotIn(as_url(renamed), pane.get_selected_files())
+		other = self.root / 'other'
+		other.mkdir()
+		(other / 'kept-object.txt').touch()
+		self.navigate(pane, other)
+		self.assertEqual([], pane.get_selected_files())
+
+	def test_failed_scan_preserves_displayed_pane(self):
+		from core.fs.local import LocalFileSystem
+		from fman.url import as_url
+		from unittest.mock import patch
+		pane = self.panes[0]
+		other = self.root / 'other'
+		other.mkdir()
+		failed = Event()
+		def onerror(error, url):
+			failed.set()
+			return None
+		with patch.object(LocalFileSystem, 'scan', side_effect=PermissionError('denied')):
+			pane.set_location(as_url(other), onerror=onerror)
+			self.assertTrue(failed.wait(5))
+		self.assertEqual(as_url(self.root), pane.get_location())
+		self.assertEqual(5, self.run_in_app(pane._model.rowCount))
+
+	def close_window(self):
+		def close():
+			for pane in self.panes:
+				pane._model.sourceModel().shutdown()
+				pane._model._snapshot_scans.close()
+				pane._model._snapshot_refreshes.close()
+				pane._model._snapshot_views.close()
+			self.window.close()
+		self.run_in_app(close)
+		self.run_in_app(self.window.deleteLater)
+		self.errors.assert_not_called()
+
+	def drain(self, pane):
+		from time import monotonic
+		deadline = monotonic() + 5
+		while monotonic() < deadline:
+			def settled():
+				model = pane._model.sourceModel()
+				return hasattr(model, '_committed_revision') and not model._scanning and not model._dirty \
+					and model._committed_revision == model._revision
+			if self.run_in_app(settled):
+				return
+		self.fail('Snapshot did not settle')
+
+	def set_query(self, text, pane=None):
+		pane = pane or self.panes[0]
+		super().set_query(text, pane)
+		self.drain(pane)
+
+	def key(self, key, text='', pane=None):
+		pane = pane or self.panes[0]
+		result = super().key(key, text, pane)
+		self.drain(pane)
+		return result
+
+	def status(self):
+		for pane in self.panes:
+			self.drain(pane)
+		return super().status()
+
+	def test_loading_navigation_and_retired_source(self):
+		from core.fs.local import LocalFileSystem
+		from fman.url import as_url
+		from unittest.mock import patch
+		pane = self.panes[0]
+		old = self.run_in_app(pane._model.sourceModel)
+		nested = self.root / 'nested'
+		nested.mkdir()
+		(nested / 'report.new').touch()
+		entered, release, loaded = Event(), Event(), Event()
+		original = LocalFileSystem.scan
+		def delayed(provider, path, check):
+			if path == as_url(nested)[7:]:
+				entered.set()
+				if not release.wait(5):
+					raise TimeoutError('scan not released')
+			return original(provider, path, check)
+		with patch.object(LocalFileSystem, 'scan', delayed):
+			try:
+				pane.set_location(as_url(nested), callback=loaded.set)
+				self.assertTrue(entered.wait(5))
+				self.assertEqual(as_url(self.root), pane.get_location())
+				self.set_query('rep')
+				self.assertEqual('Filter "rep": 2 of 5 items', self.status())
+			finally:
+				release.set()
+			self.assertTrue(loaded.wait(5))
+		self.drain(pane)
+		self.assertTrue(old._shutdown)
+		self.assertEqual(as_url(nested / 'report.new'), pane.get_file_under_cursor())
+		self.window.show_status_message('Unchanged')
+		self.run_in_app(old.files_changed.emit)
+		self.assertEqual('Unchanged', self.status())
+
+	def test_bulk_selection_avoids_per_row_header_flags(self):
+		from dataclasses import replace
+		pane = self.panes[0]
+		model = self.run_in_app(pane._model.sourceModel)
+		listing = model._listing
+		count = 2000
+		large = replace(listing, names=tuple('file%06d.txt' % index for index in range(count)),
+			is_dir=(False,) * count, sizes=(1,) * count, mtimes_ns=(listing.mtimes_ns[0],) * count,
+			attributes=(32,) * count, created_ns=(1,) * count,
+			identities=b''.join((index + 1).to_bytes(16, 'little') for index in range(count)))
+		def install():
+			model._listing = large
+			model.update()
+		self.run_in_app(install)
+		self.drain(pane)
+		self.set_query('!file001')
+		self.assertEqual(1000, self.run_in_app(pane._model.rowCount))
+		self.set_query('!file0019')
+		self.assertEqual(1900, self.run_in_app(pane._model.rowCount))
+		from unittest.mock import patch
+		with patch.object(model, 'flags', wraps=model.flags) as flags:
+			self.run_in_app(pane.select_all)
+			self.run_in_app(pane._file_view.viewport().repaint)
+			self.assertLess(flags.call_count, 1000)
+		self.assertEqual(1900, self.run_in_app(lambda: sum(
+			selection.bottom() - selection.top() + 1
+			for selection in pane._file_view.selectionModel().selection())))
 
 class DirectorySizeIT(QtIT):
 	def test_no_standalone_directory_size_plugin(self):
@@ -1172,7 +1723,8 @@ def exercise():
 				model.shutdown()
 			return models
 		for model in gui(stop):
-			model._worker._thread.join(2)
+			if hasattr(model, '_worker'):
+				model._worker._thread.join(2)
 		gui(lambda: app.exit(code))
 
 QTimer.singleShot(0, lambda: Thread(target=exercise, daemon=True).start())
@@ -1194,15 +1746,11 @@ sys.exit(context.run())
 		from unittest.mock import Mock, patch
 		widget = self.run_in_app(DirectoryPaneWidget, self.filesystem, 'null://', self.parent, Mock())
 		model = self.run_in_app(widget._model.sourceModel)
-		ready = Event()
-		model._worker.submit(100, ready.set)
-		self.assertTrue(ready.wait(5))
+		self.drain_model(widget._model)
 		callbacks = []
 		with patch.object(widget._model, 'set_extra_columns', side_effect=lambda *args: callbacks.append(args[-1])):
 			widget.set_extra_columns(self.owner, {})
 		self.run_in_app(model.shutdown)
-		model._worker._thread.join(5)
-		self.assertFalse(model._worker._thread.is_alive())
 		def dispose_and_deliver():
 			sip.delete(widget)
 			self.assertTrue(sip.isdeleted(widget._model))
@@ -1472,13 +2020,12 @@ sys.exit(context.run())
 			self.parent.deleteLater()
 			return models
 		for model in self.run_in_app(close):
-			model._worker._thread.join(2)
+			if hasattr(model, '_worker'):
+				model._worker._thread.join(2)
 
 	def drain_models(self):
 		for widget in self.widgets:
-			done = Event()
-			self.run_in_app(lambda: widget._model.sourceModel()._worker.submit(100, done.set))
-			self.assertTrue(done.wait(5), 'Model work did not finish')
+			self.drain_model(widget._model)
 
 	def test_toggle_preserves_pane_state_and_named_widths(self):
 		from core.directory_size import COLUMN, SortByDirectorySize
@@ -1572,7 +2119,9 @@ sys.exit(context.run())
 				self.assertEqual('3 B...', self.run_in_app(read_cell))
 				self.assertEqual([QApplication.instance().thread()], delivery_threads)
 				qt_thread = self.run_in_app(get_ident)
-				model_threads = self.run_in_app(lambda: [widget._model.sourceModel()._worker._thread.ident for widget in self.widgets])
+				model_threads = self.run_in_app(lambda: [model._worker._thread.ident
+					for model in (widget._model.sourceModel() for widget in self.widgets)
+					if hasattr(model, '_worker')])
 				self.assertNotIn(worker_threads[0], [qt_thread] + model_threads)
 				loaded = Event()
 				self.panes[0].set_path(as_url(self.child), callback=loaded.set)
@@ -1862,7 +2411,7 @@ class ProcessPaneIT(QtIT):
 		self.provider.end.assert_not_called()
 		self.module.show_status_message.assert_not_called()
 		self.drain(self.panes[0])
-		self.assertEqual(2, self.provider.snapshot.call_count)
+		self.assertEqual(3, self.provider.snapshot.call_count)
 		self.errors.report.assert_not_called()
 
 
@@ -2020,15 +2569,14 @@ class UnpackArchiveIT(QtIT):
 					errors.report.assert_not_called()
 			finally:
 				def close():
-					model = widget._model.sourceModel()
+					model = widget._model
 					model.shutdown()
 					for dialog in dialogs:
 						dialog.cancel()
 					parent.close()
 					parent.deleteLater()
 					return model
-				model = self.run_in_app(close)
-				model._worker._thread.join(2)
+				self.run_in_app(close)
 
 class SearchFileSyntaxIT(QtIT):
 	def test_native_picker_queries_highlights_accept_and_cancel(self):
@@ -2114,6 +2662,8 @@ class SearchFileMetadataIT(QtIT):
 			location_changed = pyqtSignal(str)
 			def get_location(self):
 				return 'test://root'
+			def get_listing(self):
+				return getattr(self, 'listing', None)
 		self.widget = self.run_in_app(PaneWidget)
 		self.registry = Mock()
 		self.pane = DirectoryPane(Mock(), self.widget, self.registry)
@@ -2147,6 +2697,7 @@ class SearchFileMetadataIT(QtIT):
 	def test_reserved_rows_reorder_filter_accept_and_cancel(self):
 		from fman.impl.quicksearch import Quicksearch
 		from fman.impl.theme import Theme
+		from fman.listing import Listing
 		from search_file_fuzzy import SearchFilesInCurrentFolder, describe_metadata
 		from search_file_fuzzy.indexer import IndexResult
 		from search_file_fuzzy.matcher import SearchEntry
@@ -2154,6 +2705,7 @@ class SearchFileMetadataIT(QtIT):
 		from PyQt5.QtTest import QTest
 		from PyQt5.QtWidgets import QStyleOptionViewItem
 		from pathlib import Path
+		from itertools import product
 		from types import SimpleNamespace
 		from unittest.mock import patch
 		app = QApplication.instance()
@@ -2169,8 +2721,10 @@ class SearchFileMetadataIT(QtIT):
 			errors = []
 			def inspect():
 				try:
-					for text in ('', 'report', '^second', '^first', 'missing', ''):
+					for text in ('', 'rpt', 'report', '^second .txt$', '^first', 'missing', ''):
 						dialog._query.setText(text)
+						if text == 'rpt':
+							self.assertEqual(2, len(dialog._curr_items))
 						dialog._items.doItemsLayout()
 						heights = []
 						for row, item in enumerate(dialog._curr_items):
@@ -2204,10 +2758,14 @@ class SearchFileMetadataIT(QtIT):
 		with patch('search_file_fuzzy.build_index') as build, \
 			patch('search_file_fuzzy.show_quicksearch', side_effect=lambda *args, **kwargs:
 				self.run_in_app(show_on_qt, *args, **kwargs)):
-			for values in ((0, None), (None, 0), (None, None)):
+			for snapshot, values in product((False, True), ((0, None), (None, 0), (None, None))):
 				entries = [SearchEntry('test://root/' + name, name, name, size,
 					1_800_000_000_000_000_000 if size is not None else None)
 					for name, size in zip(('first-report.txt', 'second-report.txt'), values)]
+				listing = Listing.create('test://root', tuple(entry.name for entry in entries),
+					sizes=values, mtimes_ns=tuple(entry.modified_ns for entry in entries)) if snapshot else None
+				self.run_in_app(setattr, self.widget, 'listing', listing)
+				build.reset_mock()
 				build.return_value = IndexResult(entries, False)
 				for cancel in (False, True):
 					self.registry.reset_mock()
@@ -2218,6 +2776,8 @@ class SearchFileMetadataIT(QtIT):
 						self.registry.execute_command.assert_called_once_with('open_directory',
 							{'url': entries[0].url}, self.pane)
 					self.assert_unsubscribed()
+				if snapshot:
+					build.assert_not_called()
 
 	def test_blocked_provider_cancel_navigation_and_disposal_reject_results(self):
 		from concurrent.futures import ThreadPoolExecutor
@@ -2592,14 +3152,12 @@ class ComparatorIT(QtIT):
 	def close_window(self):
 		from core.comparator import _pending
 		def close():
-			models = [pane._widget._model.sourceModel() for pane in (self.left, self.right)]
+			models = [pane._widget._model for pane in (self.left, self.right)]
 			for model in models:
 				model.shutdown()
 			self.main.close()
 			return models
-		for model in self.run_in_app(close):
-			model._worker._thread.join(5)
-			self.assertFalse(model._worker._thread.is_alive())
+		self.run_in_app(close)
 		self.run_in_app(self.main.deleteLater)
 		self.assertEqual({}, _pending)
 		self.errors.report.assert_not_called()
@@ -2746,6 +3304,30 @@ class ComparatorIT(QtIT):
 		self.launch.assert_not_called()
 
 class FindFilesIT(QtIT):
+	def test_escape_closes_both_search_panels_and_focuses_pane(self):
+		from fman.ui import UiOwner
+		from fman.impl.ui.facade import _hosts
+		from search_files import DEFAULTS, SearchSession
+		from PyQt5.QtTest import QTest
+		def close_panel(panel):
+			host = _hosts[panel._key()]
+			host.focus_panel()
+			QApplication.processEvents()
+			self.assertTrue(self.main._panel_dock.isAncestorOf(QApplication.focusWidget()))
+			QTest.keyClick(QApplication.focusWidget(), Qt.Key_Escape)
+			for turn in range(3):
+				QApplication.processEvents()
+			self.assertFalse(panel.is_open)
+			self.assertIsNone(self.main._panel_dock)
+			self.assertIs(self.pane._widget._file_view, QApplication.focusWidget())
+		self.run_in_app(close_panel, self.session.panel)
+		owner = UiOwner(resource_root=str(self.plugin_root.parent / 'SearchFiles'))
+		try:
+			session = self.run_in_app(SearchSession, owner, self.pane, str(self.root), dict(DEFAULTS))
+			self.run_in_app(close_panel, session.panel)
+		finally:
+			owner.invalidate()
+
 	def setUp(self):
 		from core import Name, Size, Modified, OpenDirectory
 		from core.fs.local import LocalFileSystem
@@ -2800,13 +3382,11 @@ class FindFilesIT(QtIT):
 	def close_window(self):
 		self.owner.invalidate()
 		def close():
-			model = self.pane._widget._model.sourceModel()
+			model = self.pane._widget._model
 			model.shutdown()
 			self.main.close()
 			return model
-		model = self.run_in_app(close)
-		model._worker._thread.join(5)
-		self.assertFalse(model._worker._thread.is_alive())
+		self.run_in_app(close)
 		self.run_in_app(self.main.deleteLater)
 		self.errors.report.assert_not_called()
 
@@ -3164,13 +3744,11 @@ class SearchFilesIT(QtIT):
 			finally:
 				owner.invalidate()
 				def close():
-					model = pane._widget._model.sourceModel()
+					model = pane._widget._model
 					model.shutdown()
 					main.close()
 					return model
-				model = self.run_in_app(close)
-				model._worker._thread.join(5)
-				self.assertFalse(model._worker._thread.is_alive())
+				self.run_in_app(close)
 				self.run_in_app(main.deleteLater)
 				errors.report.assert_not_called()
 
@@ -3468,6 +4046,48 @@ class SearchFilesIT(QtIT):
 
 
 class TableIT(QtIT):
+	def test_panel_escape_returns_focus_to_last_active_pane(self):
+		def check():
+			from fman import DirectoryPane, Window
+			from fman.ui import TextField, UiOwner, show_panel
+			from fman.impl.ui.facade import _hosts
+			from fman.impl.widgets import MainWindow
+			from PyQt5.QtTest import QTest
+			from PyQt5.QtWidgets import QLineEdit
+			from unittest.mock import Mock
+			for active_index in (0, 1):
+				with self.subTest(active=active_index):
+					main = MainWindow(Mock(), [], Mock(), Mock(), Mock(), 'null://')
+					panes = [QLineEdit(main), QLineEdit(main)]
+					for widget in panes:
+						main._central_layout.addWidget(widget)
+					pane = DirectoryPane(Window(main, Mock()), panes[0], Mock())
+					owner = UiOwner()
+					main.show()
+					main.activateWindow()
+					QApplication.processEvents()
+					main._active_pane = panes[active_index]
+					panes[active_index].setFocus()
+					try:
+						panel = show_panel(owner=owner, pane=pane, rows=((TextField('query', 'Query'),),))
+						control = _hosts[panel._key()].controls['query'][1]
+						QApplication.processEvents()
+						self.assertIs(control, QApplication.focusWidget())
+						QTest.keyClick(control, Qt.Key_Escape)
+						for turn in range(3):
+							QApplication.processEvents()
+						self.assertFalse(panel.is_open)
+						self.assertIsNone(main._panel_dock)
+						self.assertIs(panes[active_index], QApplication.focusWidget())
+						QTest.keyClicks(panes[active_index], 'ready')
+						self.assertEqual('ready', panes[active_index].text())
+					finally:
+						main._active_pane = None
+						owner.invalidate()
+						main.close()
+						main.deleteLater()
+		self.run_in_app(check)
+
 	def test_close_callback_order_and_live_focus_targets(self):
 		def check():
 			from fman import DirectoryPane, Window
@@ -3670,32 +4290,6 @@ class TableIT(QtIT):
 					owner.invalidate()
 					self.run_in_app(main.close)
 					self.run_in_app(main.deleteLater)
-
-	def test_large_snapshot_projection_timing(self):
-		from time import perf_counter
-		from fman.impl.ui.table import Table
-		from fman.impl.ui.table_data import TableRow, TableSchema
-		ready = Event()
-		rows = tuple(TableRow(str(index), ('folder/file-%05d.txt' % index,
-			'A long matching text snippet ' * 16)) for index in range(10000))
-		def prepare():
-			started = perf_counter()
-			schema = TableSchema(2, ('File Path', 'Snippet'))
-			widget = Table(schema, schema.snapshot(lambda: rows))
-			construction = perf_counter() - started
-			widget.state_changed.connect(lambda: ready.set() if widget.model.matches else None)
-			started = perf_counter()
-			widget.query.setText('fl9')
-			return widget, construction, started
-		widget, construction, started = self.run_in_app(prepare)
-		try:
-			self.assertTrue(ready.wait(10))
-			elapsed = perf_counter() - started
-			print('Table 10000 rows: snapshot/construction %.3f s; fuzzy %.3f s' % (construction, elapsed))
-			self.assertGreater(self.run_in_app(widget.model.rowCount), 0)
-		finally:
-			self.run_in_app(widget.dispose)
-			self.run_in_app(widget.deleteLater)
 
 	def test_directory_pane_styles_unchanged(self):
 		def check():

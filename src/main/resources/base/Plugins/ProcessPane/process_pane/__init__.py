@@ -24,6 +24,22 @@ class Processes(FileSystem):
 	def process_record(self, path):
 		return self.snapshot.get(path)
 
+	def scan(self, path, check_canceled):
+		from fman.listing import Listing
+		if path:
+			raise NotADirectoryError('Process Pane has no child directories.')
+		def enumerate_records():
+			for record in get_provider().snapshot():
+				check_canceled()
+				yield record
+		entries = self.snapshot.capture(enumerate_records)
+		return Listing.create(ROOT, (path for path, record in entries),
+			labels=(record.name for path, record in entries),
+			created_ns=(record.created or 0 for path, record in entries),
+			identities=b''.join(record.pid.to_bytes(16, 'little') if record.created is not None
+				else bytes(16) for path, record in entries),
+			extra=(('pid', tuple(record.pid for path, record in entries)),))
+
 	def name(self, path):
 		return self.process_record(path).name if path else 'Processes'
 
@@ -39,6 +55,12 @@ class Processes(FileSystem):
 
 class Pid(Column):
 	display_name = 'PID'
+
+	def text(self, listing, index):
+		return str(listing.column('pid')[index])
+
+	def keys(self, listing, ascending):
+		return listing.column('pid')
 
 	def get_str(self, url):
 		return str(self.get_sort_value(url))

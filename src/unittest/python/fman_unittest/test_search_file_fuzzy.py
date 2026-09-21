@@ -339,102 +339,6 @@ class FzfReferenceTest(TestCase):
 			file=sys.stderr)
 
 
-@skipUnless(os.environ.get('SEARCH_PERFORMANCE_TESTS') == '1', 'Opt-in performance check')
-class SearchPerformanceTest(TestCase):
-	def test_incremental_cost(self):
-		from statistics import median
-		from time import perf_counter
-		cases = (
-			('ordinary contiguous', 'report', 'report'),
-			('ordinary subsequence', 'rpt', 'rpt'),
-			('ordinary multi-term', 'report py', 'report py'),
-			('contiguous + exclusion', 'report', 'report !missing'),
-			('subsequence + exclusion', 'rpt', 'rpt !missing'),
-			('subsequence + prefix', 'rpt', '^src rpt'),
-		)
-		for count in (1000, 10000, 50000):
-			entries = [SearchEntry(str(index), 'report%05d.py' % index,
-				'src/folder%03d/report%05d.py' % (index % 100, index))
-				for index in range(count)]
-			matcher = Matcher(entries)
-			print('\nIncremental query cost: %s entries, milliseconds' % count, file=sys.stderr)
-			for label, old_query, new_query in cases:
-				def old():
-					return matcher._fuzzy(normalize(old_query))
-				def new():
-					return matcher.matches(new_query)
-				self.assertEqual(old(), [entry for entry, highlights in new()])
-				timings = {'old': [], 'new': []}
-				for repeat in range(9):
-					operations = (('old', old), ('new', new))
-					if repeat % 2:
-						operations = operations[::-1]
-					for name, operation in operations:
-						started = perf_counter()
-						found = operation()
-						timings[name].append((perf_counter() - started) * 1000)
-						self.assertLessEqual(len(found), 100)
-				previous = median(timings['old'])
-				current = median(timings['new'])
-				delta = median([current_sample - previous_sample
-					for previous_sample, current_sample in zip(timings['old'], timings['new'])])
-				print('%-28s old=%7.2f new=%7.2f added=%+7.2f' %
-					(label, previous, current, delta), file=sys.stderr)
-			samples = {'regular': [], 'fuzzy': []}
-			for repeat in range(11):
-				modes = ('regular', 'fuzzy') if repeat % 2 else ('fuzzy', 'regular')
-				for mode in modes:
-					started = perf_counter()
-					measured = Matcher(entries, mode=mode)
-					elapsed = (perf_counter() - started) * 1000
-					if repeat:
-						samples[mode].append(elapsed)
-					if mode == 'fuzzy':
-						extra_bytes = sys.getsizeof(measured._literal_paths) + \
-							sum(map(sys.getsizeof, measured._literal_paths))
-					del measured
-			delta = median([current - previous
-				for previous, current in zip(samples['regular'], samples['fuzzy'])])
-			print('Construction: without literal cache=%.2f with cache=%.2f added=%+.2f ms; cache=%.2f MiB' %
-				(median(samples['regular']), median(samples['fuzzy']), delta, extra_bytes / 2**20),
-				file=sys.stderr)
-
-	def test_fifty_thousand_entries(self):
-		from statistics import median
-		from time import perf_counter
-		import tracemalloc
-		entries = [SearchEntry(str(index), 'report%05d.py' % index,
-			'src/folder%03d/report%05d.py' % (index % 100, index))
-			for index in range(50_000)]
-		started = perf_counter()
-		matcher = Matcher(entries)
-		print('\nMatcher construction: %.1f ms' % ((perf_counter() - started) * 1000), file=sys.stderr)
-		checks = [('old scoring baseline', lambda: matcher._fuzzy(normalize('report py')))]
-		queries = ('report py', "'report", '^src', '.py$', '!tmp',
-			"'missing", '^missing', '.missing$', '!report', '^src rpt',
-			'^missing rpt', "'report rpt", 'r | p')
-		checks.extend((query, lambda query=query: matcher.matches(query)) for query in queries)
-		for name, operation in checks:
-			operation()
-			samples = []
-			for repeat in range(7):
-				started = perf_counter()
-				found = operation()
-				samples.append((perf_counter() - started) * 1000)
-			self.assertLessEqual(len(found), 100)
-			print('%-22s median=%7.2f ms max=%7.2f ms' %
-				(name, median(samples), max(samples)), file=sys.stderr)
-		tracemalloc.start()
-		try:
-			measured = Matcher(entries)
-			current, peak = tracemalloc.get_traced_memory()
-			self.assertEqual(100, len(measured('')))
-			print('Matcher allocation: current=%.1f MiB peak=%.1f MiB' %
-				(current / 2**20, peak / 2**20), file=sys.stderr)
-		finally:
-			tracemalloc.stop()
-
-
 class BuildIndexTest(TestCase):
 	def test_traverses_local_directories_breadth_first(self):
 		with TemporaryDirectory() as root:
@@ -902,6 +806,27 @@ class MetadataCommandTest(TestCase):
 			patcher.start()
 			self.addCleanup(patcher.stop)
 
+	def test_current_folder_snapshot_uses_fuzzy_quicksearch_without_rescan(self):
+		from fman.listing import Listing
+		self.pane.get_listing.return_value = Listing.create('test://root',
+			('report.txt', 'other.py'), sizes=(0, 10))
+		def show(get_items, query=''):
+			self.assertEqual('rpt', query)
+			for text in ('rpt', '^rep .txt$', "'report", '.py$ | .txt$ !other'):
+				items = list(get_items(text))
+				self.assertEqual(['test://root/report.txt'], [item.value for item in items])
+				self.assertTrue(items[0].highlight)
+				self.assertEqual('0 B', items[0].description)
+			self.assertEqual([], list(get_items('!report !other')))
+			return query, 'test://root/report.txt'
+		self.plugin.show_quicksearch.side_effect = show
+		SearchFilesInCurrentFolder(self.pane)(query='rpt')
+		self.plugin.show_quicksearch.assert_called_once()
+		self.plugin.build_index.assert_not_called()
+		self.plugin.submit_task.assert_not_called()
+		self.pane.find_in_listing.assert_not_called()
+		self.pane.run_command.assert_called_once_with('open_directory', {'url': 'test://root/report.txt'})
+
 	def test_both_commands_collect_and_reserve_description_without_query_io(self):
 		for command, recursive in ((SearchFilesInCurrentFolder, False), (SearchFilesRecursively, True)):
 			self.plugin.build_index.return_value = IndexResult([
@@ -977,63 +902,6 @@ class MetadataCommandTest(TestCase):
 		self.plugin.show_quicksearch.side_effect = show
 		SearchFilesInCurrentFolder(self.pane)()
 		self.pane.run_command.assert_not_called()
-
-
-@skipUnless(os.environ.get('SEARCH_METADATA_PERFORMANCE_TESTS') == '1', 'Opt-in metadata benchmark')
-class SearchMetadataPerformanceTest(TestCase):
-	def test_fifty_thousand_file_index_and_result_formatting(self):
-		from collections import namedtuple
-		from search_file_fuzzy import _IndexFiles, describe_metadata
-		from statistics import median
-		from threading import Event
-		from time import perf_counter
-		import tracemalloc
-		with TemporaryDirectory() as root:
-			for folder_number in range(100):
-				folder = Path(root) / ('folder%03d' % folder_number)
-				folder.mkdir()
-				for file_number in range(500):
-					(folder / ('report%03d.txt' % file_number)).touch()
-			url = as_url(root)
-			options = dict(recursive=True, max_entries=51_000, include_hidden=True)
-			timings = {False: [], True: []}
-			def index(enabled):
-				if enabled:
-					task = _IndexFiles(url, options, Event())
-					task()
-					return task.index
-				return build_index(url, **options)
-			for repeat in range(5):
-				for enabled in ((False, True) if repeat % 2 == 0 else (True, False)):
-					started = perf_counter()
-					result = index(enabled)
-					timings[enabled].append((perf_counter() - started) * 1000)
-					self.assertEqual(50_000, len(result.entries))
-					self.assertFalse(result.truncated)
-					del result
-			for enabled in (False, True):
-				tracemalloc.start()
-				try:
-					result = index(enabled)
-					current, peak = tracemalloc.get_traced_memory()
-				finally:
-					tracemalloc.stop()
-				print('Metadata %s: 50,000 files, median %.2f ms, retained %.2f MiB, peak %.2f MiB' %
-					(enabled, median(timings[enabled]), current / 2**20, peak / 2**20), file=sys.stderr)
-				if enabled:
-					returned = Matcher(result.entries).matches("'report")
-					formats = []
-					for repeat in range(21):
-						started = perf_counter()
-						descriptions = [describe_metadata(entry) for entry, highlights in returned]
-						formats.append((perf_counter() - started) * 1000)
-					self.assertEqual(100, len(descriptions))
-					self.assertTrue(all(text.endswith(', 0 B') for text in descriptions))
-					print('100 metadata descriptions: median %.3f ms' % median(formats), file=sys.stderr)
-				del result
-		previous = namedtuple('PreviousEntry', 'url name relative_path')
-		overhead = sys.getsizeof(SearchEntry('', '', '')) - sys.getsizeof(previous('', '', ''))
-		print('Record-slot overhead at 50,000 entries: %d bytes' % (50_000 * overhead), file=sys.stderr)
 
 
 class SettingsTest(TestCase):

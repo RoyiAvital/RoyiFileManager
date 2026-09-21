@@ -1,4 +1,4 @@
-"""Functional and timing checks for the pane architecture proof of concept."""
+"""Functional checks for the pane architecture proof of concept."""
 
 import importlib.util
 import json
@@ -7,7 +7,6 @@ import subprocess
 import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from time import perf_counter
 from unittest import TestCase, skipUnless
 
 
@@ -229,30 +228,3 @@ class BenchmarkTest(TestCase):
 			report = json.loads(output.read_text(encoding='utf-8'))
 			self.assertEqual(0, report['entries'])
 			self.assertGreater(report['phases_ms']['scan_to_paint'], 0)
-
-
-class TimingTest(TestCase):
-	"""Synthetic 100k-entry listing; asserts generous bounds and prints timings."""
-
-	SIZE = 100_000
-
-	def test_sort_and_filter_budget(self):
-		names = ['%06d_%s.jpg' % (i, 'ab'[i % 2]) for i in range(self.SIZE)]
-		listing = poc.Listing('x', names, [False] * self.SIZE, list(range(self.SIZE)),
-			list(range(self.SIZE)), [0] * self.SIZE, [n.casefold() for n in names])
-		started = perf_counter()
-		order = poc.sort_order(listing, 'name')
-		sort_ms = (perf_counter() - started) * 1000
-		filter_ = poc.Filter(listing, order)
-		started = perf_counter()
-		substring = filter_.apply('9')
-		substring_ms = (perf_counter() - started) * 1000
-		started = perf_counter()
-		fuzzy = poc.Filter(listing, order).apply('9a', 'fuzzy')
-		fuzzy_ms = (perf_counter() - started) * 1000
-		print('\n%d entries: natural sort %.0f ms, substring %.1f ms (%d rows), fuzzy %.1f ms (%d rows)' % (
-			self.SIZE, sort_ms, substring_ms, len(substring), fuzzy_ms, len(fuzzy)))
-		self.assertEqual(self.SIZE, len(order))
-		self.assertLess(sort_ms, 2000)
-		self.assertLess(substring_ms, 500)
-		self.assertLess(fuzzy_ms, 1000)
