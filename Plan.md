@@ -2,12 +2,14 @@
 
 ## Pending
 
+- [Date Format: Locale or ISO](Plan/DateFormat.md)
 - [Everything Plug-In](Plan/EverythingPlugIn.md)
 - [Filter Files 002: Multiple Terms (AND)](Plan/FilterFiles002.md)
 - [Find Files 003: Everything-Style Query Syntax](Plan/FindFiles003.md)
 - [Flat View](Plan/FlatView.md)
 - [Improve Pane Scan](Plan/ImprovePaneScan.md)
 - [Migrate to PyQt6](Plan/MigrateToPyQt6.md)
+- [Pane Rendering 001: Reuse Entry Hidden Attributes](Plan/PaneRendering001.md)
 - [QuickView 002: Videos](Plan/QuickView002.md)
 - [QuickView 003: Text-Based Files](Plan/QuickView003.md)
 - [Search Files 003: Extended Mode](Plan/SearchFiles003.md)
