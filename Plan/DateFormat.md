@@ -1,7 +1,7 @@
 # Date Format
 
 Status: Design only; review before implementation. Independent of
-[PaneRendering001.md](PaneRendering001.md).
+[PaneRendering001.md](../Done/PaneRendering001.md).
 
 ## Task
 

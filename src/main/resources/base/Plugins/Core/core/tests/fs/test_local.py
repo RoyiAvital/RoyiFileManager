@@ -2,14 +2,403 @@ from collections import namedtuple
 from fman import PLATFORM
 from fman.url import join, as_url, splitscheme
 from core import LocalFileSystem
+from core.fs import local
 from core.tests import SYMLINKS_SUPPORTED
 from pathlib import Path
 from stat import S_IWRITE
 from tempfile import TemporaryDirectory
+from threading import Event, Thread
+from types import SimpleNamespace
 from unittest import TestCase, skipIf, skipUnless
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import os
+
+class EntryAttributesCacheTest(TestCase):
+	def setUp(self):
+		self.cache = local._EntryAttributesCache()
+		self.directory = 'C:/folder'
+		self.path = self.directory + '/entry'
+	def test_publication_preserves_full_stat(self):
+		stat_result = object()
+		self.cache.put(self.path, 'stat', stat_result)
+		with self.cache.collect_entry_attributes(self.directory) as publish:
+			publish(self.path, 2)
+		self.assertEqual(2, self.cache.get(self.path, '_entry_attributes'))
+		self.assertIs(stat_result, self.cache.get(self.path, 'stat'))
+	def test_publication_resolves_directory_once_per_scan(self):
+		with patch.object(self.cache._root, 'update_child',
+			wraps=self.cache._root.update_child) as resolve:
+			with self.cache.collect_entry_attributes(self.directory + '/') as publish:
+				publish(self.path, 2)
+				publish(self.directory + '/other', 32)
+			resolve.assert_called_once_with(self.directory)
+		self.assertEqual(2, self.cache.get(self.path, '_entry_attributes'))
+		self.assertEqual(32, self.cache.get(self.directory + '/other', '_entry_attributes'))
+	def test_lookup_resolves_directory_once_for_siblings(self):
+		self.cache.put(self.path, '_entry_attributes', 2)
+		self.cache.put(self.directory + '/other', '_entry_attributes', 32)
+		with patch.object(self.cache._root, 'get_child',
+			wraps=self.cache._root.get_child) as resolve:
+			self.assertEqual(2, self.cache.get_entry_attributes(self.path))
+			self.assertEqual(32, self.cache.get_entry_attributes(self.directory + '/other'))
+			resolve.assert_called_once_with(self.directory)
+	def test_warm_lookup_cannot_reuse_cleared_nodes(self):
+		for cleared in (self.path, self.directory, 'C:', ''):
+			with self.subTest(cleared=cleared):
+				self.cache.put(self.path, '_entry_attributes', 2)
+				self.assertEqual(2, self.cache.get_entry_attributes(self.path))
+				self.cache.clear(cleared)
+				self.assertIsNone(self.cache._lookup_directory)
+				with self.assertRaises(KeyError):
+					self.cache.get_entry_attributes(self.path)
+				self.cache.put(self.path, '_entry_attributes', 32)
+				self.assertEqual(32, self.cache.get_entry_attributes(self.path))
+	def test_lookup_switches_directories_and_does_not_create_missing_nodes(self):
+		other = 'D:/other/entry'
+		self.cache.put(self.path, '_entry_attributes', 2)
+		self.cache.put(other, '_entry_attributes', None)
+		for path, expected in ((self.path, 2), (other, None), (self.path, 2)):
+			self.assertEqual(expected, self.cache.get_entry_attributes(path))
+		with self.assertRaises(KeyError):
+			self.cache.get_entry_attributes('Z:/missing/entry')
+		with self.assertRaises(KeyError):
+			self.cache._root.get_child('Z:')
+		self.cache.clear('D:/unrelated')
+		self.assertEqual(2, self.cache.get_entry_attributes(self.path))
+	def test_concurrent_clear_discards_warmed_lookup(self):
+		ready, resume = Event(), Event()
+		results, errors = [], []
+		self.cache.put(self.path, '_entry_attributes', 2)
+		def read():
+			try:
+				results.append(self.cache.get_entry_attributes(self.path))
+				ready.set()
+				if not resume.wait(5):
+					raise TimeoutError('reader was not resumed')
+				results.append(self.cache.get_entry_attributes(self.path))
+			except BaseException as error:
+				errors.append(error)
+		worker = Thread(target=read, daemon=True)
+		worker.start()
+		try:
+			self.assertTrue(ready.wait(5))
+			self.cache.clear(self.directory)
+			with self.cache.collect_entry_attributes(self.directory) as publish:
+				publish(self.path, 32)
+		finally:
+			resume.set()
+			worker.join(5)
+		self.assertFalse(worker.is_alive())
+		self.assertEqual([], errors)
+		self.assertEqual([2, 32], results)
+	def test_clear_rejects_late_publication(self):
+		for cleared in (self.path, self.directory, 'C:', '', self.path + '/child'):
+			with self.subTest(cleared=cleared):
+				with self.cache.collect_entry_attributes(self.directory) as publish:
+					self.cache.clear(cleared)
+					self.cache.put(self.path, '_entry_attributes', 32)
+					publish(self.path, 2)
+				self.assertEqual(32, self.cache.get(self.path, '_entry_attributes'))
+	def test_clear_missing_entry_rejects_scan(self):
+		with self.cache.collect_entry_attributes(self.directory) as publish:
+			self.cache.clear(self.path)
+			publish(self.path, 2)
+		with self.assertRaises(KeyError):
+			self.cache.get(self.path, '_entry_attributes')
+	def test_unrelated_clear_keeps_scan(self):
+		with self.cache.collect_entry_attributes(self.directory) as publish:
+			self.cache.clear('C:/folder-other')
+			publish(self.path, 2)
+		self.assertEqual(2, self.cache.get(self.path, '_entry_attributes'))
+	def test_clear_preserves_unrelated_published_attributes(self):
+		other = self.directory + '/other'
+		with self.cache.collect_entry_attributes(self.directory) as publish:
+			publish(self.path, 2)
+			publish(other, 32)
+		self.cache.clear(self.path)
+		with self.assertRaises(KeyError):
+			self.cache.get(self.path, '_entry_attributes')
+		self.assertEqual(32, self.cache.get(other, '_entry_attributes'))
+	def test_new_scan_supersedes_old_scan(self):
+		with self.cache.collect_entry_attributes(self.directory) as old_publish:
+			with self.cache.collect_entry_attributes(self.directory) as new_publish:
+				new_publish(self.path, 32)
+			old_publish(self.path, 2)
+		self.assertEqual(32, self.cache.get(self.path, '_entry_attributes'))
+	def test_completed_publisher_cannot_write(self):
+		with self.cache.collect_entry_attributes(self.directory) as publish:
+			pass
+		publish(self.path, 2)
+		with self.assertRaises(KeyError):
+			self.cache.get(self.path, '_entry_attributes')
+	def test_exception_discards_publisher(self):
+		with self.assertRaises(OSError):
+			with self.cache.collect_entry_attributes(self.directory) as publish:
+				raise OSError('scan failed')
+		publish(self.path, 2)
+		with self.assertRaises(KeyError):
+			self.cache.get(self.path, '_entry_attributes')
+	def test_concurrent_refresh_rejects_old_scan(self):
+		started, resume = Event(), Event()
+		errors = []
+		def scan():
+			try:
+				with self.cache.collect_entry_attributes(self.directory) as publish:
+					started.set()
+					if not resume.wait(5):
+						raise TimeoutError('scan was not resumed')
+					publish(self.path, 2)
+			except BaseException as error:
+				errors.append(error)
+		worker = Thread(target=scan, daemon=True)
+		worker.start()
+		try:
+			self.assertTrue(started.wait(5))
+			self.cache.clear(self.directory)
+			with self.cache.collect_entry_attributes(self.directory) as publish:
+				publish(self.path, 32)
+		finally:
+			resume.set()
+			worker.join(5)
+		self.assertFalse(worker.is_alive())
+		self.assertEqual([], errors)
+		self.assertEqual(32, self.cache.get(self.path, '_entry_attributes'))
+
+class EntryAttributesTest(TestCase):
+	def setUp(self):
+		self.platform = patch('core.fs.local.PLATFORM', 'Windows')
+		self.platform.start()
+		self.addCleanup(self.platform.stop)
+		self.fs = LocalFileSystem()
+		self.directory = 'C:/folder'
+	def scan(self, entries):
+		iterator = Mock()
+		iterator.__enter__ = Mock(return_value=iter(entries))
+		iterator.__exit__ = Mock(return_value=False)
+		with patch('core.fs.local.os.scandir', return_value=iterator):
+			result = self.fs.iterdir(self.directory)
+		iterator.__exit__.assert_called_once()
+		return result
+	def entry(self, name, attributes):
+		return SimpleNamespace(name=name, stat=Mock(return_value=
+			SimpleNamespace(st_file_attributes=attributes)))
+	def test_names_attributes_and_no_full_stat_seeding(self):
+		entries = [self.entry('visible', 32), self.entry('hidden', 2),
+			self.entry('directory', 18), self.entry('.dot', 4),
+			self.entry('unicode-\u00fc', 32)]
+		with patch('core.fs.local.os.stat', side_effect=AssertionError):
+			self.assertEqual([entry.name for entry in entries], self.scan(entries))
+			for entry, hidden in zip(entries, (False, True, True, False, False)):
+				path = self.directory + '/' + entry.name
+				self.assertIs(hidden, self.fs._pane_hidden_state(path))
+				entry.stat.assert_called_once_with(follow_symlinks=False)
+				with self.assertRaises(KeyError):
+					self.fs.cache.get(path, 'stat')
+	def test_unknown_and_reparse_replace_earlier_flags(self):
+		for attributes in (1024, 1026, None):
+			with self.subTest(attributes=attributes):
+				self.scan([self.entry('entry', 2)])
+				self.scan([self.entry('entry', attributes)])
+				self.assertIsNone(self.fs._pane_hidden_state(self.directory + '/entry'))
+	def test_attribute_errors_keep_names_and_fallback(self):
+		for error in (FileNotFoundError(), PermissionError(), OSError()):
+			with self.subTest(error=type(error)):
+				entry = self.entry('entry', 2)
+				entry.stat.side_effect = error
+				self.assertEqual(['entry'], self.scan([entry]))
+				self.assertIsNone(self.fs._pane_hidden_state(self.directory + '/entry'))
+	def test_missing_attribute_falls_back(self):
+		entry = self.entry('entry', 2)
+		entry.stat.return_value = SimpleNamespace()
+		self.scan([entry])
+		self.assertIsNone(self.fs._pane_hidden_state(self.directory + '/entry'))
+	def test_roots_unc_and_noncanonical_paths_never_use_flags(self):
+		for path in ('C:', 'C:/', '//host/share', '//host/share/entry',
+			'C:/folder/../entry', 'C:/folder//entry', 'relative', 'C:/folder\\entry'):
+			with self.subTest(path=path):
+				self.fs.cache.put(path, '_entry_attributes', 2)
+				self.assertIsNone(self.fs._pane_hidden_state(path))
+	def test_unc_and_other_platforms_keep_listdir(self):
+		for platform, path in (('Windows', '//host/share'), ('Linux', '/tmp')):
+			with self.subTest(platform=platform), \
+				patch('core.fs.local.PLATFORM', platform), \
+				patch.object(self.fs, '_url_to_os_path', return_value=path), \
+				patch.object(self.fs, '_isabs', return_value=True), \
+				patch('core.fs.local.os.listdir', return_value=['entry']) as listdir, \
+				patch('core.fs.local.os.scandir', side_effect=AssertionError):
+				self.assertEqual(['entry'], self.fs.iterdir(path))
+				listdir.assert_called_once_with(path)
+	def test_empty_scan_and_cache_miss(self):
+		self.assertEqual([], self.scan([]))
+		with patch('core.fs.local.os.stat', side_effect=AssertionError):
+			self.assertIsNone(self.fs._pane_hidden_state(self.directory + '/missing'))
+	def test_iteration_failure_propagates_and_closes(self):
+		error = PermissionError('enumeration failed')
+		def entries():
+			yield self.entry('entry', 32)
+			raise error
+		iterator = Mock()
+		iterator.__enter__ = Mock(return_value=entries())
+		iterator.__exit__ = Mock(return_value=False)
+		with patch('core.fs.local.os.scandir', return_value=iterator):
+			with self.assertRaises(PermissionError) as raised:
+				self.fs.iterdir(self.directory)
+		self.assertIs(error, raised.exception)
+		iterator.__exit__.assert_called_once()
+		self.assertEqual({}, self.fs.cache._scans)
+		with patch('core.fs.local.os.listdir', side_effect=error):
+			with self.assertRaises(PermissionError) as raised:
+				self.fs.iterdir('//host/share')
+		self.assertIs(error, raised.exception)
+		self.assertEqual(['entry'], self.scan([self.entry('entry', 2)]))
+		self.assertTrue(self.fs._pane_hidden_state(self.directory + '/entry'))
+	def test_clear_during_metadata_read_cannot_republish(self):
+		entry = self.entry('entry', 2)
+		def read(**kwargs):
+			self.fs.cache.clear(self.directory + '/entry')
+			return SimpleNamespace(st_file_attributes=2)
+		entry.stat.side_effect = read
+		self.assertEqual(['entry', 'later'], self.scan([entry, self.entry('later', 2)]))
+		self.assertIsNone(self.fs._pane_hidden_state(self.directory + '/entry'))
+		self.assertIsNone(self.fs._pane_hidden_state(self.directory + '/later'))
+
+@skipUnless(PLATFORM == 'Windows', 'Windows enumeration attributes')
+class NativeEntryAttributesTest(TestCase):
+	def setUp(self):
+		self.temporary = TemporaryDirectory()
+		self.addCleanup(self.temporary.cleanup)
+		self.root = Path(self.temporary.name)
+		self.fs = LocalFileSystem()
+		self.directory = _urlpath(self.root)
+		(self.root / 'file').write_bytes(b'contents')
+		(self.root / 'directory').mkdir()
+	def test_stat_identity_and_metadata_unchanged_after_scan(self):
+		path = _urlpath(self.root / 'file')
+		before = self.fs.stat(path)
+		names = self.fs.iterdir(self.directory)
+		self.assertEqual(os.listdir(self.root), names)
+		self.assertIs(before, self.fs.stat(path))
+		for name in names:
+			actual = self.fs.stat(_urlpath(self.root / name))
+			self.assertIs(type(actual), os.stat_result)
+			self.assertEqual(tuple(os.stat(self.root / name)), tuple(actual))
+			self.assertNotEqual(0, actual.st_ino)
+			self.assertNotEqual(0, actual.st_dev)
+	def test_hidden_attribute_parity_and_refresh(self):
+		from PyQt5.QtCore import QFileInfo
+		from win32file import SetFileAttributes
+		for name, attributes in (('file', 2), ('directory', 2), ('.dot', 4)):
+			path = self.root / name
+			if not path.exists():
+				path.touch()
+			SetFileAttributes(str(path), attributes)
+		self.fs.iterdir(self.directory)
+		for path in self.root.iterdir():
+			self.assertIs(QFileInfo(str(path)).isHidden(),
+				self.fs._pane_hidden_state(_urlpath(path)))
+		SetFileAttributes(str(self.root / 'file'), 128)
+		self.assertTrue(self.fs._pane_hidden_state(_urlpath(self.root / 'file')))
+		self.fs.cache.clear(self.directory)
+		self.fs.iterdir(self.directory)
+		self.assertFalse(self.fs._pane_hidden_state(_urlpath(self.root / 'file')))
+	def test_hardlink_copy_move_delete_after_scan(self):
+		from core.fs.local import MoveByCopying
+		source = self.root / 'file'
+		alias = self.root / 'alias'
+		os.link(source, alias)
+		self.fs.iterdir(self.directory)
+		self.assertTrue(self.fs.samefile(_urlpath(source), _urlpath(alias)))
+		copy = self.root / 'copy'
+		self.fs.copy(as_url(source), as_url(copy))
+		self.fs.iterdir(self.directory)
+		destination = self.root / 'moved'
+		tasks = list(self.fs.prepare_move(as_url(copy), as_url(destination)))
+		self.assertEqual(1, len(tasks))
+		self.assertNotIsInstance(tasks[0], MoveByCopying)
+		tasks[0]()
+		self.assertEqual(b'contents', destination.read_bytes())
+		self.fs.delete(_urlpath(destination))
+		self.assertFalse(destination.exists())
+		self.assertEqual(b'contents', source.read_bytes())
+	def test_cross_device_move_still_uses_copy(self):
+		from core.fs.local import MoveByCopying
+		self.fs.iterdir(self.directory)
+		original = self.fs.stat(self.directory)
+		self.fs.cache.put(self.directory, 'stat',
+			SimpleNamespace(st_dev=original.st_dev + 1))
+		tasks = list(self.fs.prepare_move(as_url(self.root / 'file'),
+			as_url(self.root / 'destination')))
+		self.assertEqual(1, len(tasks))
+		self.assertIsInstance(tasks[0], MoveByCopying)
+	def test_drive_root_keeps_qt_semantics(self):
+		from core.commands import _hidden_file_filter
+		from PyQt5.QtCore import QFileInfo
+		for path in ('C:', 'C:/', _urlpath(self.root.anchor)):
+			with self.subTest(path=path):
+				self.fs.cache.put(path, '_entry_attributes', 6)
+				self.assertIsNone(self.fs._pane_hidden_state(path))
+				with patch('core.commands.query', side_effect=lambda url, method:
+					getattr(self.fs, method)(splitscheme(url)[1])):
+					self.assertEqual(not QFileInfo(path).isHidden(),
+						_hidden_file_filter('file://' + path))
+	def test_c_drive_listing_matches_qt_read_only(self):
+		from core.commands import _hidden_file_filter
+		from PyQt5.QtCore import QFileInfo
+		for directory in ('C:', 'C:/'):
+			with self.subTest(directory=directory):
+				names = self.fs.iterdir(directory)
+				self.assertEqual(os.listdir('C:/'), names)
+				self.assertIsNone(self.fs._pane_hidden_state(directory))
+				with patch('core.commands.query', side_effect=lambda url, method:
+					getattr(self.fs, method)(splitscheme(url)[1])):
+					for name in names:
+						path = 'C:/' + name
+						self.assertEqual(not QFileInfo(path).isHidden(),
+							_hidden_file_filter('file://' + path), name)
+	def test_junction_to_hidden_directory_keeps_qt_and_target_stat(self):
+		from core.commands import _hidden_file_filter
+		from PyQt5.QtCore import QFileInfo
+		from subprocess import run
+		from win32file import SetFileAttributes
+		target = self.root / 'directory'
+		link = self.root / 'junction'
+		SetFileAttributes(str(target), 2)
+		result = run(['cmd', '/c', 'mklink', '/J', str(link), str(target)],
+			capture_output=True, timeout=10)
+		self.assertEqual(0, result.returncode, result.stderr)
+		try:
+			self.fs.iterdir(self.directory)
+			self.assertIsNone(self.fs._pane_hidden_state(_urlpath(link)))
+			self.assertTrue(self.fs.is_dir(_urlpath(link)))
+			self.assertTrue(self.fs.samefile(_urlpath(target), _urlpath(link)))
+			with patch('core.commands.query', side_effect=lambda url, method:
+				getattr(self.fs, method)(splitscheme(url)[1])):
+				self.assertEqual(not QFileInfo(str(link)).isHidden(),
+					_hidden_file_filter(as_url(link)))
+		finally:
+			os.rmdir(link)
+	@skipUnless(SYMLINKS_SUPPORTED, 'Symbolic links require Windows privilege')
+	def test_visible_hidden_and_broken_symlinks_keep_qt(self):
+		from core.commands import _hidden_file_filter
+		from PyQt5.QtCore import QFileInfo
+		from win32file import SetFileAttributes
+		target = self.root / 'file'
+		for name, destination in (('visible-link', target),
+			('hidden-link', target), ('broken-link', self.root / 'missing')):
+			(self.root / name).symlink_to(destination)
+		SetFileAttributes(str(target), 2)
+		SetFileAttributes(str(self.root / 'hidden-link'), 2)
+		self.fs.iterdir(self.directory)
+		for name in ('visible-link', 'hidden-link', 'broken-link'):
+			path = self.root / name
+			self.assertIsNone(self.fs._pane_hidden_state(_urlpath(path)))
+			with patch('core.commands.query', side_effect=lambda url, method:
+				getattr(self.fs, method)(splitscheme(url)[1])):
+				self.assertEqual(not QFileInfo(str(path)).isHidden(),
+					_hidden_file_filter(as_url(path)))
+		self.assertEqual(len(b'contents'), self.fs.size_bytes(_urlpath(self.root / 'visible-link')))
+		self.assertIs(type(self.fs.stat(_urlpath(self.root / 'broken-link'))), os.stat_result)
 
 class LocalFileSystemTest(TestCase):
 	@skipUnless(PLATFORM == 'Windows', 'Windows non-replacing directory rename')

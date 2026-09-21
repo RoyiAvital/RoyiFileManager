@@ -1123,7 +1123,21 @@ def _hidden_file_filter(url):
 	if PLATFORM == 'Mac' and url == 'file:///Volumes':
 		return True
 	scheme, path = splitscheme(url)
-	return scheme != 'file://' or not is_hidden(path)
+	if scheme != 'file://':
+		return True
+	if PLATFORM == 'Windows':
+		try:
+			hidden = query(url, '_pane_hidden_state')
+		except AttributeError as error:
+			if error.name != '_pane_hidden_state' \
+				or getattr(type(error.obj), '_pane_hidden_state', None) is not None:
+				raise
+		except OSError:
+			pass
+		else:
+			if isinstance(hidden, bool):
+				return not hidden
+	return not is_hidden(path)
 
 class _OpenInPaneCommand(DirectoryPaneCommand):
 	def __call__(self):

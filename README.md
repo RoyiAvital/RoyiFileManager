@@ -21,10 +21,12 @@ See the [Plug In API Reference](PlugIn.md) for legacy APIs and new extensions.
 
 Significant additions compared with `fman`:
 
+- **Performance**: Improved navigation performance on large folders. Optimized the reactivity operations (Filtering / Finding).
 - **Fuzzy Find Files**: Find files by name with <kbd>Ctrl</kbd>+<kbd>F</kbd> or recursively with <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>. Supports [`fzf`](https://github.com/junegunn/fzf) style exact terms, anchors, negation, `AND` / `OR` and match highlights. Using **Toggle find result metadata** adds metadata to results. See [Usage, Syntax and Performance](src/main/resources/base/Plugins/SearchFileFuzzy/README.md).
 - **Search Files**: Press <kbd>Alt</kbd>+<kbd>F7</kbd> for [`ripgrep`](https://github.com/burntsushi/ripgrep) based filename and content search in Glob, Literal or RegEx mode. Leave content empty to list files by name. See [Search Files Usage](src/main/resources/base/Plugins/SearchFiles/README.md).
 - **Find Files with `fd`**: Press <kbd>Shift</kbd>+<kbd>F7</kbd> for [`fd`](https://github.com/sharkdp/fd) based filename search with date, size, type and traversal filters. See [Find Files Usage](src/main/resources/base/Plugins/FindFiles/README.md).
 - **Pane Filter / Files Filter**: Type to filter file names with globs, anchors and negation with [`fzf`](https://github.com/junegunn/fzf) inspired syntax. See [Pane Filter Usage](src/main/resources/base/Plugins/Core/README.md#pane-filter).
+- **Hidden Files**: Windows panes reuse entry attributes to reduce repeated visibility checks. Press <kbd>Ctrl</kbd>+<kbd>R</kbd> after external hidden-attribute changes. See [Hidden Files](src/main/resources/base/Plugins/Core/README.md#hidden-files).
 - **QuickView Images**: Press <kbd>Ctrl</kbd>+<kbd>Q</kbd> to preview the cursor image over the other pane. Use <kbd>Tab</kbd> to focus it, with Fit, physical-pixel 100%, zoom and pan. See [QuickView Usage](src/main/resources/base/Plugins/Core/README.md#quickview).
 - **UI Components**: New building blocks that expand what plug-ins can do. [Plug-in UI guide](Plan/UIElements.md#plug-in-api).
 - **Docked Panel**: Allows controlling states and operations. Exposed to be used by Plug-In's.
@@ -210,6 +212,27 @@ python src/misc/benchmark_fuzzy_search.py --max-files 50000 `
 	--query "power shell" C:\Windows C:\Program Files
 ```
 
+### Pane Snapshot Benchmark
+
+[pane_arch_poc.py](src/misc/pane_arch_poc.py) compares the original simplified
+matchers with the current Filter Bar and Fuzzy Find algorithms on a standalone
+snapshot model. It does not replace the application's pane.
+
+```powershell
+python src/misc/pane_arch_poc.py "C:\Path\To\Folder" --platform windows --algorithms current --json target/diagnostics/pane-current.json
+python src/misc/pane_arch_poc.py "C:\Path\To\Folder" --platform windows --algorithms simple --json target/diagnostics/pane-simple.json
+```
+
+Current mode is the default. `--queries` and `--fuzzy` accept query sequences;
+`--max-results` limits fuzzy output (default 100, zero means all). Both modes
+search pane-visible entries by default. Use `--fuzzy-scope files
+--fuzzy-include-hidden` for file-only candidates independent of pane visibility.
+The current wrapper computes highlights but this table does not draw them.
+Reports separate index construction, matching, completed reset/paint and memory.
+These are synchronous query calls, not real keyboard-latency measurements.
+The simplified regex can stall on adversarial inputs; use current mode for those.
+See [measurements and limits](Plan/FSPaneArch001.md#current-matcher-experiment).
+
 ### Directory Listing Benchmark
 
 [benchmark_directory_listing.py](src/misc/benchmark_directory_listing.py) compares
@@ -240,6 +263,42 @@ Focused regression tests:
 ```powershell
 python -m unittest src/unittest/python/fman_unittest/test_directory_listing_benchmark.py -v
 ```
+
+### Pane Rendering Benchmark
+
+[benchmark_pane_rendering.py](src/misc/benchmark_pane_rendering.py) runs the usual
+three-folder comparison: `D:\TMP\CelebAAligned`, `%WINDIR%\System32` and
+`%WINDIR%\WinSxS`. Use the existing application Python environment on Windows:
+
+```powershell
+python src/misc/benchmark_pane_rendering.py
+```
+
+The runner sets up application import paths automatically, performs three
+alternating baseline/current pairs per folder, and prints median first-paint,
+completion and loading arrow-to-paint timings. The default baseline reproduces
+the 0.8.0 listing path. Raw samples go to
+`target/diagnostics/pane-rendering-three-folders.json`; `--output` changes that
+destination. A missing folder, failed child or row/metadata mismatch returns
+nonzero; invalid comparisons do not produce a summary. OS caches are not flushed.
+
+Folder arguments override the defaults; `--repeat 1` is a shorter smoke run:
+
+```powershell
+python src/misc/benchmark_pane_rendering.py --baseline reviewed --repeat 1
+python src/misc/benchmark_pane_rendering.py "D:\TMP\CelebAAligned" "C:\Windows\System32" "C:\Windows\WinSxS" --show-hidden
+python -m unittest src/unittest/python/fman_unittest/test_pane_rendering_benchmark.py -v
+```
+
+[pane_rendering_benchmark.py](src/integrationtest/python/fman_integrationtest/pane_rendering_benchmark.py)
+measures actual pane loading and arrow-to-paint latency in isolated fresh
+processes. `--baseline before` compares against no hidden-attribute cache;
+`--baseline reviewed` compares against its earlier full-path lookup implementation.
+Both compare with current code. Use `--repeat 3`, `--show-hidden` for the
+filter-off control, and `--output` to retain JSON results. Child-only
+`--rows-output` records final rows after timing to diagnose parity differences.
+Run through `build._environment()` as shown in the
+[validated commands and timings](Done/PaneRendering001.md#follow-up-validation-and-reproduction).
 
 ### Everything Search Backend Probe
 

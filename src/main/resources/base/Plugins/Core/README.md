@@ -33,6 +33,15 @@ navigating clears the filter and resets its status message to `Ready.`.
 `Space` still toggles selection, even while filtering. Multiple-term AND
 matching is not implemented; spaces supplied as filter text remain literal.
 
+## Hidden Files
+
+Windows local panes reuse ordinary entries' own hidden attributes from directory
+enumeration. After another application changes these attributes, press `Ctrl+R`
+to refresh; toggling hidden-file visibility alone need not rescan the directory.
+Roots, UNC paths, links/reparse entries (including cloud placeholders), and
+unavailable attributes retain the existing Qt visibility checks. Full file
+metadata and file-operation behavior are unchanged.
+
 ## QuickView
 
 On Windows, `Ctrl+Q` / **Toggle QuickView** previews the file under the source

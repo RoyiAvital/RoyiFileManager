@@ -6,6 +6,7 @@ from core.commands import About, CreateAndEditFile, History, Move, NewEmptyFile,
 	get_dest_suggestion, _find_extension_start, _get_shortcuts_for_command, \
 	_recent_commands, _COMMAND_PALETTE_HISTORY, CommandPalette, CommandPaletteItem
 from core.tests import StubUI
+from core.commands import _hidden_file_filter
 from core.util import filenotfounderror
 from fman import OK, YES, NO, PLATFORM
 from fman.impl.plugins.plugin import _get_command_name
@@ -16,6 +17,59 @@ from unittest.mock import call, Mock, patch
 import json
 import os
 import os.path
+
+class HiddenFileFilterTest(TestCase):
+	def setUp(self):
+		self.platform = patch('core.commands.PLATFORM', 'Windows')
+		self.platform.start()
+		self.addCleanup(self.platform.stop)
+	def test_cached_flags_skip_qt_on_repeated_passes(self):
+		for hidden in (True, False):
+			with patch('core.commands.query', return_value=hidden) as query, \
+				patch('core.commands.is_hidden', side_effect=AssertionError):
+				for _ in range(3):
+					self.assertIs(not hidden, _hidden_file_filter('file://C:/entry'))
+				self.assertEqual(3, query.call_count)
+	def test_unknown_and_oserror_use_qt(self):
+		for result in (None, OSError('unavailable')):
+			for hidden in (True, False):
+				with patch('core.commands.query', return_value=None,
+					side_effect=result) as query, \
+					patch('core.commands.is_hidden', return_value=hidden) as fallback:
+					self.assertIs(not hidden, _hidden_file_filter('file://C:/entry'))
+					fallback.assert_called_once_with('C:/entry')
+	def test_provider_without_private_method_falls_back(self):
+		provider = object()
+		with patch('core.commands.query', side_effect=lambda *args:
+			getattr(provider, '_pane_hidden_state')('C:/entry')), \
+			patch('core.commands.is_hidden', return_value=True) as fallback:
+			self.assertFalse(_hidden_file_filter('file://C:/entry'))
+			fallback.assert_called_once()
+	def test_errors_inside_existing_method_propagate(self):
+		class Provider:
+			def _pane_hidden_state(self, path):
+				return self.bug
+		for error in (AttributeError('bug'), ValueError('bug'), RuntimeError('bug')):
+			with patch('core.commands.query', side_effect=error), \
+				patch('core.commands.is_hidden', side_effect=AssertionError):
+				with self.assertRaises(type(error)):
+					_hidden_file_filter('file://C:/entry')
+		with patch('core.commands.query', side_effect=lambda *args:
+			Provider()._pane_hidden_state('entry')):
+			with self.assertRaises(AttributeError):
+				_hidden_file_filter('file://C:/entry')
+	def test_nonlocal_and_mac_volumes_bypass_local_checks(self):
+		for platform, url in (('Windows', 'zip://archive/entry'),
+			('Mac', 'file:///Volumes')):
+			with patch('core.commands.PLATFORM', platform), \
+				patch('core.commands.query', side_effect=AssertionError), \
+				patch('core.commands.is_hidden', side_effect=AssertionError):
+				self.assertTrue(_hidden_file_filter(url))
+	def test_nonwindows_keeps_qt(self):
+		with patch('core.commands.PLATFORM', 'Linux'), \
+			patch('core.commands.query', side_effect=AssertionError), \
+			patch('core.commands.is_hidden', return_value=True):
+			self.assertFalse(_hidden_file_filter('file:///tmp/entry'))
 
 class AboutTest(TestCase):
 	@patch('core.commands.show_alert')

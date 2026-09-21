@@ -7,11 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+API compatibility: Preserves the public `fman` plug-in API from fman 1.7.6.
+
+## [0.8.1] - 2026-09-21
+
 API compatibility: Preserves the public `fman` plug-in API signatures from fman
 1.7.5. `load_json` and `save_json` now merge nested dictionaries to preserve
 inherited settings; override individual entries rather than relying on `{}` or
 omitted nested keys to clear defaults. Deleting inherited nested keys on save
 raises `ValueError`.
+
+### Changed
+
+- Reuse ordinary Windows directory entries' hidden attributes to reduce repeated
+  pane visibility checks, with parent-node reuse to avoid repeated full-path cache
+  traversal. Roots, UNC paths and reparse entries retain Qt fallback;
+  full file metadata and operation semantics are unchanged. Refresh with `Ctrl+R`
+  after external hidden-attribute changes.
+
+#### Performance Compared With 0.8.0
+
+Windows reference folder with 202,603 entries; medians of three alternating
+fresh-process pairs, warm OS caches, hidden filtering enabled, QuickView and
+extended status disabled. The benchmark reconstructs the 0.8.0 listing path;
+these are folder-loading measurements, not packaged-application startup times.
+
+**CelebA Folder - ~200,000 Files**
+
+| Measurement                     	| Version `0.8.0` 	| This Version 	| Time Reduction 	|
+|---------------------------------	|-----------------	|--------------	|----------------	|
+| First Populated Pane Paint      	| 8.949 s         	| 5.823 s      	| 34.9%          	|
+| Metadata Loading Complete       	| 17.786 s        	| 11.873 s     	| 33.2%          	|
+| Total Post Paint Qt Commit Work 	| 2.765 s         	| 1.282 s      	| 53.7%          	|
+
+This adds to previous improvements over the original code.  
+In future version whole architecture is to be replaced to bring even greater gains.
 
 ### Fixed
 

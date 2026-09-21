@@ -22,6 +22,131 @@ class SortedFileSystemModelAT: # Instantiated in fman_integrationtest.test_qt
 	def test_location_after_init(self):
 		self.assertEqual('null://', self._model.get_location())
 		self.assertEqual((self._null_column,), self._model.get_columns())
+	def test_local_hidden_attributes_shared_panes_toggle_refresh_and_events(self):
+		if sys.platform != 'win32':
+			self.skipTest('Windows entry attributes')
+		from core import LocalFileSystem, Modified
+		from core.commands import _hidden_file_filter
+		from fman.url import as_url
+		from pathlib import Path
+		from tempfile import TemporaryDirectory
+		from unittest.mock import patch
+		from PyQt5.QtCore import QThread, QItemSelectionModel
+		from PyQt5.QtWidgets import QTableView, QApplication
+		from win32file import SetFileAttributes
+		self._timeout = 5
+		with TemporaryDirectory() as temporary:
+			root = Path(temporary).resolve()
+			(root / 'visible').touch()
+			(root / 'hidden').touch()
+			(root / 'other').mkdir()
+			SetFileAttributes(str(root / 'hidden'), 2)
+			provider = LocalFileSystem()
+			self._fs.add_child('file://', provider)
+			self._register_column(Modified(self._fs))
+			second = self.run_in_app(SortedFileSystemModel, None, self._fs, 'null://')
+			models = [self._model, second]
+			views = []
+			wrong_threads = []
+			def create_views():
+				for model in models:
+					view = QTableView()
+					view.setModel(model)
+					views.append(view)
+					model.add_filter(_hidden_file_filter)
+					model.files_changed.connect(lambda:
+						wrong_threads.append(QThread.currentThread() != QApplication.instance().thread()))
+			def names(model):
+				return self.run_in_app(lambda: [model.data(model.index(row, 0))
+					for row in range(model.rowCount())])
+			with patch('core.commands.query', side_effect=self._fs.query), \
+				patch.object(self._fs._icon_provider, 'get_icon', return_value=None):
+				try:
+					self.run_in_app(create_views)
+					for model in models:
+						loaded = Event()
+						self.run_in_app(lambda: model.all_rows_loaded.connect(loaded.set))
+						model.set_location(as_url(root))
+						self.assertTrue(loaded.wait(5))
+						self.run_in_app(lambda: model.all_rows_loaded.disconnect(loaded.set))
+						self.assertEqual(['other', 'visible'], names(model))
+					visible_url = as_url(root / 'visible')
+					def select():
+						selection = views[0].selectionModel()
+						selection.setCurrentIndex(self._model.find(visible_url),
+							QItemSelectionModel.ClearAndSelect | QItemSelectionModel.Rows)
+					self.run_in_app(select)
+					self.run_in_app(self._model.remove_filter, _hidden_file_filter)
+					self._wait_until(lambda: names(self._model) == ['other', 'hidden', 'visible'], 'toggle on')
+					self.assertEqual(['other', 'visible'], names(second))
+					self.assertEqual(visible_url, self.run_in_app(lambda:
+						self._model.url(views[0].currentIndex())))
+					self.assertEqual([visible_url], self.run_in_app(lambda:
+						[self._model.url(index) for index in views[0].selectionModel().selectedRows()]))
+					self.run_in_app(self._model.add_filter, _hidden_file_filter)
+					self._wait_until(lambda: names(self._model) == ['other', 'visible'], 'toggle off')
+					SetFileAttributes(str(root / 'visible'), 2)
+					for model in models:
+						self.run_in_app(model.sourceModel).notify_file_changed(visible_url)
+					self._wait_until(lambda: all(names(model) == ['other'] for model in models), 'changed event')
+					SetFileAttributes(str(root / 'hidden'), 128)
+					provider.notify_file_changed(splitscheme(as_url(root))[1])
+					self._wait_until(lambda: all(names(model) == ['other', 'hidden'] for model in models), 'refresh')
+					provider.move(as_url(root / 'hidden'), as_url(root / 'renamed'))
+					self._wait_until(lambda: all(names(model) == ['other', 'renamed'] for model in models), 'rename')
+					provider.delete(splitscheme(as_url(root / 'renamed'))[1])
+					self._wait_until(lambda: all(names(model) == ['other'] for model in models), 'delete')
+					self.assertTrue(wrong_threads)
+					self.assertFalse(any(wrong_threads))
+				finally:
+					for model in models:
+						source = self.run_in_app(model.sourceModel)
+						source.shutdown()
+						source._worker._thread.join(5)
+						self.assertFalse(source._worker._thread.is_alive())
+					self.run_in_app(lambda: [view.deleteLater() for view in views])
+	def test_navigation_away_from_blocked_local_scan_rejects_stale_rows(self):
+		if sys.platform != 'win32':
+			self.skipTest('Windows entry attributes')
+		from core import LocalFileSystem, Modified
+		from fman.url import as_url
+		from pathlib import Path
+		from tempfile import TemporaryDirectory
+		from types import SimpleNamespace
+		from unittest.mock import patch
+		started, resume = Event(), Event()
+		with TemporaryDirectory() as temporary:
+			root = Path(temporary).resolve()
+			(root / 'entry').touch()
+			provider = LocalFileSystem()
+			self._fs.add_child('file://', provider)
+			self._register_column(Modified(self._fs))
+			class Entries:
+				def __enter__(self):
+					return self
+				def __exit__(self, *args):
+					pass
+				def __iter__(self):
+					started.set()
+					if not resume.wait(5):
+						raise TimeoutError('blocked scan not released')
+					yield SimpleNamespace(name='entry', stat=lambda **kwargs:
+						SimpleNamespace(st_file_attributes=32))
+			with patch('core.fs.local.os.scandir', return_value=Entries()):
+				self._model.set_location(as_url(root))
+				old = self.run_in_app(self._model.sourceModel)
+				try:
+					self.assertTrue(started.wait(5))
+					self._set_location('stub://dir')
+					provider.cache.clear(splitscheme(as_url(root))[1])
+				finally:
+					resume.set()
+					old._worker._thread.join(5)
+				self.assertFalse(old._worker._thread.is_alive())
+				self.assertTrue(old._shutdown)
+				self.assertEqual('stub://dir', self._model.get_location())
+				self.assertEqual(['subdir'], self._get_first_column())
+				self.assertIsNone(provider._pane_hidden_state(splitscheme(as_url(root / 'entry'))[1]))
 	def _tracked_location(self, url, callback=None):
 		from fman.impl.navigation import NavigationRequest, tracking
 		finished = Event()
