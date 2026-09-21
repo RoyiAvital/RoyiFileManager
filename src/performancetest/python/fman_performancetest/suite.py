@@ -16,7 +16,7 @@ import time
 import traceback
 
 from fman_performancetest import fixtures
-from fman_performancetest.records import CATALOG, ROOT, compare, digest, load_catalog, new_record, save_record, summarize
+from fman_performancetest.records import CATALOG, ROOT, compare, digest, load_catalog, new_record, save_record, statistics_record, summarize
 
 
 def git(*arguments):
@@ -204,6 +204,7 @@ def main(argv=None, *, record_saved=None):
 		traceback.print_exc()
 	finally:
 		record['finished_at'] = datetime.now(timezone.utc).isoformat()
+		record = statistics_record(record)
 		path = save_record(args.results, record)
 		print('Run record: ' + str(path), flush=True)
 	if record_saved is not None:

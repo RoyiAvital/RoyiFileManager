@@ -11,7 +11,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 CHANGELOG = ROOT / 'CHANGELOG.md'
-API_STATEMENT = re.compile(r'^API compatibility:.*$', re.MULTILINE)
 
 
 def _section_body(changelog_text, match):
@@ -22,6 +21,7 @@ def _section_body(changelog_text, match):
 
 
 def extract_section(changelog_text, version):
+	extract_unreleased(changelog_text)
 	heading = re.compile(
 		r'^## \[' + re.escape(version) + r'\](?: - (\d{4}-\d{2}-\d{2}))?[ \t]*$',
 		re.MULTILINE
@@ -30,18 +30,10 @@ def extract_section(changelog_text, version):
 	if match is None:
 		raise SystemExit(
 			f'CHANGELOG.md has no "## [{version}]" section. Move the '
-			f'"## [Unreleased]" entries under "## [{version}] - YYYY-MM-DD" '
+			f'"## [Unreleased]" entries under "## [{version}]" '
 			'before tagging.'
 		)
-	if match.group(1) is None:
-		raise SystemExit(f'"## [{version}]" is missing its release date.')
 	section = _section_body(changelog_text, match)
-	if not section:
-		raise SystemExit(f'"## [{version}]" has no content.')
-	if API_STATEMENT.search(section) is None:
-		raise SystemExit(
-			f'"## [{version}]" lacks the required "API compatibility:" statement.'
-		)
 	return section, match.group(1)
 
 
@@ -49,23 +41,11 @@ def extract_unreleased(changelog_text):
 	match = re.search(r'^## \[Unreleased\][ \t]*$', changelog_text, re.MULTILINE)
 	if match is None:
 		raise SystemExit('CHANGELOG.md has no "## [Unreleased]" section.')
-	section = _section_body(changelog_text, match)
-	if API_STATEMENT.search(section) is None:
+	if re.search(r'^## ', changelog_text[:match.start()], re.MULTILINE):
 		raise SystemExit(
-			'"## [Unreleased]" lacks the required "API compatibility:" '
-			'statement.'
+			'"## [Unreleased]" must be the first changelog section.'
 		)
-	return section
-
-
-def check_unreleased_is_empty(changelog_text):
-	section = extract_unreleased(changelog_text)
-	leftover = API_STATEMENT.sub('', section).strip()
-	if leftover:
-		raise SystemExit(
-			'"## [Unreleased]" still contains entries. Move them into the '
-			'version section before tagging a release.'
-		)
+	return _section_body(changelog_text, match)
 
 
 def main():
@@ -85,8 +65,7 @@ def main():
 		notes = f'Dry run for {args.version}.\n\n{section}\n'
 	else:
 		section, date = extract_section(text, args.version)
-		check_unreleased_is_empty(text)
-		notes = f'Released {date}.\n\n{section}\n'
+		notes = f'Released {date}.\n\n{section}\n' if date else f'{section}\n'
 	if args.output:
 		args.output.parent.mkdir(parents=True, exist_ok=True)
 		args.output.write_text(notes, encoding='utf-8')

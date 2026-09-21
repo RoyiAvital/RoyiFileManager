@@ -7,18 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-API compatibility: Breaks the fman 1.7.5 filesystem, column and pane-filter
+## [0.9.0] - 2026-09-22
+
+Probably the biggest change since the project started.  
+The whole architecture of the _File Manager_ is replaced with the _Snapshot Architecture_.  
+The new architecture make the application far more responsive and being able to handle large folders with ease.  
+Internal testing on folders with more than 200,000 files showed almost instant rendering.
+Performance should be on par with high performance _File Managers_ (Total Commander / RF Commander / Double Commander).
+
+### API Compatibility
+
+The current version breaks the `fman 1.7.5` filesystem, column and pane filter
 extension contracts. Providers must implement `scan(path, check_canceled)`;
 columns must implement `text(listing, index)` and `keys(listing, ascending)`;
-custom pane filters must capture a snapshot predicate. There is no old-model
-fallback. Commands, URL-based file operations, settings and Task signatures
+custom pane filters must capture a snapshot predicate.  
+Commands, URL-based file operations, settings and Task signatures
 remain unchanged. See [migration contracts](PlugIn.md#filesystems-and-columns).
+
+Later version will have dedicated guide for 3rd party Plug In's.
 
 ### Added
 
 - Dedicated, demand-only performance tests with a commented YAML catalog,
   stable test/query IDs and immutable per-run JSON records attributed to the
   application version, source, harness, dependencies and machine configuration.
+  New records retain per-metric statistics and sample counts instead of raw
+  observations, without reducing repetitions. Older records remain readable.
   Comparisons reject incompatible fixtures, definitions and environments.
   Run them with `python build.py measure`, separately from `python build.py test`;
   the full suite updates its `X.Y.Z` or `Unreleased` result and opens an offline
@@ -60,9 +74,7 @@ remain unchanged. See [migration contracts](PlugIn.md#filesystems-and-columns).
 
 #### Performance Report
 
-Earlier `Unreleased` snapshot, measured on 2026-09-21 with `python build.py measure`.
-Windows/NTFS, warm caches, three fresh-process runs per test. Small folders contain
-256 files; large folders contain 200,000 files; recursive search uses 50,000 files.
+The new architecture is the baseline for the performance suite.
 
 | Test                      	| Run Time (ms) 	|
 |---------------------------	|---------------	|
@@ -70,13 +82,26 @@ Windows/NTFS, warm caches, three fresh-process runs per test. Small folders cont
 | Pane Load - Large Folder  	| 1030.26       	|
 | Filter Bar - Small Folder 	| 9.72          	|
 | Filter Bar - Large Folder 	| 332.28        	|
-| Fuzzy Find - Small Folder 	| 11.68         	|
-| Fuzzy Find - Large Folder 	| 476.94        	|
-| Recursive Find            	| 89.82         	|
+| Fuzzy Find - Small Folder 	| 4.67          	|
+| Fuzzy Find - Large Folder 	| 350.86        	|
+| Fuzzy Find (Recursive)     	| 89.82         	|
 | QuickView - Small Folder  	| 109.73        	|
 | QuickView - Large Folder  	| 118.74        	|
 | Navigation                	| 6.79          	|
 | Refresh / Selection       	| 482.95        	|
+
+The results were measured on the main development PC:
+ - CPU: AMD64 Family 26 Model 68 Stepping 0, AuthenticAMD.
+ - Memory (RAM): 93.60.
+ - OS: Windows-11-10.0.26200-SP0.
+ - Machine ID: `352fff5e51b22dfd`.
+ - Python: 3.14.7 | Packaged by conda-forge | (main, Sep 2 2026, 21:12:42) [MSC v.1944 64 bit (AMD64)].
+ - Qt / PyQt: 5.15.15 / 5.15.11.
+ - Viewport: 1280 x 800 / 1x DPI.
+
+Earlier `Unreleased` snapshot, measured on 2026-09-21 with `python build.py measure`.
+Windows/NTFS, warm caches, three fresh-process runs per test. Small folders contain
+256 files; large folders contain 200,000 files; recursive search uses 50,000 files.
 
 Pane Load and QuickView report median time to first populated paint and first
 preview paint, respectively. Search rows report the slowest query's median time
@@ -104,7 +129,7 @@ All 24 runs passed ordered row/text parity and settings-isolation checks.
 
 **CelebA Folder - 202,603 Entries**
 
-| Measurement                     	| Version `0.8.1` 	| Snapshot Implementation 	| Time Reduction 	|
+| Measurement                     	| Version `0.8.1` 	| Snapshot Architecture   	| Time Reduction 	|
 |---------------------------------	|-----------------	|-------------------------	|----------------	|
 | First Populated Pane Paint      	| 5.663 s         	| 0.583 s                 	| 89.7%          	|
 | Metadata Loading Complete       	| 11.498 s        	| 0.571 s                 	| 95.0%          	|

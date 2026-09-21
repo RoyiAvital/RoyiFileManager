@@ -83,16 +83,29 @@ def load_catalog(path=CATALOG):
 
 
 def new_record(catalog, application, environment):
-	return dict(schema_version=1, run_id=str(uuid.uuid4()),
+	return dict(schema_version=2, run_id=str(uuid.uuid4()),
 		started_at=datetime.now(timezone.utc).isoformat(),
 		application=application, environment=environment,
 		catalog=catalog, catalog_sha256=digest(catalog), results=[])
 
 
+def completed_repetitions(result):
+	return len(result['samples']) if 'samples' in result else result['completed_repetitions']
+
+
+def statistics_record(record):
+	if record.get('schema_version') not in (1, 2):
+		raise ValueError('Unsupported performance record schema')
+	results = [dict({key: value for key, value in result.items() if key not in ('samples', 'summary')},
+		completed_repetitions=completed_repetitions(result), summary=summarize(result))
+		for result in record['results']]
+	return dict(record, schema_version=2, results=results)
+
+
 def save_record(directory, record):
 	directory = Path(directory)
 	directory.mkdir(parents=True, exist_ok=True)
-	payload = json.dumps(record, indent=2, allow_nan=False) + '\n'
+	payload = json.dumps(statistics_record(record), indent=2, allow_nan=False) + '\n'
 	path = directory / (record['run_id'] + '.json')
 	with path.open('x', encoding='utf-8') as output:
 		output.write(payload)
@@ -130,6 +143,8 @@ def measurements(result):
 
 
 def summarize(result):
+	if 'samples' not in result:
+		return result['summary']
 	return {name: dict(count=len(values), median=statistics.median(values),
 		minimum=min(values), maximum=max(values),
 		p95=sorted(values)[min(len(values) - 1, int(len(values) * .95))] if len(values) >= 20 else None)
@@ -138,8 +153,8 @@ def summarize(result):
 
 def compare(baseline, current):
 	for record in (baseline, current):
-		if record.get('schema_version') != 1 or record.get('status') != 'passed':
-			raise ValueError('Only successful schema-1 runs can be compared')
+		if record.get('schema_version') not in (1, 2) or record.get('status') != 'passed':
+			raise ValueError('Only successful schema-1 or schema-2 runs can be compared')
 	for field in ('machine_id', 'configuration_sha256'):
 		if baseline['environment'][field] != current['environment'][field]:
 			raise ValueError('Environment mismatch: ' + field)

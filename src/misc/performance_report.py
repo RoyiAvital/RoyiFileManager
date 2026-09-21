@@ -9,7 +9,7 @@ import sys
 from tempfile import NamedTemporaryFile
 import webbrowser
 
-from fman_performancetest.records import ROOT, compare, digest, summarize
+from fman_performancetest.records import ROOT, compare, completed_repetitions, digest, statistics_record, summarize
 from fman_performancetest.pane_rendering_benchmark import REFRESH_SELECTIONS
 
 
@@ -45,10 +45,10 @@ def complete(record):
 	definitions = record['catalog']['tests']
 	results = record['results']
 	repetitions = record['parameters']['repetitions']
-	return (record['schema_version'] == 1 and record['status'] == 'passed'
+	return (record['schema_version'] in (1, 2) and record['status'] == 'passed'
 		and len(results) == len(definitions) and bool(definitions)
 		and {result['test_id'] for result in results} == {test['id'] for test in definitions}
-		and all(result['status'] == 'passed' and len(result['samples']) == repetitions
+		and all(result['status'] == 'passed' and completed_repetitions(result) == repetitions
 			for result in results))
 
 
@@ -77,7 +77,7 @@ def update_history(directory, record):
 	identity = version_id(record)
 	if complete(record):
 		stored = json.loads((directory / 'runs' / (record['run_id'] + '.json')).read_text(encoding='utf-8'))
-		if digest(stored) != digest(record):
+		if digest(statistics_record(stored)) != digest(statistics_record(record)):
 			raise ValueError('Version result does not match its saved run')
 		versions[identity] = stored
 		index = dict(schema_version=1, versions={version: item['run_id'] for version, item in versions.items()})

@@ -101,10 +101,10 @@ footer { padding:24px 0 32px; color:var(--muted); font-size:12px; }
     <details id="measurements"><summary>Queries, refresh, selection, navigation and memory</summary><div class="details-body">
    <div class="controls"><label>Workload<select id="detail-test" aria-label="Details workload"></select></label><label>Measurement filter<input id="metric-filter" type="search" placeholder="e.g. wheel, page-down, memory" aria-label="Measurement filter"></label><label>Order<select id="metric-order"><option value="name">Measurement name</option><option value="regression">Largest increase first</option><option value="improvement">Largest decrease first</option></select></label></div>
    <p id="metric-count" class="footnote" aria-live="polite"></p><div class="table-scroll"><table class="metric-table"><thead><tr><th>Measurement</th><th class="numeric">Median</th><th class="numeric">Range</th><th class="numeric">p95</th><th class="numeric">Samples</th><th class="numeric">Change</th></tr></thead><tbody id="metric-values"></tbody></table></div>
-    <p class="footnote">p95 is unavailable below 20 observations. Navigation samples repeat within processes; they are not independent process runs. Refresh peak memory is the process high-water mark, cumulative across ordered selection cases, not refresh-only allocation. Raw samples are retained in the run JSON.</p>
+    <p class="footnote">p95 is unavailable below 20 observations. Navigation samples repeat within processes; they are not independent process runs. Refresh peak memory is the process high-water mark, cumulative across ordered selection cases, not refresh-only allocation. New run JSON records retain summary statistics and sample counts, not individual observations.</p>
   </div></details>
  </section>
- <section aria-labelledby="environment-heading"><div class="section-head"><h2 id="environment-heading">Run &amp; environment</h2><a id="raw-record" href="#">Raw run JSON</a></div><dl class="metadata" id="environment"></dl></section>
+ <section aria-labelledby="environment-heading"><div class="section-head"><h2 id="environment-heading">Run &amp; environment</h2><a id="raw-record" href="#">Run JSON</a></div><dl class="metadata" id="environment"></dl></section>
  <footer><div class="footer-row"><span>RoyiFileManager / Performance</span><span>Warm cache &middot; Completed Qt paints &middot; No profiler timings</span></div></footer>
 </div>
 </main>
@@ -113,7 +113,7 @@ footer { padding:24px 0 32px; color:var(--muted); font-size:12px; }
 'use strict';
 const data = JSON.parse(document.getElementById('performance-data').textContent);
 const byId = id => document.getElementById(id);
-const names = {'pane.load.small':'Pane loading / Small','pane.load.large':'Pane loading / Large','filter.small':'Filter Bar / Small','filter.large':'Filter Bar / Large','fuzzy.small':'Fuzzy Find / Small','fuzzy.large':'Fuzzy Find / Large','recursive.tree':'Recursive Find','quickview.small':'QuickView / Small','quickview.large':'QuickView / Large','refresh.selection':'Refresh / Selection','navigation':'Navigation'};
+const names = {'pane.load.small':'Pane loading / Small','pane.load.large':'Pane loading / Large','filter.small':'Filter Bar / Small','filter.large':'Filter Bar / Large','fuzzy.small':'Fuzzy Find / Small','fuzzy.large':'Fuzzy Find / Large','recursive.tree':'Fuzzy Find (Recursive)','quickview.small':'QuickView / Small','quickview.large':'QuickView / Large','refresh.selection':'Refresh / Selection','navigation':'Navigation'};
 const format = value => Number.isFinite(value) ? value.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) : '\u2014';
 const numberText = (value, unit='ms') => Number.isFinite(value) ? format(value) + ' ' + unit : '\u2014';
 const difference = (before, after) => Number.isFinite(before) && Number.isFinite(after) ? {absolute:after-before, percent:before ? (after/before-1)*100 : null} : null;

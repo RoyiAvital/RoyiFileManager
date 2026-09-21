@@ -31,6 +31,24 @@ finally:
 
 
 class PerformanceReportTest(TestCase):
+	def test_report_labels_recursive_fuzzy_find(self):
+		html = report.render_html(self.record(), {})
+		self.assertIn("'recursive.tree':'Fuzzy Find (Recursive)'", html)
+		self.assertNotIn('Recursive Find', html)
+
+	def test_statistics_record_preserves_every_report_metric_without_samples(self):
+		current = self.refresh_record()
+		before = deepcopy(current)
+		compact = records.statistics_record(current)
+		self.assertEqual(2, compact['schema_version'])
+		self.assertEqual(before, current)
+		self.assertEqual(compact, records.statistics_record(compact))
+		self.assertEqual(report.overview(current), report.overview(compact))
+		for raw, result in zip(current['results'], compact['results']):
+			self.assertNotIn('samples', result)
+			self.assertEqual(len(raw['samples']), result['completed_repetitions'])
+			self.assertEqual(records.summarize(raw), result['summary'])
+
 	def refresh_record(self):
 		current = self.navigation_record()
 		for identity in report.REFRESH_TESTS:
@@ -117,12 +135,12 @@ class PerformanceReportTest(TestCase):
 			with self.assertRaisesRegex(ValueError, 'does not match'):
 				report.update_history(directory, current)
 
-	def test_rerun_replaces_version_pointer_and_preserves_raw_runs(self):
+	def test_rerun_replaces_version_pointer_and_preserves_statistics_runs(self):
 		with TemporaryDirectory() as directory:
 			first, second = self.record(), self.record(milliseconds=8)
 			self.save(directory, first)
 			versions = self.save(directory, second)
-			self.assertEqual({'1.0.0': second}, versions)
+			self.assertEqual({'1.0.0': records.statistics_record(second)}, versions)
 			self.assertEqual(2, len(list((Path(directory) / 'runs').glob('*.json'))))
 
 	def test_failed_or_partial_run_cannot_replace_previous_version(self):
@@ -133,7 +151,7 @@ class PerformanceReportTest(TestCase):
 				current = self.record()
 				current['status'] = status
 				current['results'] = []
-				self.assertEqual({'1.0.0': previous}, self.save(directory, current))
+				self.assertEqual({'1.0.0': records.statistics_record(previous)}, self.save(directory, current))
 				self.assertEqual(1, report.report_data(current, {'1.0.0': previous})['saved_versions'])
 
 	def test_comparison_reports_improvements_regressions_and_mismatches(self):
@@ -147,6 +165,37 @@ class PerformanceReportTest(TestCase):
 		comparison = report.report_data(current, {'1.0.0': baseline})['previous'][0]
 		self.assertFalse(comparison['compatible'])
 		self.assertIn('Environment mismatch', comparison['reason'])
+
+	def test_statistics_and_legacy_history_produce_identical_report_and_comparison(self):
+		baseline = self.refresh_record()
+		current = deepcopy(baseline)
+		current['run_id'] = self.record()['run_id']
+		current['application']['version_id'] = 'Unreleased'
+		current['results'][-1]['samples'][0]['ui']['samples'][-1]['paint_ms'] = 150
+		compact = records.statistics_record(current)
+		self.assertTrue(report.complete(compact))
+		self.assertEqual(report.report_data(current, {'1.0.0': baseline}),
+			report.report_data(compact, {'1.0.0': records.statistics_record(baseline)}))
+		self.assertEqual(records.compare(baseline, current), records.compare(baseline, compact))
+		with TemporaryDirectory() as directory:
+			path = Path(directory) / 'runs' / (baseline['run_id'] + '.json')
+			path.parent.mkdir()
+			path.write_text(json.dumps(baseline), encoding='utf-8')
+			report.update_history(directory, baseline)
+			versions = self.save(directory, compact)
+			self.assertEqual({'1.0.0', 'Unreleased'}, set(versions))
+			self.assertEqual(1, report.read_history(directory)['1.0.0']['schema_version'])
+			self.assertEqual(2, report.read_history(directory)['Unreleased']['schema_version'])
+		compact['results'][0]['completed_repetitions'] = 0
+		self.assertFalse(report.complete(compact))
+
+	def test_statistics_saved_values_are_verified_before_publication(self):
+		current = records.statistics_record(self.record())
+		with TemporaryDirectory() as directory:
+			records.save_record(Path(directory) / 'runs', current)
+			current['results'][0]['summary']['first_paint_ms']['median'] = 123
+			with self.assertRaisesRegex(ValueError, 'does not match'):
+				report.update_history(directory, current)
 
 	def test_unreleased_does_not_replace_numeric_version(self):
 		with TemporaryDirectory() as directory:
@@ -325,6 +374,55 @@ class SyntheticFixtureTest(TestCase):
 
 
 class PerformanceRecordTest(TestCase):
+	def test_statistics_only_save_keeps_all_repetitions_and_partial_failure(self):
+		for fail_after in (None, 2):
+			with self.subTest(fail_after=fail_after), TemporaryDirectory() as temporary:
+				calls, published = [], []
+				def invoke(test, directory, catalog_path, algorithm=False):
+					iteration = len(calls) // 2 + 1
+					calls.append(algorithm)
+					if fail_after is not None and iteration > fail_after:
+						raise RuntimeError('Expected later child failure')
+					if algorithm:
+						return dict(truncated=False, queries=[dict(query_id='substring-report', returned=1,
+							samples=[dict(wall_ms=iteration * 5, cpu_ms=1)])])
+					return dict(errors=[], settings_isolated=True, samples=[dict(
+						query_id='substring-report', rows=1, paint_ms=iteration * 10,
+						heartbeat_samples_ms=[1, 2, 3])])
+				with patch.object(suite, 'provenance', return_value={'commit': 'test', 'version': 'test'}), \
+					patch.object(suite, 'environment', return_value={}), \
+					patch.object(suite, 'source_hash', return_value='test'), \
+					patch.object(suite.fixtures, 'assets', return_value={}), \
+					patch.object(suite.fixtures, 'prepare', return_value=dict(id='fixture', sha256='hash', directory=temporary)), \
+					patch.object(suite, 'invoke', side_effect=invoke), \
+					redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+					self.assertEqual(int(fail_after is not None), suite.main(
+						['--test', 'filter.small', '--results', temporary],
+						record_saved=lambda record, path: published.append((record, path))))
+				current, path = published[0]
+				self.assertEqual(current, json.loads(path.read_text(encoding='utf-8')))
+				self.assertEqual(2, current['schema_version'])
+				self.assertEqual(3, current['parameters']['repetitions'])
+				self.assertEqual(5, current['parameters']['navigation_repetitions'])
+				self.assertEqual([False, True] * 3 if fail_after is None else [False, True] * 2 + [False], calls)
+				result = current['results'][0]
+				self.assertNotIn('samples', result)
+				self.assertEqual(3 if fail_after is None else 2, result['completed_repetitions'])
+				self.assertEqual(dict(count=3, median=20, minimum=10, maximum=30, p95=None)
+					if fail_after is None else dict(count=2, median=15, minimum=10, maximum=20, p95=None),
+					result['summary']['substring-report.paint_ms'])
+				self.assertEqual('passed' if fail_after is None else 'failed', result['status'])
+				if fail_after is not None:
+					self.assertIn('Expected later child failure', current['error'])
+
+	def test_statistics_keep_p95_and_do_not_trust_cached_summary(self):
+		result = dict(samples=[dict(ui=dict(first_paint_ms=number)) for number in range(1, 21)],
+			summary={'stale': dict(median=-1)})
+		compact = records.statistics_record(dict(schema_version=1, results=[result]))['results'][0]
+		self.assertEqual(20, compact['completed_repetitions'])
+		self.assertEqual({'first_paint_ms': dict(count=20, median=10.5, minimum=1, maximum=20, p95=20)},
+			compact['summary'])
+
 	def test_refresh_dispatch_uses_catalog_cases_without_navigation(self):
 		from fman_performancetest import pane_rendering_benchmark
 		catalog = records.load_catalog()

@@ -20,19 +20,19 @@ and displays its failure without replacing the last successful version result.
 
 Retained output lives under `UserSettings/Performance`, outside `build.py clean`:
 
-- `runs/<uuid>.json`: immutable raw results, including failed attempts.
+- `runs/<uuid>.json`: immutable statistics-only results, including failed attempts.
 - `versions.json`: atomically updated version-to-run index, one current result per version.
 - `index.html`: regenerated offline report; embedded data, charts and icon, no network requests.
 
 Version identifiers are exactly `X.Y.Z` or `Unreleased`. A clean checkout at tag
 `vX.Y.Z` or `X.Y.Z` matching the application version is a release measurement.
 All other checkouts are `Unreleased`. Source version, commit and dirty state remain
-in the raw record. Repeating a version replaces its index entry, not its old run.
+in the result record. Repeating a version replaces its index entry, not its old run.
 Corrupt history is reported, never silently reset. Earlier diagnostic runs under
 `target` are not imported as previous versions.
 
 The overview has eleven rows: pane loading, Filter Bar, Fuzzy Find and QuickView in
-small/large folders, recursive Find, Refresh / Selection, and Navigation. Headlines are first populated
+small/large folders, Fuzzy Find (Recursive), Refresh / Selection, and Navigation. Headlines are first populated
 paint, slowest query median, or first preview paint, respectively. Navigation is
 the arithmetic mean of 28 case medians: seven actions across small/large panes with
 QuickView off/on, equally weighted. Refresh / Selection is the mean of 16 case
@@ -131,8 +131,9 @@ Historical CelebA measurements are not substituted into synthetic histories.
 
 Each measurement creates `UserSettings/Performance/runs/<uuid>.json` with exclusive
 creation. The diagnostic launcher defaults to `target/performance/runs` and accepts
-`--results` and `--note`. Failed attempts retain completed samples and an error.
-The format uses `schema_version: 1`.
+`--results` and `--note`. Failed attempts retain statistics for completed
+repetitions and an error. New records use `schema_version: 2`; schema-1 records
+remain readable and are not rewritten.
 
 | Field | Meaning |
 | --- | --- |
@@ -142,12 +143,21 @@ The format uses `schema_version: 1`.
 | `environment` | Anonymous machine/volume IDs, OS, CPU, RAM, disk inventory, filesystem, power plan, locale, Python/Qt and dependencies |
 | `catalog`, `catalog_sha256`, `parameters` | Definition snapshot, semantic hash and effective parameters |
 | `fixtures` | Fixture IDs, generator specifications and manifest hashes |
-| `results` | Test ID/revision/definition hash, fixture hash, status, raw samples and summary |
+| `results` | Test ID/revision/definition hash, fixture hash, status, completed repetition count and metric summaries |
 | `artifacts`, `notes` | Separate profile locations and persistent annotation |
 
-Times use `_ms`; memory uses `_mib`. Raw samples accompany median/min/max/count.
-Cross-run p95 is `null` below 20 observations; per-phase heartbeat distributions
-have their own counts. Read those counts before interpreting tails.
+Times use `_ms`; memory uses `_mib`. Each metric retains count, median, minimum,
+maximum and p95; p95 is `null` below 20 observations. Individual observations,
+per-repetition payloads and raw event-loop probes are discarded after aggregation,
+not saved in a second file. All repetitions, queries and correctness checks still
+run unchanged. `completed_repetitions` counts finished test repetitions, while
+metric counts can include repeated actions within each process. Report details,
+Navigation/Refresh aggregates and comparison values are unchanged. Application,
+environment, fixture and definition metadata remain for compatible comparisons.
+
+Existing schema-1 files still contain their original raw data. Comparisons accept
+either format but continue to require matching harness and definition hashes;
+this storage change does not bypass those checks.
 
 Run the same harness/catalog against each application version and retain its
 JSON output. Comparison emits median deltas for common test IDs; negative values

@@ -174,15 +174,10 @@ documentation-only and test-only changes. Document an application's actual chang
 not the planning or review activity that preceded it. A task with a qualifying
 application change is not complete until that change is represented here.
 
-Follow Keep a Changelog structure. Every release section, including
-`Unreleased`, must contain an explicit API compatibility statement, for example:
-
-```markdown
-API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
-```
-
-If compatibility changes, state the affected API, migration path, and rationale
-instead. Do not rely on a feature bullet to imply compatibility.
+Follow Keep a Changelog structure. Keep `## [Unreleased]` as the first section
+and use `## [X.Y.Z]` for each release. A ` - YYYY-MM-DD` date suffix is optional.
+Section bodies are free-form and may be empty; no API compatibility statement
+is required. Describe compatibility changes and migration guidance when relevant.
 
 ## Documentation Quality
 
