@@ -45,6 +45,15 @@ Significant additions compared with `fman`:
 > Open an issue for new feature feature requests.  
 > Any feedback is highly appreciated.
 
+## Configuration
+
+JSON settings from plug-ins and user overrides merge dictionaries recursively,
+so adding an archive handler preserves the built-in handlers. Higher-priority
+values replace earlier values unless both are dictionaries; nested lists replace,
+while top-level lists prepend. Override individual entries: `{}` does not clear
+inherited defaults, and saving cannot delete inherited dictionary keys.
+See [Configuration API](PlugIn.md#configuration) for persistence rules.
+
 ## Development
 
 Install a conda package manager then create the environment:

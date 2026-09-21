@@ -19,8 +19,7 @@
 - [x] Add "Quick View" mode where there inactive pane is used for previewing the current file.
 - [ ] Integrate "Quick Look Win". See [QuickLook-Win](https://github.com/BenjaminKobjolke/QuickLook-Win).
 - [ ] Integrate a Terminal into the file manager. Or at least open the current folder in Windows Terminal.
-- [ ] Add a "Rename Tool" as a Plug In. See [FManPowerRenamerAndReplacer
-](https://github.com/BenjaminKobjolke/FManPowerRenamerAndReplacer).
+- [ ] Add a "Rename Tool" as a Plug In. See [FManPowerRenamerAndReplacer](https://github.com/BenjaminKobjolke/FManPowerRenamerAndReplacer).
 - [ ] Add "Synchronized Browsing" feature. See [SynchronizedBrowsing](https://github.com/mherrmann/SynchronizedBrowsing).
 - [x] Add option to compare 2 files using external file comparison or integrate Meld view. See [SimpleCompare
 ](https://github.com/rjwojcicki/SimpleCompare).
@@ -35,7 +34,7 @@
 - [x] Evaluate using [`fd`](https://github.com/sharkdp/fd) to accelerate searching.
 - [ ] Use ISO Style date (`YYYY-mm-dd`) and 24 Hours format for time. Should be a tiny run time improvement.
 - [ ] Enable the file watching mechanism on Windows.
-- [ ] Implement [Commit `f3e48d2`](https://github.com/mherrmann/fman/commit/f3e48d23308689c4d3ffc90753a73bf6bb24a55b) from [`fman`](https://github.com/mherrmann/fman).
+- [x] Implement [Commit `f3e48d2`](https://github.com/mherrmann/fman/commit/f3e48d23308689c4d3ffc90753a73bf6bb24a55b) from [`fman`](https://github.com/mherrmann/fman).
 - [x] Update naming to match the logic: "Find files" -> Find files by their names or metadata, "Search files" -> Searches file by their content and metadata.
 
 ## Performance

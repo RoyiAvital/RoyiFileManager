@@ -20,6 +20,33 @@ class ConfigTest(TestCase):
 		self._config.add_dir(self._dir_2)
 		self.assertIs(value, self._config.load_json('Test.json'))
 		self.assertEqual([2, 1], value)
+	def test_nested_settings_reload_save_and_restart(self):
+		name = 'Archives.json'
+		base = {'archive_handlers': {'.zip': 'zip://', '.tar': 'tar://'}}
+		override = {'archive_handlers': {'.crx': 'crx://', '.tar': 'tar2://'}}
+		write_differential_json(base, [], join(self._dir_1, name))
+		write_differential_json(override, [], join(self._dir_2, name))
+		self._config.add_dir(self._dir_1)
+		value = self._config.load_json(name)
+		self._config.add_dir(self._dir_2)
+		self.assertIs(value, self._config.load_json(name))
+		self.assertEqual({'.zip': 'zip://', '.tar': 'tar2://', '.crx': 'crx://'},
+			value['archive_handlers'])
+		self._config.remove_dir(self._dir_2)
+		self.assertIs(value, self._config.load_json(name))
+		self.assertEqual(base, value)
+		self._config.add_dir(self._dir_2)
+		user_dir = mkdtemp()
+		self.addCleanup(rmtree, user_dir)
+		self._config.add_dir(user_dir)
+		value['archive_handlers']['.crx'] = 'custom://'
+		self._config.save_json(name)
+		with open(self._config.locate(name)[-1], 'r') as file:
+			self.assertEqual({'archive_handlers': {'.crx': 'custom://'}}, json.load(file))
+		restarted = Config(PLATFORM)
+		for directory in (self._dir_1, self._dir_2, user_dir):
+			restarted.add_dir(directory)
+		self.assertEqual(value, restarted.load_json(name))
 	def test_remove_add_dir(self):
 		self._config.add_dir(self._dir_1)
 		self.assertEqual([1], self._config.load_json('Test.json'))
@@ -163,6 +190,32 @@ class LoadJsonTest(TestCase):
 		json1 = self._save_to_json(d1)
 		json2 = self._save_to_json(d2)
 		self.assertEqual({'a': 1, 'b': 2, 'c': 2}, load_json([json1, json2]))
+	def test_nested_dict_multiple_files(self):
+		base = {'archive_handlers': {'.zip': 'zip://', '.tar': 'tar://'}}
+		override = {'archive_handlers': {'.crx': 'crx://', '.tar': 'tar2://'}}
+		paths = [self._save_to_json(base), self._save_to_json(override)]
+		self.assertEqual(
+			{'archive_handlers': {
+				'.zip': 'zip://', '.tar': 'tar2://', '.crx': 'crx://'
+			}},
+			load_json(paths)
+		)
+	def test_nested_list_multiple_files(self):
+		base = {'editor': {'args': ['vim', '{file}']}}
+		override = {'editor': {'args': ['emacs', '{file}']}}
+		paths = [self._save_to_json(base), self._save_to_json(override)]
+		self.assertEqual(override, load_json(paths))
+	def test_deep_nested_dict_multiple_files(self):
+		values = (
+			{'tools': {'editor': {'path': 'vim', 'args': ['old']}}},
+			{'tools': {'editor': {'path': 'emacs'}}},
+			{'tools': {'editor': {'args': [], 'enabled': False}}}
+		)
+		paths = [self._save_to_json(value) for value in values]
+		self.assertEqual(
+			{'tools': {'editor': {'path': 'emacs', 'args': [], 'enabled': False}}},
+			load_json(paths)
+		)
 	def test_list(self):
 		l = [1, 2]
 		json_path = self._save_to_json(l)
@@ -275,6 +328,47 @@ class WriteDifferentialJsonTest(TestCase):
 		write_differential_json({'a': 1, 'b': 2}, [json1], json2)
 		with self.assertRaises(ValueError):
 			write_differential_json({'b': 2}, [json1], json2)
+	def test_nested_dict_incremental_update(self):
+		base_path = self._json_file(0)
+		override_path = self._json_file(1)
+		write_differential_json({'a': {'x': 1, 'y': 1}}, [], base_path)
+		updated = {'a': {'x': 1, 'y': 2, 'z': 3}}
+		write_differential_json(updated, [base_path], override_path)
+		with open(override_path, 'r') as file:
+			self.assertEqual({'a': {'y': 2, 'z': 3}}, json.load(file))
+		self.assertEqual(updated, load_json([base_path, override_path]))
+	def test_delete_nested_dict_key_same_file_ok(self):
+		base_path = self._json_file(0)
+		override_path = self._json_file(1)
+		base = {'a': {'x': 1}}
+		write_differential_json(base, [], base_path)
+		write_differential_json({'a': {'x': 1, 'y': 2}}, [base_path], override_path)
+		write_differential_json(base, [base_path], override_path)
+		self.assertEqual(base, load_json([base_path, override_path]))
+	def test_delete_nested_dict_key_different_file_raises(self):
+		base_path = self._json_file(0)
+		override_path = self._json_file(1)
+		write_differential_json({'a': {'x': 1}}, [], base_path)
+		write_differential_json({'a': {'x': 1, 'y': 2}}, [base_path], override_path)
+		with self.assertRaises(ValueError):
+			write_differential_json({'a': {'y': 2}}, [base_path], override_path)
+		self.assertEqual({'a': {'x': 1, 'y': 2}}, load_json([base_path, override_path]))
+	def test_nested_value_type_changes_round_trip(self):
+		for base_value, updated_value in (
+			({'key': 1}, None), ({'key': 1}, []), ({'key': 1}, False),
+			(None, {'key': 1}), ([], {'key': 1}), (False, {'key': 1}),
+			(['old'], ['new']), ({}, {'new': {}})
+		):
+			with self.subTest(base=base_value, updated=updated_value):
+				base_path = self._json_file(0)
+				override_path = self._json_file(1)
+				base = {'settings': {'value': base_value, 'unchanged': True}}
+				updated = {'settings': {'value': updated_value, 'unchanged': True}}
+				write_differential_json(base, [], base_path)
+				write_differential_json(updated, [base_path], override_path)
+				with open(override_path, 'r') as file:
+					self.assertEqual({'settings': {'value': updated_value}}, json.load(file))
+				self.assertEqual(updated, load_json([base_path, override_path]))
 	def setUp(self):
 		self.temp_dir = mkdtemp()
 	def tearDown(self):

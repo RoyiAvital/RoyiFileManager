@@ -7,7 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-API compatibility: Preserves the public `fman` plug-in API from fman 1.7.5.
+API compatibility: Preserves the public `fman` plug-in API signatures from fman
+1.7.5. `load_json` and `save_json` now merge nested dictionaries to preserve
+inherited settings; override individual entries rather than relying on `{}` or
+omitted nested keys to clear defaults. Deleting inherited nested keys on save
+raises `ValueError`.
+
+### Fixed
+
+- Ported upstream [f3e48d2](https://github.com/mherrmann/fman/commit/f3e48d23308689c4d3ffc90753a73bf6bb24a55b):
+  nested plug-in settings merge recursively, so added archive handlers retain
+  built-in formats; saves write only changed nested keys.
 
 ## [0.8.0] - 2026-09-21
 

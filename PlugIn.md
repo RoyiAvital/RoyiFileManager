@@ -254,15 +254,19 @@ Do not manipulate Qt widgets from notification threads.
 
 Names are shared across loaded plug-ins, not automatically package-namespaced.
 Use distinctive filenames. Layers include generic and platform-specific files;
-later dictionaries shallowly override earlier dictionaries, and later lists are
-prepended to earlier lists. Mismatched JSON types raise `ValueError`.
+dictionaries merge recursively, with later values winning unless both values are
+dictionaries. Nested lists replace earlier lists; top-level lists are prepended
+to earlier lists. Mismatched top-level JSON types raise `ValueError`; nested
+values can change type. An empty dictionary does not clear an inherited
+dictionary: override individual entries instead.
 
 User overrides are normally written to
 `UserSettings/Plugins/User/Settings/<Name> (Windows).json`. Saves use a temporary
-file followed by atomic replacement. Values equal to defaults can be omitted
-from the on-disk override. Inherited dictionary keys cannot simply be deleted,
-and inherited list suffixes cannot be arbitrarily edited through differential
-saving; such requests may raise `ValueError`.
+file followed by atomic replacement. Only changed keys are written, recursively
+omitting values equal to defaults. Removing inherited dictionary keys at any
+depth raises `ValueError`; keys present only in the user override can be removed.
+Inherited top-level list suffixes cannot be arbitrarily edited through
+differential saving; such requests may raise `ValueError`.
 
 Copy loaded data before editing when save failure must leave the cache intact.
 Use a shared `settings_resource(name).lock` for multi-step read/modify/write

@@ -108,7 +108,7 @@ def load_json(paths):
 				(type(next_value).__name__, type(result).__name__)
 			)
 		if isinstance(next_value, dict):
-			result.update(next_value)
+			result = _merge_dicts(result, next_value)
 		elif isinstance(next_value, list):
 			result = next_value + result
 	return result
@@ -145,18 +145,8 @@ def get_differential_json(obj, paths, final_path):
 				(type(old_obj).__name__, type(obj).__name__)
 			)
 		if isinstance(obj, dict):
-			deleted = set(key for key in old_obj if key not in obj)
-			not_deletable = set(load_json(paths) or {})
-			wrongly_deleted = deleted.intersection(not_deletable)
-			if wrongly_deleted:
-				raise ValueError(
-					'Deleting keys %r is not supported.' % wrongly_deleted
-				)
 			base = load_json(paths) or {}
-			return {
-				key: value for key, value in obj.items()
-				if key not in base or base[key] != value
-			}
+			return _get_dict_delta(obj, base)
 		elif isinstance(obj, list):
 			changeable = load_json([final_path]) or []
 			remainder = old_obj[len(changeable):]
@@ -171,3 +161,29 @@ def get_differential_json(obj, paths, final_path):
 				return obj
 		else:
 			return obj
+
+def _merge_dicts(base, override):
+	result = dict(base)
+	for key, value in override.items():
+		if isinstance(value, dict) and isinstance(result.get(key), dict):
+			result[key] = _merge_dicts(result[key], value)
+		else:
+			result[key] = value
+	return result
+
+def _get_dict_delta(obj, base):
+	wrongly_deleted = set(base) - set(obj)
+	if wrongly_deleted:
+		raise ValueError(
+			'Deleting keys %r is not supported.' % wrongly_deleted
+		)
+	result = {}
+	for key, value in obj.items():
+		base_value = base.get(key, object())
+		if isinstance(base_value, dict) and isinstance(value, dict):
+			delta = _get_dict_delta(value, base_value)
+			if delta:
+				result[key] = delta
+		elif base_value != value:
+			result[key] = value
+	return result
