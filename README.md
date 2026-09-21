@@ -10,11 +10,11 @@ The _File Manager_ focuses on:
  - High performance to generate **reactive** experience.
  - **Commands** through _Command Center_.
  - **Keyboard** oriented workflow.
- - Advanced search tools with **known syntax** (`fzf`).
+ - Advanced search tools with **known syntax** (`fzf` / `fd` / `ripgrep`).
  - Easy **integration** of 3rd party tools (Text Editor, File Comparison, Grep Tool, File Find Tool, etc...).
  - Developed and verified on **Windows OS**.
 
-Development prioritizes _performance_ and _correctness_.  
+Development prioritizes _correctness_ and _performance_.  
 Each release is validated by hundreds of correctness tests and accompanied by a detailed performance report.
 
 ## Features
@@ -66,9 +66,9 @@ Results of the performance test suite per version.
 | Refresh / Selection       	| 482.95  [ms]    	|
 
 > [!NOTE]
-> Version `0.9.0` is the 1st version with the new architecture (_Snapshot Architecture_) which is an order of magnitude faster than `0.8.1`.
-> Version `0.8.1` had an improved version of the `fman` architecture (About 30% faster than `0.8.0`).
-> Version `0.8.0` and earlier versions use the `fman` architecture and performance.
+> * Version `0.9.0` is the 1st version with the new architecture (_Snapshot Architecture_) which is an order of magnitude faster than `0.8.1`.
+> * Version `0.8.1` had an improved version of the `fman` architecture (About 30% faster than `0.8.0`).
+> * Version `0.8.0` and earlier versions use the `fman` architecture and performance.
 
 ## Development
 
