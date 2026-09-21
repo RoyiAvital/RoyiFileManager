@@ -61,7 +61,9 @@ class PaneRenderingBenchmarkTest(TestCase):
 
 	def test_main_runs_three_defaults_with_repository_environment(self):
 		with TemporaryDirectory() as temporary:
-			root = Path(temporary)
+			root = Path(temporary) / 'nested'
+			root.mkdir()
+			root = root / '..'
 			folders = [root / name for name in ('large', 'System32', 'WinSxS')]
 			for folder in folders:
 				folder.mkdir()
@@ -73,8 +75,8 @@ class PaneRenderingBenchmarkTest(TestCase):
 				self.assertEqual(benchmark.ROOT, kwargs['cwd'])
 				self.assertEqual({'test': 'environment'}, kwargs['env'])
 				self.assertEqual([benchmark.sys.executable, '-m', 'fman_integrationtest.pane_rendering_benchmark',
-					*map(str, folders), '--baseline', 'reviewed', '--repeat', '1',
-					'--output', str(output), '--show-hidden'], command)
+					*[str(folder.resolve()) for folder in folders], '--baseline', 'reviewed', '--repeat', '1',
+					'--output', str(output.resolve()), '--show-hidden'], command)
 				output.write_text(json.dumps(rows), encoding='utf-8')
 				return SimpleNamespace(returncode=0)
 			with patch.object(benchmark.sys, 'platform', 'win32'), \
