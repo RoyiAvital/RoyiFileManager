@@ -40,6 +40,11 @@ python build.py freeze
 python build.py package
 ```
 
+`test` checks application behavior and release/build inputs. Benchmark harnesses,
+synthetic performance fixtures, report generation and standalone PoCs are outside
+normal discovery and CI. Their optional [development-tool checks](src/performancetest/README.md#development-tool-checks)
+run separately; they are not release validation.
+
 `test` prints each test name as it runs. Each discovery group emits Python
 thread stacks every two minutes while still running and has a ten-minute timeout.
 For a stalled CI run, use the last test name and thread dump to locate the wait;
@@ -173,7 +178,7 @@ The current wrapper computes highlights but this table does not draw them.
 Reports separate index construction, matching, completed reset/paint and memory.
 These are synchronous query calls, not real keyboard-latency measurements.
 The simplified regex can stall on adversarial inputs; use current mode for those.
-See [measurements and limits](Plan/FSPaneArch001.md#current-matcher-experiment).
+See [measurements and limits](Done/FSPaneArch001.md#current-matcher-experiment).
 
 For the isolated unchanged-refresh and Windows watcher A/B experiment, use the
 existing application Python environment:
@@ -219,7 +224,7 @@ same-file checks and moves. A large ratio can still mean negligible absolute sav
 Focused regression tests:
 
 ```powershell
-python -m unittest src/unittest/python/fman_unittest/test_directory_listing_benchmark.py -v
+python -m unittest src/performancetest/python/fman_performancetest/test_directory_listing_benchmark.py -v
 ```
 
 ### Pane Rendering Benchmark
@@ -247,7 +252,7 @@ Folder arguments override the defaults; `--repeat 1` is a shorter smoke run:
 ```powershell
 python src/misc/benchmark_pane_rendering.py --baseline reviewed --repeat 1
 python src/misc/benchmark_pane_rendering.py "C:\Path\To\Folder" --show-hidden
-python -m unittest src/unittest/python/fman_unittest/test_pane_rendering_benchmark.py -v
+python -m unittest src/performancetest/python/fman_performancetest/test_pane_rendering_benchmark.py -v
 ```
 
 [pane_rendering_benchmark.py](src/performancetest/python/fman_performancetest/pane_rendering_benchmark.py)

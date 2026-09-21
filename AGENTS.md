@@ -9,6 +9,7 @@ These instructions apply to the entire repository.
  - Do not change `.gitattributes` or `.gitignore` without permission or explicitly being asked for.
  - Make the code easy to grasp for human and agents.
  - Be focused and short on documentation and text.
+ - Do not apply `git add` or `git commit` unless explicitly asked for.
 
 ## Task Documents
 

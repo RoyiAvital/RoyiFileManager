@@ -141,11 +141,12 @@ fell from **771.3 MiB to 165.6 MiB** (78.5%). System32 first paint fell from
 86 ms to 32 ms. These are directory-loading measurements, not application-startup
 or cold-storage guarantees.
 
-Heavy interaction remains an open performance gate: a separate 202,603-entry
+Heavy interaction remains a performance limitation: a separate 202,603-entry
 full-candidate Find/sort/refresh run peaked at 285 MiB, and selected-all sorting
 had 36 ms arrow-to-paint p95. Initial loading gains do not establish uniformly
-frame-budget interaction. Reproduction and open gates are recorded in
-[FSPaneArch001](Plan/FSPaneArch001.md).
+frame-budget interaction. Reproduction and known limits are recorded in
+[FSPaneArch001](Done/FSPaneArch001.md); further investigations are tracked in
+[FSPaneArch002](Plan/FSPaneArch002.md).
 
 ### Fixed
 

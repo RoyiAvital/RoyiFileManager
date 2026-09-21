@@ -13,8 +13,9 @@ This runs all eleven catalog workloads, three repetitions each, without profilin
 updates the version's result; generates a standalone HTML report; and opens it in
 the default browser. No arguments or profile selection are required. It does not
 run correctness verification, build the application or install dependencies.
-`build.py test` does not run performance workloads. A failed run returns nonzero
-and displays its failure without replacing the last successful version result.
+`build.py test` does not run performance workloads or their development-tool
+checks. A failed measurement run returns nonzero and displays its failure without
+replacing the last successful version result.
 
 ## Report and Version History
 
@@ -185,9 +186,20 @@ measurements outside verification discovery. `image` includes the separate
 history. `run.py search` retains the earlier configurable seeded Filter/Find
 runner. `run.py pane` retains historical application A/B comparisons.
 
-Do not add this directory to `build.test()` or normal discovery. Only tiny
-catalog, fixture, output and comparison correctness checks belong in verification:
+## Development-Tool Checks
+
+Normal application and release verification does not test benchmark harnesses,
+catalogs, synthetic performance fixtures, result summaries, HTML generation or
+standalone PoCs. Their checks live alongside the tooling in
+`python/fman_performancetest/test_*.py`, outside `build.py test` and CI discovery.
+Do not add this directory to normal discovery.
+
+Run these checks explicitly when changing the development tools:
 
 ```powershell
-python -c "import build, subprocess, sys; sys.exit(subprocess.run([sys.executable, '-m', 'unittest', 'fman_unittest.test_filter_find_benchmark', 'fman_unittest.test_pane_rendering_benchmark'], env=build._environment()).returncode)"
+python -c "import build, subprocess, sys, os; env=build._environment(); env['QT_QPA_PLATFORM']='offscreen'; env['QT_QPA_FONTDIR']=os.path.join(os.environ['WINDIR'],'Fonts'); sys.exit(subprocess.run([sys.executable, '-m', 'unittest', 'discover', '-s', 'src/performancetest/python', '-p', 'test_*.py'], env=env).returncode)"
 ```
+
+This uses small fixtures and mocked measurement runs plus small PoC smoke checks;
+it does not run the full performance catalog or publish a retained report. Neither
+`build.py test` nor `build.py measure` invokes these checks automatically.

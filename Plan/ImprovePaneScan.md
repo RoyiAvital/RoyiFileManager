@@ -562,7 +562,7 @@ implementation checks. No application optimization has been applied yet.
 
 ### Existing Test Case and Results
 
-[test_directory_listing_benchmark.py](../src/unittest/python/fman_unittest/test_directory_listing_benchmark.py)
+[test_directory_listing_benchmark.py](../src/performancetest/python/fman_performancetest/test_directory_listing_benchmark.py)
 contains 11 tests covering:
 
 - Real files/directories, Unicode names, size/time equality and nonrecursion.

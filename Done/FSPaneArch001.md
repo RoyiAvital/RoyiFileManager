@@ -1,16 +1,21 @@
 # File System and Pane Architecture 001: Columnar Snapshots
 
-Status: Implementation in progress; one snapshot pane for every bundled provider,
-with native optimization focused on NTFS/ReFS (2026_09_21).
+Status: Completed with user/main-developer acceptance (2026_09_22).
+One snapshot pane serves every bundled provider, with native optimization
+focused on NTFS/ReFS.
 Breaks the fman 1.7.5 plug-in API by design (user decision, 2026_09_21).
-Latest review response: correctness findings addressed and safe overhead removed;
-[review response and measurements](#review-response-and-measurements) are below.
-Adoption remains blocked by the [open gates](#open-adoption-gates). PoC timings
-are observations, not worst-case bounds or verified compatibility results.
-The [current-matcher experiment](#current-matcher-experiment) now reuses production
-matching code in the PoC. Its measured query costs supersede the simplified
-matchers' timings. Production implementation and validation are now underway;
-the original PoC timings below are historical, not application guarantees.
+
+Based on the real-world experience of the user/main developer, the new design
+works immensely well and is about an order of magnitude better than the previous
+design. This is the user's acceptance assessment, not a claim that every measured
+operation is ten times faster.
+
+The user explicitly accepted the implementation and closed its original adoption
+gates with documented limitations. Remaining performance and validation work is
+tracked in [FSPaneArch002](../Plan/FSPaneArch002.md). Historical review records and
+measurements below are preserved; their pending/adoption-blocked statements
+describe the state at the time, not the current task status. PoC timings remain
+observations, not application guarantees.
 
 ## Task
 
@@ -22,7 +27,7 @@ data structure, no per-path cache tree, no incremental diff machinery, few edge
 cases, an API a third party can implement in an afternoon.
 
 Proof of concept: [src/misc/pane_arch_poc.py](../src/misc/pane_arch_poc.py),
-tests in [test_pane_arch_poc.py](../src/unittest/python/fman_unittest/test_pane_arch_poc.py).
+tests in [test_pane_arch_poc.py](../src/performancetest/python/fman_performancetest/test_pane_arch_poc.py).
 Measured on the reference folder, real Windows platform plug-in, warm cache:
 
 | Phase | Today (PaneRendering001 "after") | PoC |
@@ -374,6 +379,20 @@ Required before adoption:
    and migration notes.
 
 ## Acceptance Criteria
+
+### Closure Decision (2026_09_22)
+
+- The user/main developer accepts the implemented architecture based on real-world
+  use and the recorded correctness and performance evidence.
+- The original 16 ms loaded-input p95 and 250 MiB peak-memory targets, together
+  with unrun adoption checks, are no longer completion blockers for this task.
+  They were not retroactively passed. Remaining investigations are captured in
+  [FSPaneArch002](../Plan/FSPaneArch002.md).
+- Existing provider, identity, selection, query-semantics and plug-in migration
+  requirements are retained; acceptance does not waive known correctness defects.
+  No new application changes or broad validation run are implied by this closure.
+
+### Original Targets (Historical)
 
 - Reference folder: first paint ≤ 2 s in the application (PoC: 0.42 s), no
   post-paint metadata tail, Filter Bar and Fuzzy Find keystrokes ≤ 16 ms
@@ -1279,6 +1298,19 @@ collects garbage outside each timer and discards results between samples.
   Retarget fuzzy timing to Quicksearch and revise its workload identity; preserve
   historical measurements without claiming comparable latency or closed gates.
 
+### 2026_09_22 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Not exposed by host
+- Effort: Medium
+- Context Window: Not exposed by host
+- Outcome: Recorded explicit user/main-developer acceptance from real-world use.
+  Closed the implementation with the original performance thresholds and unrun
+  adoption checks documented as follow-up work in FSPaneArch002, not as passed
+  tests. Preserved previous reviews, implementation records and measurements.
+
 ## Implementer
 
 ### 2026_09_21 - GitHub Copilot
@@ -1372,6 +1404,32 @@ collects garbage outside each timer and discards results between samples.
   small Filter Bar benchmark smoke passed. Architecture remains pending adoption.
 
 ## Validation Results
+
+### Completion Review (2026_09_22)
+
+Reviewed the existing unit, provider, Qt, native smoke and benchmark evidence
+below. This closure adds no application code and does not rerun the full test
+suite, packaging or environment-specific checks. User acceptance supersedes the
+original adoption-blocking decision, not the recorded test outcomes.
+
+The latest focused Fuzzy Find run used the restored Quicksearch dialog:
+
+```powershell
+python src/performancetest/run.py suite --test 'fuzzy.*' --test recursive.tree --results UserSettings/Performance/runs --note 'Fuzzy Find-only measurement after restoring Quicksearch; three default repetitions.'
+```
+
+All three workloads passed all three repetitions, including UI/algorithm result
+count parity. Slowest-query paint medians were 4.67 ms (256 files), 350.86 ms
+(200,000 files) and 91.08 ms (recursive, 50,000 files). These exclude dialog
+opening and do not measure loaded-input p95. The statistics-only record is
+`UserSettings/Performance/runs/3b559f28-d64e-49f5-8e0f-ef0aaba508ca.json`;
+its version identifier is `Unreleased`, with source version 0.9.0.
+
+Documentation closure verification passed: this task has one canonical file
+under `Done`, FSPaneArch002 is indexed under Pending, both task documents retain
+the required sections, and incoming architecture links resolve after the move.
+The move preserved the file's SHA-256 hash. `git diff --check` also passed.
+These checks do not replace the deferred runtime checks.
 
 ### Restored Find Dialog and Panel Focus
 
@@ -1656,7 +1714,11 @@ python src/misc/benchmark_pane_rendering.py "<reference-folder>" "$env:WINDIR/Sy
 python -c "import build, subprocess, sys, os; env=build._environment(); env['QT_QPA_PLATFORM']='windows'; env['QT_QPA_FONTDIR']=os.path.join(os.environ['WINDIR'], 'Fonts'); sys.exit(subprocess.run([sys.executable, '-m', 'fman_integrationtest.pane_rendering_benchmark', sys.argv[1], '--child', 'snapshot', '--interactions', '--output', 'target/diagnostics/fs-pane-interactions-unified.json'], env=env, timeout=180).returncode)" "<reference-folder>"
 ```
 
-### Open Adoption Gates
+### Deferred Follow-up Work
+
+The following items were open adoption gates before the user's 2026_09_22
+acceptance. They are preserved as limitations and copied into
+[FSPaneArch002](../Plan/FSPaneArch002.md), not claimed as passed:
 
 - Not all loaded interaction phases meet 16 ms p95; peak interaction memory
   exceeds 250 MiB. Python sort/key generation, large marked-state restoration
@@ -1667,8 +1729,8 @@ python -c "import build, subprocess, sys, os; env=build._environment(); env['QT_
   behavior and external drag automation. Native NTFS/ReFS identity and ordinary
   file-operation regressions passed; these do not substitute for the remaining
   environment-specific checks.
-- Portable artifact smoke was not requested or run. Keep this task in Plan;
-  do not move it to Done until adoption gates pass or are explicitly revised.
+- Portable artifact smoke was not requested or run. The user explicitly revised
+  the completion criteria; this unrun check no longer blocks closing this task.
 
 ### Earlier PoC
 

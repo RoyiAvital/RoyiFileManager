@@ -182,7 +182,7 @@ def render_html(current, versions):
 	payload = json.dumps(report_data(current, versions), ensure_ascii=True, allow_nan=False)
 	payload = payload.replace('&', '\\u0026').replace('<', '\\u003c').replace('>', '\\u003e')
 	template = Path(__file__).with_suffix('.html').read_text(encoding='utf-8')
-	icon = base64.b64encode((ROOT / 'src/main/icons/base/32.png').read_bytes()).decode('ascii')
+	icon = base64.b64encode((ROOT / 'src/main/icons/Icon.svg').read_bytes()).decode('ascii')
 	return template.replace('__PERFORMANCE_ICON__', icon).replace('__PERFORMANCE_DATA__', payload)
 
 
