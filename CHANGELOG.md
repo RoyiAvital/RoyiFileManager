@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-09-22
+
+### Added
+
+- QuickView's **Copy Image** button copies the loaded full-resolution still image
+  to the clipboard without changing normal file-copy shortcuts.
+
 ## [0.9.0] - 2026-09-22
 
 Probably the biggest change since the project started.  

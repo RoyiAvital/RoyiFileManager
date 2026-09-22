@@ -60,6 +60,12 @@ QuickView starts off at every launch and does no image work while off.
 | `+`, `-`, zoom buttons, `Ctrl+wheel` | Zoom between 5% and 800%; Fit can be smaller |
 | Arrows / `Shift+arrows` | Pan 32 / 128 logical pixels |
 | Drag, wheel / `Shift+wheel` | Pan with mouse, vertically / horizontally |
+| Copy Image button | Copy the loaded image to the clipboard at full resolution |
+
+Copy Image copies decoded pixels, not the file or zoomed viewport. GIF/APNG
+previews contribute only the displayed still image, not the animation. It replaces
+the clipboard without changing `Ctrl+C`; copying large images can increase memory
+use. The button is disabled until an image is ready.
 
 Image keys apply only while QuickView has focus. Other keys first focus the
 source and use its existing shortcut dispatch, including Command Center.

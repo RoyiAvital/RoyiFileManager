@@ -2,6 +2,7 @@ from fman.impl.quick_view_images import ImageLoader, ImageRequest, ImageResult
 from threading import Event
 from unittest import TestCase
 
+import os
 import subprocess
 import sys
 
@@ -108,6 +109,46 @@ print('closed', flush=True)
 		result = subprocess.run([sys.executable, '-c', code], capture_output=True, text=True, timeout=10)
 		self.assertEqual(0, result.returncode, result.stderr)
 		self.assertIn('closed', result.stdout)
+
+
+class QuickViewClipboardTest(TestCase):
+	def test_image_clipboard_round_trip_and_file_copy(self):
+		code = '''
+from fman import clipboard
+from fman.impl.quick_view import QuickViewSession
+from PyQt5.QtGui import QColor, QImage
+from PyQt5.QtWidgets import QApplication
+from types import SimpleNamespace
+
+app = QApplication([])
+image = QImage(32, 24, QImage.Format_ARGB32_Premultiplied)
+image.fill(QColor('#80402010'))
+expected = image.copy()
+canvas = SimpleNamespace(image=image)
+session = SimpleNamespace(overlay=SimpleNamespace(canvas=canvas))
+files = ['file://C:/quick-view.png']
+clipboard.cut_files(files)
+assert clipboard.files_were_cut()
+QuickViewSession.image_action(session, 'copy_image')
+assert QApplication.clipboard().mimeData().hasImage()
+assert QApplication.clipboard().image() == expected
+assert clipboard.get_files() == []
+assert not clipboard.files_were_cut()
+canvas.image = None
+del image
+QuickViewSession.image_action(session, 'copy_image')
+del session, canvas
+assert QApplication.clipboard().image() == expected
+clipboard.copy_files(files)
+assert clipboard.get_files() == files
+assert not clipboard.files_were_cut()
+assert not QApplication.clipboard().mimeData().hasImage()
+clipboard.clear()
+'''
+		result = subprocess.run(
+			[sys.executable, '-c', code], env=dict(os.environ, QT_QPA_PLATFORM='offscreen'),
+			capture_output=True, text=True, timeout=30)
+		self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
 
 class QuickViewPackagingTest(TestCase):

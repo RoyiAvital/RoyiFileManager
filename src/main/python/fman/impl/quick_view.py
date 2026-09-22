@@ -244,7 +244,8 @@ class QuickViewOverlay(QWidget):
 		self.modes = QButtonGroup(self)
 		for name, text, tooltip, icon in (
 			('fit', 'Fit', 'Fit image', ''), ('actual_size', '100%', 'One image pixel per screen pixel', ''),
-			('zoom_out', '-', 'Zoom out', 'zoom-out'), ('zoom_in', '+', 'Zoom in', 'zoom-in')
+			('zoom_out', '-', 'Zoom out', 'zoom-out'), ('zoom_in', '+', 'Zoom in', 'zoom-in'),
+			('copy_image', 'Copy Image', 'Copy full-resolution image to clipboard (still frame)', 'edit-copy')
 		):
 			button = QToolButton(self)
 			button.setText(text)
@@ -505,6 +506,8 @@ class QuickViewSession(QObject):
 			canvas.zoom(value if name == 'zoom' else (1 if name == 'zoom_in' else -1))
 		elif name == 'pan':
 			canvas.pan(*value)
+		elif name == 'copy_image':
+			QApplication.clipboard().setImage(canvas.image)
 
 	def close(self, *_):
 		if self.closed:

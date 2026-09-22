@@ -273,6 +273,63 @@ class QuickViewImagesIT(QtIT):
 	navigate = QuickViewIT.navigate
 	drain = QuickViewIT.drain
 
+	def test_copy_image_uses_loaded_frame_and_preserves_focus(self):
+		from fman.impl.quick_view import QuickViewSession
+		from fman.impl.quick_view_images import ImageResult
+		from PyQt5.QtCore import QMimeData, QThread
+		from PyQt5.QtGui import QColor, QImage
+		from PyQt5.QtTest import QTest
+		from unittest.mock import Mock, patch
+		def check():
+			clipboard = Mock()
+			payload = QMimeData()
+			def copy_image(image):
+				self.assertEqual(QApplication.instance().thread(), QThread.currentThread())
+				payload.setImageData(image)
+			clipboard.setImage.side_effect = copy_image
+			with patch('fman.load_json', return_value={}), patch('fman.impl.quick_view.QApplication.clipboard', return_value=clipboard) as access:
+				session = QuickViewSession(self.window, *self.panes)
+				session.timer.stop()
+				try:
+					canvas = session.overlay.canvas
+					button = session.overlay.buttons['copy_image']
+					self.assertFalse(button.isEnabled())
+					button.click()
+					session.image_action('copy_image')
+					access.assert_not_called()
+					image = QImage(800, 600, QImage.Format_ARGB32_Premultiplied)
+					image.fill(QColor('#80402010'))
+					session.show_result(ImageResult(image, format='png'))
+					canvas.zoom(-4)
+					self.assertNotEqual(1, canvas.scale)
+					self.assertTrue(button.isEnabled())
+					for focus in (session.source, canvas):
+						focus.setFocus()
+						QTest.mouseClick(button, Qt.LeftButton)
+						self.assertTrue(focus.hasFocus())
+						self.assertIs(image, clipboard.setImage.call_args.args[0])
+					self.assertEqual(2, clipboard.setImage.call_count)
+					self.assertEqual(image, payload.imageData())
+					self.assertEqual(128, payload.imageData().pixelColor(0, 0).alpha())
+					self.controller.handle_shortcut.reset_mock()
+					QTest.keyClick(canvas, Qt.Key_C, Qt.ControlModifier)
+					self.controller.handle_shortcut.assert_called_once()
+					self.assertEqual(2, clipboard.setImage.call_count)
+					for message in ('Loading', 'Cannot decode image', 'No file selected'):
+						session._clear(message)
+						self.assertFalse(button.isEnabled())
+						button.click()
+						session.image_action('copy_image')
+					self.assertEqual(2, clipboard.setImage.call_count)
+					replacement = QImage(4, 3, QImage.Format_RGB32)
+					replacement.fill(Qt.blue)
+					session.show_result(ImageResult(replacement, format='png'))
+					self.assertEqual(image, payload.imageData())
+				finally:
+					session.close()
+				self.assertEqual(image, payload.imageData())
+		self.run_in_app(check)
+
 	def make_image(self, name='image.png', width=600, height=400, color='red', image_format='PNG'):
 		from PyQt5.QtGui import QColor, QImage
 		path = self.root / name
