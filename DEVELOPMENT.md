@@ -35,12 +35,13 @@ Repository-wide contribution and task-lifecycle requirements are defined in
 ## Tests and Packaging
 
 ```powershell
+python build.py doc
 python build.py test
 python build.py freeze
 python build.py package
 ```
 
-`test` checks application behavior and release/build inputs. Benchmark harnesses,
+`doc` builds the documentation in strict mode. `test` checks application behavior and release/build inputs. Benchmark harnesses,
 synthetic performance fixtures, report generation and standalone PoCs are outside
 normal discovery and CI. Their optional [development-tool checks](src/performancetest/README.md#development-tool-checks)
 run separately; they are not release validation.
@@ -136,6 +137,34 @@ git push --force origin refs/tags/vX.Y.Z
 
 Developer utilities that are not included in release packages live under
 `src/misc`.
+
+### Documentation Screenshots
+
+[generate_docs_screenshots.py](src/misc/generate_docs_screenshots.py) creates
+repeatable documentation screenshots using only public locations under `C:\`
+and `C:\Windows`. Source mode captures the main window, Command Center,
+Find a Location, pane filtering, QuickView, recursive fuzzy find, Search Files
+and Find Files. Command Center and Find a Location include the full application.
+Source mode uses the Qt smoke-test approach and captures widgets directly.
+Packaged mode launches the frozen executable for a parity image.
+
+```powershell
+python src/misc/generate_docs_screenshots.py --mode source
+python src/misc/generate_docs_screenshots.py --mode packaged
+```
+
+The default `all` mode runs both. Packaged mode requires
+`target/RoyiFileManager/RoyiFileManager.exe`. Use `--output-dir`, `--width`,
+`--height` and `--timeout` to change capture settings.
+
+PNG files remain ignored by Git. Upload approved images to Imgur, then replace
+local image references in the public documentation with their hosted URLs.
+
+Focused regression tests:
+
+```powershell
+python -m unittest fman_unittest.test_generate_docs_screenshots -v
+```
 
 ### Fuzzy Search Benchmark
 

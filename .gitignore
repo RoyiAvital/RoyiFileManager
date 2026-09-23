@@ -7,6 +7,7 @@ src/main/resources/base/Plugins/Core/bin/*
 target/
 UserSettings/
 venv/
+site/
 
 # Ignore Work in Progress
 **/*WIP

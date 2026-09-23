@@ -212,6 +212,13 @@ def clean():
 		shutil.rmtree(cache, ignore_errors=True)
 
 
+def doc():
+	subprocess.run(
+		[sys.executable, '-m', 'mkdocs', 'build', '--strict'],
+		check=True, cwd=ROOT
+	)
+
+
 def _ensure_conda_lock():
 	if os.environ.get('CI', '').lower() == 'true':
 		if CONDA_LOCK_PATH.is_file():
@@ -306,6 +313,7 @@ def publish():
 
 COMMANDS = {
 	'clean': clean,
+	'doc': doc,
 	'freeze': freeze,
 	'measure': measure,
 	'package': package,
