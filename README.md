@@ -1,4 +1,5 @@
 [![Visitors](https://api.visitorbadge.io/api/combined?path=https%3A%2F%2Fgithub.com%2FRoyiAvital%2FStackExchangeCodes&labelColor=%23f47373&countColor=%23555555&style=plastic)](https://github.com/RoyiAvital/RoyiFileManager) <!-- https://www.visitorbadge.io -->
+[![Documentation](https://img.shields.io/badge/documentation-online-brightgreen?style=plastic)](https://royiavital.github.io/RoyiFileManager)
 
 # RoyiFileManager
 
