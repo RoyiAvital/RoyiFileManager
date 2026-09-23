@@ -57,9 +57,9 @@ reviewed. Do not create a task document solely to record provenance:
 - Role: Reviewer
 - Activity: Design
 - Agent: <Acting agent>
-- Model: <Model identifier or Not exposed by host>
+- Model: <Model identifier>
 - Effort: <Low, Medium, or High>
-- Context Window: <Context-window size or Not exposed by host>
+- Context Window: <Context-window size>
 - Outcome: <Review outcome>
 ```
 
@@ -90,6 +90,7 @@ Rules:
 - If user assigned you a signature, use that for any field not exposed by the agent.
 - `Outcome` briefly records the decision, important concerns, or approval state.
 - Preserve previous records; reviewer history is append only.
+- If any signature info is missing, use what you were assigned to by the user.
 
 ## Implementation and Completion
 
@@ -111,10 +112,10 @@ document exists:
 
   - Role: Implementer
   - Activity: Implementation
-  - Agent: <Acting agent>
-  - Model: <Model identifier or Not exposed by host>
-  - Effort: <Low, Medium, or High>
-  - Context Window: <Context-window size or Not exposed by host>
+  - Agent: <Acting agent / As assigned by user>
+  - Model: <Model identifier / As assigned by user>
+  - Effort: <As assigned by user>
+  - Context Window: <As assigned by user>
   - Outcome: <Implementation outcome and decisive checks>
    ```
 
@@ -131,6 +132,8 @@ by the Changelog policy below, whether or not a task document exists. Plans,
 reviews, and documentation only work do not require a changelog entry.  
 Unless a features is in released version, no need to add fixes to it in the 
 changelog.
+
+Use the information assigned to you by the user for the signature.
 
 ## Runtime and Compatibility Requirements
 

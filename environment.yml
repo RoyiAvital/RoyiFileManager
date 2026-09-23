@@ -14,3 +14,4 @@ dependencies:
   - fzf #<! For testing only
   - fd-find #<! Find files with `fd` command
   - conda-lock
+  - mkdocs-material #<! Downgrades `click` (https://github.com/conda-forge/mkdocs-feedstock/issues/55) run `micromamba update click --no-deps`
