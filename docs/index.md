@@ -12,6 +12,9 @@ Minimal interface. Fast navigation. Powerful search. Commands are always close.
 !!! info
     The development began as a fork of [`fman`](https://github.com/mherrmann/fman) by [Michael Herrmann](https://github.com/mherrmann).
 
+!!! hint
+    The workflow is highly inspired from [Sublime Text](https://www.sublimetext.com).
+
 ## Features
 
 - **Performance** - Architecture based on snapshot file listing, virtual rows and background projections for **responsiveness** and **reactivity**.

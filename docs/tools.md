@@ -29,7 +29,7 @@ Press ++ctrl+shift+f++ to include subfolders.
 
 - Match incomplete names and paths.
 - Combine terms, such as `wall img`.
-- Use `'text` for exact text, `^src` for a prefix or `!tmp` to exclude.
+- Use `'text` for exact text, `^src` for a prefix, `.py$` for a suffix or `!tmp` to exclude.
 - Press ++enter++ to open the containing folder and select the file.
 
 ## Search Files
@@ -49,7 +49,7 @@ Search file names, file contents or both.
 - Stop background work and keep results collected so far.
 - Open results by path and matching snippet.
 
-## Find Files with fd
+## Find Files with `fd`
 
 Press ++shift+f7++.
 

@@ -3,7 +3,8 @@
 The source capture follows the Qt smoke-test approach and grabs widgets directly.
 The packaged capture launches the frozen executable and grabs its native window.
 Both use isolated settings and only show ``C:\\`` and ``C:\\Windows``.
-Generated PNG files remain ignored by Git and are intended for external hosting.
+Generated PNG files remain ignored by Git. The Pages workflow generates them
+before building its deployment artifact.
 
 Run from the repository root:
 
@@ -184,8 +185,14 @@ def _source_outputs(output_dir, capture):
 		'filter-pane': ('royifilemanager-filter-pane.png',),
 		'quick-view': ('royifilemanager-quickview.png',),
 		'fuzzy-find': ('royifilemanager-fuzzy-find-recursive.png',),
-		'search-files': ('royifilemanager-search-files.png',),
-		'find-files': ('royifilemanager-find-files-fd.png',),
+		'search-files': (
+			'royifilemanager-search-files.png',
+			'royifilemanager-search-files-panel.png',
+		),
+		'find-files': (
+			'royifilemanager-find-files-fd.png',
+			'royifilemanager-find-files-fd-panel.png',
+		),
 	}
 	return tuple(output_dir / name for name in names[capture])
 
@@ -356,8 +363,9 @@ def _capture_source_child(args):
 				host.on_action.__self__.panel.update(values=values)
 				QApplication.processEvents()
 				if state['settled'] >= 3:
+					_save_pixmap(context.main_window.grab(), outputs[0])
 					finish(
-						context.main_window.grab(), outputs[0],
+						host.panel.grab(), outputs[1],
 						host.on_action.__self__.panel.close
 					)
 		except BaseException:

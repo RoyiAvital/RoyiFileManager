@@ -54,7 +54,9 @@ class GenerateDocsScreenshotsTest(TestCase):
 			'royifilemanager-quickview.png',
 			'royifilemanager-fuzzy-find-recursive.png',
 			'royifilemanager-search-files.png',
+			'royifilemanager-search-files-panel.png',
 			'royifilemanager-find-files-fd.png',
+			'royifilemanager-find-files-fd-panel.png',
 		), outputs)
 
 	def test_prepares_non_first_run_session(self):

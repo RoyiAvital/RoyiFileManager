@@ -70,6 +70,22 @@ Results of the performance test suite per version.
 > * Version `0.8.1` had an improved version of the `fman` architecture (About 30% faster than `0.8.0`).
 > * Version `0.8.0` and earlier versions use the `fman` architecture and performance.
 
+## Documentation
+
+Build the documentation:
+
+```powershell
+python build.py doc
+```
+
+Start the local documentation server from the repository root:
+
+```powershell
+micromamba run -n RoyiFileManager mkdocs serve --dev-addr 127.0.0.1:8000
+```
+
+Open <http://127.0.0.1:8000/RoyiFileManager/>.
+
 ## Development
 
 The development workflow is based on architecture design by the developer and implementation by an AI Agent.  

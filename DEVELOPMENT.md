@@ -157,8 +157,8 @@ The default `all` mode runs both. Packaged mode requires
 `target/RoyiFileManager/RoyiFileManager.exe`. Use `--output-dir`, `--width`,
 `--height` and `--timeout` to change capture settings.
 
-PNG files remain ignored by Git. Upload approved images to Imgur, then replace
-local image references in the public documentation with their hosted URLs.
+PNG files remain ignored by Git. The Pages workflow generates source captures
+before building the site, so they exist only in its deployment artifact.
 
 Focused regression tests:
 
