@@ -31,7 +31,7 @@ DEFAULT_EXE = ROOT / 'target' / 'RoyiFileManager' / 'RoyiFileManager.exe'
 DEFAULT_OUTPUT_DIR = ROOT / 'docs' / 'assets'
 WORK_DIR = ROOT / 'target' / 'docs-screenshots'
 SOURCE_CAPTURES = (
-	'overview', 'go-to', 'filter-pane', 'quick-view', 'fuzzy-find',
+	'overview', 'go-to', 'context-menu', 'filter-pane', 'quick-view', 'fuzzy-find',
 	'search-files', 'find-files'
 )
 SOURCE_PATHS = (
@@ -182,6 +182,7 @@ def _source_outputs(output_dir, capture):
 			'royifilemanager-command-center.png',
 		),
 		'go-to': ('royifilemanager-find-location.png',),
+		'context-menu': ('royifilemanager-file-context-menu.png',),
 		'filter-pane': ('royifilemanager-filter-pane.png',),
 		'quick-view': ('royifilemanager-quickview.png',),
 		'fuzzy-find': ('royifilemanager-fuzzy-find-recursive.png',),
@@ -278,7 +279,7 @@ def _capture_source_child(args):
 			if state['settled'] < 3:
 				return
 			pane = panes[1] if args._capture in \
-				('filter-pane', 'search-files', 'find-files') else panes[0]
+				('context-menu', 'filter-pane', 'search-files', 'find-files') else panes[0]
 			if args._capture == 'overview':
 				if state['started']:
 					return
@@ -293,6 +294,42 @@ def _capture_source_child(args):
 				state['started'] = True
 				pane.focus()
 				pane.run_command('go_to')
+			elif args._capture == 'context-menu':
+				from PyQt5.QtGui import QContextMenuEvent
+				from PyQt5.QtWidgets import QMenu
+				file_url = as_url(str(_public_paths()[1] / 'win.ini'))
+				if state['started']:
+					return
+				pane.place_cursor_at(file_url)
+				if pane.get_file_under_cursor() != file_url:
+					return
+				pane.focus()
+				view = pane._widget._file_view
+				index = view.currentIndex()
+				view.scrollTo(index, view.PositionAtCenter)
+				QApplication.processEvents()
+				position = view.visualRect(index).center()
+				if not view.viewport().rect().contains(position):
+					return
+				def capture_menu():
+					try:
+						menu = QApplication.activePopupWidget()
+						if not isinstance(menu, QMenu) or not menu.isVisible():
+							raise RuntimeError('File context menu did not open')
+						finish(
+							_grab_window_with_dialog(context.main_window, menu),
+							outputs[0], menu.close
+						)
+					except BaseException:
+						fail()
+				state['started'] = True
+				QTimer.singleShot(150, capture_menu)
+				QApplication.sendEvent(
+					view.viewport(), QContextMenuEvent(
+						QContextMenuEvent.Mouse, position,
+						view.viewport().mapToGlobal(position)
+					)
+				)
 			elif args._capture == 'filter-pane':
 				filter_bar = pane._widget._filter_bar
 				if not state['started']:

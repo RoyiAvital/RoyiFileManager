@@ -68,29 +68,26 @@ Rules:
 - Dates use `YYYY_MM_DD`.
 - The acting contributor supplies its own metadata for every record.
 - `Agent` identifies the product or agent performing the work.
-- `Model` records the model signature. First check the session host or an
-  available official API for an explicit identifier of the model running the
-  current session. Use that identifier when available. Do not infer it from a
-  model catalog, configured default, agent name, or another session's metadata.
-- If no explicit current session identifier is available, use the exact model
-  signature assigned by the user. If neither source provides a signature, write
-  `Not exposed by host`. Do not add a separate user-supplied label field or a
-  qualification suffix to the signature.
-- An assigned signature is a user directed attribution convention, not independent
-  verification of the underlying model. This policy does not change `Agent`,
-  `Effort`, or `Context Window`, and does not rewrite historical records.
-- `Effort` reflects the effort used for that activity and is `Low`, `Medium`,
-  or `High`.
-- `Context Window` records the size exposed to the acting agent; otherwise
-  write `Not exposed by host`. Use exactly this field capitalization in new records.
+- `Model` defaults to the exact signature assigned by the User/Operator, even
+  when the session host exposes a different model identifier. Without an
+  assignment, use an explicit current-session host or official-API identifier;
+  if neither is available, write `Not exposed by host`. Do not infer an identifier
+  from a model catalog, configured default, agent name, or another session's
+  metadata. Do not add a separate label field or a suffix to the signature.
+- A User/Operator-assigned signature is an attribution convention, not independent
+  verification of the underlying model. Preserve historical records; do not
+  rewrite their signatures when the default changes.
+- `Effort` uses the User/Operator-assigned level when provided; otherwise it
+  reflects the effort used for the activity. Use `Low`, `Medium`, or `High`.
+- `Context Window` uses the User/Operator-assigned size when provided; otherwise
+  use the size exposed to the acting agent, or `Not exposed by host` if neither
+  is available. Use exactly this field capitalization in new records.
 - Only the first planning record for a task uses `Activity: Design`.
 - Every later planning pass uses `Activity: Review`, including revisions by the
   original designer.
 - `Role` states `Reviewer` in this section.
-- If user assigned you a signature, use that for any field not exposed by the agent.
 - `Outcome` briefly records the decision, important concerns, or approval state.
 - Preserve previous records; reviewer history is append only.
-- If any signature info is missing, use what you were assigned to by the user.
 
 ## Implementation and Completion
 
@@ -112,10 +109,10 @@ document exists:
 
   - Role: Implementer
   - Activity: Implementation
-  - Agent: <Acting agent / As assigned by user>
-  - Model: <Model identifier / As assigned by user>
-  - Effort: <As assigned by user>
-  - Context Window: <As assigned by user>
+  - Agent: <Acting agent>
+  - Model: <Model signature>
+  - Effort: <Low, Medium, or High>
+  - Context Window: <Context-window size>
   - Outcome: <Implementation outcome and decisive checks>
    ```
 
@@ -133,7 +130,8 @@ reviews, and documentation only work do not require a changelog entry.
 Unless a features is in released version, no need to add fixes to it in the 
 changelog.
 
-Use the information assigned to you by the user for the signature.
+Apply the same User/Operator-first metadata rules to reviewer and implementer
+records.
 
 ## Runtime and Compatibility Requirements
 

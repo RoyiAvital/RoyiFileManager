@@ -21,8 +21,7 @@
 - [ ] Integrate a Terminal into the file manager. Or at least open the current folder in Windows Terminal.
 - [ ] Add a "Rename Tool" as a Plug In. See [FManPowerRenamerAndReplacer](https://github.com/BenjaminKobjolke/FManPowerRenamerAndReplacer).
 - [ ] Add "Synchronized Browsing" feature. See [SynchronizedBrowsing](https://github.com/mherrmann/SynchronizedBrowsing).
-- [x] Add option to compare 2 files using external file comparison or integrate Meld view. See [SimpleCompare
-](https://github.com/rjwojcicki/SimpleCompare).
+- [x] Add option to compare 2 files using external file comparison or integrate Meld view. See [SimpleCompare](https://github.com/rjwojcicki/SimpleCompare).
 - [x] Show System Process in a Pane with the ability to kill a process. See [ProcessFS](https://github.com/mherrmann/ProcessFS).
 - [x] BUG: On launch the status bar shows `v1.7.5`. It should show the version from `base.json`.
 - [ ] Move to `PyQt6`.
@@ -39,7 +38,8 @@
 - [x] BUG: When closing a panel ("Search files" / "Find files with `fd`") with <kbd>Esc</kbd> the focus does not return to the last active pane.
 - [x] BUG: <kbd>Ctrl</kbd>+<kbd>F</kbd> ("Find files in current folder") does not yield the UI from version `0.8.1` (Quick Search based).
 - [x] FEATURE: Add a button "Copy Image" to copy the image to the clipboard in "QuickView" for images mode.
-- [ ] FEATURE: Add support for GIF, APNG and other animated images formats in "QuickView" for images mode.
+- [x] FEATURE: Add a plan to support for GIF, APNG and other animated images formats in "QuickView" for images mode.
+- [x] CHANGE: Update the structure of the "About" box.
 
 ## Performance
 

@@ -9,11 +9,11 @@ Minimal interface. Fast navigation. Powerful search. Commands are always close.
   <figcaption>Minimalistic, Keyboard Focused Dual Pane UI</figcaption>
 </figure>
 
-!!! info
+!!! info "Fork of `fman`"
     The development began as a fork of [`fman`](https://github.com/mherrmann/fman) by [Michael Herrmann](https://github.com/mherrmann).
 
-!!! hint
-    The workflow is highly inspired from [Sublime Text](https://www.sublimetext.com).
+!!! hint "Inspiration"
+    The workflow is highly inspired by [Sublime Text](https://www.sublimetext.com).
 
 ## Features
 

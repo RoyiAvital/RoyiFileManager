@@ -10,7 +10,7 @@
 - [Flat View](Plan/FlatView.md)
 - [Improve Pane Scan](Plan/ImprovePaneScan.md)
 - [Migrate to PyQt6](Plan/MigrateToPyQt6.md)
-- [QuickView 002: Videos](Plan/QuickView002.md)
+- [QuickView 002: Videos and Animated Images](Plan/QuickView002.md)
 - [QuickView 003: Text-Based Files](Plan/QuickView003.md)
 - [Search Files 003: Extended Mode](Plan/SearchFiles003.md)
 - [UI Elements](Plan/UIElements.md)

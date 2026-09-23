@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The About dialog now shows the product version, a provisional plug-in API
+  version of `0.0.0` and clickable project and documentation links.
+
 ## [0.9.1] - 2026-09-22
 
 ### Added

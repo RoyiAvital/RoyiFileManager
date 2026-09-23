@@ -22,6 +22,15 @@ Open a source on one side. Open a destination on the other. Then copy or move.
 | New folder | ++f7++ |
 | Delete to Recycle Bin | ++f8++ |
 
+## Transfer Files Between Panes
+
+1. Open the source folder in one pane and the destination folder in the other. Press ++tab++ to switch panes.
+2. In the source pane, use ++space++ to mark the files you want. With no marked files, the file under the cursor is the target.
+3. Press ++f5++ to copy or ++f6++ to move the chosen files into the other pane's folder. Review any confirmation before proceeding.
+4. Switch to the destination pane to check the result.
+
+See [Keyboard Shortcuts](shortcuts.md) for more file operations.
+
 ## Command Center
 
 Press ++ctrl+shift+p++.
@@ -56,7 +65,12 @@ Press ++esc++ to clear the filter.
   ![RoyiFileManager pane filtered to executable files](assets/royifilemanager-filter-pane.png)
 </figure>
 
-!!! note "Windows only"
-    RoyiFileManager is developed and tested on Windows.
+## Start in Specific Folders
 
-Continue with [Features](features.md).
+From PowerShell in the extracted application folder, pass one or two directory paths:
+
+```powershell
+.\RoyiFileManager.exe "C:\Work\Incoming" "C:\Work\Archive"
+```
+
+The first path opens in the left pane; the second opens in the right. Replace the example folders with ones that exist on your computer. With no paths, RoyiFileManager restores the previous pane locations.

@@ -46,7 +46,6 @@ class HiddenFileFilterTest(TestCase):
 class AboutTest(TestCase):
 	@patch('core.commands.show_alert')
 	def test_shows_product_version_from_build_settings(self, show_alert):
-		from fman import FMAN_VERSION
 		from pathlib import Path
 		settings_path = Path(__file__).resolve().parents[9] / 'src/build/settings/base.json'
 		version = json.loads(settings_path.read_text(encoding='utf-8'))['version']
@@ -54,9 +53,19 @@ class AboutTest(TestCase):
 		with patch('fman.impl.application_context.get_application_context', return_value=context):
 			About(Mock())()
 		show_alert.assert_called_once_with(
-			'RoyiFileManager version: %s\nfman plug-in API: %s' % (version, FMAN_VERSION)
+			'Version: %s<br>API Version: 0.0.0<br>'
+			'Project: <a href="https://github.com/RoyiAvital/RoyiFileManager">'
+			'https://github.com/RoyiAvital/RoyiFileManager</a><br>'
+			'Documentation: <a href="https://royiavital.github.io/RoyiFileManager">'
+			'https://royiavital.github.io/RoyiFileManager</a>'
+			% version
 		)
-		self.assertNotEqual(FMAN_VERSION, version)
+	@patch('core.commands.show_alert')
+	def test_escapes_product_version_in_html(self, show_alert):
+		context = Mock(build_settings={'version': '<dev & test>'})
+		with patch('fman.impl.application_context.get_application_context', return_value=context):
+			About(Mock())()
+		self.assertIn('Version: &lt;dev &amp; test&gt;<br>', show_alert.call_args.args[0])
 
 class CommandPaletteHistoryTest(TestCase):
 	def setUp(self):

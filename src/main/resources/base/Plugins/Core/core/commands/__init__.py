@@ -16,6 +16,7 @@ from fman.fs import exists, touch, mkdir, is_dir, delete, samefile, copy, \
 from fman.impl.util import get_user
 from fman.url import splitscheme, as_url, join, basename, as_human_readable, \
 	dirname, relpath, normalize
+from html import escape
 from io import UnsupportedOperation
 from itertools import chain
 from os import strerror
@@ -42,8 +43,12 @@ class About(ApplicationCommand):
 		from fman.impl.application_context import get_application_context
 		version = get_application_context().build_settings['version']
 		show_alert(
-			'RoyiFileManager version: %s\nfman plug-in API: %s'
-			% (version, FMAN_VERSION)
+			'Version: %s<br>API Version: 0.0.0<br>'
+			'Project: <a href="https://github.com/RoyiAvital/RoyiFileManager">'
+			'https://github.com/RoyiAvital/RoyiFileManager</a><br>'
+			'Documentation: <a href="https://royiavital.github.io/RoyiFileManager">'
+			'https://royiavital.github.io/RoyiFileManager</a>'
+			% escape(version)
 		)
 
 class Help(ApplicationCommand):

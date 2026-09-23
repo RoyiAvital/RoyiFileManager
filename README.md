@@ -64,16 +64,16 @@ Results of the performance test suite per version.
 
 | Test                      	| Version: `0.9.0` 	|
 |---------------------------	|------------------	|
-| Pane Load - Small Folder  	| 44.14   [ms]      	|
+| Pane Load - Small Folder  	| 44.14   [ms]      |
 | Pane Load - Large Folder  	| 1030.26 [ms]     	|
-| Filter Bar - Small Folder 	| 9.72    [ms]      	|
+| Filter Bar - Small Folder 	| 9.72    [ms]      |
 | Filter Bar - Large Folder 	| 332.28  [ms]    	|
 | Fuzzy Find - Small Folder 	| 4.67    [ms]     	|
 | Fuzzy Find - Large Folder 	| 350.86  [ms]    	|
-| Fuzzy Find (Recursive)     	| 89.82   [ms]      	|
+| Fuzzy Find (Recursive)     	| 89.82   [ms]      |
 | QuickView - Small Folder  	| 109.73  [ms]    	|
 | QuickView - Large Folder  	| 118.74  [ms]    	|
-| Navigation                	| 6.79    [ms]      	|
+| Navigation                	| 6.79    [ms]      |
 | Refresh / Selection       	| 482.95  [ms]    	|
 
 > [!NOTE]
@@ -92,7 +92,7 @@ python build.py doc
 Start the local documentation server from the repository root:
 
 ```powershell
-micromamba run -n RoyiFileManager mkdocs serve --dev-addr 127.0.0.1:8000
+micromamba run mkdocs serve --dev-addr 127.0.0.1:8000
 ```
 
 Open <http://127.0.0.1:8000/RoyiFileManager/>.

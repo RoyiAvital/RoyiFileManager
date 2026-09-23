@@ -50,6 +50,7 @@ class GenerateDocsScreenshotsTest(TestCase):
 			'royifilemanager-dual-pane.png',
 			'royifilemanager-command-center.png',
 			'royifilemanager-find-location.png',
+			'royifilemanager-file-context-menu.png',
 			'royifilemanager-filter-pane.png',
 			'royifilemanager-quickview.png',
 			'royifilemanager-fuzzy-find-recursive.png',
