@@ -18,6 +18,16 @@ The _File Manager_ focuses on:
 Development prioritizes _correctness_ and _performance_.  
 Each release is validated by hundreds of correctness tests and accompanied by a detailed performance report.
 
+## Installation
+
+1. Open the [latest release](https://github.com/RoyiAvital/RoyiFileManager/releases/latest).
+2. Download `RoyiFileManager-<version>-windows-x86_64.zip`.
+3. Extract the ZIP file to a folder of your choice.
+4. Run `RoyiFileManager.exe` from the extracted folder.
+
+RoyiFileManager is portable. Keep the extracted files together and move the
+folder whenever needed.
+
 ## Features
 
 Significant additions compared with `fman`:

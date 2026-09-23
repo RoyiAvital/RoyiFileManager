@@ -26,6 +26,7 @@ theme:
 
 nav:
   - Home: index.md
+  - Installation: installation.md
   - Basics: basics.md
   - Features: features.md
   - Performance: performance.md
