@@ -1,7 +1,6 @@
 from fman.ui import matchers
 from fman import DirectoryPaneCommand, NO, QuicksearchItem, YES, load_json, \
 	save_json, show_alert, show_prompt, show_quicksearch, show_status_message
-from fman.fs import exists
 from fman.url import as_human_readable, normalize
 from itertools import chain
 

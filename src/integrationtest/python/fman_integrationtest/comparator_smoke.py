@@ -22,7 +22,7 @@ def exercise(context, root, restart):
 	gui = lambda function: run_in_main_thread(function)()
 	children, dialog_errors = [], []
 	selection = comparator.MANUAL
-	arguments = ['-c', 'import json,pathlib,sys,threading;pathlib.Path(sys.argv[1]).write_text(json.dumps(sys.argv[2:]));threading.Event().wait()', str(root / 'received.json')]
+	arguments = ['-c', 'import json,pathlib,sys,threading;output=pathlib.Path(sys.argv[1]);temporary=output.with_suffix(".tmp");temporary.write_text(json.dumps(sys.argv[2:]));temporary.replace(output);threading.Event().wait()', str(root / 'received.json')]
 	def wait_for(predicate, message):
 		ready = Event()
 		def connect():
@@ -111,15 +111,6 @@ def exercise(context, root, restart):
 		for child in children:
 			child.kill()
 			child.wait(timeout=5)
-		def stop_models():
-			models = [pane._widget._model.sourceModel() for pane in context.window.get_panes()]
-			for model in models:
-				model.shutdown()
-			return models
-		for model in gui(stop_models):
-			model._worker._thread.join(5)
-			if model._worker._thread.is_alive():
-				code = 1
 		gui(lambda: context.app.exit(code))
 
 

@@ -1,6 +1,5 @@
 from collections import defaultdict
 from os.path import basename, dirname
-from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFontDatabase
 from PyQt5.QtWidgets import QDialog, QDialogButtonBox, QLabel, QLineEdit, \
 	QHeaderView, QTabWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout

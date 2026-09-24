@@ -82,7 +82,7 @@ Comparisons with previous versions:
 
 | Measurement                | Version 0.8.0 | Version 0.8.1 | Version 0.9.0 |
 |----------------------------|---------------|---------------|---------------|
-| First Populated Pane Paint | 8.949 [s]     | 5.663[ ]s     | 0.583 [s]     |
+| First Populated Pane Paint | 8.949 [s]     | 5.663 [s]     | 0.583 [s]     |
 | Metadata Loading Complete  | 17.786 [s]    | 11.498 [s]    | 0.571 [s]     |
 | Post Paint Qt Commit Work  | 2.765 [s]     | 1.282 [s]     | 0 [s]         |
 | Settled Working Memory     | Not recorded  | 771.3 [MiB]   | 165.6 [MiB]   |

@@ -5,7 +5,7 @@ from core.fileoperations import CopyFiles, MoveFiles
 from core.github import find_repos, GitHubRepo
 from core.os_ import open_terminal_in_directory, open_native_file_manager, \
 	get_popen_kwargs_for_opening
-from core.util import strformat_dict_values, listdir_absolute, is_parent
+from core.util import listdir_absolute, is_parent
 from core.quicksearch_matchers import contains_chars, \
 	contains_chars_after_separator
 from core.quick_view import switch_quick_view as _switch_quick_view
@@ -14,6 +14,7 @@ from fman.fs import exists, touch, mkdir, is_dir, delete, samefile, copy, \
 	iterdir, resolve, prepare_copy, prepare_move, prepare_delete, \
 	FileSystem, prepare_trash, query, makedirs, notify_file_added
 from fman.impl.util import get_user
+from fman.impl.product import APP_NAME
 from fman.url import splitscheme, as_url, join, basename, as_human_readable, \
 	dirname, relpath, normalize
 from html import escape
@@ -22,8 +23,6 @@ from itertools import chain
 from os import strerror
 from os.path import basename, pardir
 from pathlib import PurePath
-from PyQt5.QtCore import QUrl
-from PyQt5.QtGui import QDesktopServices
 from subprocess import Popen, DEVNULL, PIPE
 from tempfile import TemporaryDirectory
 from urllib.error import URLError
@@ -43,6 +42,7 @@ class About(ApplicationCommand):
 		from fman.impl.application_context import get_application_context
 		version = get_application_context().build_settings['version']
 		show_alert(
+			f'{escape(APP_NAME)}<br>'
 			'Version: %s<br>API Version: 0.0.0<br>'
 			'Project: <a href="https://github.com/RoyiAvital/RoyiFileManager">'
 			'https://github.com/RoyiAvital/RoyiFileManager</a><br>'
@@ -249,7 +249,7 @@ class Open(DirectoryPaneCommand):
 							'Quick tip: Apps in macOS are directories. When '
 							'you press '
 							'<span style="color: white;">Enter</span>, '
-							'RoyiFileManager therefore browses them. If you want to '
+							f'{APP_NAME} therefore browses them. If you want to '
 							'launch the app instead, press '
 							'<span style="color: white;">Cmd+Enter</span>.'
 						)
@@ -1405,10 +1405,10 @@ class Quit(ApplicationCommand):
 		sys.exit(0)
 
 class ZenOfFman(ApplicationCommand):
-	aliases = ('Zen of RoyiFileManager',)
+	aliases = (f'Zen of {APP_NAME}',)
 	def __call__(self):
 		show_alert(
-			"The Zen of RoyiFileManager\n\n"
+			f"The Zen of {APP_NAME}\n\n"
 			"Looks matter\n"
 			"Speed counts\n"
 			"Extending must be easy\n"
@@ -2160,22 +2160,6 @@ def _add_app():
 	apps[app_name] = app_path
 	_save_apps()
 	return app_name
-
-def _remove_app(app):
-	apps = _load_apps()
-	try:
-		del apps[app]
-	except KeyError:
-		# We don't expect this to happen. But JSON files are always susceptible
-		# by becoming corrupted, eg. when the user edits them.
-		pass
-	_save_apps()
-	associations = _load_file_associations()
-	for suffix, apps in list(associations.items()):
-		apps.pop(app, None)
-		if not apps:
-			del associations[suffix]
-	_save_file_associations()
 
 class QuicksearchScreen:
 

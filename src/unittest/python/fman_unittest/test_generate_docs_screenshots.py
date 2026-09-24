@@ -78,14 +78,24 @@ class GenerateDocsScreenshotsTest(TestCase):
 	def test_finds_visible_main_window_for_process(self):
 		def enumerate_windows(callback, argument):
 			callback(123, argument)
-		with patch.object(win32gui, 'EnumWindows', side_effect=enumerate_windows), \
+		with patch.object(screenshots, 'APP_NAME', 'RfmRenameProbe'), \
+				patch.object(win32gui, 'EnumWindows', side_effect=enumerate_windows), \
 				patch.object(win32gui, 'IsWindowVisible', return_value=True), \
-				patch.object(win32gui, 'GetWindowText', return_value='RoyiFileManager'), \
+				patch.object(win32gui, 'GetWindowText', return_value='RfmRenameProbe'), \
 				patch.object(
 					win32process, 'GetWindowThreadProcessId', return_value=(1, 456)
 				):
 			handle = screenshots._find_window(456, 1)
 		self.assertEqual(123, handle)
+
+	def test_default_executable_uses_settings_name(self):
+		import runpy
+		with patch('fbs_runtime.build_settings.get_build_settings', return_value={
+			'app_name': 'RfmRenameProbe', 'version': '9.8.7'
+		}):
+			loaded = runpy.run_path(str(SCRIPT))
+		self.assertEqual(ROOT / 'target/RfmRenameProbe/RfmRenameProbe.exe', loaded['DEFAULT_EXE'])
+		self.assertEqual('9.8.7', loaded['_application_version']())
 
 	def test_resizes_packaged_client(self):
 		with patch.object(win32gui, 'GetWindowLong', return_value=0), \

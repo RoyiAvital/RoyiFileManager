@@ -160,7 +160,7 @@ not proof of playback.
 
 Verify PyInstaller collects QtMultimedia, QtMultimediaWidgets and the required Qt
 media-service/plugin DLLs from the pinned environment. Adjust
-[RoyiFileManager.spec](../RoyiFileManager.spec) only if necessary. Keep Qt/PyQt
+[application.spec](../application.spec) only if necessary. Keep Qt/PyQt
 distribution notices; no codec-pack installation, runtime downloads or system
 configuration changes. Missing plugins/codecs degrade inline. A source-only
 construction probe does not establish portable playback support.

@@ -1,4 +1,6 @@
-site_name: RoyiFileManager
+site_name: "{{ app_name }}"
+hooks:
+  - src/misc/docs_hooks.py
 site_description: Fast, keyboard-focused file management for Windows.
 site_url: https://royiavital.github.io/RoyiFileManager/
 repo_url: https://github.com/RoyiAvital/RoyiFileManager
@@ -53,4 +55,3 @@ markdown_extensions:
 extra_css:
   - stylesheets/extra.css
 
-copyright: RoyiFileManager is based on fman 1.7.5.

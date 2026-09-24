@@ -1,6 +1,6 @@
 # Features
 
-RoyiFileManager is a fast, keyboard-focused file manager for Windows.
+{{ app_name }} is a fast, keyboard-focused file manager for Windows.
 
 ## Dual-Pane Workflow
 

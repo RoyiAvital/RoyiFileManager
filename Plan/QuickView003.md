@@ -37,7 +37,7 @@ Use existing PyQt5 5.15 `QPlainTextEdit`, `QSyntaxHighlighter`, `QTextBrowser` a
 (distribution/import `pygments`) for lexing; pin a Python 3.14-compatible release
 in the [environment](../environment.yml)/lock only after user approval/installation.
 Retain its BSD license notice and collect the explicit lexer modules for the
-[portable build](../RoyiFileManager.spec). No Markdown Python package, WebEngine,
+[portable build](../application.spec). No Markdown Python package, WebEngine,
 Node, browser service, chardet or language server is required.
 
 [Qt Markdown/resource documentation](https://doc.qt.io/archives/qt-5.15/qtextdocument.html)

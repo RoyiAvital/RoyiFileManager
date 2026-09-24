@@ -36,7 +36,6 @@ class FileListView(
 		self.add_delegate(self._delegate)
 		self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 		self.setContextMenuPolicy(Qt.DefaultContextMenu)
-		self._urls_being_loaded = []
 		self._snapshot_state = None
 		self._view_generation = 0
 		self._pending_snapshot_restore = None
@@ -254,42 +253,11 @@ class FileListView(
 	def _is_row_visible(self, i):
 		visible = self.get_visible_row_range()
 		return visible.start <= i < visible.stop
-	def paintEvent(self, event):
-		missing_rows, missing_urls = self._get_rows_to_load()
-		if missing_rows:
-			self._urls_being_loaded.extend(missing_urls)
-			def callback(location=self.model().get_location()):
-				self._on_rows_loaded(location, missing_urls)
-			self.model().load_rows(missing_rows, callback=callback)
-		super().paintEvent(event)
-	def _get_rows_to_load(self):
-		rows = self._get_rows_visible_but_not_loaded()
-		urls = [
-			self.model().url(self.model().index(row, 0))
-			for row in rows
-		]
-		for url in self._urls_being_loaded:
-			try:
-				i = urls.index(url)
-			except ValueError:
-				continue
-			del rows[i]
-			del urls[i]
-		return rows, urls
-	def _on_rows_loaded(self, location, urls):
-		if location != self.model().get_location():
-			return
-		for url in urls:
-			try:
-				self._urls_being_loaded.remove(url)
-			except ValueError:
-				pass
 	def _on_model_reset(self):
 		self._view_generation += 1
 		self._dragged_index = None
 		if self.state() == self.DraggingState:
 			QDrag.cancel()
-		self._urls_being_loaded = []
 		super()._on_model_reset()
 	def _init_vertical_header(self):
 		# The vertical header is what would in Excel be displayed as the row

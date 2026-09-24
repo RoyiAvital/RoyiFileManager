@@ -2,16 +2,17 @@ from fbs_runtime.platform import is_windows, is_mac
 from fman import OK
 from fman.impl.filter_pattern import compile_filter, MAX_FILTER_LENGTH
 from fman.impl.model import SortedFileSystemModel
+from fman.impl.product import APP_NAME
 from fman.impl.quicksearch import Quicksearch
 from fman.impl.status_bar import ACTIVE_PANE, DISABLED, PER_PANE, \
 	PaneStatusSnapshot, PaneStatusWidget, StatusCalculationService, \
 	set_size_divisor
 from fman.impl.util.qt import disable_window_animations_mac, Key_Escape, \
-	NoFocus, Key_Backspace, DisplayRole
+	NoFocus, Key_Backspace
 from fman.impl.util.qt.thread import run_in_main_thread
 from fman.impl.view.location_bar import LocationBar
 from fman.impl.view import FileListView, Layout, set_selection
-from fman.url import as_human_readable, basename, dirname
+from fman.url import as_human_readable, dirname
 from PyQt5.QtCore import pyqtSignal, QTimer, Qt, QEvent, QSize
 from PyQt5.QtGui import QKeySequence
 from PyQt5.QtWidgets import QWidget, QMainWindow, QSplitter, QStatusBar, \
@@ -339,7 +340,7 @@ class FilterBar(QFrame):
 		self._active = False
 		self._search_session = None
 		self._accepted_search = None
-		self._model.add_filter(self._accepts)
+		self._model.add_filter(self.snapshot_filter)
 		self._model.files_changed.connect(self.publish_count)
 		self._model.snapshot_committed.connect(self._search_committed)
 		file_view.verticalScrollBar().rangeChanged.connect(
@@ -403,25 +404,7 @@ class FilterBar(QFrame):
 		# Prevent Arrow-Left/-Right from changing the cursor position:
 		self._input.setCursorPosition(len(query))
 		self.setVisible(bool(query) or self._search_session is not None)
-		if result:
-			self._select_row_with_prefix(query)
 		return result
-	def _select_row_with_prefix(self, query):
-		if hasattr(self._model.sourceModel(), '_displayed'):
-			return
-		query_lower = query.lower()
-		m = self._model
-		def has_required_prefix(index):
-			return m.data(index, DisplayRole).lower().startswith(query_lower)
-		curr = self._file_view.currentIndex()
-		if curr.isValid() and has_required_prefix(curr):
-			# We're already at a row with the required prefix. Nothing to do.
-			return
-		for i in range(m.rowCount()):
-			idx = m.index(i, 0)
-			if has_required_prefix(idx):
-				self._file_view.setCurrentIndex(idx)
-				break
 	def close(self):
 		if self._search_session is not None:
 			self.finish_search()
@@ -456,8 +439,6 @@ class FilterBar(QFrame):
 		if self._active:
 			self.filter_changed.emit(self._input.text(), self._model.rowCount(),
 				len(self._model.sourceModel().get_rows()))
-	def _accepts(self, url):
-		return not self._active or self._matcher.matches(basename(url))
 	def snapshot_filter(self):
 		matcher, active = self._matcher, self._active
 		return lambda listing, index: not active or matcher.matches(listing.display_names[index])
@@ -589,7 +570,7 @@ class MainWindow(QMainWindow):
 		# Let API users pass arbitrary objects by converting str(text):
 		text_str = str(text)
 		dialog = Prompt(
-			self, 'RoyiFileManager', text_str, default,
+			self, APP_NAME, text_str, default,
 			selection_start, selection_end
 		)
 		dialog.setTextValue(default)
@@ -799,6 +780,7 @@ class MessageBox(QMessageBox):
 
 	def __init__(self, parent, allow_escape=True):
 		super().__init__(parent)
+		self.setWindowTitle(APP_NAME)
 		self._allow_escape = allow_escape
 	def setStandardButtons(self, buttons):
 		super().setStandardButtons(buttons)

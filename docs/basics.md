@@ -1,12 +1,12 @@
 # File Management, Focused
 
-RoyiFileManager shows two folders at once (Dual Pane).
+{{ app_name }} shows two folders at once (Dual Pane).
 
 Open a source on one side. Open a destination on the other. Then copy or move.
 
 <figure class="product-shot" markdown>
-  ![RoyiFileManager showing C drive and Windows folder](assets/royifilemanager-dual-pane.png)
-  <figcaption>RoyiFileManager showing C:\ and C:\Windows.</figcaption>
+  ![{{ app_name }} showing C drive and Windows folder](assets/royifilemanager-dual-pane.png)
+  <figcaption>{{ app_name }} showing C:\ and C:\Windows.</figcaption>
 </figure>
 
 ## Start Here
@@ -40,7 +40,7 @@ Type an action. Press ++enter++.
 The Command Center is the fastest way to discover features.
 
 <figure class="product-shot" markdown>
-  ![RoyiFileManager Command Center](assets/royifilemanager-command-center.png)
+  ![{{ app_name }} Command Center](assets/royifilemanager-command-center.png)
 </figure>
 
 ## Find a Location
@@ -50,7 +50,7 @@ Press ++ctrl+p++.
 Type part of a folder path. Choose a result.
 
 <figure class="product-shot" markdown>
-  ![RoyiFileManager Find a Location window](assets/royifilemanager-find-location.png)
+  ![{{ app_name }} Find a Location window](assets/royifilemanager-find-location.png)
 </figure>
 
 ## Filter a Pane
@@ -62,7 +62,7 @@ Use `*.pdf` for PDF names. Use `^report` for names that start with `report`.
 Press ++esc++ to clear the filter.
 
 <figure class="product-shot" markdown>
-  ![RoyiFileManager pane filtered to executable files](assets/royifilemanager-filter-pane.png)
+  ![{{ app_name }} pane filtered to executable files](assets/royifilemanager-filter-pane.png)
 </figure>
 
 ## Start in Specific Folders
@@ -70,7 +70,7 @@ Press ++esc++ to clear the filter.
 From PowerShell in the extracted application folder, pass one or two directory paths:
 
 ```powershell
-.\RoyiFileManager.exe "C:\Work\Incoming" "C:\Work\Archive"
+.\{{ app_name }}.exe "C:\Work\Incoming" "C:\Work\Archive"
 ```
 
-The first path opens in the left pane; the second opens in the right. Replace the example folders with ones that exist on your computer. With no paths, RoyiFileManager restores the previous pane locations.
+The first path opens in the left pane; the second opens in the right. Replace the example folders with ones that exist on your computer. With no paths, {{ app_name }} restores the previous pane locations.

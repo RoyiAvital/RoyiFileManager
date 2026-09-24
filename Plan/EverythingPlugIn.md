@@ -52,7 +52,7 @@ Included:
   date and size, "N of M" count, navigation on accept.
 - Bundling: `Everything.exe` 1.4.1.1032 x64 portable plus its `License.txt`
   fetched by `build.py` with pinned SHA-256 (same mechanism as `7za.exe`),
-  copied by [RoyiFileManager.spec](../RoyiFileManager.spec).
+  copied by [application.spec](../application.spec).
 - Optional `executable` override so a user's own Everything installation (1.4 or
   1.5) can be used instead of the bundled binary.
 - README section, CHANGELOG entry, tests.

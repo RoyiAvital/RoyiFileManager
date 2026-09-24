@@ -172,7 +172,7 @@ and does not affect other plug-ins, exactly as today.
 | `webencodings` (dependency of tinycss2, noarch) | – | pulled automatically |
 
 Both new packages are pure Python; PyInstaller collects them without hidden
-imports or data hooks. [RoyiFileManager.spec](../RoyiFileManager.spec) does not
+imports or data hooks. [application.spec](../application.spec) does not
 mention `tinycss` and needed no change. The user updated the environment and
 lock; the Windows lock lists tinycss2 1.5.1 and webencodings 0.5.1. Successful
 packaged operation was confirmed by the user.

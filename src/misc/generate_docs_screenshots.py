@@ -1,4 +1,4 @@
-"""Generate public, repeatable RoyiFileManager documentation screenshots.
+"""Generate public, repeatable application documentation screenshots.
 
 The source capture follows the Qt smoke-test approach and grabs widgets directly.
 The packaged capture launches the frozen executable and grabs its native window.
@@ -27,7 +27,12 @@ import traceback
 
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_EXE = ROOT / 'target' / 'RoyiFileManager' / 'RoyiFileManager.exe'
+sys.path.insert(0, str(ROOT / 'src/main/python'))
+from fbs_runtime.build_settings import get_build_settings
+
+BUILD_SETTINGS = get_build_settings()
+APP_NAME = BUILD_SETTINGS['app_name']
+DEFAULT_EXE = ROOT / 'target' / APP_NAME / (APP_NAME + '.exe')
 DEFAULT_OUTPUT_DIR = ROOT / 'docs' / 'assets'
 WORK_DIR = ROOT / 'target' / 'docs-screenshots'
 SOURCE_CAPTURES = (
@@ -116,8 +121,7 @@ def _public_image():
 
 
 def _application_version():
-	settings = ROOT / 'src' / 'build' / 'settings' / 'base.json'
-	return json.loads(settings.read_text(encoding='utf-8'))['version']
+	return BUILD_SETTINGS['version']
 
 
 def _prepare_settings(name):
@@ -449,14 +453,14 @@ def _find_window(process_id, timeout):
 			_, candidate_process_id = win32process.GetWindowThreadProcessId(handle)
 			if candidate_process_id == process_id and \
 					win32gui.IsWindowVisible(handle) and \
-					win32gui.GetWindowText(handle) == 'RoyiFileManager':
+					win32gui.GetWindowText(handle) == APP_NAME:
 				matches.append(handle)
 			return True
 		win32gui.EnumWindows(collect, None)
 		if matches:
 			return matches[0]
 		time.sleep(0.05)
-	raise TimeoutError('Packaged RoyiFileManager window did not appear')
+	raise TimeoutError('Packaged %s window did not appear' % APP_NAME)
 
 
 def _resize_client(handle, width, height):

@@ -25,7 +25,6 @@ class SortedFileSystemModel(QIdentityProxyModel):
 		self._fs = fs
 		self._null_location = null_location
 		self._filters = []
-		self._num_rows_to_preload = 0
 		self._navigation_request = None
 		self._location_generation = 0
 		self._closed = False
@@ -42,8 +41,6 @@ class SortedFileSystemModel(QIdentityProxyModel):
 		self.destroyed.connect(self._snapshot_views.close)
 		self.set_location(null_location)
 		self._fs.file_removed.add_callback(self._on_file_removed)
-	def set_num_rows_to_preload(self, preload_rows):
-		self._num_rows_to_preload = preload_rows
 	def set_location(
 		self, url, sort_column='', ascending=True, callback=None, onerror=None
 	):
@@ -296,14 +293,6 @@ class SortedFileSystemModel(QIdentityProxyModel):
 		# Without this call, #sourceModel() sometimes returns None on Arch:
 		sip.transferto(model, None)
 		super().setSourceModel(model)
-	def row_is_loaded(self, i):
-		source_row = self.mapToSource(self.index(i, 0)).row()
-		return self.sourceModel().row_is_loaded(source_row)
-	def load_rows(self, rows, callback=None):
-		source_rows = [self._map_row_to_source(row) for row in rows]
-		self.sourceModel().load_rows(source_rows, callback)
-	def _map_row_to_source(self, i):
-		return self.mapToSource(self.index(i, 0)).row()
 	def get_location(self):
 		return self.sourceModel().get_location()
 	def get_columns(self):

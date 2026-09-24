@@ -834,7 +834,7 @@ packaging-manifest requirements. Leave 7-Zip acquisition and the lock unchanged.
 
 Source runs/tests use `Path(sys.prefix) / 'bin' / 'rg.exe'` directly, without
 metadata scans, version probes, hashes, downloads or PATH fallback.
-[RoyiFileManager.spec](../RoyiFileManager.spec) adds that executable to `binaries`
+[application.spec](../application.spec) adds that executable to `binaries`
 under `resources/Plugins/SearchFiles/bin`; PyInstaller performs its normal
 native dependency analysis. Its conda helper locates the package cache solely
 to copy `info/licenses` as ordinary data. No custom validation or generated

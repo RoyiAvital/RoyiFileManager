@@ -1,6 +1,5 @@
 import argparse
 import hashlib
-import json
 import os
 from pathlib import Path
 import shutil
@@ -12,11 +11,16 @@ from urllib.error import HTTPError
 from urllib.request import urlopen
 from zipfile import ZIP_DEFLATED, ZipFile
 
+from src.main.python.fbs_runtime.build_settings import load_build_settings as _load_build_settings
+
 
 ROOT = Path(__file__).resolve().parent
 TARGET_DIR = ROOT / 'target'
-DIST_DIR = TARGET_DIR / 'RoyiFileManager'
 SETTINGS_PATH = ROOT / 'src' / 'build' / 'settings' / 'base.json'
+BUILD_SETTINGS = _load_build_settings(SETTINGS_PATH)
+APP_NAME = BUILD_SETTINGS['app_name']
+DIST_DIR = TARGET_DIR / APP_NAME
+WORK_DIR = TARGET_DIR / '.pyinstaller'
 ENVIRONMENT_PATH = ROOT / 'environment.yml'
 CONDA_LOCK_PATH = ROOT / 'conda-lock.yml'
 SEVEN_ZIP_VERSION = '26.03'
@@ -43,7 +47,7 @@ DOWNLOAD_RETRY_DELAYS = (1, 2, 4)
 
 def _require_windows():
 	if sys.platform != 'win32':
-		raise SystemExit('RoyiFileManager is supported on Windows only.')
+		raise SystemExit('%s is supported on Windows only.' % APP_NAME)
 
 
 def _sha256(path):
@@ -264,7 +268,7 @@ def _remove_previous_freeze():
 		shutil.rmtree(DIST_DIR)
 	except PermissionError as error:
 		raise SystemExit(
-			f'Cannot replace {DIST_DIR}. Close RoyiFileManager and ensure no '
+			f'Cannot replace {DIST_DIR}. Close {APP_NAME} and ensure no '
 			'terminal has this directory as its current working directory, then '
 			'run `python build.py freeze` again.'
 		) from error
@@ -279,8 +283,8 @@ def freeze():
 		[
 			sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean',
 			'--distpath', str(TARGET_DIR),
-			'--workpath', str(TARGET_DIR / 'build'),
-			str(ROOT / 'RoyiFileManager.spec')
+			'--workpath', str(WORK_DIR),
+			str(ROOT / 'application.spec')
 		],
 		check=True, cwd=ROOT, env=_environment()
 	)
@@ -293,8 +297,8 @@ def package():
 	if not DIST_DIR.is_dir():
 		raise SystemExit('Run `python build.py freeze` first.')
 	_copy_dependency_manifests()
-	version = json.loads(SETTINGS_PATH.read_text(encoding='utf-8'))['version']
-	archive = TARGET_DIR / f'RoyiFileManager-{version}-windows-x86_64.zip'
+	version = BUILD_SETTINGS['version']
+	archive = TARGET_DIR / f'{APP_NAME}-{version}-windows-x86_64.zip'
 	with ZipFile(archive, 'w', ZIP_DEFLATED) as zip_file:
 		for path in sorted(DIST_DIR.rglob('*')):
 			archive_path = Path(DIST_DIR.name) / path.relative_to(DIST_DIR)
@@ -325,7 +329,7 @@ COMMANDS = {
 
 
 def main(argv=None):
-	parser = argparse.ArgumentParser(description='Build RoyiFileManager.')
+	parser = argparse.ArgumentParser(description='Build %s.' % APP_NAME)
 	commands = parser.add_subparsers(dest='command', required=True)
 	for command in sorted(COMMANDS):
 		commands.add_parser(command)

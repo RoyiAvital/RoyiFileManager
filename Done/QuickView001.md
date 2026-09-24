@@ -253,7 +253,7 @@ The shared infrastructure above is delivered with images in this stage.
 No video or text dependency. Use existing PyQt5 5.15: `QImageReader` and a
 Qt scrollable paint surface. No Pillow, ImageMagick, Yazi or new Python package.
 The [environment](../environment.yml) already declares PyQt5. Verify codec plugin
-collection in the [packaging specification](../RoyiFileManager.spec) and artifact;
+collection in the [packaging specification](../application.spec) and artifact;
 development-machine support alone is insufficient.
 
 [QImageReader documentation](https://doc.qt.io/archives/qt-5.15/qimagereader.html)

@@ -156,6 +156,6 @@ class QuickViewPackagingTest(TestCase):
 		import ast
 		from pathlib import Path
 		root = Path(__file__).resolve().parents[4]
-		tree = ast.parse((root / 'RoyiFileManager.spec').read_text(encoding='utf-8'))
+		tree = ast.parse((root / 'application.spec').read_text(encoding='utf-8'))
 		assignment = next(node for node in tree.body if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == 'hidden_imports' for target in node.targets))
 		self.assertIn('fman.impl.quick_view', [node.value for node in ast.walk(assignment.value) if isinstance(node, ast.Constant)])

@@ -1,59 +1,6 @@
-from fman.impl.view.resize_cols_to_contents import ResizeColumnsToContents, \
+from fman.impl.view.resize_cols_to_contents import \
 	_get_ideal_column_widths, _resize_column
 from unittest import TestCase
-
-
-class RowsVisibleButNotLoadedTest(TestCase):
-	def test_has_stops_at_first_unloaded_row(self):
-		view = _View([True, False, True])
-
-		result = ResizeColumnsToContents._has_rows_visible_but_not_loaded(view)
-
-		self.assertTrue(result)
-		self.assertEqual([0, 1], view.model().checked_rows)
-
-	def test_has_returns_false_when_all_visible_rows_are_loaded(self):
-		view = _View([True, True])
-
-		result = ResizeColumnsToContents._has_rows_visible_but_not_loaded(view)
-
-		self.assertFalse(result)
-		self.assertEqual([0, 1], view.model().checked_rows)
-
-	def test_get_returns_unloaded_rows(self):
-		view = _View([True, False, True, False])
-
-		result = ResizeColumnsToContents._get_rows_visible_but_not_loaded(view)
-
-		self.assertEqual([1, 3], result)
-
-	def test_get_returns_empty_list_when_all_loaded(self):
-		view = _View([True, True])
-
-		result = ResizeColumnsToContents._get_rows_visible_but_not_loaded(view)
-
-		self.assertEqual([], result)
-
-
-class _View:
-	def __init__(self, loaded):
-		self._model = _Model(loaded)
-
-	def model(self):
-		return self._model
-
-	def get_visible_row_range(self):
-		return range(len(self._model.loaded))
-
-
-class _Model:
-	def __init__(self, loaded):
-		self.loaded = loaded
-		self.checked_rows = []
-
-	def row_is_loaded(self, row):
-		self.checked_rows.append(row)
-		return self.loaded[row]
 
 class GetIdealColumnWidthsTest(TestCase):
 	def test_one_column_no_change(self):

@@ -1,6 +1,7 @@
 """Retained version history and offline presentation for the benchmark suite."""
 
 import base64
+from html import escape
 import json
 from pathlib import Path
 import re
@@ -11,6 +12,7 @@ import webbrowser
 
 from fman_performancetest.records import ROOT, compare, completed_repetitions, digest, statistics_record, summarize
 from fman_performancetest.pane_rendering_benchmark import REFRESH_SELECTIONS
+from fbs_runtime.build_settings import get_build_settings
 
 
 HISTORY = ROOT / 'UserSettings' / 'Performance'
@@ -183,7 +185,8 @@ def render_html(current, versions):
 	payload = payload.replace('&', '\\u0026').replace('<', '\\u003c').replace('>', '\\u003e')
 	template = Path(__file__).with_suffix('.html').read_text(encoding='utf-8')
 	icon = base64.b64encode((ROOT / 'src/main/icons/Icon.svg').read_bytes()).decode('ascii')
-	return template.replace('__PERFORMANCE_ICON__', icon).replace('__PERFORMANCE_DATA__', payload)
+	return template.replace('__APP_NAME__', escape(get_build_settings()['app_name'])) \
+		.replace('__PERFORMANCE_ICON__', icon).replace('__PERFORMANCE_DATA__', payload)
 
 
 def main():

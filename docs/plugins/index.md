@@ -1,6 +1,6 @@
 # Your First Plug-in
 
-RoyiFileManager keeps fman's Python plug-in model.
+{{ app_name }} keeps fman's Python plug-in model.
 
 Create this folder:
 

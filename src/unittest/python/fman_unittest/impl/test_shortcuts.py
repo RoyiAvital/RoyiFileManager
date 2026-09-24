@@ -77,3 +77,32 @@ class CollectShortcutsTest(TestCase):
 		with open(path, 'w') as file:
 			dump(bindings, file)
 		return path
+
+
+class ShortcutSuggestionsTest(TestCase):
+	def test_arrow_suggestions_offer_and_dispatch_home_and_end(self):
+		from fman.impl.nonexistent_shortcut_handler import NonexistentShortcutHandler
+		from unittest.mock import Mock
+		for shortcut, choice, command in (
+			('Left', 'Move home', 'move_cursor_home'),
+			('Right', 'Move end', 'move_cursor_end')
+		):
+			with self.subTest(shortcut=shortcut):
+				pane = Mock()
+				pane.get_path.return_value = 'file:///c:/folder'
+				pane.get_file_under_cursor.return_value = 'file:///c:/folder/child'
+				pane.window.get_panes.return_value = [pane]
+				handler = NonexistentShortcutHandler(Mock(), {}, Mock())
+				handler._get_previous_folder_in_history = Mock(return_value=None)
+				handler._get_next_folder_in_history = Mock(return_value=None)
+				handler._is_existing_dir = Mock(return_value=True)
+				handler._show_suggestions = Mock(return_value=choice)
+				handler._offer_to_customize_keybindings = Mock()
+				event = Mock()
+				event.is_modifier_only.return_value = False
+				event.matches.side_effect = lambda pattern: pattern == shortcut
+				self.assertTrue(handler(event, pane))
+				options = handler._show_suggestions.call_args.args[2]
+				self.assertIn(choice, [name for name, description in options])
+				self.assertEqual((shortcut, command),
+					handler._offer_to_customize_keybindings.call_args.args[1:])

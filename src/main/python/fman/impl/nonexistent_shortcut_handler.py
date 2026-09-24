@@ -3,11 +3,11 @@ from fman import show_alert, YES, NO, run_application_command, load_json, \
 	save_json, DATA_DIRECTORY, unload_plugin, load_plugin
 from fman.fs import is_dir
 from fman.impl.html_style import highlight
+from fman.impl.product import APP_NAME
 from fman.impl.util.qt import Key_Up
 from os.path import dirname, basename, join
 from pathlib import PurePath
-from PyQt5.QtCore import QEvent, QUrl
-from PyQt5.QtGui import QDesktopServices
+from PyQt5.QtCore import QEvent
 from PyQt5.QtWidgets import QDialog, QLabel, QVBoxLayout, QRadioButton, \
 	QLineEdit, QDialogButtonBox, QCheckBox
 
@@ -15,7 +15,7 @@ class NonexistentShortcutHandler:
 
 	_THANK_YOU_FOR_FEEDBACK_MESSAGE = \
 		'Thank you for your feedback. We will take it into account for ' \
-		'future versions of RoyiFileManager!'
+		f'future versions of {APP_NAME}!'
 
 	def __init__(self, main_window, settings, metrics):
 		self._main_window = main_window
@@ -70,8 +70,6 @@ class NonexistentShortcutHandler:
 				'Open in left pane',
 				'Open "%s" in the left pane' % basename(file_under_cursor)
 			))
-		if not options:
-			return
 		choice = self._show_suggestions(dialog_id, title, options)
 		if not choice:
 			return
@@ -84,11 +82,6 @@ class NonexistentShortcutHandler:
 			self._offer_to_customize_keybindings(
 				'The normal shortcut for opening a directory in the left pane '
 				'is %s. ' % highlight('Ctrl+Left'), 'Left', 'open_in_left_pane'
-			)
-		elif choice == 'Move cursor up':
-			self._offer_to_customize_keybindings(
-				'The normal shortcut for moving the cursor up is %s. '
-				% highlight('Arrow-Up'), 'Left', 'move_cursor_up'
 			)
 		elif choice == 'Go back':
 			self._offer_to_customize_keybindings(
@@ -134,8 +127,6 @@ class NonexistentShortcutHandler:
 				'Go forward',
 				'Go forward in history (to "%s")' % basename(next_in_history)
 			))
-		if not options:
-			return
 		choice = self._show_suggestions(dialog_id, title, options)
 		if not choice:
 			return
@@ -149,12 +140,6 @@ class NonexistentShortcutHandler:
 				'The normal shortcut for opening a directory in the right pane '
 				'is %s. ' % highlight('Ctrl+Right'),
 				'Right', 'open_in_right_pane'
-			)
-		elif choice == 'Move cursor down':
-			self._offer_to_customize_keybindings(
-				'The normal shortcut for moving the cursor down is %s. '
-				% highlight('Arrow-Down'),
-				'Right', 'move_cursor_down'
 			)
 		elif choice == 'Go forward':
 			self._offer_to_customize_keybindings(
@@ -193,7 +178,7 @@ class NonexistentShortcutHandler:
 	def _handle_ctrl_cmd_t(self):
 		key = lambda mod, k: highlight(('Cmd' if is_mac() else mod) + '+' + k)
 		show_alert(
-			"Sorry, RoyiFileManager does not yet support tabs. But you might "
+			f"Sorry, {APP_NAME} does not yet support tabs. But you might "
 			"not need "
 			"them: Jump to other directories with %s, then press %s "
 			"to go back. This lets you switch folders almost as fast &ndash; "
@@ -281,9 +266,6 @@ class NonexistentShortcutHandler:
 			run_application_command('install_plugin', {
 				'github_repo': 'mherrmann/SwitchPanesWithArrowKeys'
 			})
-	def _open_url(self, url):
-		QDesktopServices.openUrl(QUrl(url))
-
 class NonexistentShortcutDialog(QDialog):
 	def __init__(self, parent, title, options):
 		super().__init__(parent)

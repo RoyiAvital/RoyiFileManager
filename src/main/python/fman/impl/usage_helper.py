@@ -1,5 +1,6 @@
 from fman import show_alert, OK, CANCEL
 from fman.impl.html_style import highlight as b, underline as u
+from fman.impl.product import APP_NAME
 
 class UsageHelper:
 	def __init__(self, is_first_run):
@@ -17,7 +18,7 @@ class UsageHelper:
 		if events[-1] == 'AbortedTour' and 'AbortedTour' not in events[:-1]:
 			response = show_alert(
 				"Hey, sorry to bother again. You just used the mouse. That "
-				"works, but RoyiFileManager is optimized for the keyboard. "
+				f"works, but {APP_NAME} is optimized for the keyboard. "
 				"Would you like to see the short tutorial?",
 				OK | CANCEL, OK
 			)
@@ -27,7 +28,7 @@ class UsageHelper:
 		if events[-1] == 'CompletedTour':
 			show_alert(
 				"Hey, sorry to bother one last time. You just used the mouse. "
-				"To make the most of RoyiFileManager, use the keyboard:"
+				f"To make the most of {APP_NAME}, use the keyboard:"
 				"<ul>"
 					"<li>Jump to files by typing their name.</li>"
 					"<li>Use %s to open them.</li>"

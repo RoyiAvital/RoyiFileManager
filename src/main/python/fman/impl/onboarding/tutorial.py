@@ -1,6 +1,7 @@
 from fbs_runtime.platform import is_mac, is_windows
-from fman import load_json, show_alert
+from fman import load_json
 from fman.impl.onboarding import Tour, TourStep
+from fman.impl.product import APP_NAME
 from fman.impl.util import is_below_dir
 from fman.impl.util.qt import connect_once
 from fman.impl.util.qt.thread import run_in_main_thread, is_in_main_thread
@@ -8,7 +9,6 @@ from fman.url import as_url, splitscheme, as_human_readable
 from os.path import expanduser, relpath, realpath, splitdrive, basename, \
 	normpath, dirname
 from pathlib import PurePath
-from platform import mac_ver
 from PyQt5.QtCore import QFileInfo
 from PyQt5.QtWidgets import QFileDialog
 from time import time, sleep
@@ -43,7 +43,7 @@ class Tutorial(Tour):
 	def _get_steps(self):
 		return [
 			TourStep(
-				'Welcome to RoyiFileManager!',
+				f'Welcome to {APP_NAME}!',
 				[
 					"Would you like to take a quick tour of the most useful "
 					"features? It takes less than five minutes and lets you "
@@ -75,7 +75,7 @@ class Tutorial(Tour):
 			TourStep(
 				"",
 				[
-					"We will now use a feature that makes RoyiFileManager unique "
+					f"We will now use a feature that makes {APP_NAME} unique "
 					"among "
 					"file managers: It's called *GoTo*. Press *%s* to launch "
 					"it!" % self._cmd_p
@@ -126,9 +126,9 @@ class Tutorial(Tour):
 			TourStep(
 				'',
 				[
-					"Well done! RoyiFileManager opened " + self._native_fm +
+					f"Well done! {APP_NAME} opened " + self._native_fm +
 					" in your *%s* folder.",
-					"Because RoyiFileManager always displays two directories, it is "
+					f"Because {APP_NAME} always displays two directories, it is "
 					"called a *dual-pane file manager*. Have you used one "
 					"before?"
 				],
@@ -151,7 +151,7 @@ class Tutorial(Tour):
 				[
 					"Okay! Press *Tab* to move from one side to the other. "
 					"Then, select the file you want to copy and press *F5*. "
-					"RoyiFileManager will ask you for confirmation. To delete the "
+					f"{APP_NAME} will ask you for confirmation. To delete the "
 					"file "
 					"afterwards, press *%s*. Once you are done, click the "
 					"button below." % self._delete_key
@@ -172,7 +172,7 @@ class Tutorial(Tour):
 				[
 					"Dual-pane file managers rely heavily on keyboard "
 					"shortcuts. But how do you remember them?",
-					"RoyiFileManager's answer is a searchable list of "
+					f"{APP_NAME}'s answer is a searchable list of "
 					"features. It's called the *Command Palette*. Please press "
 					"*%s* to launch it." % self._cmd_shift_p
 				],
@@ -187,7 +187,7 @@ class Tutorial(Tour):
 				'',
 				[
 					"Well done! Note how the Command Palette shows "
-					"RoyiFileManager's "
+					f"{APP_NAME}'s "
 					"commands as well as the shortcut for each of them.",
 					"Say you want to select all files, but don't know how. "
 					"Type *select* into the Command Palette. It will suggest "
@@ -220,7 +220,7 @@ class Tutorial(Tour):
 					"* *%s* lets you go to any _P_ath." % self._cmd_p,
 					"* *F10* opens %s" % self._native_fm,
 					"* *%s* opens the Command _P_alette." % self._cmd_shift_p,
-					"Have fun with RoyiFileManager!"
+					f"Have fun with {APP_NAME}!"
 				],
 				buttons=[('Close', self.complete)]
 			)
@@ -310,7 +310,7 @@ class Tutorial(Tour):
 		result = []
 		if not self._last_step:
 			result.append(
-				"RoyiFileManager always shows two directories. We will "
+				f"{APP_NAME} always shows two directories. We will "
 				"now navigate to your *%s* folder in the left pane." %
 				fman.url.basename(self._dst_url)
 			)
@@ -362,7 +362,7 @@ class Tutorial(Tour):
 		else:
 			assert instruction == 'go to'
 			text = "We need to go to *%s*. Please press *%s* to open " \
-				   "RoyiFileManager's GoTo dialog. Type *%s*, then *Enter*."\
+				   f"{APP_NAME}'s GoTo dialog. Type *%s*, then *Enter*."\
 				   % (path, self._cmd_p, path)
 			result.append(text)
 		self._last_step = instruction
@@ -423,7 +423,7 @@ class Tutorial(Tour):
 				   "Then, press *Enter*."
 		else:
 			goto_dir = fman.url.basename(self._dst_url)
-			text = "Start typing *%s*. RoyiFileManager will suggest " \
+			text = f"Start typing *%s*. {APP_NAME} will suggest " \
 				   "your directory. Press *Enter* to open it." % goto_dir
 		self._format_next_step_paragraph((), text)
 		self._next_step()
@@ -436,9 +436,9 @@ class Tutorial(Tour):
 					"Awesome! Using GoTo, you jumped to your directory in "
 					"*%.2f* seconds instead of *%.2f*." %
 					(time_taken, self._time_taken),
-					"The next time you open *%s* outside RoyiFileManager, ask "
+					f"The next time you open *%s* outside {APP_NAME}, ask "
 					"yourself: Isn't it tedious to click through directory "
-					"trees all the time? RoyiFileManager is the answer." %
+					f"trees all the time? {APP_NAME} is the answer." %
 					fman.url.basename(url)
 				]
 			else:
@@ -463,16 +463,6 @@ def _is_hidden(url):
 		return False
 	# Copied from core.commands:
 	return QFileInfo(as_human_readable(url)).isHidden()
-
-def _is_macos_catalina_or_later():
-	if not is_mac():
-		return False
-	try:
-		macos_ver = tuple(map(int, mac_ver()[0].split('.')))
-	except ValueError:
-		return False
-	else:
-		return macos_ver >= (10, 15, 0)
 
 def _get_navigation_steps(
 	dst_url, src_url, is_hidden=lambda url: False, showing_hidden_files=True

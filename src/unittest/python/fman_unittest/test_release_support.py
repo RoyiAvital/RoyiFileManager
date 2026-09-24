@@ -81,3 +81,19 @@ class ReleaseNotesTest(TestCase):
 				redirect_stdout(stdout):
 				release_notes.main()
 			return stdout.getvalue()
+
+
+class ReleaseProductNameTest(TestCase):
+	def test_name_flows_from_validated_settings_to_publish_job(self):
+		import yaml
+		workflow = yaml.safe_load((ROOT / '.github/workflows/release.yml').read_text(encoding='utf-8'))
+		build = workflow['jobs']['build']
+		resolve = next(step for step in build['steps'] if step.get('id') == 'version')['run']
+		self.assertIn('$appName = python src/main/python/fbs_runtime/build_settings.py', resolve)
+		self.assertIn('if ($LASTEXITCODE -ne 0)', resolve)
+		self.assertIn('"app-name=$appName" >> $env:GITHUB_OUTPUT', resolve)
+		self.assertIn('"artifact-name=$appName-$version" >> $env:GITHUB_OUTPUT', resolve)
+		self.assertEqual('${{ steps.version.outputs.app-name }}', build['outputs']['app-name'])
+		publish = workflow['jobs']['publish']
+		self.assertEqual('${{ needs.build.outputs.app-name }}', publish['env']['APP_NAME'])
+		self.assertIn("'--title', \"$env:APP_NAME $env:RELEASE_VERSION\"", publish['steps'][-1]['run'])

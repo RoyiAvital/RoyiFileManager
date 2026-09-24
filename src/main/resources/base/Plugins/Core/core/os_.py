@@ -3,7 +3,6 @@ from fman import load_json, show_alert, show_status_message, PLATFORM
 from shutil import which
 from subprocess import Popen, check_output
 
-import os
 import sys
 
 def is_arch():
@@ -85,10 +84,6 @@ def _is_ubuntu():
 def _run_app_from_setting(app, curr_dir):
 	popen_kwargs = strformat_dict_values(app, {'curr_dir': curr_dir})
 	Popen(**popen_kwargs)
-
-def _is_gnome_based():
-	curr_desktop = os.environ.get('XDG_CURRENT_DESKTOP', '').lower()
-	return curr_desktop in ('unity', 'gnome', 'x-cinnamon')
 
 def _get_os_release_name():
 	with open('/etc/os-release', 'r') as f:

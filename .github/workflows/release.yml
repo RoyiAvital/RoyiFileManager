@@ -24,6 +24,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 60
     outputs:
+      app-name: ${{ steps.version.outputs.app-name }}
       artifact-name: ${{ steps.version.outputs.artifact-name }}
       prerelease: ${{ steps.version.outputs.prerelease }}
       version: ${{ steps.version.outputs.version }}
@@ -49,6 +50,10 @@ jobs:
         id: version
         shell: pwsh
         run: |
+          $appName = python src/main/python/fbs_runtime/build_settings.py
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Invalid application settings in src/build/settings/base.json.'
+          }
           $settings = Get-Content src/build/settings/base.json -Raw | ConvertFrom-Json
           $version = $settings.version
           $identifier = '(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)'
@@ -77,7 +82,8 @@ jobs:
           "version=$version" >> $env:GITHUB_OUTPUT
           "tag=$tag" >> $env:GITHUB_OUTPUT
           "prerelease=$($prerelease.ToString().ToLower())" >> $env:GITHUB_OUTPUT
-          "artifact-name=RoyiFileManager-$version" >> $env:GITHUB_OUTPUT
+          "app-name=$appName" >> $env:GITHUB_OUTPUT
+          "artifact-name=$appName-$version" >> $env:GITHUB_OUTPUT
 
       - name: Extract release notes from CHANGELOG.md
         shell: pwsh
@@ -147,6 +153,7 @@ jobs:
       contents: write
     env:
       GH_TOKEN: ${{ github.token }}
+      APP_NAME: ${{ needs.build.outputs.app-name }}
       RELEASE_TAG: ${{ github.ref_name }}
       RELEASE_VERSION: ${{ needs.build.outputs.version }}
       RELEASE_PRERELEASE: ${{ needs.build.outputs.prerelease }}
@@ -173,7 +180,7 @@ jobs:
             'release', 'create', $env:RELEASE_TAG,
             '--verify-tag',
             '--repo', $env:GITHUB_REPOSITORY,
-            '--title', "RoyiFileManager $env:RELEASE_VERSION",
+            '--title', "$env:APP_NAME $env:RELEASE_VERSION",
             '--notes-file', 'target/release/release-notes.md',
             $archive[0].FullName,
             $checksum[0].FullName

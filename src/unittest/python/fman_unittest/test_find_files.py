@@ -53,7 +53,7 @@ class FindFilesTest(TestCase):
 		from pathlib import Path
 		root = Path(__file__).parents[4]
 		plugin = root / 'src/main/resources/base/Plugins/FindFiles'
-		spec = (root / 'RoyiFileManager.spec').read_text()
+		spec = (root / 'application.spec').read_text()
 		ast.parse(spec)
 		self.assertIn("'fd.exe'), 'resources/Plugins/FindFiles/bin'", spec)
 		build = (root / 'build.py').read_text()

@@ -1775,13 +1775,7 @@ def exercise():
 			from core import directory_size
 			if directory_size._service is not None:
 				directory_size._service.owner.invalidate()
-			models = [pane._widget._model.sourceModel() for pane in context.window.get_panes()]
-			for model in models:
-				model.shutdown()
-			return models
-		for model in gui(stop):
-			if hasattr(model, '_worker'):
-				model._worker._thread.join(2)
+		gui(stop)
 		gui(lambda: app.exit(code))
 
 QTimer.singleShot(0, lambda: Thread(target=exercise, daemon=True).start())
@@ -2070,15 +2064,11 @@ sys.exit(context.run())
 	def close_panes(self):
 		self.owner.invalidate()
 		def close():
-			models = [widget._model.sourceModel() for widget in self.widgets]
-			for model in models:
-				model.shutdown()
+			for widget in self.widgets:
+				widget._model.shutdown()
 			self.parent.close()
 			self.parent.deleteLater()
-			return models
-		for model in self.run_in_app(close):
-			if hasattr(model, '_worker'):
-				model._worker._thread.join(2)
+		self.run_in_app(close)
 
 	def drain_models(self):
 		for widget in self.widgets:
@@ -2176,10 +2166,7 @@ sys.exit(context.run())
 				self.assertEqual('3 B...', self.run_in_app(read_cell))
 				self.assertEqual([QApplication.instance().thread()], delivery_threads)
 				qt_thread = self.run_in_app(get_ident)
-				model_threads = self.run_in_app(lambda: [model._worker._thread.ident
-					for model in (widget._model.sourceModel() for widget in self.widgets)
-					if hasattr(model, '_worker')])
-				self.assertNotIn(worker_threads[0], [qt_thread] + model_threads)
+				self.assertNotEqual(worker_threads[0], qt_thread)
 				loaded = Event()
 				self.panes[0].set_path(as_url(self.child), callback=loaded.set)
 				self.assertTrue(loaded.wait(5), 'Navigation blocked behind directory walk')
@@ -5667,6 +5654,7 @@ class FavoritesManagerIT(QtIT):
 			buttons = prompt.findChild(QDialogButtonBox)
 			self.assertTrue(buttons.button(QDialogButtonBox.No).isDefault())
 			self.assertEqual(Qt.WindowModal, prompt.windowModality())
+			self.assertTrue(QTest.qWaitForWindowExposed(prompt))
 			QTest.keyClick(prompt, Qt.Key_Escape)
 			self.assertIsNone(self.window.prompt)
 			self.assertTrue(self.window.alive.is_set())
@@ -5859,6 +5847,7 @@ class FavoritesManagerIT(QtIT):
 			self.assertEqual('Renamed', window.session._mutate.call_args.args[1])
 			window.session._mutate.reset_mock()
 			window.session.action('rename')
+			self.assertTrue(QTest.qWaitForWindowExposed(window.prompt))
 			QTest.keyClick(window.prompt, Qt.Key_Escape)
 			window.session._mutate.assert_not_called()
 			self.assertTrue(window.alive.is_set())

@@ -515,7 +515,7 @@ not an application startup failure.
 The resource tree already bundles plug-in source. Since PyInstaller does not
 necessarily discover imports inside resource plug-ins, explicitly collect psutil
 and its Windows extension through its supported hook/hidden imports in
-[RoyiFileManager.spec](../RoyiFileManager.spec). Reuse the spec's existing
+[application.spec](../application.spec). Reuse the spec's existing
 collection patterns without broad unrelated dependency collection. Add the
 plug-in root to [build.py](../build.py)'s test environment. At implementation
 completion, document commands and limitations in the main README and changelog.

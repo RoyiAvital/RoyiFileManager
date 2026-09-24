@@ -167,15 +167,6 @@ def exercise(context, root, output, layout_only=False):
 		traceback.print_exc()
 	finally:
 		SearchUI.owner.invalidate()
-		def stop_models():
-			models = [pane._widget._model.sourceModel() for pane in context.window.get_panes()]
-			for model in models:
-				model.shutdown()
-			return models
-		for model in gui(stop_models):
-			model._worker._thread.join(2)
-			if model._worker._thread.is_alive():
-				code = 1
 		gui(lambda: context.app.exit(code))
 
 

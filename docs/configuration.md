@@ -1,6 +1,6 @@
 # Configuration
 
-RoyiFileManager is portable.
+{{ app_name }} is portable.
 
 Settings live in `UserSettings` beside the application.
 
@@ -17,7 +17,7 @@ Most preferences save automatically as you use the application:
 - Search modes and options.
 - Status bar mode.
 
-Close RoyiFileManager before editing configuration files by hand.
+Close {{ app_name }} before editing configuration files by hand.
 
 User overrides live in:
 
@@ -31,7 +31,7 @@ Leave `Local`, `Panes`, `Sort Settings` and `Visited Paths` to the application.
 
 Bundled plug-ins load first, followed by third-party and user plug-ins. The user `Settings` plug-in loads last, so its configuration can override bundled defaults. Put custom key bindings and menu files under `UserSettings\Plugins\User\Settings` rather than editing shipped plug-ins. A `(Windows)` variant takes precedence over the corresponding generic filename.
 
-Start with [Your First Plug-in](plugins/index.md) and the [API Overview](api/index.md). Commands and URL helpers retain familiar fman patterns, but custom filesystem providers and columns use RoyiFileManager's snapshot API: `scan(path, check_canceled)` returns a `Listing`, and columns implement `text(listing, index)` and `keys(listing, ascending)`. Do not use upstream per-file column examples unchanged.
+Start with [Your First Plug-in](plugins/index.md) and the [API Overview](api/index.md). Commands and URL helpers retain familiar fman patterns, but custom filesystem providers and columns use {{ app_name }}'s snapshot API: `scan(path, check_canceled)` returns a `Listing`, and columns implement `text(listing, index)` and `keys(listing, ascending)`. Do not use upstream per-file column examples unchanged.
 
 See [Context Menus](#context-menus) for a file-menu example and the [plug-in API reference](https://github.com/RoyiAvital/RoyiFileManager/blob/main/PlugIn.md) for the full contracts.
 
@@ -39,7 +39,7 @@ See [Context Menus](#context-menus) for a file-menu example and the [plug-in API
 
 Create these files in the user Settings folder. A `(Windows)` variant takes precedence over the generic filename.
 
-Restart RoyiFileManager after external edits.
+Restart {{ app_name }} after external edits.
 
 ### Fuzzy Find
 
@@ -143,7 +143,7 @@ Create `Key Bindings (Windows).json` in the user Settings folder to add custom b
 ]
 ```
 
-Restart RoyiFileManager after editing the file.
+Restart {{ app_name }} after editing the file.
 
 See the [keyboard shortcut reference](shortcuts.md).
 
@@ -152,7 +152,7 @@ See the [keyboard shortcut reference](shortcuts.md).
 Right-click a file for its file menu, or empty pane space for a separate folder menu. Both menus run plug-in commands and can be customized without changing keyboard shortcuts.
 
 <figure class="product-shot" markdown>
-  ![RoyiFileManager file context menu open over the file panes](assets/royifilemanager-file-context-menu.png)
+  ![{{ app_name }} file context menu open over the file panes](assets/royifilemanager-file-context-menu.png)
   <figcaption>Right-click a file to open its context menu.</figcaption>
 </figure>
 
@@ -189,7 +189,7 @@ Press ++ctrl+shift+p++ and run **Set text editor** or **Set text viewer**.
 
 Press ++f4++ to edit. Press ++f3++ to view.
 
-Do not add a file placeholder to manual arguments. RoyiFileManager appends the selected file path.
+Do not add a file placeholder to manual arguments. {{ app_name }} appends the selected file path.
 
 The editor and viewer are independent. Each setup list also has a Clear option.
 
@@ -201,7 +201,7 @@ Choose Meld, Beyond Compare, WinMerge, SmartSynchronize or **Manual configuratio
 
 Run **Compare files** or **Compare folders** from the Command Center.
 
-Manual arguments must not contain path placeholders. RoyiFileManager appends both paths.
+Manual arguments must not contain path placeholders. {{ app_name }} appends both paths.
 
 The file and folder comparators are independent. Each setup list also has a Clear option.
 

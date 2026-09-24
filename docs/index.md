@@ -1,11 +1,11 @@
-# RoyiFileManager
+# {{ app_name }}
 
 A keyboard-focused dual-pane file manager for Windows.
 
 Minimal interface. Fast navigation. Powerful search. Commands are always close.
 
 <figure class="product-shot" markdown>
-  ![RoyiFileManager showing C drive and Windows folder](assets/royifilemanager-dual-pane.png)
+  ![{{ app_name }} showing C drive and Windows folder](assets/royifilemanager-dual-pane.png)
   <figcaption>Minimalistic, Keyboard Focused Dual Pane UI</figcaption>
 </figure>
 
@@ -39,3 +39,10 @@ Minimal interface. Fast navigation. Powerful search. Commands are always close.
  - **Reactivity**: The UI response to user input.
  - **Reachability**: Accessible tools to reach any file / content with ease and speed.
  - **Modularity**: Easy integration of 3rd party tools for synergy.
+
+## Focus in Practice
+
+A file date could be formatted by detecting the OS locale, translating the date, and handling regional edge cases. Date filters and search results instead use ISO dates (`YYYY-MM-DD`): one predictable format with less conversion code. The pane's Modified column still follows the OS locale.
+
+Performance wise, the gain of skipping the locale is small. About 1.97 [µs] per row.  
+Still, every microsecond counts. The bigger benefit of ISO dates in filters and search is simpler, predictable behavior.

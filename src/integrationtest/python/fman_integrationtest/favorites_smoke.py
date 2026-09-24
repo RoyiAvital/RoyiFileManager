@@ -139,7 +139,7 @@ def exercise(context, root, output):
 					assert all(button.width() <= 160 for button in buttons), 'Action exceeded width cap'
 					assert main._panel_dock.close_button.width() == 22
 					main._panel_dock.grab().save(str(output.with_name('panel-width-%d.png' % width)))
-				assert widths[0] < widths[-1], 'Actions did not adapt to application width'
+				assert widths == sorted(widths), 'Actions shrank as application width increased'
 				assert widths[-1] == 160, 'Wide actions did not reach their cap'
 			finally:
 				main.resize(original_size)
@@ -256,16 +256,6 @@ def exercise(context, root, output):
 			Path(os.environ['FAVORITES_SMOKE_RESULT']).write_text(json.dumps({'ok': False, 'error': traceback.format_exc()}), encoding='utf-8')
 		code = 1
 	finally:
-		def stop_models():
-			models = [pane._widget._model.sourceModel() for pane in context.window.get_panes()]
-			for model in models:
-				model.shutdown()
-			return models
-		for model in gui(stop_models):
-			model._worker._thread.join(2)
-			if model._worker._thread.is_alive():
-				print('FAIL: pane model worker did not stop', flush=True)
-				code = 1
 		gui(lambda: context.app.exit(code))
 
 

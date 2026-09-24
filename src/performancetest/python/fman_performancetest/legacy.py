@@ -2,7 +2,6 @@
 
 from contextlib import contextmanager
 from dataclasses import replace
-import os
 from pathlib import Path
 import subprocess
 import sys

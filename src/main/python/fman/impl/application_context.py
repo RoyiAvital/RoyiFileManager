@@ -20,6 +20,7 @@ from fman.impl.plugins.discover import find_plugin_dirs
 from fman.impl.plugins.error import PluginErrorHandler
 from fman.impl.plugins.key_bindings import KeyBindings
 from fman.impl.plugins.mother_fs import MotherFileSystem
+from fman.impl.product import APP_NAME
 from fman.impl.session import SessionManager
 from fman.impl.shortcuts import ShortcutsDialog, collect_shortcuts
 from fman.impl.theme import Theme
@@ -48,7 +49,7 @@ def _set_windows_app_id():
 	if PLATFORM == 'Windows':
 		from ctypes import windll
 		windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-			'RoyiFileManager'
+			APP_NAME
 		)
 
 def get_application_context():
@@ -99,9 +100,9 @@ class DevelopmentApplicationContext(ApplicationContext):
 	def app(self):
 		_set_windows_app_id()
 		result = Application([sys.argv[0]])
-		result.setOrganizationName('RoyiFileManager')
-		result.setOrganizationDomain('RoyiFileManager')
-		result.setApplicationName('RoyiFileManager')
+		result.setOrganizationName(APP_NAME)
+		result.setOrganizationDomain(APP_NAME)
+		result.setApplicationName(APP_NAME)
 		result.setWindowIcon(QIcon(self.get_resource('Icon.ico')))
 		result.setStyle(self.style)
 		result.setPalette(self.palette)
@@ -142,7 +143,7 @@ class DevelopmentApplicationContext(ApplicationContext):
 			self.app.set_main_window(self._main_window)
 		return self._main_window
 	def _get_main_window_title(self):
-		return 'RoyiFileManager'
+		return APP_NAME
 	@run_in_main_thread
 	def show_shortcuts(self):
 		pane = self.plugin_support.get_panes()[0]

@@ -437,11 +437,6 @@ class ListingModel(DragAndDrop):
 		return self._columns
 	def get_rows(self):
 		return range(len(self._displayed.names)) if self._displayed else ()
-	def row_is_loaded(self, row):
-		return True
-	def load_rows(self, rows, callback=None):
-		if callback:
-			callback()
 	def url(self, index):
 		if not index.isValid() or not 0 <= index.row() < len(self._visible):
 			raise ValueError('Invalid index')

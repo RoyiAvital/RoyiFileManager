@@ -3,7 +3,6 @@
 import argparse
 import cProfile
 import json
-import os
 from pathlib import Path
 import platform
 import pstats

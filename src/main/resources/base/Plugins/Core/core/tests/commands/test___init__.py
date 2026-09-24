@@ -10,6 +10,7 @@ from core.commands import _hidden_file_filter
 from core.util import filenotfounderror
 from fman import OK, YES, NO, PLATFORM
 from fman.impl.plugins.plugin import _get_command_name
+from fman.impl.product import APP_NAME
 from fman.url import join, as_human_readable, as_url, dirname
 from unittest import TestCase
 from unittest.mock import call, Mock, patch
@@ -53,6 +54,7 @@ class AboutTest(TestCase):
 		with patch('fman.impl.application_context.get_application_context', return_value=context):
 			About(Mock())()
 		show_alert.assert_called_once_with(
+			f'{APP_NAME}<br>'
 			'Version: %s<br>API Version: 0.0.0<br>'
 			'Project: <a href="https://github.com/RoyiAvital/RoyiFileManager">'
 			'https://github.com/RoyiAvital/RoyiFileManager</a><br>'

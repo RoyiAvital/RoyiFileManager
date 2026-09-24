@@ -12,12 +12,6 @@ class ResizeColumnsToContents(UniformRowHeights):
 	def resizeEvent(self, event):
 		super().resizeEvent(event)
 		num_rows_visible = self._get_num_visible_rows()
-		self.model().set_num_rows_to_preload(num_rows_visible)
-		# Performance improvement: We call sizeHintForColumn(...). By default,
-		# this considers 1000 rows. So what Qt does is that it "loads" the 1000
-		# rows and then computes their size. This can be expensive. We therefore
-		# reduce 1000 to the number of rows that are actually visible (typically
-		# ~50).
 		self.horizontalHeader().setResizeContentsPrecision(num_rows_visible)
 		self._resize_cols_to_contents(self._old_col_widths)
 		self._old_col_widths = self._get_column_widths()
@@ -38,24 +32,12 @@ class ResizeColumnsToContents(UniformRowHeights):
 	def _on_model_reset(self):
 		self._old_col_widths = None
 	def _resize_cols_to_contents(self, curr_widths=None):
-		if self._has_rows_visible_but_not_loaded():
-			return
 		if curr_widths is None:
 			curr_widths = self._get_column_widths()
 		min_widths = self._get_min_col_widths()
 		width = self._get_width_excl_scrollbar()
 		ideal_widths = _get_ideal_column_widths(curr_widths, min_widths, width)
 		self._apply_column_widths(ideal_widths)
-	def _has_rows_visible_but_not_loaded(self):
-		model = self.model()
-		return any(
-			not model.row_is_loaded(i) for i in self.get_visible_row_range()
-		)
-	def _get_rows_visible_but_not_loaded(self):
-		model = self.model()
-		return [
-			i for i in self.get_visible_row_range() if not model.row_is_loaded(i)
-		]
 	def _get_width_excl_scrollbar(self):
 		return self.width() - self._get_vertical_scrollbar_width()
 	def _get_vertical_scrollbar_width(self):

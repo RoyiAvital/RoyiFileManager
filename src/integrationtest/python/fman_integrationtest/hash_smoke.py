@@ -144,13 +144,6 @@ def exercise(context, root, output):
 	finally:
 		if os.environ.get('HASH_SMOKE_RESULT'):
 			Path(os.environ['HASH_SMOKE_RESULT']).write_text(json.dumps({'ok': code == 0}), encoding='utf-8')
-		def stop_models():
-			models = [pane._widget._model.sourceModel() for pane in context.window.get_panes()]
-			for model in models:
-				model.shutdown()
-			return models
-		for model in gui(stop_models):
-			model._worker._thread.join(2)
 		gui(lambda: context.app.exit(code))
 
 

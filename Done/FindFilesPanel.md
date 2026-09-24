@@ -78,7 +78,7 @@ pins `fd-find 10.5.0 h18a1a76_0` (win-64), the executable installs to
 `sys.prefix/bin/fd.exe` (`fd 10.5.0`), and the package ships
 `info/licenses/LICENSE-MIT` and `info/licenses/THIRDPARTY.yml`.
 
-- [RoyiFileManager.spec](../RoyiFileManager.spec) copies
+- [application.spec](../application.spec) copies
   `sys.prefix/bin/fd.exe` to `resources/Plugins/FindFiles/bin/fd.exe`, as it
   does for `rg.exe`.
 - Copy the two licence files of the locked package into

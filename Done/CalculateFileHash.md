@@ -155,7 +155,7 @@ During implementation:
   `src/main/resources/base/icons/copy.svg -filter -diff -merge text`.
   Keep this small asset as ordinary text, without changing other LFS assets.
 - Add `fman.impl.ui.output` and `PyQt5.QtSvg` to the explicit hidden imports in
-  [RoyiFileManager.spec](../RoyiFileManager.spec). Verify the Qt SVG module,
+  [application.spec](../application.spec). Verify the Qt SVG module,
   native dependencies, and `iconengines/qsvgicon.dll` are collected by the
   PyInstaller Qt hooks; explicitly collect a missing plugin if needed.
 - Load `icons/copy.svg` via the host resource resolver only on construction,
@@ -553,7 +553,7 @@ source-tree Qt paths; record commands/artifact paths and any approved skips.
 6. Add defaults/bindings and plug-in loading tests; include the plug-in in
   [build.py](../build.py)'s test paths. Add `fman.impl.ui.output` and
   `PyQt5.QtSvg` hidden imports and verify qsvgicon/resources in
-  [RoyiFileManager.spec](../RoyiFileManager.spec).
+  [application.spec](../application.spec).
 7. Document OutputTextBox in [PlugIn.md](../PlugIn.md), update the shared UI
   implementation status and the plug-in/main README, and add the implemented
   application/API change to [CHANGELOG.md](../CHANGELOG.md).

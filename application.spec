@@ -1,8 +1,15 @@
 from PyInstaller.utils.hooks import collect_all
 from pathlib import Path
+from runpy import run_path
 import os
 import sys
 
+
+root = Path(SPECPATH)
+load_build_settings = run_path(
+	str(root / 'src/main/python/fbs_runtime/build_settings.py')
+)['load_build_settings']
+app_name = load_build_settings(root / 'src/build/settings/base.json')['app_name']
 
 winpty_datas, winpty_binaries, winpty_imports = collect_all('winpty')
 send2trash_datas, send2trash_binaries, send2trash_imports = \
@@ -42,7 +49,7 @@ exe = EXE(
 	a.scripts,
 	[],
 	exclude_binaries=True,
-	name='RoyiFileManager',
+	name=app_name,
 	console=os.environ.get('ROYIFILEMANAGER_BUILD_CONSOLE') == '1',
 	icon='src/main/icons/Icon.ico'
 )
@@ -52,5 +59,5 @@ coll = COLLECT(
 	a.datas,
 	strip=False,
 	upx=True,
-	name='RoyiFileManager'
+	name=app_name
 )

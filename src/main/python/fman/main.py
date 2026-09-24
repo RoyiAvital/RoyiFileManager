@@ -1,8 +1,9 @@
 import sys
+from fman.impl.product import APP_NAME
 
 def main():
 	if sys.platform != 'win32':
-		raise RuntimeError('RoyiFileManager is supported on Windows only.')
+		raise RuntimeError('%s is supported on Windows only.' % APP_NAME)
 	from fman.impl.application_context import get_application_context
 	appctxt = get_application_context()
 	exit_code = appctxt.run()
@@ -12,7 +13,7 @@ def profile_main():
 	# Import late to only incur the .0n sec time cost when necessary:
 	import cProfile
 	from fbs_runtime.application_context import is_frozen
-	filename = 'RoyiFileManager.profile' if is_frozen() else None
+	filename = '%s.profile' % APP_NAME if is_frozen() else None
 	cProfile.run('main()', sort='cumtime', filename=filename)
 
 if __name__ == '__main__':

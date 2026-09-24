@@ -7,6 +7,7 @@ import json
 import sys
 
 from fbs_runtime import application_context
+from fbs_runtime.build_settings import get_build_settings
 from fman.impl import application_context as fman_application_context
 
 
@@ -14,9 +15,11 @@ class ApplicationContextTest(TestCase):
 	def setUp(self):
 		self._application_context = application_context._application_context
 		application_context._application_context = None
+		get_build_settings.cache_clear()
 
 	def tearDown(self):
 		application_context._application_context = self._application_context
+		get_build_settings.cache_clear()
 
 	def test_get_application_context_returns_singleton(self):
 		class DevelopmentContext:
@@ -57,7 +60,7 @@ class ApplicationContextTest(TestCase):
 			settings_path = Path(bundle_dir) / 'resources/build-settings/base.json'
 			settings_path.parent.mkdir(parents=True)
 			settings_path.write_text(
-				json.dumps({'version': '9.8.7'}), encoding='utf-8'
+				json.dumps({'app_name': 'RfmRenameProbe', 'version': '9.8.7'}), encoding='utf-8'
 			)
 			with patch.object(sys, 'frozen', True, create=True), \
 					patch.object(sys, '_MEIPASS', bundle_dir, create=True), \
@@ -73,7 +76,8 @@ class ApplicationContextTest(TestCase):
 					'v9.8.7 ready.', timeout_secs=5
 				)
 				settings_path.unlink()
-				self.assertEqual({'version': '9.8.7'}, context.build_settings)
+				self.assertEqual({'app_name': 'RfmRenameProbe', 'version': '9.8.7'},
+					context.build_settings)
 				self.assertEqual('1.7.5', context.fman_version)
 				self.assertEqual('1.7.5', fman_application_context.fman.FMAN_VERSION)
 

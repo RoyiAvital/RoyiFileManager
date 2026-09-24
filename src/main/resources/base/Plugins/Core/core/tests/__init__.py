@@ -1,7 +1,6 @@
 from core import LocalFileSystem
-from fman import Task
 from fman.fs import FileSystem
-from fman.url import splitscheme, basename
+from fman.url import splitscheme
 from pathlib import Path
 from tempfile import TemporaryDirectory
 

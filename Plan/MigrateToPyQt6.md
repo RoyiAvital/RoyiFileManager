@@ -52,7 +52,7 @@ Included:
 - Enum and flag usage, removed APIs, moved classes, `sip`, event positions,
   key combinations and dialog result handling (inventory below).
 - [environment.yml](../environment.yml), `conda-lock.yml`,
-  [RoyiFileManager.spec](../RoyiFileManager.spec), [build.py](../build.py)
+  [application.spec](../application.spec), [build.py](../build.py)
   checks, README, PlugIn.md and CHANGELOG.
 - Removal of dead non-Windows Qt code that has no Qt 6 binding
   (`QtMacExtras` in [mac_clipboard_fix.py](../src/main/python/fman/impl/mac_clipboard_fix.py)).
