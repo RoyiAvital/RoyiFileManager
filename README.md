@@ -76,38 +76,40 @@ Results of the performance test suite per version.
 | Navigation                	| 6.79    [ms]      |
 | Refresh / Selection       	| 482.95  [ms]    	|
 
+Comparisons with previous versions:
+
+[CelebA](https://mmlab.ie.cuhk.edu.hk/projects/CelebA.html) folder with about 200,000 entries. Lower is better.
+
+| Measurement                | Version 0.8.0 | Version 0.8.1 | Version 0.9.0 |
+|----------------------------|---------------|---------------|---------------|
+| First Populated Pane Paint | 8.949 [s]     | 5.663[ ]s     | 0.583 [s]     |
+| Metadata Loading Complete  | 17.786 [s]    | 11.498 [s]    | 0.571 [s]     |
+| Post Paint Qt Commit Work  | 2.765 [s]     | 1.282 [s]     | 0 [s]         |
+| Settled Working Memory     | Not recorded  | 771.3 [MiB]   | 165.6 [MiB]   |
+
 > [!NOTE]
 > * Version `0.9.0` is the 1st version with the new architecture (_Snapshot Architecture_) which is an order of magnitude faster than `0.8.1`.
 > * Version `0.8.1` had an improved version of the `fman` architecture (About 30% faster than `0.8.0`).
 > * Version `0.8.0` and earlier versions use the `fman` architecture and performance.
 
-## Documentation
-
-Build the documentation:
-
-```powershell
-python build.py doc
-```
-
-Start the local documentation server from the repository root:
-
-```powershell
-micromamba run mkdocs serve --dev-addr 127.0.0.1:8000
-```
-
-Open <http://127.0.0.1:8000/RoyiFileManager/>.
-
 ## Development
+
+> [!TIP]
+> Development uses [`micromamba`](https://github.com/mamba-org/mamba).
+> Micromamba is largely compatible with `conda`. See the [Mamba documentation](https://mamba.readthedocs.io).
+> The examples below use `conda` and `micromamba` interchangeably.
+
+### Environment
 
 The development workflow is based on architecture design by the developer and implementation by an AI Agent.  
 Each feature is first defined by its tests and success criteria.  
 The design is reviewed by at least 2 different agents.  
 Implementation is verified by tests and 2 agent reviewers.
 
-Install a conda package manager then create the environment:
+Install a conda compatible package manager then create the environment:
 
 ```powershell
-conda env create -f environment.yml
+conda create -f environment.yml
 conda activate RoyiFileManager
 python build.py run
 ```
@@ -122,3 +124,19 @@ conda-lock lock -f environment.yml -p win-64
 ```
 
 See [`DEVELOPMENT.md`](DEVELOPMENT.md) for more details.
+
+### Documentation
+
+Build the documentation:
+
+```powershell
+python build.py doc
+```
+
+Start the local documentation server from the repository root:
+
+```powershell
+micromamba run mkdocs serve --dev-addr 127.0.0.1:8000
+```
+
+Open <http://127.0.0.1:8000/RoyiFileManager/>.
