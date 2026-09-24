@@ -2,6 +2,7 @@
 
 ## Pending
 
+- [Code Review 003: Low-Risk Safety and Performance](Plan/CodeReview003.md)
 - [Date Format: Locale or ISO](Plan/DateFormat.md)
 - [Everything Plug-In](Plan/EverythingPlugIn.md)
 - [File System and Pane Architecture 002: Responsiveness and Memory](Plan/FSPaneArch002.md)

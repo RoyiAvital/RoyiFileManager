@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The About dialog now shows the product version, a provisional plug-in API
   version of `0.0.0` and clickable project and documentation links.
-- Removed obsolete pre-snapshot row loading, unused internal helpers and
+- Removed obsolete pre new architecture snapshot row loading, unused internal helpers and
   unreachable shortcut suggestion branches, preserving current plug-in contracts.
 - Application identity, build/release names, screenshot discovery and generated
   documentation now derive from `app_name` in `src/build/settings/base.json`.

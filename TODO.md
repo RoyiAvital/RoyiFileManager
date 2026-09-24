@@ -18,7 +18,7 @@
   regression tests for representative filename queries.
 - [x] Add "Quick View" mode where there inactive pane is used for previewing the current file.
 - [ ] Integrate "Quick Look Win". See [QuickLook-Win](https://github.com/BenjaminKobjolke/QuickLook-Win).
-- [ ] Integrate a Terminal into the file manager. Or at least open the current folder in Windows Terminal.
+- [x] Integrate a Terminal into the file manager. Or at least open the current folder in Windows Terminal.
 - [ ] Add a "Rename Tool" as a Plug In. See [FManPowerRenamerAndReplacer](https://github.com/BenjaminKobjolke/FManPowerRenamerAndReplacer).
 - [ ] Add "Synchronized Browsing" feature. See [SynchronizedBrowsing](https://github.com/mherrmann/SynchronizedBrowsing).
 - [x] Add option to compare 2 files using external file comparison or integrate Meld view. See [SimpleCompare](https://github.com/rjwojcicki/SimpleCompare).
