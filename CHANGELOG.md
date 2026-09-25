@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-09-26
+
+This release focuses on extending the QuickView mode to support text based files.
+
+### Added
+
+- QuickView now previews plain text, Markdown and common source-code languages
+  in one read-only text widget, with syntax highlighting, Markdown Source mode,
+  selection/copy and local Find. Text reads are bounded to 2 MiB and formatting
+  to 512 KiB; larger content remains plain with explicit limits and encoding warnings.
+  Markdown resources and automatic link navigation are blocked. Existing image
+  preview and source-pane commands are preserved; no new settings or helper process.
+
 ## [0.9.3] - 2026-09-25
 
 This release focuses on targeted optimizations that reduce redundant work and temporary memory use.

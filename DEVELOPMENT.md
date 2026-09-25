@@ -143,11 +143,14 @@ Developer utilities that are not included in release packages live under
 [generate_docs_screenshots.py](src/misc/generate_docs_screenshots.py) creates
 repeatable documentation screenshots using only public locations under `C:\`
 and `C:\Windows`. Source mode captures the main window, Command Center,
-Find a Location, pane filtering, QuickView, recursive fuzzy find, Search Files,
+Find a Location, pane filtering, image and Python QuickView, recursive fuzzy find, Search Files,
 Find Files, Favorites, directory sizes, File Hash, the process pane and the
 Pack prompt. Command Center and Find a Location include the full application.
 Favorites and directory sizes use seeded settings in their isolated `UserSettings`;
 the process pane is filtered to `svchost`, and the Pack prompt is canceled.
+Python QuickView uses a generated sample under the screenshot work directory,
+waits for syntax colors, and captures the whole application. Its source location
+label reads "Python sample" during the capture so no working path is shown.
 Source mode uses the Qt smoke-test approach and captures widgets directly.
 Packaged mode launches the frozen executable for a parity image.
 

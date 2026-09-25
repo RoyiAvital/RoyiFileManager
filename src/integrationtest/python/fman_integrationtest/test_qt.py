@@ -394,6 +394,241 @@ class QuickViewIT(QtIT):
 		self.run_in_app(check)
 
 
+class QuickViewTextIT(QtIT):
+	setUp = QuickViewIT.setUp
+	close_window = QuickViewIT.close_window
+	navigate = QuickViewIT.navigate
+	drain = QuickViewIT.drain
+
+	def test_rendering_modes_local_keys_and_source_forwarding(self):
+		from fman.impl.quick_view import QuickViewSession
+		from fman.impl.quick_view_text import TextContent, convert_text
+		from PyQt5.QtTest import QTest
+		from unittest.mock import patch
+		def check():
+			with patch('fman.load_json', return_value={}):
+				session = QuickViewSession(self.window, *self.panes)
+				session.timer.stop()
+			try:
+				self.assertIsNone(session.overlay.text_view)
+				content = TextContent('def example():\n    return "hello"\n# hello', 'sample.py', 'utf-8', (), 55)
+				session.show_result(convert_text(content, colors=session._text_colors()))
+				view = session.overlay.text_view
+				browser = view.browser
+				self.assertIn('def example()', browser.toPlainText())
+				self.assertFalse(browser.document().find('def').charFormat().foreground().style() == Qt.NoBrush)
+				self.assertFalse(session.overlay.buttons['copy_image'].isVisible())
+				session.overlay.focus_canvas()
+				self.assertTrue(browser.hasFocus())
+				self.controller.handle_shortcut.reset_mock()
+				QTest.keyClick(browser, Qt.Key_A, Qt.ControlModifier)
+				self.assertIn('def example()', browser.textCursor().selectedText())
+				QTest.keyClick(browser, Qt.Key_C, Qt.ControlModifier)
+				self.assertIn('def example()', QApplication.clipboard().text())
+				QTest.keyClick(browser, Qt.Key_F, Qt.ControlModifier)
+				self.assertTrue(view.find_input.hasFocus())
+				QTest.keyClicks(view.find_input, 'hello')
+				QTest.keyClick(view.find_input, Qt.Key_Return)
+				self.assertEqual('hello', browser.textCursor().selectedText())
+				QTest.keyClick(view.find_input, Qt.Key_F3)
+				QTest.keyClick(view.find_input, Qt.Key_F3, Qt.ShiftModifier)
+				self.controller.handle_shortcut.assert_not_called()
+				QTest.keyClick(view.find_input, Qt.Key_Escape)
+				self.assertTrue(browser.hasFocus())
+				self.assertFalse(view.find_bar.isVisible())
+				QTest.keyClick(browser, Qt.Key_F8)
+				self.controller.handle_shortcut.assert_called_once()
+				self.assertTrue(session.source.hasFocus())
+				self.controller.handle_shortcut.reset_mock()
+				view.find_bar.show()
+				view.find_input.setFocus()
+				QTest.keyClick(view.find_input, Qt.Key_Q, Qt.ControlModifier)
+				self.controller.handle_shortcut.assert_called_once()
+				self.assertTrue(session.source.hasFocus())
+				view.close_find()
+				for key, modifiers in ((Qt.Key_Tab, Qt.NoModifier), (Qt.Key_Backtab, Qt.ShiftModifier), (Qt.Key_Escape, Qt.NoModifier)):
+					session.overlay.focus_canvas()
+					QTest.keyClick(browser, key, modifiers)
+					self.assertTrue(session.source.hasFocus())
+				self.assertFalse(browser.grab().isNull())
+			finally:
+				session.close()
+		self.run_in_app(check)
+
+	def test_resources_are_denied_and_plain_text_stays_literal(self):
+		from fman.impl.quick_view_text import TextPreview, TextContent, convert_text
+		from PyQt5.QtCore import QByteArray, QUrl
+		from PyQt5.QtGui import QTextDocument
+		from unittest.mock import patch
+		def check():
+			view = TextPreview(self.panes[0], self.window)
+			try:
+				content = TextContent('# <tag> *literal*\n    indented', 'sample.txt', 'utf-8', (), 32)
+				with patch.object(view.browser, 'setHtml', side_effect=AssertionError('Plain text must not parse HTML')):
+					view.show_result(convert_text(content))
+				self.assertEqual(content.text, view.browser.toPlainText())
+				for url in ('https://example.invalid/image.png', 'file:///must-not-read', 'relative.png', 'data:image/png,abc', '//server/share/image.png'):
+					self.assertEqual(QByteArray(), view.browser.loadResource(QTextDocument.ImageResource, QUrl(url)))
+					self.assertEqual(QByteArray(), view.browser.document().loadResource(QTextDocument.ImageResource, QUrl(url)))
+				view.browser.setHtml('<img src="file:///must-not-read"><img src="https://example.invalid/image.png">')
+				image = QuickViewImagesIT.make_image(self, 'blocked.png', 3, 3)
+				url = QUrl.fromLocalFile(str(image))
+				self.assertEqual(QByteArray(), view.browser.document().resource(QTextDocument.ImageResource, url))
+				self.assertFalse(view.browser.openLinks())
+				self.assertFalse(view.browser.openExternalLinks())
+			finally:
+				view.deleteLater()
+		self.run_in_app(check)
+
+
+	def test_limited_markdown_disables_rendered_until_eligible_content(self):
+		from dataclasses import replace
+		from fman.impl.quick_view_text import TextPreview, TextContent, FORMAT_LIMIT, convert_text
+		from unittest.mock import Mock
+		def check():
+			view = TextPreview(self.panes[0], self.window)
+			requested = Mock()
+			view.mode_requested.connect(requested)
+			try:
+				content = TextContent('# Heading', 'sample.md', 'utf-8', (), 9)
+				for limited, warning in ((replace(content, truncated=True), 'truncated'),
+					(replace(content, byte_count=FORMAT_LIMIT + 1), '512 KiB')):
+					for mode in ('rendered', 'source'):
+						view.show_result(convert_text(limited, mode))
+						self.assertFalse(view.mode_buttons['rendered'].isEnabled())
+						self.assertTrue(view.mode_buttons['source'].isEnabled())
+						self.assertTrue(view.mode_buttons['source'].isChecked())
+						self.assertIn(warning, view.metadata.text())
+						view.mode_buttons['rendered'].click()
+						requested.assert_not_called()
+				view.show_result(convert_text(replace(content, byte_count=FORMAT_LIMIT), 'source'))
+				self.assertTrue(view.mode_buttons['rendered'].isEnabled())
+				view.mode_buttons['rendered'].click()
+				requested.assert_called_once_with('rendered')
+			finally:
+				view.deleteLater()
+		self.run_in_app(check)
+
+	def test_plain_source_and_code_use_four_space_tabs(self):
+		from fman.impl.quick_view_text import TextPreview, TextContent, convert_text
+		from PyQt5.QtGui import QFontMetricsF, QTextCursor
+		def check():
+			view = TextPreview(self.panes[0], self.window)
+			view.resize(450, 300)
+			view.show()
+			try:
+				for path, mode in (('sample.txt', 'rendered'), ('sample.md', 'source'),
+					('sample.py', 'source'), ('sample.py', 'rendered')):
+					with self.subTest(path=path, mode=mode):
+						content = TextContent('\tvalue = 42', path, 'utf-8', (), 11)
+						result = convert_text(content, mode)
+						view.show_result(result)
+						browser = view.browser
+						expected = QFontMetricsF(browser.document().defaultFont()).horizontalAdvance('    ')
+						self.assertAlmostEqual(expected, browser.tabStopDistance())
+						cursor = QTextCursor(browser.document())
+						start = browser.cursorRect(cursor).left()
+						cursor.setPosition(4 if result.html else 1)
+						self.assertAlmostEqual(expected, browser.cursorRect(cursor).left() - start, delta=1)
+			finally:
+				view.deleteLater()
+		self.run_in_app(check)
+
+	def test_worker_delivery_modes_reuse_source_and_clear_for_images(self):
+		from fman.impl.quick_view import QuickViewSession
+		from fman.impl.quick_view_images import load_preview
+		from fman.url import as_url
+		from PyQt5.QtCore import QThread
+		from unittest.mock import patch
+		markdown = self.root / 'preview.md'
+		markdown.write_text('# Heading\n\nA **bold** word.', encoding='utf-8')
+		image = QuickViewImagesIT.make_image(self, 'preview.png', 8, 8)
+		for source in self.panes:
+			source.reload()
+			self.drain(source)
+			source.place_cursor_at(as_url(markdown))
+		for panes in (self.panes, list(reversed(self.panes))):
+			with self.subTest(source=panes[0]):
+				ready = Event()
+				loads = []
+				class RecordingSession(QuickViewSession):
+					def show_result(self, result):
+						super().show_result(result)
+						ready.set()
+				def load(request, canceled):
+					self.assertIsNot(QThread.currentThread(), QApplication.instance().thread())
+					self.assertTrue(all(isinstance(color, str) for color in request.colors))
+					loads.append(request)
+					return load_preview(request, canceled, self.filesystem.resolve)
+				with patch('fman.load_json', return_value={}):
+					session = self.run_in_app(RecordingSession, self.window, *panes, load=load)
+				try:
+					self.assertTrue(ready.wait(5), 'Text result did not reach Qt')
+					view = session.overlay.text_view
+					self.assertEqual('Heading\nA bold word.', self.run_in_app(view.browser.toPlainText))
+					content = session._text_content
+					for mode in ('source', 'rendered'):
+						ready.clear()
+						with patch('fman.impl.quick_view_text.load_text', side_effect=AssertionError('Mode switch reread file')):
+							self.run_in_app(session.text_mode, mode)
+							self.assertTrue(ready.wait(5))
+						self.assertIs(content, session._text_content)
+						self.assertIs(view, session.overlay.text_view)
+						self.assertEqual(mode == 'source', self.run_in_app(view.browser.toPlainText).startswith('#'))
+					self.assertEqual(3, len(loads))
+					self.assertIsNone(loads[0].content)
+					self.assertIs(content, loads[1].content)
+					ready.clear()
+					panes[0].place_cursor_at(as_url(image))
+					self.assertEqual('', self.run_in_app(view.browser.toPlainText))
+					self.assertTrue(ready.wait(5))
+					self.assertIsNone(session._text_content)
+					self.assertIsNotNone(session.overlay.canvas.image)
+					self.assertTrue(self.run_in_app(session.overlay.buttons['copy_image'].isVisible))
+				finally:
+					session.shutdown()
+
+	def test_stale_conversion_after_cursor_change_cannot_restore_text(self):
+		from fman.impl.quick_view import QuickViewSession
+		from fman.impl.quick_view_images import load_preview
+		from fman.url import as_url
+		from unittest.mock import patch
+		path = self.root / 'preview.md'
+		path.write_text('# Original', encoding='utf-8')
+		image = QuickViewImagesIT.make_image(self, 'next.png', 8, 8)
+		self.panes[0].reload()
+		self.drain(self.panes[0])
+		self.panes[0].place_cursor_at(as_url(path))
+		ready, started, release = Event(), Event(), Event()
+		self.addCleanup(release.set)
+		results = []
+		class RecordingSession(QuickViewSession):
+			def show_result(self, result):
+				results.append(result.kind)
+				super().show_result(result)
+				ready.set()
+		def load(request, canceled):
+			if request.content is not None:
+				started.set()
+				release.wait(5)
+			return load_preview(request, canceled, self.filesystem.resolve)
+		with patch('fman.load_json', return_value={}):
+			session = self.run_in_app(RecordingSession, self.window, *self.panes, load=load)
+		self.addCleanup(session.shutdown)
+		self.assertTrue(ready.wait(5))
+		ready.clear()
+		self.run_in_app(session.text_mode, 'source')
+		self.assertTrue(started.wait(5))
+		worker = session.bridge.loader._thread
+		self.panes[0].place_cursor_at(as_url(image))
+		self.assertIs(worker, session.bridge.loader._thread)
+		self.assertEqual('', self.run_in_app(session.overlay.text_view.browser.toPlainText))
+		release.set()
+		self.assertTrue(ready.wait(5))
+		self.assertEqual(['text', 'image'], results)
+		self.assertIsNone(session._text_content)
+
+
 class QuickViewImagesIT(QtIT):
 	setUp = QuickViewIT.setUp
 	close_window = QuickViewIT.close_window

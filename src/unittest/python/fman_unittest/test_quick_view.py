@@ -152,6 +152,16 @@ clipboard.clear()
 
 
 class QuickViewPackagingTest(TestCase):
+	def test_highlighter_distribution_notices_are_collected(self):
+		import ast
+		from pathlib import Path
+		root = Path(__file__).resolve().parents[4]
+		tree = ast.parse((root / 'application.spec').read_text(encoding='utf-8'))
+		self.assertTrue(any(isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+			and node.func.id == 'copy_metadata' and node.args
+			and isinstance(node.args[0], ast.Constant) and node.args[0].value == 'Pygments'
+			for node in ast.walk(tree)))
+
 	def test_lazy_renderer_is_collected(self):
 		import ast
 		from pathlib import Path

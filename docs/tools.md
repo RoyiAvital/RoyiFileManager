@@ -4,17 +4,35 @@
 
 Press ++ctrl+q++.
 
-QuickView previews the image under the cursor over the other pane.
+QuickView previews the file under the cursor over the other pane.
+Both folder locations stay unchanged.
+
+### QuickView for Images
 
 <figure class="product-shot" markdown>
   ![QuickView showing a Windows wallpaper](assets/royifilemanager-quickview.png)
   <figcaption>Preview an image without leaving its folder.</figcaption>
 </figure>
 
-- View JPEG, PNG and BMP images.
+- View JPEG (`.jpg`, `.jpeg`), PNG, BMP, GIF, ICO, TIFF (`.tif`, `.tiff`) and WebP images.
 - Fit, zoom and pan the image.
 - Show it at 100% or copy its decoded pixels.
-- Keep both folder locations unchanged.
+- Animated images show a still frame. Format availability depends on the bundled Qt codecs.
+
+### QuickView for Text based Files
+
+<figure class="product-shot" markdown>
+  ![QuickView showing syntax-highlighted Python code](assets/royifilemanager-quickview-python.png)
+  <figcaption>Read Python source with syntax highlighting.</figcaption>
+</figure>
+
+- Read plain text and syntax-highlighted source code.
+- Switch Markdown between **Rendered** and **Source** modes.
+- Select text, then press ++ctrl+c++ or right-click and choose **Copy**.
+- With the preview focused, press ++ctrl+f++ to open Find, ++f3++ for the next match or ++shift+f3++ for the previous match.
+
+Text reads stop at 2 MiB, formatting stops at 512 KiB, with plain-text fallback.
+Markdown external resources are blocked.
 
 ## Fuzzy Find
 

@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import win32gui
 import win32process
@@ -53,6 +53,7 @@ class GenerateDocsScreenshotsTest(TestCase):
 			'royifilemanager-file-context-menu.png',
 			'royifilemanager-filter-pane.png',
 			'royifilemanager-quickview.png',
+			'royifilemanager-quickview-python.png',
 			'royifilemanager-fuzzy-find-recursive.png',
 			'royifilemanager-search-files.png',
 			'royifilemanager-search-files-panel.png',
@@ -64,6 +65,41 @@ class GenerateDocsScreenshotsTest(TestCase):
 			'royifilemanager-process-pane.png',
 			'royifilemanager-pack-archive.png',
 		), outputs)
+
+	def test_text_capture_generates_its_own_python_sample(self):
+		with TemporaryDirectory() as temporary_directory, \
+				patch.object(screenshots, 'WORK_DIR', Path(temporary_directory)), \
+				patch.object(screenshots, '_public_paths', return_value=(
+					Path('C:\\'), Path('C:\\Windows')
+				)):
+			left, right = screenshots._source_capture_paths('quick-view-text')
+			self.assertEqual(Path(temporary_directory) / 'source-quick-view-text/sample', left)
+			self.assertEqual(Path('C:\\Windows'), right)
+			source = (left / 'file_summary.py').read_text(encoding='utf-8')
+			self.assertEqual(screenshots.PYTHON_SAMPLE, source)
+			self.assertNotIn('\t', source)
+			compile(source, 'file_summary.py', 'exec')
+
+	def test_python_capture_grabs_window_and_restores_location_label(self):
+		for fail in (False, True):
+			with self.subTest(fail=fail):
+				window, location_bar = Mock(), Mock()
+				location_bar.text.return_value = 'Private working path'
+				def grab():
+					location_bar.setText.assert_called_once_with('Python sample')
+					if fail:
+						raise RuntimeError('Capture failed')
+					return 'full window pixmap'
+				window.grab.side_effect = grab
+				if fail:
+					with self.assertRaises(RuntimeError):
+						screenshots._grab_window_with_sample_location(window, location_bar)
+				else:
+					self.assertEqual('full window pixmap',
+						screenshots._grab_window_with_sample_location(window, location_bar))
+				window.grab.assert_called_once_with()
+				self.assertEqual(2, location_bar.setText.call_count)
+				location_bar.setText.assert_called_with('Private working path')
 
 	def test_seeds_public_favorites(self):
 		with TemporaryDirectory() as temporary_directory, \

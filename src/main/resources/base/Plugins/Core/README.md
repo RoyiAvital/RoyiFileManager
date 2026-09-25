@@ -47,8 +47,9 @@ metadata or identity checks.
 
 On Windows, `Ctrl+Q` / **Toggle QuickView** previews the file under the source
 cursor over the other pane, including its address bar. Marked files do not choose
-the preview. JPEG, PNG and BMP are supported; loading errors appear inline.
-QuickView starts off at every launch and does no image work while off.
+the preview. Images, plain text, Markdown and source code are supported; loading
+errors appear inline. QuickView starts off at every launch and does no preview
+work while off.
 
 | Control | Action |
 | --- | --- |
@@ -86,9 +87,44 @@ Local and accessible UNC regular files are supported, including resolved local
 symlinks. Limits are 64 MiB encoded, 128 million pixels and 65,536 pixels per edge.
 The normalized image can use about 488 MiB; temporary decoding/conversion buffers
 can exceed that substantially. Only the first image/frame is shown. No archive
-extraction, animation, SVG rasterization, video, text preview, prefetch or image
+extraction, animation, SVG rasterization, video, prefetch or image
 cache is included. Cancellation discards stale results; it cannot interrupt a
 blocked native read, but disabling QuickView and exiting do not wait for it.
+
+### Text, Markdown and Code
+
+Text previews are read-only. Markdown opens rendered, with **Rendered / Source**
+controls; source code uses dark syntax highlighting for common languages selected
+by filename. Unknown readable files use plain text; HTML/XML/SVG are shown as
+source, never as web pages. Images and external resources in Markdown are blocked.
+For ambiguous extensions, `.m` uses MATLAB (not Objective-C) and `.ts` uses
+TypeScript; binary MPEG-TS files are rejected by the content probe.
+
+| Focused text preview | Action |
+| --- | --- |
+| Arrows, Page Up/Down, Home/End | Move or scroll within the preview |
+| Ctrl+Home/End | Start/end of loaded text |
+| Ctrl+A / Ctrl+C | Select/copy displayed text |
+| Ctrl+F | Open local Find |
+| F3 / Shift+F3 | Next/previous literal match |
+| Escape | Close Find first, then return to the source pane |
+| Tab / Shift+Tab | Return to the source pane |
+
+These local keys take precedence over user bindings only while the preview or
+its Find field is focused. Other commands, including Ctrl+Q, go to the source
+pane once. External View/Find/Select All bindings remain unchanged in the file list.
+Copy uses displayed text and normalized line endings, not original file bytes.
+Plain text, code and Markdown Source use four-space tab stops.
+
+Read limits are 2 MiB, with Markdown/highlighting limited to complete files up to
+512 KiB. Larger/truncated files remain plain text with an indicator, and Markdown's
+**Rendered** button is disabled for those inputs. Unknown
+files first receive an 8 KiB probe; common binaries are excluded. BOM-based
+UTF-8/16/32 and UTF-8 text are supported, with a labeled Windows ANSI fallback.
+Sparse damage in otherwise valid Unicode text keeps UTF-8 with replacement
+characters instead of reinterpreting the whole file as ANSI.
+Encoding and formatting failures stay readable with warnings. Mode switches
+reuse loaded text; no preview preference, whole-file cache or helper process is added.
 
 ## Directory Sizes
 

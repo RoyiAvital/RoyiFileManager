@@ -2,7 +2,8 @@
 
 The source capture follows the Qt smoke-test approach and grabs widgets directly.
 The packaged capture launches the frozen executable and grabs its native window.
-Both use isolated settings and only show ``C:\\`` and ``C:\\Windows``.
+Both use isolated settings and only show ``C:\\`` and ``C:\\Windows`` locations.
+The text preview uses a generated Python sample with a neutral location label.
 Generated PNG files remain ignored by Git. The Pages workflow generates them
 before building its deployment artifact.
 
@@ -36,10 +37,32 @@ DEFAULT_EXE = ROOT / 'target' / APP_NAME / (APP_NAME + '.exe')
 DEFAULT_OUTPUT_DIR = ROOT / 'docs' / 'assets'
 WORK_DIR = ROOT / 'target' / 'docs-screenshots'
 SOURCE_CAPTURES = (
-	'overview', 'go-to', 'context-menu', 'filter-pane', 'quick-view', 'fuzzy-find',
+	'overview', 'go-to', 'context-menu', 'filter-pane', 'quick-view', 'quick-view-text',
+	'fuzzy-find',
 	'search-files', 'find-files', 'favorites', 'directory-size', 'file-hash',
 	'process-pane', 'pack-archive'
 )
+PYTHON_SAMPLE = '''from dataclasses import dataclass
+from pathlib import Path
+
+
+@dataclass(frozen=True)
+class FileSummary:
+	name: str
+	size: int
+
+
+def describe_files(folder: Path) -> list[FileSummary]:
+	return [
+		FileSummary(path.name, path.stat().st_size)
+		for path in sorted(folder.iterdir())
+		if path.is_file()
+	]
+
+
+for item in describe_files(Path(".")):
+	print(f"{item.name:24} {item.size:>8,} bytes")
+'''.expandtabs(4)
 RIGHT_PANE_CAPTURES = (
 	'context-menu', 'filter-pane', 'search-files', 'find-files', 'file-hash',
 	'process-pane', 'pack-archive'
@@ -203,10 +226,24 @@ def _grab_window_with_dialog(window, dialog):
 	return pixmap
 
 
+def _grab_window_with_sample_location(window, location_bar):
+	original = location_bar.text()
+	location_bar.setText('Python sample')
+	try:
+		return window.grab()
+	finally:
+		location_bar.setText(original)
+
+
 def _source_capture_paths(capture):
 	root, windows = _public_paths()
 	if capture == 'quick-view':
 		return _public_image().parent, windows
+	if capture == 'quick-view-text':
+		folder = WORK_DIR / 'source-quick-view-text' / 'sample'
+		folder.mkdir(parents=True, exist_ok=True)
+		(folder / 'file_summary.py').write_text(PYTHON_SAMPLE, encoding='utf-8')
+		return folder, windows
 	if capture == 'fuzzy-find':
 		return windows / 'Web', windows
 	if capture == 'directory-size':
@@ -226,6 +263,7 @@ def _source_outputs(output_dir, capture):
 		'context-menu': ('royifilemanager-file-context-menu.png',),
 		'filter-pane': ('royifilemanager-filter-pane.png',),
 		'quick-view': ('royifilemanager-quickview.png',),
+		'quick-view-text': ('royifilemanager-quickview-python.png',),
 		'fuzzy-find': ('royifilemanager-fuzzy-find-recursive.png',),
 		'search-files': (
 			'royifilemanager-search-files.png',
@@ -250,7 +288,7 @@ def _capture_source_child(args):
 
 	from fman.impl.application_context import get_application_context
 	from fman.url import as_url
-	from PyQt5.QtCore import QTimer
+	from PyQt5.QtCore import QTimer, Qt
 	from PyQt5.QtWidgets import QApplication
 
 	context = get_application_context()
@@ -393,18 +431,40 @@ def _capture_source_child(args):
 					finish(
 						context.main_window.grab(), outputs[0], filter_bar.close
 					)
-			elif args._capture == 'quick-view':
-				image_url = as_url(str(_public_image()))
+			elif args._capture in ('quick-view', 'quick-view-text'):
+				text_capture = args._capture == 'quick-view-text'
+				file_url = as_url(str(
+					left_path / 'file_summary.py' if text_capture else _public_image()
+				))
 				if not state['started']:
-					pane.place_cursor_at(image_url)
+					pane.place_cursor_at(file_url)
 					pane.focus()
-					if pane.get_file_under_cursor() != image_url:
+					if pane.get_file_under_cursor() != file_url:
 						return
 					state['started'] = True
 					pane.run_command('toggle_quick_view')
 					return
 				session = getattr(context.main_window, '_quick_view_session', None)
-				if session is not None and session.overlay.canvas.image is not None:
+				if session is None:
+					return
+				if text_capture:
+					view = session.overlay.text_view
+					if view is None or not view.isVisible():
+						return
+					browser = view.browser
+					if browser.toPlainText().strip() != PYTHON_SAMPLE.strip():
+						raise RuntimeError('QuickView did not display the Python sample')
+					highlight = browser.document().find('def').charFormat().foreground()
+					if highlight.style() == Qt.NoBrush or \
+							highlight.color() == browser.palette().text().color():
+						raise RuntimeError('QuickView Python sample is not syntax highlighted')
+					finish(
+						_grab_window_with_sample_location(
+							context.main_window, pane._widget._location_bar
+						), outputs[0],
+						lambda: pane.run_command('toggle_quick_view')
+					)
+				elif session.overlay.canvas.image is not None:
 					finish(
 						context.main_window.grab(), outputs[0],
 						lambda: pane.run_command('toggle_quick_view')

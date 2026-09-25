@@ -9,7 +9,7 @@ There is one QuickView feature and one viewport, extended in three delivery stag
 
 1. Stage 001: the shared foundation and images, specified in this document.
 2. [Stage 002: Videos](../Plan/QuickView002.md): add video support to that same viewport.
-3. [Stage 003: Text-Based Files](../Plan/QuickView003.md): add text, Markdown, and programming languages.
+3. [Stage 003: Text-Based Files](QuickView003.md): add text, Markdown, and programming languages.
 
 Status: implementation complete on 2026-09-21, with focused validation recorded below.
 The approved overlay/Tab design and user-approved 128 MP allowance are implemented.
@@ -245,7 +245,7 @@ Default to image Fit. Save only deliberate Fit/100% preference changes, never pa
 positions or every cursor event; preserve unknown keys. A failed save does not
 prevent viewing. Stage 001 adds no package or helper process. Video/text dependencies,
 preferences and helper cleanup remain in [002](../Plan/QuickView002.md) and
-[003](../Plan/QuickView003.md), not prerequisites or implementation work for this stage.
+[003](QuickView003.md), not prerequisites or implementation work for this stage.
 
 ### Image Dependencies
 
@@ -568,7 +568,7 @@ Name conditional-codec skips; advertise those formats only after artifact valida
    artifact gates explicitly; do not build packages without authorization.
 7. Update README/Core usage and CHANGELOG only after implementation, then complete
   this task with validation results. Leave [videos](../Plan/QuickView002.md) and
-  [text](../Plan/QuickView003.md) pending their own revised focus/process designs. Update
+  [text](QuickView003.md) pending their own revised focus/process designs. Update
    relative links when moving this canonical file to Done; never keep a Plan copy.
 
 ## Acceptance Criteria

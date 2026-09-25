@@ -2,10 +2,10 @@ from PyQt5.QtCore import QEvent, QObject, QPoint, QPointF, QRect, QRectF, Qt, QT
 from PyQt5.QtGui import QBrush, QIcon, QImage, QPainter
 from PyQt5.QtWidgets import (
 	QAbstractScrollArea, QApplication, QButtonGroup, QHBoxLayout, QLabel,
-	QSizePolicy, QStyle, QToolButton, QVBoxLayout, QWidget
+	QSizePolicy, QStackedLayout, QStyle, QToolButton, QVBoxLayout, QWidget
 )
 from PyQt5 import sip
-from fman.impl.quick_view_images import ImageLoader, ImageRequest, fit_scale, zoom_scale
+from fman.impl.quick_view_images import ImageLoader, ImageRequest, fit_scale, zoom_scale, load_preview
 from fman.impl.util.qt.thread import run_in_main_thread
 from fman.url import basename
 from math import ceil
@@ -208,6 +208,7 @@ class PreviewCanvas(QAbstractScrollArea):
 
 class QuickViewOverlay(QWidget):
 	close_requested = pyqtSignal()
+	text_mode_requested = pyqtSignal(str)
 
 	def __init__(self, window, source, target):
 		super().__init__(window.centralWidget())
@@ -238,7 +239,10 @@ class QuickViewOverlay(QWidget):
 		header.addWidget(close)
 		layout.addLayout(header)
 		self.canvas = PreviewCanvas(source, self)
-		layout.addWidget(self.canvas, 1)
+		self.text_view = None
+		self.content = QStackedLayout()
+		self.content.addWidget(self.canvas)
+		layout.addLayout(self.content, 1)
 		controls = QHBoxLayout()
 		self.buttons = {}
 		self.modes = QButtonGroup(self)
@@ -274,7 +278,34 @@ class QuickViewOverlay(QWidget):
 
 	def focus_canvas(self):
 		self.source.setFocus()
-		self.canvas.setFocus()
+		if self.text_view is not None and self.content.currentWidget() is self.text_view:
+			self.text_view.browser.setFocus()
+		else:
+			self.canvas.setFocus()
+
+	def show_text(self, result):
+		if self.text_view is None:
+			from fman.impl.quick_view_text import TextPreview
+			self.text_view = TextPreview(self.source, self)
+			self.text_view.mode_requested.connect(self.text_mode_requested)
+			self.content.addWidget(self.text_view)
+		focused = self.isAncestorOf(QApplication.focusWidget())
+		self.content.setCurrentWidget(self.text_view)
+		for widget in (*self.buttons.values(), self.metadata):
+			widget.hide()
+		self.text_view.show_result(result)
+		if focused:
+			self.text_view.browser.setFocus()
+
+	def clear_text(self):
+		if self.text_view is not None:
+			focused = self.text_view.isAncestorOf(QApplication.focusWidget())
+			self.text_view.clear()
+			self.content.setCurrentWidget(self.canvas)
+			if focused:
+				self.canvas.setFocus()
+		for widget in (*self.buttons.values(), self.metadata):
+			widget.show()
 
 	def set_title(self, title):
 		self._title = title or 'QuickView'
@@ -327,6 +358,8 @@ class QuickViewOverlay(QWidget):
 		if not sip.isdeleted(self.source) and self.isAncestorOf(QApplication.focusWidget()):
 			self.source.setFocus()
 		self.canvas.set_image(None)
+		if self.text_view is not None:
+			self.text_view.clear()
 		self.hide()
 		self.deleteLater()
 
@@ -338,7 +371,7 @@ class LoaderBridge(QObject):
 		super().__init__(window)
 		self.window = window
 		self.closed = False
-		self.loader = ImageLoader(self.ready.emit, **({'load': load} if load is not None else {}))
+		self.loader = ImageLoader(self.ready.emit, load if load is not None else load_preview)
 		self.ready.connect(self.receive, Qt.QueuedConnection)
 		window.closed.connect(self.close)
 
@@ -381,6 +414,7 @@ class QuickViewSession(QObject):
 		self._snapshot_reset = False
 		self._content_token = None
 		self._url = None
+		self._text_content = None
 		settings = load_json('QuickView.json', default={})
 		self.preferred_mode = settings.get('image_mode', 'fit') if isinstance(settings, dict) else 'fit'
 		if self.preferred_mode not in ('fit', 'actual_size'):
@@ -396,6 +430,7 @@ class QuickViewSession(QObject):
 		self._connect(self.timer.timeout, self._submit)
 		self._connect(self.overlay.close_requested, self.close)
 		self._connect(self.overlay.canvas.image_action, self.image_action)
+		self._connect(self.overlay.text_mode_requested, self.text_mode)
 		self._connect(source._file_view.selectionModel().currentChanged, self.cursor_changed)
 		self._connect(source._model.modelAboutToBeReset, self._model_resetting)
 		self._connect(source._model.modelReset, self._model_reset_done)
@@ -448,6 +483,8 @@ class QuickViewSession(QObject):
 	def _clear(self, message):
 		self.timer.stop()
 		self.generation = self.bridge.loader.invalidate()
+		self._text_content = None
+		self.overlay.clear_text()
 		self.overlay.image_format = ''
 		self.overlay.canvas.set_image(None, self.preferred_mode, message)
 
@@ -467,9 +504,31 @@ class QuickViewSession(QObject):
 
 	def _submit(self):
 		if not self.closed and self._url:
-			self.bridge.loader.submit(ImageRequest(self.generation, self._url))
+			self.bridge.loader.submit(ImageRequest(self.generation, self._url, colors=self._text_colors()))
+
+	def _text_colors(self):
+		widget = self.overlay.text_view.browser if self.overlay.text_view is not None else self.overlay.canvas
+		widget.ensurePolished()
+		palette = widget.palette()
+		return palette.text().color().name(), palette.base().color().name()
+
+	def text_mode(self, mode):
+		if self.closed or self._text_content is None or mode not in ('source', 'rendered'):
+			return
+		self.timer.stop()
+		self.generation = self.bridge.loader.invalidate()
+		self.overlay.text_view.clear()
+		self.bridge.loader.submit(ImageRequest(self.generation, self._url, mode,
+			self._text_colors(), self._text_content))
 
 	def show_result(self, result):
+		if result.kind == 'text':
+			self._text_content = result.content
+			self.overlay.canvas.set_image(None)
+			self.overlay.show_text(result)
+			return
+		self._text_content = None
+		self.overlay.clear_text()
 		self.overlay.image_format = result.format
 		self.overlay.canvas.set_image(result.image, self.preferred_mode, result.message)
 
@@ -513,6 +572,7 @@ class QuickViewSession(QObject):
 		if self.closed:
 			return
 		self.closed = True
+		self._text_content = None
 		self.timer.stop()
 		self.bridge.loader.invalidate()
 		for signal, callback in self._connections:

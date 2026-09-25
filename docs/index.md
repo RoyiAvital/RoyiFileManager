@@ -17,6 +17,7 @@ Minimal interface. Fast navigation. Powerful search. Commands are always close.
 
 ## Features
 
+- **Data Safety** - Careful handling protects files during copies, moves, link operations and archive transfers.
 - **Performance** - Architecture based on snapshot file listing, virtual rows and background projections for **responsiveness** and **reactivity**.
 - **Fuzzy Find Files** - Search the path hierarchy with [`fzf`](https://github.com/junegunn/fzf) style search syntax.
 - **Search Files** - Search files and content through an easy to use UI panel powered by [`ripgrep`](https://github.com/burntsushi/ripgrep).

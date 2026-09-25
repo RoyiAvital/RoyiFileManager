@@ -25,7 +25,7 @@ See the [tools](tools.md) and [search guide](search.md).
 
 ## Preview and Inspect
 
-- Preview images with QuickView.
+- Preview images, text, Markdown and highlighted source code with QuickView.
 - Fit, zoom, pan or copy the displayed image.
 - Calculate directory sizes in the Size column.
 - Calculate hashes with a choice of algorithms.
@@ -42,6 +42,15 @@ See [QuickView](tools.md#quickview), [Directory Size](tools.md#directory-size) a
 - Copy full paths to the clipboard.
 
 See [Archives](archives.md).
+
+## Data Safety
+
+- Files are copied completely before replacing an existing destination.
+- Failed or canceled copies preserve existing data whenever possible.
+- Risky operations involving file-system links are refused.
+- Archive moves verify copied files before deleting their sources.
+
+See [Advanced Notes](advanced.md#file-transfers).
 
 ## Use External Tools
 

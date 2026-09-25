@@ -149,4 +149,4 @@ Start the local documentation server from the repository root:
 micromamba run mkdocs serve --dev-addr 127.0.0.1:8000
 ```
 
-Open <http://127.0.0.1:8000/RoyiFileManager/>.
+Open <http://127.0.0.1:8000/RoyiFileManager>.

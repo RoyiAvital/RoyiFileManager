@@ -13,7 +13,7 @@
 version: 1
 metadata:
   content_hash:
-    win-64: cbfc427488fc63cdd96e4887ef677ef3f3c74acdb33025ac194399a6ae84bce5
+    win-64: 17e7fbcd9bb929655f2d2ae939c32a410c9e16058742c90ddd59e02c99d2317c
   channels:
   - url: conda-forge
     used_env_vars: []
@@ -909,17 +909,17 @@ package:
   category: main
   optional: false
 - name: libexpat
-  version: 2.8.4
+  version: 2.8.5
   manager: conda
   platform: win-64
   dependencies:
     ucrt: '>=10.0.20348.0'
     vc: '>=14.3,<15'
     vc14_runtime: '>=14.44.35208'
-  url: https://conda.anaconda.org/conda-forge/win-64/libexpat-2.8.4-hac47afa_0.conda
+  url: https://conda.anaconda.org/conda-forge/win-64/libexpat-2.8.5-hac47afa_0.conda
   hash:
-    md5: 7e9023b0034e87d324ad64809859184e
-    sha256: f7360315e293c587176bc2201fb4fa05926cb4dcf643772bbbdb90df5f7f64e5
+    md5: 4969128c45f9e71adbb6a1696679ce7f
+    sha256: 70c73d9fd24ad996f2821d1501adae2ca70984b4e2d8faed76227f348ce86078
   category: main
   optional: false
 - name: libffi
@@ -1225,16 +1225,16 @@ package:
   category: main
   optional: false
 - name: markdown
-  version: 3.10.3
+  version: '3.11'
   manager: conda
   platform: win-64
   dependencies:
     importlib-metadata: '>=4.4'
-    python: '>=3.10'
-  url: https://conda.anaconda.org/conda-forge/noarch/markdown-3.10.3-pyhcf101f3_0.conda
+    python: '>=3.11'
+  url: https://conda.anaconda.org/conda-forge/noarch/markdown-3.11-pyh5ded981_0.conda
   hash:
-    md5: 398589c573fc7ee424314236965fd8e9
-    sha256: e7568d1a9c11460508a6403e96c116634c242703dcf1e689e6b00abe4014f035
+    md5: 8876bb88b606131cf858bd854755078d
+    sha256: caa769aa6666bb07c981d9fb46c6184a40fcb8f292a939285e06a64f664eb97b
   category: main
   optional: false
 - name: markupsafe
@@ -1502,15 +1502,15 @@ package:
   category: main
   optional: false
 - name: platformdirs
-  version: 4.11.12
+  version: 4.11.13
   manager: conda
   platform: win-64
   dependencies:
     python: '>=3.11'
-  url: https://conda.anaconda.org/conda-forge/noarch/platformdirs-4.11.12-pyh5ded981_0.conda
+  url: https://conda.anaconda.org/conda-forge/noarch/platformdirs-4.11.13-pyh5ded981_0.conda
   hash:
-    md5: 99714207349966378c112c2b8db785f5
-    sha256: 5d440bd9ccb80abc1c6d40022a4a54d007a133b2dd73a62762e7c18c470895cd
+    md5: 68cd791f764c7e158a61424eec38e67c
+    sha256: 9b63090f465ec1d113f8f23c43669542f6d8fb560740f0b1aa9e71f060f1a861
   category: main
   optional: false
 - name: ply

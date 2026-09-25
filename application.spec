@@ -1,4 +1,4 @@
-from PyInstaller.utils.hooks import collect_all
+from PyInstaller.utils.hooks import collect_all, copy_metadata
 from pathlib import Path
 from runpy import run_path
 import os
@@ -20,7 +20,7 @@ datas = [
 	('src/build/settings/base.json', 'resources/build-settings'),
 	('src/main/resources/windows', 'resources'),
 	('src/main/icons/Icon.ico', 'resources')
-] + winpty_datas + send2trash_datas
+] + winpty_datas + send2trash_datas + copy_metadata('Pygments')
 binaries = winpty_binaries + send2trash_binaries + [
 	(str(Path(sys.prefix) / 'bin' / 'rg.exe'), 'resources/Plugins/SearchFiles/bin'),
 	(str(Path(sys.prefix) / 'bin' / 'fd.exe'), 'resources/Plugins/FindFiles/bin')

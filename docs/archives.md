@@ -48,3 +48,4 @@ or between two archives of the same format.
 - There is no password prompt for encrypted archives.
 
 See [Archive usage](https://github.com/RoyiAvital/RoyiFileManager/blob/main/src/main/resources/base/Plugins/Core/README.md#archive-transfers).
+See [Advanced Notes](advanced.md#file-transfers) for local-copy and recovery cautions.

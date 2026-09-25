@@ -13,7 +13,6 @@
 - [Flat View](Plan/FlatView.md)
 - [Migrate to PyQt6](Plan/MigrateToPyQt6.md)
 - [QuickView 002: Videos and Animated Images](Plan/QuickView002.md)
-- [QuickView 003: Text-Based Files](Plan/QuickView003.md)
 - [Search Files 003: Extended Mode](Plan/SearchFiles003.md)
 - [UI Elements](Plan/UIElements.md)
 
@@ -46,6 +45,7 @@
 - [Pane Rendering 001: Reuse Entry Hidden Attributes](Done/PaneRendering001.md)
 - [Process Pane](Done/ProcessPane.md)
 - [QuickView 001: Initial Design and Images](Done/QuickView001.md)
+- [QuickView 003: Text-Based Files](Done/QuickView003.md)
 - [Recent Commands in Command Palette](Done/RecentCommandsInPalette.md)
 - [Release Workflow Hardening](Done/ReleaseWorkflowHardening.md)
 - [Search Files 001](Done/SearchFiles001.md)
