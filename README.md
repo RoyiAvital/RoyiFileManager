@@ -105,7 +105,7 @@ Comparisons with previous versions:
 | First Populated Pane Paint | 8.949 [s]     | 5.663 [s]     | 0.583 [s]     | 0.506 [s]     |
 | Metadata Loading Complete  | 17.786 [s]    | 11.498 [s]    | 0.571 [s]     | 0.494 [s]     |
 | Post Paint Qt Commit Work  | 2.765 [s]     | 1.282 [s]     | 0 [s]         | 0 [s]         |
-| Settled Working Memory     | Not recorded  | 771.3 [MiB]   | 165.6 [MiB]   | 167.4 [MiB]   |
+| Settled Working Memory     | 771.1 [MiB]   | 771.3 [MiB]   | 165.6 [MiB]   | 167.4 [MiB]   |
 
 > [!NOTE]
 > * Version `0.9.0` is the 1st version with the new architecture (_Snapshot Architecture_) which is an order of magnitude faster than `0.8.1`.

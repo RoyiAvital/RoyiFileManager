@@ -98,7 +98,7 @@ class BuildNamingTest(TestCase):
 	def test_build_paths_freeze_and_help_use_settings(self):
 		for name in ('RfmRenameProbe', 'build'):
 			with self.subTest(name=name), TemporaryDirectory() as temporary:
-				root = Path(temporary)
+				root = Path(temporary).resolve(strict=True)
 				self._fixture(root, name)
 				build = runpy.run_path(str(root / 'build.py'))
 				self.assertEqual(name, build['APP_NAME'])
@@ -122,7 +122,7 @@ class BuildNamingTest(TestCase):
 
 	def test_archive_name_root_and_version_use_cached_settings(self):
 		with TemporaryDirectory() as temporary:
-			root = Path(temporary)
+			root = Path(temporary).resolve(strict=True)
 			settings_path = self._fixture(root, 'RfmRenameProbe')
 			build = runpy.run_path(str(root / 'build.py'))
 			settings_path.unlink()
@@ -140,7 +140,7 @@ class BuildNamingTest(TestCase):
 
 	def test_spec_derives_both_names_and_preserves_bundled_settings(self):
 		with TemporaryDirectory() as temporary:
-			root = Path(temporary)
+			root = Path(temporary).resolve(strict=True)
 			self._fixture(root, 'RfmRenameProbe')
 			executable, collection = Mock(), Mock()
 			with patch('PyInstaller.utils.hooks.collect_all', return_value=([], [], [])), \

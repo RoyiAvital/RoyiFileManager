@@ -34,8 +34,6 @@ Results use Windows and NTFS with warm caches and three fresh processes per test
 | First Populated Pane Paint | 8.949 [s]     | 5.663 [s]     | 0.583 [s]     | 0.506 [s]     |
 | Metadata Loading Complete  | 17.786 [s]    | 11.498 [s]    | 0.571 [s]     | 0.494 [s]     |
 | Post Paint Qt Commit Work  | 2.765 [s]     | 1.282 [s]     | 0 [s]         | 0 [s]         |
-| Settled Working Memory     | Not recorded  | 771.3 [MiB]   | 165.6 [MiB]   | 167.4 [MiB]   |
+| Settled Working Memory     | 771.1 [MiB]   | 771.3 [MiB]   | 165.6 [MiB]   | 167.4 [MiB]   |
 
-The `0.8.1` timing column shows its lowest result from the two comparison runs. Memory was recorded only in the `0.8.1` to `0.9.0` run.
-
-Both runs used alternating fresh processes, warm OS caches, hidden filtering enabled and QuickView and extended status disabled. Do not chain percentages across the two runs.
+All runs used alternating fresh processes, warm OS caches, hidden filtering enabled and QuickView and extended status disabled. Do not chain percentages across the two runs.

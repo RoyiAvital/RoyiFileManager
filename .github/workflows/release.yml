@@ -112,6 +112,10 @@ jobs:
 
       - name: Run tests
         shell: pwsh
+        env:
+          TEMP: ${{ runner.temp }}
+          TMP: ${{ runner.temp }}
+          TMPDIR: ${{ runner.temp }}
         run: micromamba run -n $env:RELEASE_ENV python build.py test
 
       - name: Freeze
