@@ -132,7 +132,7 @@ def _prepare_settings(name):
 	local.mkdir(parents=True)
 	(local / 'Session.json').write_text(
 		json.dumps({
-			'fman_version': _application_version(),
+			'app_version': _application_version(),
 			'is_licensed': True,
 		}, indent=2) + '\n',
 		encoding='utf-8'

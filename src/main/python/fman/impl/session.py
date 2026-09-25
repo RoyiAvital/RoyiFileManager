@@ -20,12 +20,12 @@ class SessionManager:
 	DEFAULT_WINDOW_SIZE = 1280, 800
 	_MAIN_WINDOW_VERSION = 1
 
-	def __init__(self, settings, fs, error_handler, fman_version, is_licensed):
+	def __init__(self, settings, fs, error_handler, app_version, is_licensed):
 		self.is_first_run = not settings
 		self._settings = settings
 		self._fs = fs
 		self._error_handler = error_handler
-		self._fman_version = fman_version
+		self._app_version = app_version
 		self._is_licensed = is_licensed
 	@property
 	def was_licensed_on_last_run(self):
@@ -63,16 +63,20 @@ class SessionManager:
 				_decode(window_state_b64), self._MAIN_WINDOW_VERSION
 			)
 	def _show_startup_messages(self, main_window):
-		previous_version = self._settings.get('fman_version', None)
-		status_message = 'v%s ready.' % self._fman_version
-		if previous_version and previous_version != self._fman_version:
-			status_message = 'Updated to v%s.' % self._fman_version
+		previous_version = self._previous_app_version()
+		status_message = 'v%s ready.' % self._app_version
+		if previous_version and previous_version != self._app_version:
+			status_message = 'Updated to v%s.' % self._app_version
 		main_window.show_status_message(status_message, timeout_secs=5)
 	def _get_startup_message(self):
-		previous_version = self._settings.get('fman_version', None)
-		if not previous_version or previous_version == self._fman_version:
-			return 'v%s ready.' % self._fman_version
-		return 'Updated to v%s.' % self._fman_version
+		previous_version = self._previous_app_version()
+		if not previous_version or previous_version == self._app_version:
+			return 'v%s ready.' % self._app_version
+		return 'Updated to v%s.' % self._app_version
+	def _previous_app_version(self):
+		return self._settings.get(
+			'app_version', self._settings.get('fman_version', None)
+		)
 	def _init_panes(self, panes, pane_infos, paths_on_cmdline):
 		with ThreadPoolExecutor(max_workers=len(panes)) as executor:
 			futures = [
@@ -164,7 +168,8 @@ class SessionManager:
 			_encode(main_window.saveState(self._MAIN_WINDOW_VERSION))
 		self._settings['panes'] = \
 			list(map(self._read_pane_settings, main_window.get_panes()))
-		self._settings['fman_version'] = self._fman_version
+		self._settings['app_version'] = self._app_version
+		self._settings.pop('fman_version', None)
 		self._settings['is_licensed'] = self._is_licensed
 		try:
 			self._settings.flush()

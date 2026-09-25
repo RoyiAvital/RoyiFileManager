@@ -101,9 +101,10 @@ class PluginApiCompatibilityTest(TestCase):
 		expected = {
 			'ApplicationCommand', 'DirectoryPaneCommand',
 			'DirectoryPaneListener', 'Task', 'load_json', 'save_json',
-			'show_alert', 'show_prompt', 'show_quicksearch'
+			'show_alert', 'show_prompt', 'show_quicksearch', 'APP_VERSION'
 		}
 		self.assertTrue(expected.issubset(set(fman.__all__)))
+		self.assertFalse(hasattr(fman, 'FMAN_VERSION'))
 
 
 class RegistryPolicyTest(TestCase):

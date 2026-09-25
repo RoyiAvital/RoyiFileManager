@@ -36,8 +36,8 @@ contracts whose details matter when extending the application.
 
 The upstream fman 1.7.5 listing/column contracts are not preserved. Implement
 the snapshot methods below; old per-row display methods are not an adapter.
-`FMAN_VERSION` is a historical upstream value, not a compatibility or
-feature-negotiation guarantee for this fork. Consult
+`APP_VERSION` reports the RoyiFileManager product version; it is not a plug-in
+API compatibility or feature-negotiation guarantee. Consult
 [CHANGELOG.md](CHANGELOG.md) for extension changes and migration notes.
 
 - Do not import `fman.impl`, access private host fields such as `_widget` or
@@ -293,7 +293,7 @@ Leave this option off for ordinary settings that should refresh on plug-in reloa
 | Name | Meaning |
 | --- | --- |
 | `PLATFORM` | Host platform label used for platform-specific configuration. |
-| `FMAN_VERSION` | Upstream compatibility version, currently `'1.7.5'`. |
+| `APP_VERSION` | RoyiFileManager product version from the bundled build settings. |
 | `DATA_DIRECTORY` | Native path to portable `UserSettings`; `ROYIFILEMANAGER_USER_SETTINGS` overrides it when set before importing fman. |
 | `OK`, `CANCEL`, `YES`, `NO`, `YES_TO_ALL`, `NO_TO_ALL`, `ABORT` | Dialog result/button constants. Combine choices with bitwise OR. |
 

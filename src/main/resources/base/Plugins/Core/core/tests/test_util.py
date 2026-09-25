@@ -1,4 +1,4 @@
-from core import strformat_dict_values
+from core.util import strformat_dict_values
 from unittest import TestCase
 
 class TestStrformatDictValues(TestCase):

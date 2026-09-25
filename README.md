@@ -39,7 +39,7 @@ Significant additions compared with `fman`:
 - **Pane Filter / Files Filter**: Type to filter file names with globs, anchors and negation with [`fzf`](https://github.com/junegunn/fzf) inspired syntax. See [Pane Filter Usage](src/main/resources/base/Plugins/Core/README.md#pane-filter).
 - **Hidden Files**: Windows panes reuse entry attributes to reduce repeated visibility checks. Press <kbd>Ctrl</kbd>+<kbd>R</kbd> after external hidden-attribute changes. See [Hidden Files](src/main/resources/base/Plugins/Core/README.md#hidden-files).
 - **QuickView Layer**: Press <kbd>Ctrl</kbd>+<kbd>Q</kbd> to enter the **Quick View Mode** which previews the cursor file (image) over the other pane. See [QuickView Usage](src/main/resources/base/Plugins/Core/README.md#quickview).
-- **UI Components**: New building blocks that expand what plug-ins can do. [Plug-in UI guide](Plan/UIElements.md#plug-in-api).
+- **UI Components**: New building blocks that expand what plug-ins can do. [Plug-in UI guide](PlugIn.md#ui-extension).
 - **Docked Panel**: Allows controlling states and operations. Exposed to be used by Plug-In's.
 - **Favorites**: Press <kbd>Ctrl</kbd>+<kbd>B</kbd> for a fully featured Favorites Manager, built entirely with the plug-in APIs.
 - **Recent Commands**: <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> pins the last three commands run from the palette.

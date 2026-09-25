@@ -37,7 +37,7 @@ class ApplicationContextTest(TestCase):
 
 		self.assertIs(first, second)
 
-	def test_startup_uses_product_version_without_changing_plugin_version(self):
+	def test_startup_uses_product_version(self):
 		settings_path = Path(__file__).resolve().parents[4] / \
 			'src/build/settings/base.json'
 		version = json.loads(settings_path.read_text(encoding='utf-8'))['version']
@@ -52,8 +52,8 @@ class ApplicationContextTest(TestCase):
 		window.show_status_message.assert_called_once_with(
 			'v%s ready.' % version, timeout_secs=5
 		)
-		self.assertEqual('1.7.5', context.fman_version)
-		self.assertEqual('1.7.5', fman_application_context.fman.FMAN_VERSION)
+		self.assertEqual(version, context.app_version)
+		self.assertEqual(version, fman_application_context.fman.APP_VERSION)
 
 	def test_frozen_startup_uses_cached_bundled_settings(self):
 		with TemporaryDirectory() as bundle_dir:
@@ -78,8 +78,7 @@ class ApplicationContextTest(TestCase):
 				settings_path.unlink()
 				self.assertEqual({'app_name': 'RfmRenameProbe', 'version': '9.8.7'},
 					context.build_settings)
-				self.assertEqual('1.7.5', context.fman_version)
-				self.assertEqual('1.7.5', fman_application_context.fman.FMAN_VERSION)
+				self.assertEqual('9.8.7', context.app_version)
 
 	@patch.object(fman_application_context, 'PLATFORM', 'Windows')
 	@patch.object(fman_application_context, 'makedirs')

@@ -69,7 +69,7 @@ class DevelopmentApplicationContext(ApplicationContext):
 	def init_logging(self):
 		logging.basicConfig()
 	def _load_plugins(self):
-		fman.FMAN_VERSION = self.fman_version
+		fman.APP_VERSION = self.app_version
 		plugin_dirs = find_plugin_dirs(
 			self.get_resource('Plugins'),
 			join(DATA_DIRECTORY, 'Plugins', 'Third-party'),
@@ -85,8 +85,8 @@ class DevelopmentApplicationContext(ApplicationContext):
 		self.builtin_plugin.initialize_status_bar()
 		self.theme.enable_updates()
 	@property
-	def fman_version(self):
-		return fman.FMAN_VERSION
+	def app_version(self):
+		return self.build_settings['version']
 	def on_main_window_shown(self):
 		if self.session_manager.is_first_run:
 			pane = self.plugin_support.get_panes()[0]
@@ -336,7 +336,7 @@ class DevelopmentApplicationContext(ApplicationContext):
 		settings = Settings(self._get_local_data_file('Session.json'))
 		return SessionManager(
 			settings, self.mother_fs, self.plugin_error_handler,
-			self.build_settings['version'], True
+			self.app_version, True
 		)
 	@cached_property
 	def theme(self):

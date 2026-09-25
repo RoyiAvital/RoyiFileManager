@@ -355,5 +355,3 @@ prints nothing to a console and opens its options window on an unknown switch. T
 `--collision` check verifies that a user's own unnamed Everything instance keeps
 running untouched beside ours. Findings are recorded in
 [Find Files 003](Plan/FindFiles003.md).
-
-See [UPSTREAM.md](UPSTREAM.md) for the upstream merge policy.

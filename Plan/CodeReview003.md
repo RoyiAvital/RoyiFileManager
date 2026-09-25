@@ -210,6 +210,124 @@ No additional cache, scan, worker or changes to snapshot APIs.
 Risk: very low. Require exactly one URL construction per row and equivalent
 results, not a noisy wall-clock threshold.
 
+### 11. Remove a Partially Written Copy on Cancellation or Error (P2)
+
+Owner: [CopyFile.__call__](../src/main/resources/base/Plugins/Core/core/fs/local/__init__.py#L364).
+
+Evidence: `check_canceled()` raises inside the `with open(dst, 'wb')` block, and
+any read/write `OSError` does the same. The destination is left as a truncated
+file with no `copystat` and no `notify_file_added`; a later listing shows a
+plausible-looking file with the wrong size. When the destination did not exist
+before the copy, the partial file is pure garbage.
+
+Design: wrap the data loop in `try/except BaseException`; if `dst_existed` is
+false, `os.remove(dst)` (ignoring `FileNotFoundError`) before re-raising. When
+the destination existed, leave it as is (restoring the old content needs the
+atomic-replacement design already excluded) and keep re-raising. Cancellation
+and error identity are unchanged.
+
+Risk: very low; only the create-new case removes a file, and only the one this
+task created. Test: cancel after the first chunk, injected write error, existing
+destination untouched, notification still suppressed on failure.
+
+### 12. Do Not Move Through a Junction or Directory Symlink (P1)
+
+Owner: [LocalFileSystem._prepare_move](../src/main/resources/base/Plugins/Core/core/fs/local/__init__.py#L133) and `_prepare_copy`.
+
+Evidence (code path; not executed): both helpers classify the source with
+`self.is_dir(src_path)`, which follows the link. A cross-device move of a
+junction or directory symlink therefore recurses into the *target*, yields
+`MoveByCopying` (copy + delete) for every target file and `DeleteIfEmpty` for
+the link. The result is that the target directory is emptied and the link
+dangles. Same-device moves rename the link and are safe; copy follows the target
+(as Explorer does) and only duplicates data. Item 1 fixes the same class of
+bug for delete and explicitly leaves move/copy out.
+
+Design: in `_prepare_move`, before the `is_dir` check, detect
+`islink(os_src_path) or os.path.isjunction(os_src_path)`. For the rename branch
+nothing changes. For the copy branch yield one task that recreates the link at
+the destination (`os.symlink(readlink, dst, target_is_directory=...)`, or
+`_winapi.CreateJunction` for a junction) and removes the source link, without
+entering the target. If recreating a junction is considered out of scope,
+refuse with `UnsupportedOperation` naming the link; refusing is still strictly
+safer than today. `_prepare_copy` may keep following (documented behaviour).
+
+Risk: low; the branch is only reached for cross-device moves of links, which
+today destroy data. Native tests: junction and directory-symlink source moved to
+another drive letter or a mocked `st_dev`, target contents retained, source link
+removed or refused; ordinary directory move unchanged.
+
+### 13. Replace an Existing Destination When Copying a Symlink (P3)
+
+Owner: [CopyFile.__call__](../src/main/resources/base/Plugins/Core/core/fs/local/__init__.py#L364), symlink branch.
+
+Evidence: after the user accepts the overwrite prompt, `os.symlink(readlink,
+dst)` raises `FileExistsError` because the branch never removes the existing
+destination; the regular-file branch overwrites through `open(dst, 'wb')`.
+Additionally `target_is_directory` is not passed, so a dangling directory
+symlink (the only way a directory link reaches this branch, since `is_dir`
+follows live ones) is recreated as a file symlink on Windows.
+
+Design: when `dst_existed`, remove the destination first (`os.remove`, falling
+back to `os.rmdir` for a directory link); pass
+`target_is_directory=os.path.isdir(src)` — for a dangling link use the source's
+lstat mode. No change for the regular-file branch.
+
+Risk: very low; only the symlink branch after an accepted overwrite.
+
+### 14. QuickView Stays on "Loading folder" After a Failed Scan (P3)
+
+Owner: [QuickViewSession](../src/main/python/fman/impl/quick_view.py#L418).
+
+Evidence: `_location_changed` sets `_loading_location`; only `location_loaded`
+clears it. The snapshot model emits `location_loaded` from `_commit`, which
+never runs when the scan fails (`PermissionError`, vanished folder →
+`location_disappeared`, or the navigation `onerror` fallback). Until the next
+successful navigation the overlay ignores every cursor change.
+
+Design: also clear `_loading_location` on `location_disappeared` and on
+`snapshot_committed` (a commit implies the location is loaded), then call
+`cursor_changed()`. Three connections, no new state.
+
+Risk: very low; covered by a Qt test that fails the scan and asserts the
+overlay leaves the loading state.
+
+### 15. Inaccessible Folder on Refresh Raises the Crash Dialog (P3)
+
+Owner: [ListingModel._receive](../src/main/python/fman/impl/model/listing.py#L319).
+
+Evidence: a scan error with no active navigation request is routed to
+`sys.excepthook` unless it is `FileNotFoundError`. A folder whose permissions
+change while displayed, or a removable volume that is ejected, therefore shows
+the application's exception dialog on the next mutation-driven rescan; the old
+model reported the same condition through `location_disappeared`/status.
+
+Design: treat `PermissionError` and `OSError` subclasses that mean "no longer
+readable" (`ENOENT`, `EACCES`, `ENOTDIR`, Windows 2/3/5/21) like
+`FileNotFoundError` — emit `location_disappeared` so the pane falls back to the
+parent as it does today for deleted folders. Keep `excepthook` for genuinely
+unexpected exceptions.
+
+Risk: low; the change only reclassifies which UI a known OS error reaches.
+
+### 16. Small Snapshot Hot-Path Trims (P3)
+
+Owners: [reconcile](../src/main/python/fman/listing.py#L86),
+[ListingModel.refresh_files](../src/main/python/fman/impl/model/listing.py#L487).
+
+- The unchanged-rescan fast path builds a `{i: i}` dict over every known
+  entry (~20 ms at 202k) that the view then uses only as `remap.get(entry)`.
+  Returning a small identity-mapping object (`__getitem__`/`get` returning the
+  key when the identity is known) or a `None` sentinel meaning "same order"
+  removes the allocation. Keep the current dict for the changed case.
+- `refresh_files` emits one `dataChanged` over the entire visible range; Qt
+  clips it to the viewport, but delegates and proxies still receive a 202k-row
+  range. Emitting only for rows in the visible viewport region (via the
+  view's `indexAt`) is optional; at minimum restrict the columns to those whose
+  `keys_depend_on_external_data` or text depends on external data (Size).
+
+Risk: very low; equality tests on the projection/selection outcome.
+
 ### Findings Outside This Low-Risk Batch
 
 - **P1: local-to-archive move can delete its source after a packing error.**
@@ -232,6 +350,24 @@ results, not a noisy wall-clock threshold.
 - No broad optimization of search, archive enumeration, directory-size scanning
   or painting is justified by these probes. Their existing cancellation, limits
   and generation protections must remain intact.
+- **Merge onto a mismatched type** ([FileTreeOperation._merge_directory](../src/main/resources/base/Plugins/Core/core/fileoperations.py#L109)):
+  a source directory whose destination exists as a *file*, or a source file
+  whose destination is a *directory*, is enqueued without an overwrite prompt
+  and fails at task time (`FileExistsError` from `mkdir`, `PermissionError`
+  from `open`). Behaviour is safe (nothing is destroyed) but the error surfaces
+  late and per task. A prompt or an early refusal needs a UX decision; recorded,
+  not batched.
+- **Comparator identity on filesystems without inodes**
+  ([validate_operands](../src/main/resources/base/Plugins/Core/core/comparator.py#L164)):
+  `st_ino == 0` (FAT/exFAT, some cloud drives) is rejected as "cannot determine
+  identity", making comparison impossible there. Falling back to normalized
+  path equality is a small change but alters a documented refusal; flagged in
+  the task's implementation review and left for the owner.
+- **Failed shell-icon extraction is cached as the generic icon**
+  ([ListingIcons._receive](../src/main/python/fman/impl/model/listing_icons.py#L140)):
+  a transient failure (`SHGetFileInfoW` returning 0 while the shell is busy)
+  stores `None` for that key until LRU eviction (256 keys). Cosmetic; a retry
+  policy is not worth its complexity now.
 
 ## Alternatives
 
@@ -388,3 +524,29 @@ benchmark workload, freeze, package or remote release is required by this plan.
   deferred its larger verification design. Baseline: 128 focused tests passed,
   5 skipped, and 7 listener/native tests passed. No application implementation
   authorized or performed in this pass.
+
+### 2026_09_25 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Claude Fable 5.1
+- Effort: High
+- Context Window: 1M
+- Outcome: Reviewed items 1–10 against the code; all ten owners, evidence and
+  designs check out and stay within the low-risk constraint (item 4 is the
+  broadest; its atomic-write design mirrors the existing `Config` writer).
+  Added items 11–16 from a read of the local provider, transfer operations,
+  snapshot model, QuickView and icon service: partial-copy cleanup on
+  cancel/error (11); the cross-device move of a junction/directory symlink
+  that empties the *target* because `_prepare_move` follows links (12, P1 —
+  the move-side twin of item 1, which the batch explicitly left out);
+  symlink copy over an accepted overwrite raising `FileExistsError` (13);
+  QuickView stuck on "Loading folder" after a failed scan (14); inaccessible
+  folder on rescan routed to the crash dialog instead of the disappeared path
+  (15); two snapshot hot-path allocations (16). Recorded three further
+  observations outside the batch (mismatched-type merge, comparator inode
+  rule, cached icon failures). Items 12 and 15 are code-path findings, not
+  executed reproductions; item 12 must be reproduced on a disposable second
+  volume or a mocked `st_dev` before implementation. No application code
+  changed.

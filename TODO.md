@@ -40,6 +40,7 @@
 - [x] FEATURE: Add a button "Copy Image" to copy the image to the clipboard in "QuickView" for images mode.
 - [x] FEATURE: Add a plan to support for GIF, APNG and other animated images formats in "QuickView" for images mode.
 - [x] CHANGE: Update the structure of the "About" box.
+- [x] CHANGE: Use `app_version` and `APP_VERSION` instead of `fman_version` and `FMAN_VERSION`.
 
 ## Performance
 

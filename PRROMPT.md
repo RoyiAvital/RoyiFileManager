@@ -14,7 +14,6 @@ I customized the project to match my vision.
 Your onboarding tasks:
  - Go through all the code.  
  - Learn the architecture and the API's.
- - Review `fman`'s documentation: https://fman.io/docs.
  - Review `fman`'s API: https://fman.io/docs/api (We are no longer compatible).
  - Make sure you read previous `md` files which shows implementation considerations.
  - Read `AGENTS.md`.
@@ -40,9 +39,8 @@ I customized the project to match my vision.
 Your onboarding tasks:
  - Go through all the code.  
  - Learn the architecture and the API's.
- - Review `fman`'s documentation: https://fman.io/docs.
- - Review `fman`'s API: https://fman.io/docs/api (We are no longer compatible).
  - Make sure you read previous `md` files which shows implementation considerations.
+ - Review `fman`'s API: https://fman.io/docs/api (We are no longer compatible).
  - Read `AGENTS.md`.
 
 Once you're ready, We'll start reviewing features.
@@ -66,14 +64,18 @@ I customized the project to match my vision.
 Your onboarding tasks:
  - Go through all the code.  
  - Learn the architecture and the API's.
- - Review `fman`'s API: https://fman.io/docs/api (We are no longer compatible).
  - Make sure you read previous `md` files which shows implementation considerations.
- - Review `fman`'s documentation: https://fman.io/docs.
  - Read the documentation in `doc\`.
+ - Review `fman`'s API: https://fman.io/docs/api (We are no longer compatible).
+ - Review `fman`'s documentation: https://fman.io/docs.
  - Read `AGENTS.md`.
 
 Once you're ready, We'll start maintaining and documenting.  
 We'll build a documentation for users, for developers and maintenance tasks.
+
+Guidelines for documentation:
+ - Use visual examples.
+ - Use short concise sentences.
 
 Your model signature: GPT-6 Sol.
 Your effort level: High.

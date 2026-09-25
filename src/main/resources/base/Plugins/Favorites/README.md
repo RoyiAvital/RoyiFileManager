@@ -124,4 +124,4 @@ The opt-in `fman.ui` component layer still uses Qt widgets and supports standard
 Qt layout/control APIs, as this plug-in demonstrates.
 IconButton is available for boolean options; Favorites currently needs only a
 sort drop-down and action buttons. See the
-[plug-in UI guide](../../../../../../Plan/UIElements.md#plug-in-api).
+[plug-in UI guide](../../../../../../PlugIn.md#ui-extension).

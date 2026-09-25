@@ -1,5 +1,6 @@
 from . import clipboard
 from .url import dirname
+from fbs_runtime.build_settings import get_build_settings
 from .impl.task import StubProgressDialog, ChildProgressDialog
 from contextlib import contextmanager
 from fbs_runtime import platform
@@ -20,7 +21,7 @@ __all__ = [
 	'get_application_command_aliases', 'load_plugin', 'unload_plugin',
 	'clipboard',
 	'submit_task', 'Task',
-	'PLATFORM', 'FMAN_VERSION', 'DATA_DIRECTORY',
+	'PLATFORM', 'APP_VERSION', 'DATA_DIRECTORY',
 	'OK', 'CANCEL', 'YES', 'NO', 'YES_TO_ALL', 'NO_TO_ALL', 'ABORT'
 ]
 
@@ -32,7 +33,7 @@ ABORT = QMessageBox.Abort
 OK = QMessageBox.Ok
 CANCEL = QMessageBox.Cancel
 
-FMAN_VERSION = '1.7.5'
+APP_VERSION = get_build_settings()['version']
 
 PLATFORM = platform.name()
 

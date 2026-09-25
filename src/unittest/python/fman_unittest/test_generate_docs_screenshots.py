@@ -68,7 +68,7 @@ class GenerateDocsScreenshotsTest(TestCase):
 			document = json.loads(
 				(settings / 'Local' / 'Session.json').read_text(encoding='utf-8')
 			)
-		self.assertEqual('1.2.3', document['fman_version'])
+		self.assertEqual('1.2.3', document['app_version'])
 		self.assertTrue(document['is_licensed'])
 
 	def test_rejects_invalid_dimensions(self):

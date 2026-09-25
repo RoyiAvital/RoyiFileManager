@@ -890,22 +890,22 @@ package:
   category: main
   optional: false
 - name: libclang13
-  version: 23.1.1
+  version: 23.1.2
   manager: conda
   platform: win-64
   dependencies:
     libxml2: ''
     libxml2-16: '>=2.15.4'
     libzlib: '>=1.3.2,<2.0a0'
-    llvm-openmp: '>=23.1.1'
+    llvm-openmp: '>=23.1.2'
     ucrt: '>=10.0.20348.0'
     vc: '>=14.3,<15'
     vc14_runtime: '>=14.44.35208'
     zstd: '>=1.5.7,<1.6.0a0'
-  url: https://conda.anaconda.org/conda-forge/win-64/libclang13-23.1.1-default_hacd6ee9_0.conda
+  url: https://conda.anaconda.org/conda-forge/win-64/libclang13-23.1.2-default_hacd6ee9_0.conda
   hash:
-    md5: b81422067866a3c0d719793b233df58e
-    sha256: fe65ead3f55a912a5f0a8d18a4931af7406217406579ac3b8e97cdae23eed514
+    md5: 3416ec01c117474e28114e4b3c31c7ed
+    sha256: 216cf2224a81090c15230ff2e6e2a01259ceb70b29da4ef72e64de1fffb0ce22
   category: main
   optional: false
 - name: libexpat
@@ -1211,17 +1211,17 @@ package:
   category: main
   optional: false
 - name: llvm-openmp
-  version: 23.1.1
+  version: 23.1.2
   manager: conda
   platform: win-64
   dependencies:
     ucrt: '>=10.0.20348.0'
     vc: '>=14.3,<15'
     vc14_runtime: '>=14.44.35208'
-  url: https://conda.anaconda.org/conda-forge/win-64/llvm-openmp-23.1.1-h49e36cd_0.conda
+  url: https://conda.anaconda.org/conda-forge/win-64/llvm-openmp-23.1.2-h49e36cd_0.conda
   hash:
-    md5: f895db3df946e742c3ce07cfce271bdd
-    sha256: 49b0967e84eae82cc2acaf4400629c7b9c08a491b9c8d3343f3f5f2feee7138d
+    md5: 4b07614a10496df13cb3e35d249caf3c
+    sha256: 8b462c021d6bf3f956749d305bd3f52deb82ae2901047c0c7061a21c3550e48f
   category: main
   optional: false
 - name: markdown
@@ -1502,15 +1502,15 @@ package:
   category: main
   optional: false
 - name: platformdirs
-  version: 4.11.11
+  version: 4.11.12
   manager: conda
   platform: win-64
   dependencies:
     python: '>=3.11'
-  url: https://conda.anaconda.org/conda-forge/noarch/platformdirs-4.11.11-pyh5ded981_0.conda
+  url: https://conda.anaconda.org/conda-forge/noarch/platformdirs-4.11.12-pyh5ded981_0.conda
   hash:
-    md5: 8fbbcac647ae8d387f011d2f0fe9041c
-    sha256: ba9e3a7ba041b569fb1c369ad5d16e47d79a0768b7a3a9bf469a5730c1c90cd8
+    md5: 99714207349966378c112c2b8db785f5
+    sha256: 5d440bd9ccb80abc1c6d40022a4a54d007a133b2dd73a62762e7c18c470895cd
   category: main
   optional: false
 - name: ply
@@ -1622,17 +1622,17 @@ package:
   category: main
   optional: false
 - name: pymdown-extensions
-  version: 12.0.1
+  version: '12.1'
   manager: conda
   platform: win-64
   dependencies:
     markdown: '>=3.6'
     python: '>=3.11'
     pyyaml: ''
-  url: https://conda.anaconda.org/conda-forge/noarch/pymdown-extensions-12.0.1-pyhd8ed1ab_0.conda
+  url: https://conda.anaconda.org/conda-forge/noarch/pymdown-extensions-12.1-pyhd8ed1ab_0.conda
   hash:
-    md5: 48e9d9c02c1cca81df3682768eaa6364
-    sha256: f932ed4d73f0907bfcf82dd92f8586430c7d0c4a560ce1ac523eba95ff9009cd
+    md5: d47aaef46af29a1f2031048ec77b4199
+    sha256: 279897269f16303aba8da67b836362d521d937b94d512f8fde8fbb55454cbc22
   category: main
   optional: false
 - name: pyproject_hooks
@@ -1728,7 +1728,7 @@ package:
   category: main
   optional: false
 - name: python-build
-  version: 1.6.0
+  version: 1.6.1
   manager: conda
   platform: win-64
   dependencies:
@@ -1738,10 +1738,10 @@ package:
     pyproject_hooks: ''
     python: '>=3.10'
     tomli: '>=1.1.0'
-  url: https://conda.anaconda.org/conda-forge/noarch/python-build-1.6.0-pyhc364b38_0.conda
+  url: https://conda.anaconda.org/conda-forge/noarch/python-build-1.6.1-pyhc364b38_0.conda
   hash:
-    md5: 1e696c762d003f8f4af971b6dccb8c1e
-    sha256: d5bad775346fbd21cce7922b29cab2587fe599517654de65c3d2fe50a7126279
+    md5: 3d3aeaee9182433cb5d4a433c1e94f58
+    sha256: 28100eda1e92e786c25753d0ea9def9375d692726d2c76444a040be686b4dd9a
   category: main
   optional: false
 - name: python-dateutil
@@ -2124,15 +2124,15 @@ package:
   category: main
   optional: false
 - name: trove-classifiers
-  version: 2026.6.1.19
+  version: 2026.9.21.13
   manager: conda
   platform: win-64
   dependencies:
-    python: '>=3.10'
-  url: https://conda.anaconda.org/conda-forge/noarch/trove-classifiers-2026.6.1.19-pyhcf101f3_0.conda
+    python: '>=3.11'
+  url: https://conda.anaconda.org/conda-forge/noarch/trove-classifiers-2026.9.21.13-pyh5ded981_0.conda
   hash:
-    md5: f23d5a5855f09bcb5026938486a9750d
-    sha256: 74dabeb087f26116a262a7580a78622f2bf109798a7e154d4d9b48234ed72b11
+    md5: ca71e34cacec0f00b1c7c312fbc884b7
+    sha256: 43cde9446d690a198ab5b35801d08e2926afe7202495aaa3df98702cb4a19f9a
   category: main
   optional: false
 - name: typing-extensions

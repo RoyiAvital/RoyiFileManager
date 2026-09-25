@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Replaced the stale public `FMAN_VERSION` compatibility value with
+  `APP_VERSION`, backed by the RoyiFileManager product version. Session state
+  now writes `app_version` while migrating the legacy `fman_version` key.
 - The About dialog now shows the product version, a provisional plug-in API
   version of `0.0.0` and clickable project and documentation links.
 - Removed obsolete pre new architecture snapshot row loading, unused internal helpers and
