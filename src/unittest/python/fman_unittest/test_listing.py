@@ -9,6 +9,27 @@ from fman.listing import Listing, reconcile
 
 
 class ListingTest(TestCase):
+	def test_status_entries_are_complete_displayed_rows_during_pending_scan(self):
+		from fman.impl.model.listing import ListingModel
+		from fman.impl.status_bar import StatusEntry
+		from fman.url import join
+		from types import SimpleNamespace
+		for location in ('file://C:/fixture', 'zip://archive', 'process://'):
+			listing = Listing.create(location, ('folder', 'selected', 'other'),
+				is_dir=(True, False, False))
+			self.assertEqual((None, None, None), listing.sizes)
+			self.assertEqual((None, None, None), listing.mtimes_ns)
+			selected_url = join(location, 'selected')
+			for visible in ((), (2, 1), (0, 1, 2)):
+				with self.subTest(location=location, visible=visible):
+					model = SimpleNamespace(_location=location, _displayed=listing,
+						_visible=visible, _scanning=True,
+						_listing=Listing.create(location, ('pending',)))
+					entries = ListingModel.get_status_entries(model, {selected_url})
+					self.assertIsInstance(entries, tuple)
+					self.assertEqual(tuple(StatusEntry(join(location, listing.names[index]),
+						listing.is_dir[index], True, index == 1) for index in visible), entries)
+
 	def test_provider_columns_are_detached_and_missing_metadata_is_explicit(self):
 		labels, pids = ['Example'], [123]
 		listing = Listing.create('process://', ['123'], labels=labels, extra=[('pid', pids)])

@@ -333,3 +333,19 @@ freeze/package automatically.
 - Outcome: Extended the Qt-only plan to route animated GIF/WebP through QMovie
   with movie-like controls and a still-frame fallback. APNG requires a verified
   Qt animation handler; actual frame playback and portable codecs remain unverified.
+
+### 2026_09_25 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Extra High
+- Context Window: 272K
+- Outcome: Feasibility review: the full video/animation scope is moderate work,
+  with backend-dependent delivery risk. Existing debounce, bounded loading and
+  generation handling are reusable, but routing and controls remain image-only.
+  GIF animation alone is a smaller candidate stage, subject to explicit scope
+  approval. Real playback, replacement/teardown, file unlock and portable codec
+  checks are the main uncertainties, not constructing the Qt widgets. Scope and
+  delivery order unchanged; no implementation or new playback tests performed.

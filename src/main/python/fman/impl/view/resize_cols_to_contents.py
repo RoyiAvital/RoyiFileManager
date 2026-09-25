@@ -65,8 +65,13 @@ class ResizeColumnsToContents(UniformRowHeights):
 			for c in range(self._num_columns)
 		]
 	def _apply_column_widths(self, widths):
-		for col, width in enumerate(widths):
-			self.setColumnWidth(col, width)
+		handle_resize = self._handle_col_resize
+		self._handle_col_resize = False
+		try:
+			for column, width in enumerate(widths):
+				self.setColumnWidth(column, width)
+		finally:
+			self._handle_col_resize = handle_resize
 	@property
 	def _num_columns(self):
 		return self.horizontalHeader().count()

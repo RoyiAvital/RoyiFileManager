@@ -1,7 +1,7 @@
 # Filesystem Link Operation Policy
 
 Status: Proposed design, 2026-09-25. Requested after the implementation review in
-[CodeReview003](CodeReview003.md). No policy implementation in this task yet;
+[CodeReview003](../Done/CodeReview003.md). No policy implementation in this task yet;
 review and approve the decisions below before changing operation behavior.
 
 ## Task

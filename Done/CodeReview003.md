@@ -1,9 +1,25 @@
 # Code Review 003: Low-Risk Safety and Performance
 
-Status: Implemented hardening changes, 2026-09-25; release validation remains
-pending. The user approved implementation of the consolidated proposal. The
-implementation record below supersedes planning-only statements in the historical
-inventory. This task remains in Plan because native/release gates are not all met.
+Status: Completed by user acceptance, 2026-09-25. The delivered hardening batch
+is closed; unfinished proposals and validation gates now belong to
+[CodeReview099](../Plan/CodeReview099.md). This is not wide-use release approval.
+
+## Closure And Handoff (2026_09_25)
+
+The user requested closing this task and initially carrying unfinished work into
+004. That inventory now belongs to 099, leaving 004 focused on four small
+optimizations. C01-C15 retain link/overwrite/archive
+policy, notification and case semantics, cancellation/type-mismatch work, settings
+and lifecycle questions, icon/clipboard cleanup and optional investigations.
+R01-R07 retain native layout, privilege/live-storage, crash/recovery, startup and
+persistence, full-suite/artifact, long-path and compatible measurement gates.
+Nothing in those inventories is marked passed merely because this task moved.
+
+Historical reviewer/implementer records and commands remain below. Their earlier
+"task remains pending" statements are superseded only as task status by this
+user-approved closure. Existing refusals, compatibility limits and release caveats
+still apply. The separate [link policy](../Plan/LinkOperationPolicy.md) remains
+unimplemented and pending; 099 links to its canonical design.
 
 ## Task
 
@@ -272,7 +288,7 @@ All seven remarks from Claude Opus 5.5's implementation review are addressed:
 5. **Suggestion adopted as documentation and coverage.** Keep Copy and Move's
   shared source/destination directory-link merge refusal. Expanded direct and
   native nested-junction tests to both commands. Usage docs and
-  [Link Operation Policy](LinkOperationPolicy.md) explicitly record this
+  [Link Operation Policy](../Plan/LinkOperationPolicy.md) explicitly record this
   tightening; the broader link policy remains unimplemented.
 6. **Fixed.** Both session-save call sites use one failure-reporting helper.
   Failed saves report once per SessionManager through the existing application
@@ -1497,7 +1513,7 @@ the Release Proposal's safety decisions and release gates.
   5. **Copy merges now refuse source directory links too.** The guard in
      `_merge_directory` is shared by Copy and Move; copying through a source
      link only duplicates data. Keep as-is or narrow to Move and destination
-     links in [Link Operation Policy](LinkOperationPolicy.md); it is a behavior
+      links in [Link Operation Policy](../Plan/LinkOperationPolicy.md); it is a behavior
      tightening worth recording.
   6. **Silent session loss for linked settings.** `Settings.flush` refuses a
      linked `Session.json`; its callers swallow `OSError`, so window/pane state
@@ -1550,6 +1566,31 @@ the Release Proposal's safety decisions and release gates.
   requirement that wording remain freely editable. Validate text and configured
   app-name substitution, not a fixed sentence. Other remarks retain existing
   release gates; no release approval.
+
+### 2026_09_25 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Not exposed by host
+- Effort: High
+- Context Window: Not exposed by host
+- Outcome: Closed the delivered batch at the user's request and transferred all
+  unfinished proposals/checks to CodeReview004 C01-C15 and R01-R07. Preserved
+  historical implementation/review provenance; closure edits only, no application
+  changes or new implementation claim. Outstanding release gates are not waived.
+
+### 2026_09_25 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Extra High
+- Context Window: 272K
+- Outcome: Updated the current handoff to CodeReview099 after the user separated
+  the deferred inventory from CodeReview004's four optimizations. Earlier records
+  retain their historical destinations; all open proposals and gates remain open.
 
 ## Implementer
 
@@ -1607,3 +1648,27 @@ the Release Proposal's safety decisions and release gates.
 - Outcome: Replaced the commented footer assertion with text/type and configured
   app-name checks, leaving prose unconstrained. DocumentationNamingTest passed
   (1 test); production hook unchanged. Existing release gates remain open.
+
+## Validation Results
+
+- Historical implementation commands/results remain in Implementation Validation,
+  Latest Review Validation and the dated records above. The latest affected-area
+  implementation gate ran 324 tests: 315 passed and 9 privilege skips. The later
+  independent review recorded 650 application tests with 9 skips and 43 opt-in
+  tooling tests; these are retained evidence, not rerun during closure.
+- The subsequent footer check passed 1 test. Native short-path BuildNamingTest
+  validation passed 3 tests after fixture-root canonicalization; CI temp overrides
+  do not remove the remaining runtime/release requirements.
+- Closure procedure: compare SHA-256 before/after moving the canonical document;
+  verify required sections, C/R/N IDs, append-only reviewer/implementer history,
+  local links, unique Pending/Completed index entries and no old Plan copy;
+  run `git diff --check -- Plan.md Plan/CodeReview003.md Plan/CodeReview004.md Plan/LinkOperationPolicy.md Done/CodeReview003.md`
+  and explicitly inspect whitespace in untracked documents.
+- Relocation integrity, sections/IDs, handoff links/index, whitespace and editor
+  diagnostics passed. Historical wording, metadata and records are preserved;
+  the user accepted one link-line indentation variation after the strict comparison
+  flagged it. Only that whitespace exception and relocated link targets were
+  allowed by the final history check.
+- No application tests, full suite, portable build, native UI session or performance
+  catalog rerun in this documentation-only closure. Required but unrun native and
+  release checks transfer to R01-R07; no release approval is implied.

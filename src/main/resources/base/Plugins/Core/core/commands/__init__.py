@@ -1311,11 +1311,13 @@ class CommandPalette(DirectoryPaneCommand):
 	def _suggest_commands(self, query):
 		result = [[] for _ in self._MATCHERS]
 		key_bindings = load_json('Key Bindings.json')
+		query = query.lower()
 		for cmd_name, aliases, command in self._get_all_commands():
 			for alias in aliases:
+				lower_alias = alias.lower()
 				this_alias_matched = False
 				for i, matcher in enumerate(self._MATCHERS):
-					highlight = matcher(alias.lower(), query.lower())
+					highlight = matcher(lower_alias, query)
 					if highlight is not None:
 						shortcuts = \
 							_get_shortcuts_for_command(key_bindings, cmd_name)

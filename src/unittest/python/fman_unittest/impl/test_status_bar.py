@@ -40,6 +40,22 @@ class _FileSystem:
 		return 42
 
 
+class PaneStatusSnapshotTest(TestCase):
+	def test_complete_snapshot_does_not_traverse_entries_again(self):
+		from fman.impl.widgets import DirectoryPaneWidget
+		from types import SimpleNamespace
+		from unittest.mock import Mock
+		entries = Mock()
+		model = Mock()
+		model.get_status_entries.return_value = entries
+		model.get_location.return_value = 'file:///root'
+		pane = SimpleNamespace(_model=model, _hidden_files_shown=True,
+			get_selected_files=Mock(return_value=['file:///root/selected']))
+		self.assertEqual(PaneStatusSnapshot('file:///root', entries, True, True),
+			DirectoryPaneWidget.get_status_snapshot(pane))
+		model.get_status_entries.assert_called_once_with({'file:///root/selected'})
+
+
 class StatusBarSettingsTest(TestCase):
 	def test_defaults_and_mode_cycle(self):
 		self.assertEqual(DEFAULT_SETTINGS, validate_status_bar_settings(None))

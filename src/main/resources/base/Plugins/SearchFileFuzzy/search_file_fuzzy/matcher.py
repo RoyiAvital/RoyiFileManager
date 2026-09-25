@@ -51,10 +51,11 @@ class Matcher:
 		self._entries = list(entries)
 		self._mode = mode
 		self._max_results = max(1, int(max_results))
-		self._normalized = [
-			(normalize(entry.name), normalize(entry.relative_path))
-			for entry in _checked(self._entries, check_canceled)
-		]
+		self._normalized = []
+		for entry in _checked(self._entries, check_canceled):
+			name = normalize(entry.name)
+			path = name if entry.name == entry.relative_path else normalize(entry.relative_path)
+			self._normalized.append((name, path))
 		self._literal_paths = [
 			_literal(entry.relative_path.replace('/', '\\'))
 			for entry in _checked(self._entries, check_canceled)
@@ -90,30 +91,31 @@ class Matcher:
 			term.kind == 'fuzzy' and not term.negate
 			for group in groups for term, predicate, score_text in group
 		)
-		result = []
-		for index, path in enumerate(_checked(self._literal_paths, check_canceled)):
-			selected = _select(groups, path)
-			if selected is None:
-				continue
-			entry = self._entries[index]
-			if not ranked:
-				result.append(entry)
-				if len(result) == self._max_results:
-					break
-				continue
-			name, relative_path = self._normalized[index]
-			score = 0
-			for term, text in selected:
-				if term.kind == 'fuzzy':
-					if text:
+		def candidates():
+			count = 0
+			for index, path in enumerate(_checked(self._literal_paths, check_canceled)):
+				selected = _select(groups, path)
+				if selected is None:
+					continue
+				entry = self._entries[index]
+				if not ranked:
+					yield entry
+					count += 1
+					if count == self._max_results:
+						return
+					continue
+				name, relative_path = self._normalized[index]
+				score = 0
+				for term, text in selected:
+					if term.kind == 'fuzzy' and text:
 						score += max(
 							_score(text, name, filename=True),
 							_score(text, relative_path, filename=False)
 						)
-			result.append((score, -index, entry))
+				yield score, -index, entry
 		if not ranked:
-			return result
-		return [entry for _, _, entry in heapq.nlargest(self._max_results, result)]
+			return list(candidates())
+		return [entry for _, _, entry in heapq.nlargest(self._max_results, candidates())]
 
 	def _highlights(self, entry, query, groups):
 		title = entry.relative_path.replace('/', '\\')
@@ -154,16 +156,16 @@ class Matcher:
 		return result
 
 	def _fuzzy(self, query, check_canceled=None):
-		scored = []
-		for index, (name, relative_path) in enumerate(_checked(self._normalized, check_canceled)):
-			score = max(
-				_score(query, name, filename=True),
-				_score(query, relative_path, filename=False)
-			)
-			if score != float('-inf'):
-				scored.append((score, -index, self._entries[index]))
+		def candidates():
+			for index, (name, relative_path) in enumerate(_checked(self._normalized, check_canceled)):
+				score = max(
+					_score(query, name, filename=True),
+					_score(query, relative_path, filename=False)
+				)
+				if score != float('-inf'):
+					yield score, -index, self._entries[index]
 		return [
-			entry for _, _, entry in heapq.nlargest(self._max_results, scored)
+			entry for _, _, entry in heapq.nlargest(self._max_results, candidates())
 		]
 
 

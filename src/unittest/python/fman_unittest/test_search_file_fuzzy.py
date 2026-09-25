@@ -96,6 +96,32 @@ class MatcherTest(TestCase):
 			SearchEntry('file:///root/helper.py', 'helper.py', 'helper.py'),
 		]
 
+	def test_preparation_normalizes_identical_raw_paths_once(self):
+		entries = self.entries + [
+			SearchEntry('unicode', 're\u0301sume\u0301.txt', 're\u0301sume\u0301.txt'),
+			SearchEntry('case', 'FILE.txt', 'file.txt'),
+		]
+		expected = [(normalize(entry.name), normalize(entry.relative_path))
+			for entry in entries]
+		arguments = [text for entry in entries for text in
+			([entry.name] if entry.name == entry.relative_path else
+			 [entry.name, entry.relative_path])]
+		for mode in ('fuzzy', 'regular'):
+			with self.subTest(mode=mode), \
+				patch('search_file_fuzzy.matcher.normalize', wraps=normalize) as normalizer:
+				matcher = Matcher(entries, mode=mode)
+				self.assertEqual(arguments, [call.args[0] for call in normalizer.call_args_list])
+				self.assertEqual(expected, matcher._normalized)
+
+	def test_preparation_still_checks_cancellation_with_shared_names(self):
+		entry = self.entries[1]
+		check = Mock(side_effect=[None, RuntimeError('canceled')])
+		with patch('search_file_fuzzy.matcher.normalize', wraps=normalize) as normalizer:
+			with self.assertRaisesRegex(RuntimeError, 'canceled'):
+				Matcher([entry] * 300, check_canceled=check)
+			self.assertEqual(256, normalizer.call_count)
+		self.assertEqual(2, check.call_count)
+
 	def test_regular_search_is_normalized_substring_search(self):
 		matcher = Matcher(self.entries, mode='regular')
 		self.assertEqual(
@@ -199,6 +225,53 @@ class ExtendedMatcherTest(TestCase):
 			expected = [entry for score, _, entry in sorted(scored, reverse=True)
 				if score != float('-inf')] if normalized else matcher._entries
 			self.assertEqual(expected, matcher(query))
+
+	def test_ranked_candidates_stream_with_exact_order_and_highlights(self):
+		from heapq import nlargest
+		from search_file_fuzzy.matcher import _prepare, _select
+		paths = ['report.txt', 'docs/report.txt', 'rpt.txt',
+			're\u0301port.txt', 'tmp/report.txt', 'unmatched.bin'] * 50
+		entries = [SearchEntry(str(index), path.rsplit('/', 1)[-1], path)
+			for index, path in enumerate(paths)]
+		for limit in (1, 7, 400):
+			matcher = Matcher(entries, max_results=limit)
+			for query in ('rpt', 'rpt !tmp', 'rpt | unmatched .txt$'):
+				with self.subTest(limit=limit, query=query):
+					groups = _prepare(parse(query)) if '!' in query or '|' in query else None
+					scored = []
+					for index, entry in enumerate(entries):
+						name, path = matcher._normalized[index]
+						if groups is None:
+							score = max(_score(query, name, True), _score(query, path, False))
+							if score == float('-inf'):
+								continue
+						else:
+							selected = _select(groups, matcher._literal_paths[index])
+							if selected is None:
+								continue
+							score = sum(max(_score(text, name, True), _score(text, path, False))
+								for term, text in selected if term.kind == 'fuzzy' and text)
+						scored.append((score, -index, entry))
+					expected = [(entry, matcher._highlights(entry, query, groups))
+						for _, _, entry in sorted(scored, reverse=True)[:limit]]
+					def consume(count, candidates):
+						self.assertIs(candidates, iter(candidates))
+						return nlargest(count, candidates)
+					with patch('search_file_fuzzy.matcher.heapq.nlargest', side_effect=consume) as heap:
+						self.assertEqual(expected, matcher.matches(query))
+						heap.assert_called_once()
+
+	def test_streaming_cancellation_and_unranked_early_limit(self):
+		matcher = self.matcher(['report.txt'] * 600, max_results=2)
+		for query in ('rpt', 'rpt !tmp'):
+			with self.subTest(query=query):
+				check = Mock(side_effect=[None, None, RuntimeError('canceled')])
+				with self.assertRaisesRegex(RuntimeError, 'canceled'):
+					matcher(query, check_canceled=check)
+				self.assertEqual(3, check.call_count)
+		check = Mock(side_effect=[None, None, AssertionError('past early limit')])
+		self.assertEqual(matcher._entries[:2], matcher("'report", check_canceled=check))
+		self.assertEqual(2, check.call_count)
 
 	def test_filter_order_and_limit(self):
 		matcher = self.matcher(max_results=2)

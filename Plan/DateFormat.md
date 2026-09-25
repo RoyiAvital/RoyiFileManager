@@ -59,8 +59,10 @@ configuration migration or Registry writes.
 At [Modified](../src/main/resources/base/Plugins/Core/core/__init__.py) instance
 initialization, read the setting once and resolve one immutable format string.
 ISO does not query the locale; Locale discovers and rewrites the pattern once.
-Each `get_str` reuses that string, retaining the current timestamp conversion,
-`QDateTime`, local-time interpretation and empty/error handling.
+Both snapshot-pane `text` and compatibility `get_str` reuse that string, retaining
+their current timestamp conversion, `QDateTime`, local-time interpretation and
+empty/error handling. Keep `keys` and `get_sort_value` unchanged; the preference
+changes display only, not timestamp precision or ordering.
 
 Settings and OS locale changes take effect after an application restart. A pane
 refresh alone does not promise a configuration reload. This avoids new lifecycle
@@ -99,7 +101,8 @@ operation; existing model cancellation stays unchanged.
 
 ## Tests
 
-Extend [core.tests.fs.test_columns](../src/main/resources/base/Plugins/Core/core/tests/fs/test_columns.py):
+Extend [core.tests.fs.test_columns](../src/main/resources/base/Plugins/Core/core/tests/fs/test_columns.py)
+and snapshot coverage in [test_listing](../src/unittest/python/fman_unittest/test_listing.py):
 
 - Default, explicit `locale`, `iso`, missing and invalid setting values.
 - Locale output matches the original Qt short-format/year-replacement expression
@@ -111,11 +114,13 @@ Extend [core.tests.fs.test_columns](../src/main/resources/base/Plugins/Core/core
   observes changed settings; existing instances retain their snapshot.
 - Unchanged `None`, `OSError`, invalid-timestamp handling, local-time conversion,
   sort precision and metadata-query counts. Existing Name/Size tests still pass.
+- Exercise both `text` and `get_str`. Use epoch-based fixtures across DST
+  transitions; a nonexistent naive local time is not a round-trip invariant.
 
 Focused command from the application environment:
 
 ```powershell
-python -c "import build, subprocess, sys; sys.exit(subprocess.run([sys.executable, '-m', 'unittest', 'core.tests.fs.test_columns', '-q'], env=build._environment(), timeout=60).returncode)"
+python -c "import build, subprocess, sys; sys.exit(subprocess.run([sys.executable, '-m', 'unittest', 'core.tests.fs.test_columns', 'fman_unittest.test_listing', '-q'], env=build._environment(), timeout=60).returncode)"
 ```
 
 Run the new failing Modified test before and immediately after its implementation,
@@ -130,6 +135,12 @@ changing OS settings. Search-result and date-input formats must remain unchanged
 Performance: compare the original formatter with both modes using identical
 datetime values. Count format/configuration calls and report elapsed time; no
 wall-clock speed assertions in unit tests or claim of solving pane stalls.
+
+The 2026-09-25 in-memory probe and estimates are recorded under N13 in
+[CodeReview004](../Done/CodeReview004.md). Resolving the pattern once saved about
+0.20-0.25 ms per 512 uncached Modified cells in that probe; text caching means
+folder entry count is not a valid multiplier for first-paint savings. Prefer
+ISO for predictable presentation, not an expected visible speedup.
 
 ## Implementation Steps
 
@@ -167,3 +178,17 @@ wall-clock speed assertions in unit tests or claim of solving pane stalls.
   request. Defined Locale default, optional ISO, startup-resolved pattern and
   focused tests. Supersedes the earlier ISO-only scope without rewriting its
   historical records. Design only; no application changes.
+
+### 2026_09_25 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Extra High
+- Context Window: 272K
+- Outcome: Aligned the design with the current snapshot `Modified.text` path as
+  well as `get_str`, retaining sorting and local-time behavior. Locale/ISO parity
+  and one-time resolution passed a disposable three-locale formatter probe;
+  detailed timings are in CodeReview004 N13. Presentation is the main benefit;
+  no implementation, settings/restart validation or end-to-end speedup claim.

@@ -1,6 +1,32 @@
 from fman.impl.view.resize_cols_to_contents import \
-	_get_ideal_column_widths, _resize_column
+	_get_ideal_column_widths, _resize_column, ResizeColumnsToContents
+from types import SimpleNamespace
 from unittest import TestCase
+
+class ApplyColumnWidthsTest(TestCase):
+	def test_suppresses_handler_and_restores_previous_state(self):
+		for enabled in (True, False):
+			with self.subTest(enabled=enabled):
+				calls = []
+				view = SimpleNamespace(_handle_col_resize=enabled)
+				def resize(column, width):
+					self.assertFalse(view._handle_col_resize)
+					calls.append((column, width))
+				view.setColumnWidth = resize
+				ResizeColumnsToContents._apply_column_widths(view, [120, 80, 60])
+				self.assertEqual([(0, 120), (1, 80), (2, 60)], calls)
+				self.assertIs(enabled, view._handle_col_resize)
+	def test_restores_previous_state_after_error(self):
+		for enabled in (True, False):
+			with self.subTest(enabled=enabled):
+				view = SimpleNamespace(_handle_col_resize=enabled)
+				def resize(column, width):
+					self.assertFalse(view._handle_col_resize)
+					raise RuntimeError('resize failed')
+				view.setColumnWidth = resize
+				with self.assertRaisesRegex(RuntimeError, 'resize failed'):
+					ResizeColumnsToContents._apply_column_widths(view, [120])
+				self.assertIs(enabled, view._handle_col_resize)
 
 class GetIdealColumnWidthsTest(TestCase):
 	def test_one_column_no_change(self):

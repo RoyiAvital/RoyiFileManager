@@ -169,9 +169,7 @@ class DirectoryPaneWidget(QWidget):
 		selected_urls = set(self.get_selected_files())
 		entries = self._model.get_status_entries(selected_urls)
 		return PaneStatusSnapshot(
-			self._model.get_location(), entries,
-			all(entry.is_loaded for entry in entries),
-			self._hidden_files_shown
+			self._model.get_location(), entries, True, self._hidden_files_shown
 		)
 	def set_status_widget(self, widget):
 		if self._status_widget is not None:

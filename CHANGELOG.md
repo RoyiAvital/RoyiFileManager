@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.3] - 2026-09-25
+
+This release focuses on targeted optimizations that reduce redundant work and temporary memory use.
+
+### Changed
+
+- Reduced redundant pane column sizing, icon-key calculation and status
+  completeness checks.
+- Find reuses identical name/path normalization and streams ranked candidates
+  into bounded top-result selection without changing results or highlights.
+- Command Center avoids repeated lowercase conversions while keeping command
+  visibility, aliases and shortcuts live on each suggestion pass.
+
+#### Performance Report
+
+Local before/after component probes for the responsiveness changes, not a rerun
+of the full performance suite:
+
+| Measurement                                    | Before   | After    | Change                  |
+| ---------------------------------------------- | -------: | -------: | ----------------------- |
+| Find preparation, 20,000 entries               | 44.53 ms | 24.91 ms | 44.1% less time         |
+| Ordinary ranked query, 20,000 entries          | 36.98 ms | 36.70 ms | Essentially unchanged   |
+| Extended ranked query, 20,000 entries          | 47.79 ms | 47.71 ms | Essentially unchanged   |
+| Peak ordinary-query allocation, 20,000 entries | 2.745 MB | 26 KB    | 99.1% less              |
+| No-match query, 20,000 entries                 | 15.13 ms | 15.36 ms | 0.23 ms slower          |
+| Native resize/paint cycle, three window sizes  | 33.34 ms | 33.42 ms | No measured improvement |
+
+Matcher timings are medians from nine batches of three calls, alternating
+before/after order; memory is peak traced allocation. The native cycle measures
+warm resizing/painting with cached icon fallbacks. Small, 100-entry ranked
+searches added approximately 0.02 ms and 10 KB of overhead. These results do not
+establish faster overall folder loading or directory-size sorting.
+See [measurement details](Done/CodeReview004.md#baseline-and-cost-probes).
+
 ## [0.9.2] - 2026-09-25
 
 This release is mainly focused on solving edge cases, improve data safety and optimize performance.

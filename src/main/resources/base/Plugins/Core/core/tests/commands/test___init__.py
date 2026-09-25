@@ -267,6 +267,51 @@ class CommandPaletteRecentTest(TestCase):
 		self.assertEqual(['Beta', 'Exit', 'Alpha', 'Find files'], [item.title for item in items])
 		self.assertEqual(['', '', 'Ctrl+A', ''], [item.hint for item in items])
 		self.assertTrue(all(not item.highlight for item in items))
+	def test_lowercases_query_once_and_each_visited_alias_once(self):
+		class CountedText(str):
+			def __new__(cls, value):
+				instance = super().__new__(cls, value)
+				instance.lower_calls = 0
+				return instance
+			def lower(self):
+				self.lower_calls += 1
+				return super().lower()
+			def casefold(self):
+				raise AssertionError('Palette must retain lower semantics')
+		self.aliases['unicode'] = ['Stra\u00dfe \u00f6ffnen', '\u0130STANBUL']
+		for query in ('', 'SEARCH', 'AF', 'missing', 'STRA\u00dfE', '\u0130ST'):
+			with self.subTest(query=query):
+				for aliases in (self.aliases, self.app_aliases):
+					for name, values in aliases.items():
+						aliases[name] = [CountedText(value) for value in values]
+				counted_query = CountedText(query)
+				items = self.palette._suggest_commands(counted_query)
+				self.assertEqual(1, counted_query.lower_calls)
+				for aliases in (self.aliases, self.app_aliases):
+					for values in aliases.values():
+						visited = True
+						for alias in values:
+							self.assertEqual(int(visited), alias.lower_calls)
+							if visited and any(matcher(str(alias).lower(), query.lower()) is not None
+								for matcher in self.palette._MATCHERS):
+								visited = False
+				for item in items:
+					self.assertIsInstance(item.title, CountedText)
+					highlights = [matcher(str(item.title).lower(), query.lower())
+						for matcher in self.palette._MATCHERS]
+					self.assertEqual(next(value for value in highlights if value is not None), item.highlight)
+
+	def test_suggestion_pass_keeps_visibility_aliases_and_bindings_live(self):
+		self.assertEqual(['Alpha'], [item.title for item in self.palette._suggest_commands('alpha')])
+		self.pane.is_command_visible.side_effect = lambda name: name != 'alpha'
+		self.assertEqual([], self.palette._suggest_commands('alpha'))
+		self.pane.is_command_visible.side_effect = None
+		self.aliases['alpha'] = ['Changed Alias']
+		self.bindings[:] = [{'keys': ['Ctrl+Z'], 'command': 'alpha'}]
+		self.assertEqual([], self.palette._suggest_commands('alpha'))
+		items = self.palette._suggest_commands('changed')
+		self.assertEqual([('Changed Alias', 'Ctrl+Z')], [(item.title, item.hint) for item in items])
+
 	def test_pinned_items_have_hints_and_no_duplicates(self):
 		self.seed(('pane', 'alpha'), ('pane', 'files'))
 		items = self.open()

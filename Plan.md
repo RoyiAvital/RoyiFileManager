@@ -2,7 +2,7 @@
 
 ## Pending
 
-- [Code Review 003: Low-Risk Safety and Performance](Plan/CodeReview003.md)
+- [Code Review 099: Deferred Work and Release Gates](Plan/CodeReview099.md)
 - [Date Format: Locale or ISO](Plan/DateFormat.md)
 - [Everything Plug-In](Plan/EverythingPlugIn.md)
 - [Favorites 003: Favorites as a Pane Location](Plan/Favorites003.md)
@@ -24,6 +24,8 @@
 - [Calculate File Hash](Done/CalculateFileHash.md)
 - [Code Review 001: Dead Code Removal](Done/CodeReview001.md)
 - [Code Review 002: Application Name Single Source](Done/CodeReview002.md)
+- [Code Review 003: Low-Risk Safety and Performance](Done/CodeReview003.md)
+- [Code Review 004: Low-Risk Responsiveness Improvements](Done/CodeReview004.md)
 - [Concise README Features](Done/ConciseReadmeFeatures.md)
 - [Context Window Capitalization](Done/ContextWindowCapitalization.md)
 - [Correct Provenance Metadata](Done/CorrectProvenanceMetadata.md)

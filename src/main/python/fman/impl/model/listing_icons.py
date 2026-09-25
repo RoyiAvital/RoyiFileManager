@@ -94,12 +94,13 @@ class ListingIcons(QObject):
 			return path, listing.identity(index), listing.mtimes_ns[index]
 		return suffix
 
-	def icon(self, listing, index):
+	def icon(self, listing, index, key=None):
 		attributes = listing.attributes[index]
 		fallback = self._folder if listing.is_dir[index] else self._file
 		if not listing.location.startswith('file://') or attributes & (0x400 | 0x1000 | 0x400000):
 			return fallback
-		key = self.key(listing, index)
+		if key is None:
+			key = self.key(listing, index)
 		if key in self._cache:
 			self._cache.move_to_end(key)
 			return self._cache[key] or fallback

@@ -414,10 +414,12 @@ class ListingModel(DragAndDrop):
 			return self._text_cache[key]
 		if role == Qt.DecorationRole and index.column() == 0:
 			if self._icons is not None:
-				self._icon_cells[index.row()] = self._icons.key(self._displayed, self._visible[index.row()])
+				entry = self._visible[index.row()]
+				key = self._icons.key(self._displayed, entry)
+				self._icon_cells[index.row()] = key
 				if len(self._icon_cells) > 512:
 					self._icon_cells.popitem(last=False)
-				return self._icons.icon(self._displayed, self._visible[index.row()])
+				return self._icons.icon(self._displayed, entry, key=key)
 			from PyQt5.QtGui import QIcon
 			return QIcon()
 		return None
@@ -462,6 +464,11 @@ class ListingModel(DragAndDrop):
 			raise ValueError('%r is not in list' % url)
 		return self.index(self._names[basename(url)], 0)
 	def get_status_entries(self, selected_urls):
+		"""Return fully loaded status entries for the currently displayed rows.
+
+		Pending scans and unknown size or modification-time metadata do not
+		affect this completeness guarantee.
+		"""
 		entries = []
 		for index in self._visible:
 			url = join(self._location, self._displayed.names[index])

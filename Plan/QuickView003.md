@@ -247,3 +247,20 @@ release gate for promised syntax highlighting. Record any video-dependency skips
 - Outcome: Proposed bounded read-only text, safe native Markdown and isolated
   Pygments highlighting in the existing shared viewport. Dependency, Unicode,
   resource-access and responsiveness gates await review and implementation.
+
+### 2026_09_25 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Extra High
+- Context Window: 272K
+- Outcome: Feasibility review: bounded plain-text preview is the simplest useful
+  candidate stage; the full plan is substantially larger because of isolated
+  lexing, Unicode spans, Markdown resource denial and packaging. The helper-process
+  reuse assumption is stale: QuickView002 now uses in-process Qt and no longer
+  supplies that infrastructure. A later design revision must assign lexer-helper
+  ownership independently. Plain text need not technically wait for video, but
+  changing scope or delivery order requires approval. No dependency installation,
+  production edits, scope changes or runtime tests performed.

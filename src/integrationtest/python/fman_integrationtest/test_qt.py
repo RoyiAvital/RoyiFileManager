@@ -89,6 +89,133 @@ class SortedFileSystemModelIT(SortedFileSystemModelAT, QtIT):
 	pass
 
 class UniformRowHeightsIT(QtIT):
+	def test_column_width_batches_measure_once_and_preserve_manual_resize(self):
+		from fman.impl.view.resize_cols_to_contents import \
+			ResizeColumnsToContents, _get_ideal_column_widths, _resize_column
+		from PyQt5.QtCore import QEvent, QPoint
+		from PyQt5.QtGui import QMouseEvent, QStandardItemModel
+		from PyQt5.QtTest import QTest
+		class CountingView(ResizeColumnsToContents):
+			def __init__(self):
+				self.measurements = 0
+				self.batches = []
+				super().__init__(None)
+			def _get_min_col_widths(self):
+				self.measurements += 1
+				return super()._get_min_col_widths()
+			def _resize_cols_to_contents(self, curr_widths=None):
+				before = self.measurements
+				super()._resize_cols_to_contents(curr_widths)
+				self.batches.append(self.measurements - before)
+		def check():
+			view = CountingView()
+			model = QStandardItemModel(100, 3, view)
+			model.setHorizontalHeaderLabels(['Name', 'Size', 'Modified'])
+			view.setModel(model)
+			notifications = []
+			view.horizontalHeader().sectionResized.connect(
+				lambda *args: notifications.append(args))
+			try:
+				view.show()
+				QApplication.processEvents()
+				for rows, width in ((100, 640), (0, 960), (100, 1280)):
+					with self.subTest(rows=rows, width=width):
+						model.setRowCount(rows)
+						view.batches.clear()
+						view.resize(width, 480)
+						QApplication.processEvents()
+						self.assertTrue(view.batches)
+						self.assertEqual([1] * len(view.batches), view.batches)
+						self.assertEqual(view._get_num_visible_rows(),
+							view.horizontalHeader().resizeContentsPrecision())
+						expected = _get_ideal_column_widths(view._get_column_widths(),
+							view._get_min_col_widths(), view._get_width_excl_scrollbar())
+						view.batches.clear()
+						view.resizeColumnsToContents()
+						self.assertEqual([1], view.batches)
+						self.assertEqual(expected, view._get_column_widths())
+				widths = view._get_column_widths()
+				requested = widths[1] + 20
+				expected = _resize_column(1, requested, widths,
+					view._get_min_col_widths(), view._get_width_excl_scrollbar())
+				view.measurements = 0
+				view.horizontalHeader().resizeSection(1, requested)
+				self.assertEqual(1, view.measurements)
+				self.assertEqual(expected, view._get_column_widths())
+				self.assertTrue(view._handle_col_resize)
+				self.assertTrue(notifications)
+				widths = view._get_column_widths()
+				expected = _resize_column(1, widths[1] + 20, widths,
+					view._get_min_col_widths(), view._get_width_excl_scrollbar())
+				header = view.horizontalHeader()
+				position = QPoint(header.sectionViewportPosition(1) + header.sectionSize(1) - 1,
+					header.height() // 2)
+				QTest.mousePress(header.viewport(), Qt.LeftButton, pos=position)
+				position += QPoint(20, 0)
+				QApplication.sendEvent(header.viewport(), QMouseEvent(QEvent.MouseMove,
+					position, Qt.NoButton, Qt.LeftButton, Qt.NoModifier))
+				QTest.mouseRelease(header.viewport(), Qt.LeftButton, pos=position)
+				self.assertEqual(expected, view._get_column_widths())
+				self.assertTrue(view._handle_col_resize)
+			finally:
+				view.close()
+				view.deleteLater()
+		self.run_in_app(check)
+
+	def test_cramped_column_batches_preserve_clamped_geometry(self):
+		from fman.impl.view.resize_cols_to_contents import \
+			ResizeColumnsToContents, _get_ideal_column_widths
+		from PyQt5.QtGui import QStandardItemModel
+		from unittest.mock import patch
+		class PreviousView(ResizeColumnsToContents):
+			def _apply_column_widths(self, widths):
+				for column, width in enumerate(widths):
+					self.setColumnWidth(column, width)
+		def check():
+			views = [PreviousView(None), ResizeColumnsToContents(None)]
+			try:
+				for view in views:
+					model = QStandardItemModel(100, 3, view)
+					model.setHorizontalHeaderLabels(['Name', 'Size', 'Modified'])
+					for column, text in enumerate(('Long file name for cramped columns.txt',
+						'123456789 bytes', '2026-09-25 14:30')):
+						model.setData(model.index(0, column), text)
+					view.setModel(model)
+					view.show()
+				QApplication.processEvents()
+				for minimum in (-1, 64, 160):
+					for width in (180, 240, 480, 960):
+						with self.subTest(minimum=minimum, width=width):
+							for view in views:
+								view.horizontalHeader().setMinimumSectionSize(minimum)
+								view.resize(width, 240)
+								QApplication.processEvents()
+								view._handle_col_resize = False
+								try:
+									view._apply_column_widths([300, 100, 160])
+								finally:
+									view._handle_col_resize = True
+								section_minimum = view.horizontalHeader().minimumSectionSize()
+								expected = [max(section_minimum, size) for size in _get_ideal_column_widths(
+									view._get_column_widths(), view._get_min_col_widths(),
+									view._get_width_excl_scrollbar())]
+								with patch.object(view, '_get_min_col_widths', wraps=view._get_min_col_widths) as measure:
+									view.resizeColumnsToContents()
+									if view is views[1]:
+										measure.assert_called_once()
+										self.assertEqual(expected, view._get_column_widths())
+								self.assertTrue(view._handle_col_resize)
+								self.assertTrue(all(size >= view.horizontalHeader().minimumSectionSize()
+									for size in view._get_column_widths()))
+								self.assertFalse(view.grab().isNull())
+							if QApplication.platformName() == 'windows':
+								self.assertEqual(views[0]._get_column_widths(), views[1]._get_column_widths())
+			finally:
+				for view in views:
+					view.close()
+					view.deleteLater()
+		self.run_in_app(check)
+
 	def test_metadata_updates_do_not_measure_every_row(self):
 		from fman.impl.view import FileListView
 		from fman.impl.view.uniform_row_heights import DummyModel, UniformRowHeights
@@ -1070,6 +1197,30 @@ class FilterBarIT(QtIT):
 		self.assertEqual(original_width, self.run_in_app(self.window.width), 'Long count text resized the window')
 
 class SnapshotFilterBarIT(FilterBarIT):
+	def test_status_snapshots_are_complete_for_visible_entries(self):
+		from fman.listing import Listing
+		from unittest.mock import patch
+		pane = self.panes[0]
+		for query in ('', 'rep', 'no_matching_filename'):
+			self.set_query(query)
+			def check():
+				snapshot = pane.get_status_snapshot()
+				self.assertTrue(snapshot[2])
+				self.assertEqual(pane._model.rowCount(), len(snapshot.entries))
+				self.assertTrue(all(entry.is_loaded for entry in snapshot.entries))
+			self.run_in_app(check)
+		def check_large():
+			source = pane._model.sourceModel()
+			count = 20000
+			listing = Listing.create(source.get_location(),
+				tuple('entry%d.txt' % index for index in range(count)))
+			with patch.multiple(source, _displayed=listing, _visible=tuple(range(count))):
+				snapshot = pane.get_status_snapshot()
+				self.assertTrue(snapshot[2])
+				self.assertEqual(count, len(snapshot.entries))
+				self.assertTrue(all(entry.is_loaded for entry in snapshot.entries))
+		self.run_in_app(check_large)
+
 	def test_nonwindows_watching_still_dispatches_to_qt(self):
 		from core.fs.local import LocalFileSystem
 		from PyQt5.QtCore import QThread
@@ -1276,6 +1427,64 @@ class SnapshotFilterBarIT(FilterBarIT):
 		finally:
 			self.run_in_app(icons.close)
 			self.run_in_app(icons.deleteLater)
+
+	def test_model_decoration_reuses_key_for_misses_hits_and_notifications(self):
+		from collections import OrderedDict
+		from fman.impl.model.listing_icons import ListingIcons
+		from fman.listing import Listing
+		from unittest.mock import Mock, patch
+		def check():
+			source = self.panes[0]._model.sourceModel()
+			icons = ListingIcons()
+			listing = Listing.create('file://C:/icons', ('file.TXT', 'app.exe', 'folder'),
+				is_dir=(False, False, True))
+			changed = Mock()
+			source.dataChanged.connect(changed)
+			try:
+				with patch.multiple(source, _icons=icons, _displayed=listing,
+					_visible=(0, 1, 2), _icon_cells=OrderedDict()), \
+					patch('fman.impl.model.listing_icons.Thread') as thread, \
+					patch.object(icons, 'key', wraps=icons.key) as key_method:
+					for row in range(3):
+						index = source.index(row, 0)
+						self.assertFalse(index.data(Qt.DecorationRole).isNull())
+						key = source._icon_cells[row]
+						self.assertIn(key, icons._pending)
+						icons._cache[key] = None
+						self.assertFalse(index.data(Qt.DecorationRole).isNull())
+						self.assertEqual((row + 1) * 2, key_method.call_count)
+						changed.reset_mock()
+						source._icons_changed(key)
+						changed.assert_called_once_with(index, index, [Qt.DecorationRole])
+					thread.assert_called_once()
+			finally:
+				source.dataChanged.disconnect(changed)
+				icons.close()
+				icons.deleteLater()
+		self.run_in_app(check)
+
+	def test_precomputed_icon_keys_preserve_provider_and_attribute_fallbacks(self):
+		from fman.impl.model.listing_icons import ListingIcons
+		from fman.listing import Listing
+		from unittest.mock import patch
+		def check():
+			icons = ListingIcons()
+			try:
+				with patch('fman.impl.model.listing_icons.Thread') as thread:
+					for location, attributes in (('zip://archive', 0), ('file://C:/icons', 0x400),
+						('file://C:/icons', 0x1000), ('file://C:/icons', 0x400000)):
+						listing = Listing.create(location, ('file.txt', 'folder'),
+							is_dir=(False, True), attributes=(attributes, attributes))
+						for index, fallback in enumerate((icons._file, icons._folder)):
+							key = icons.key(listing, index)
+							self.assertIs(fallback, icons.icon(listing, index, key=key))
+							self.assertIs(fallback, icons.icon(listing, index))
+					thread.assert_not_called()
+					self.assertFalse(icons._pending)
+			finally:
+				icons.close()
+				icons.deleteLater()
+		self.run_in_app(check)
 
 	def test_icon_queue_bounds_pending_and_undelivered_results(self):
 		from dataclasses import replace
