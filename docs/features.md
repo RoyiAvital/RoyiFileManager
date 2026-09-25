@@ -21,7 +21,7 @@ See the [keyboard shortcuts](shortcuts.md).
 - Search names and file contents with `ripgrep`.
 - Find by name, date, size or type with `fd`.
 
-See the [main tools](tools.md) and [search guide](search.md).
+See the [tools](tools.md) and [search guide](search.md).
 
 ## Preview and Inspect
 
@@ -31,6 +31,8 @@ See the [main tools](tools.md) and [search guide](search.md).
 - Calculate hashes with a choice of algorithms.
 - Cycle file and selection statistics in the status bar.
 
+See [QuickView](tools.md#quickview), [Directory Size](tools.md#directory-size) and [File Hash](tools.md#file-hash).
+
 ## Work with Files
 
 - Create files and folders.
@@ -38,6 +40,8 @@ See the [main tools](tools.md) and [search guide](search.md).
 - Pack and unpack archives.
 - Move or copy files into and out of archives.
 - Copy full paths to the clipboard.
+
+See [Archives](archives.md).
 
 ## Use External Tools
 
@@ -55,5 +59,7 @@ See [Configuration](configuration.md).
 - Browse running processes in a pane.
 - Add commands, panels and tables with plug-ins.
 - Use the public `fman` plug-in API.
+
+See [Favorites](tools.md#favorites) and [Process Pane](tools.md#process-pane).
 
 Start with [your first plug-in](plugins/index.md) or browse the [API overview](api/index.md).

@@ -60,6 +60,10 @@ Significant additions compared with `fman`:
 
 ## Performance
 
+> [!IMPORTANT]
+> We take performance seriously.
+> We aim to minimize _Time to render a pane_ (TTRP), _Time to apply a filter_ (TTAF) and _Time to apply a fuzzy find_ (TTAFF).
+    
 Results of the performance test suite per version.
 
 | Test                      	| Version: `0.9.0` 	|

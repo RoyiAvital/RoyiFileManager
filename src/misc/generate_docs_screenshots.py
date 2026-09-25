@@ -37,8 +37,14 @@ DEFAULT_OUTPUT_DIR = ROOT / 'docs' / 'assets'
 WORK_DIR = ROOT / 'target' / 'docs-screenshots'
 SOURCE_CAPTURES = (
 	'overview', 'go-to', 'context-menu', 'filter-pane', 'quick-view', 'fuzzy-find',
-	'search-files', 'find-files'
+	'search-files', 'find-files', 'favorites', 'directory-size', 'file-hash',
+	'process-pane', 'pack-archive'
 )
+RIGHT_PANE_CAPTURES = (
+	'context-menu', 'filter-pane', 'search-files', 'find-files', 'file-hash',
+	'process-pane', 'pack-archive'
+)
+DIALOG_CAPTURES = ('overview', 'go-to', 'fuzzy-find', 'pack-archive')
 SOURCE_PATHS = (
 	ROOT / 'src' / 'main' / 'python',
 	ROOT / 'src' / 'main' / 'resources' / 'base' / 'Plugins' / 'Core',
@@ -140,6 +146,33 @@ def _prepare_settings(name):
 	return directory
 
 
+def _file_url(path):
+	return 'file://' + path.as_posix().rstrip('/')
+
+
+def _seed_settings(settings, capture):
+	root, windows = _public_paths()
+	if capture == 'favorites':
+		favorites = (
+			('Windows', windows), ('System32', windows / 'System32'),
+			('Fonts', windows / 'Fonts'), ('Wallpapers', windows / 'Web' / 'Wallpaper'),
+			('Drive C', root),
+		)
+		documents = {'Favorites (Windows).json': {'favorites': [
+			{'name': name, 'url': _file_url(path)} for name, path in favorites
+		]}}
+	elif capture == 'directory-size':
+		documents = {'DirectorySize (Windows).json': {'enabled': True}}
+	else:
+		return
+	directory = settings / 'Plugins' / 'User' / 'Settings'
+	directory.mkdir(parents=True, exist_ok=True)
+	for name, document in documents.items():
+		(directory / name).write_text(
+			json.dumps(document, indent=2) + '\n', encoding='utf-8'
+		)
+
+
 def _source_environment(settings):
 	environment = os.environ.copy()
 	environment['ROYIFILEMANAGER_USER_SETTINGS'] = str(settings)
@@ -176,6 +209,10 @@ def _source_capture_paths(capture):
 		return _public_image().parent, windows
 	if capture == 'fuzzy-find':
 		return windows / 'Web', windows
+	if capture == 'directory-size':
+		web = windows / 'Web'
+		wallpaper = web / 'Wallpaper'
+		return web, wallpaper if wallpaper.is_dir() else web
 	return root, windows
 
 
@@ -198,6 +235,11 @@ def _source_outputs(output_dir, capture):
 			'royifilemanager-find-files-fd.png',
 			'royifilemanager-find-files-fd-panel.png',
 		),
+		'favorites': ('royifilemanager-favorites.png',),
+		'directory-size': ('royifilemanager-directory-size.png',),
+		'file-hash': ('royifilemanager-file-hash.png',),
+		'process-pane': ('royifilemanager-process-pane.png',),
+		'pack-archive': ('royifilemanager-pack-archive.png',),
 	}
 	return tuple(output_dir / name for name in names[capture])
 
@@ -212,12 +254,12 @@ def _capture_source_child(args):
 	from PyQt5.QtWidgets import QApplication
 
 	context = get_application_context()
-	expected_paths = (as_url(str(left_path)), as_url(str(right_path)))
 	outputs = _source_outputs(args.output_dir, args._capture)
 	deadline = time.monotonic() + args.timeout
 	state = {
 		'settled': 0, 'started': False, 'captured': False,
 		'initial_rows': None,
+		'expected': (as_url(str(left_path)), as_url(str(right_path))),
 	}
 	errors = []
 
@@ -252,11 +294,11 @@ def _capture_source_child(args):
 				fail()
 		QTimer.singleShot(
 			150,
-			capture_overview_dialog if args._capture in ('overview', 'go-to')
-			else capture_fuzzy_dialog
+			capture_fuzzy_dialog if args._capture == 'fuzzy-find'
+			else capture_overview_dialog
 		)
 
-	if args._capture in ('overview', 'go-to', 'fuzzy-find'):
+	if args._capture in DIALOG_CAPTURES:
 		context.main_window.before_dialog.connect(capture_dialog)
 
 	def check_ready():
@@ -268,7 +310,7 @@ def _capture_source_child(args):
 			panes = context.window.get_panes()
 			ready = (
 				len(panes) == 2
-				and tuple(pane.get_path() for pane in panes) == expected_paths
+				and tuple(pane.get_path() for pane in panes) == state['expected']
 				and all(pane._widget._model.rowCount() > 0 for pane in panes)
 			)
 			if not ready:
@@ -282,8 +324,7 @@ def _capture_source_child(args):
 			state['settled'] += 1
 			if state['settled'] < 3:
 				return
-			pane = panes[1] if args._capture in \
-				('context-menu', 'filter-pane', 'search-files', 'find-files') else panes[0]
+			pane = panes[1] if args._capture in RIGHT_PANE_CAPTURES else panes[0]
 			if args._capture == 'overview':
 				if state['started']:
 					return
@@ -374,6 +415,100 @@ def _capture_source_child(args):
 				state['started'] = True
 				pane.focus()
 				pane.run_command('search_files_recursively', {'query': 'img'})
+			elif args._capture == 'favorites':
+				from favorites.ui import FavoritesController
+				if not state['started']:
+					state['started'] = True
+					state['settled'] = 0
+					pane.focus()
+					pane.run_command('show_favorites')
+					return
+				window = FavoritesController._sessions.get(pane)
+				if window is None or window.busy or window.session.revision < 0 or \
+						not window.panel.choice.isEnabled():
+					state['settled'] = 0
+					return
+				if window.list.model.rowCount() == 0:
+					raise RuntimeError('Favorites Manager shows no favorites')
+				if state['settled'] >= 3:
+					finish(
+						_grab_window_with_dialog(context.main_window, window),
+						outputs[0], window.close
+					)
+			elif args._capture == 'directory-size':
+				from core import directory_size
+				service = directory_size._service
+				if service is None or not service.enabled:
+					raise RuntimeError('Directory sizes were not enabled from settings')
+				future = service._future
+				if future is None or not future.done():
+					return
+				texts = []
+				for candidate in panes:
+					model = candidate._widget._model
+					column = candidate.get_columns().index(directory_size.COLUMN)
+					texts.extend(
+						model.index(row, column).data() or ''
+						for row in range(model.rowCount())
+					)
+				if all(texts) and not any(text.endswith('...') for text in texts):
+					pane.focus()
+					QApplication.processEvents()
+					finish(context.main_window.grab(), outputs[0])
+			elif args._capture == 'file-hash':
+				from calculate_file_hash.ui import HashController
+				file_url = as_url(str(_public_paths()[1] / 'win.ini'))
+				if not state['started']:
+					pane.place_cursor_at(file_url)
+					if pane.get_file_under_cursor() != file_url:
+						return
+					pane.focus()
+					state['started'] = True
+					state['settled'] = 0
+					pane.run_command('calculate_file_hash')
+					return
+				window = HashController._sessions.get(pane)
+				if window is None or window.busy or window.session.last is None:
+					state['settled'] = 0
+					return
+				if state['settled'] >= 3:
+					finish(
+						_grab_window_with_dialog(context.main_window, window),
+						outputs[0], window.close
+					)
+			elif args._capture == 'process-pane':
+				filter_bar = pane._widget._filter_bar
+				if not state['started']:
+					state['started'] = True
+					state['settled'] = 0
+					state['expected'] = (state['expected'][0], 'process://')
+					pane.focus()
+					pane.run_command('show_processes')
+					return
+				if state['initial_rows'] is None:
+					state['initial_rows'] = pane._widget._model.rowCount()
+					state['settled'] = 0
+					filter_bar._input.setText('svchost')
+					filter_bar.show()
+					filter_bar.reposition()
+					QApplication.processEvents()
+					return
+				row_count = pane._widget._model.rowCount()
+				if state['settled'] >= 3 and filter_bar.isVisible() and \
+						filter_bar.is_active() and 0 < row_count < state['initial_rows']:
+					finish(
+						context.main_window.grab(), outputs[0], filter_bar.close
+					)
+			elif args._capture == 'pack-archive':
+				file_url = as_url(str(_public_paths()[1] / 'win.ini'))
+				if state['started']:
+					return
+				pane.place_cursor_at(file_url)
+				if pane.get_file_under_cursor() != file_url:
+					return
+				pane.focus()
+				state['started'] = True
+				pane.run_command('pack')
 			elif args._capture in ('search-files', 'find-files'):
 				from fman.impl.ui.facade import _hosts
 				if not state['started']:
@@ -428,6 +563,7 @@ def _run_source(args):
 	outputs = []
 	for capture in SOURCE_CAPTURES:
 		settings = _prepare_settings('source-' + capture)
+		_seed_settings(settings, capture)
 		command = [
 			sys.executable, str(Path(__file__).resolve()), '--_source-child',
 			'--_capture', capture,

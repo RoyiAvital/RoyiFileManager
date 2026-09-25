@@ -1,22 +1,25 @@
 # Performance
 
-The current application version is 0.9.1. The latest published benchmark suite is the 0.9.0 snapshot-architecture baseline.
+!!! danger "Take Performance Seriously"
+    Minimize _Time to render a pane_ (TTRP), _Time to apply a filter_ (TTAF) and _Time to apply a fuzzy find_ (TTAFF).
+
+The current application version is `0.9.1`. The latest published benchmark suite is the `0.9.0` snapshot-architecture baseline.
 
 ## Current Published Suite
 
-| Test | Run Time (ms) |
-| --- | ---: |
-| Pane Load - Small Folder | 44.14 |
-| Pane Load - Large Folder | 1,030.26 |
-| Filter Bar - Small Folder | 9.72 |
-| Filter Bar - Large Folder | 332.28 |
-| Fuzzy Find - Small Folder | 4.67 |
-| Fuzzy Find - Large Folder | 350.86 |
-| Fuzzy Find - Recursive | 89.82 |
-| QuickView - Small Folder | 109.73 |
-| QuickView - Large Folder | 118.74 |
-| Navigation | 6.79 |
-| Refresh / Selection | 482.95 |
+| Test                      	| Run Time (ms) 	|
+|---------------------------	|---------------	|
+| Pane Load - Small Folder  	| 44.14         	|
+| Pane Load - Large Folder  	| 1,030.26      	|
+| Filter Bar - Small Folder 	| 9.72          	|
+| Filter Bar - Large Folder 	| 332.28        	|
+| Fuzzy Find - Small Folder 	| 4.67          	|
+| Fuzzy Find - Large Folder 	| 350.86        	|
+| Fuzzy Find - Recursive    	| 89.82         	|
+| QuickView - Small Folder  	| 109.73        	|
+| QuickView - Large Folder  	| 118.74        	|
+| Navigation                	| 6.79          	|
+| Refresh / Selection       	| 482.95        	|
 
 Small folders contain 256 files. Large folders contain 200,000 files. Recursive Find uses 50,000 files.
 

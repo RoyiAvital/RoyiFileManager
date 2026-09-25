@@ -143,8 +143,11 @@ Developer utilities that are not included in release packages live under
 [generate_docs_screenshots.py](src/misc/generate_docs_screenshots.py) creates
 repeatable documentation screenshots using only public locations under `C:\`
 and `C:\Windows`. Source mode captures the main window, Command Center,
-Find a Location, pane filtering, QuickView, recursive fuzzy find, Search Files
-and Find Files. Command Center and Find a Location include the full application.
+Find a Location, pane filtering, QuickView, recursive fuzzy find, Search Files,
+Find Files, Favorites, directory sizes, File Hash, the process pane and the
+Pack prompt. Command Center and Find a Location include the full application.
+Favorites and directory sizes use seeded settings in their isolated `UserSettings`;
+the process pane is filtered to `svchost`, and the Pack prompt is canceled.
 Source mode uses the Qt smoke-test approach and captures widgets directly.
 Packaged mode launches the frozen executable for a parity image.
 
@@ -355,3 +358,26 @@ prints nothing to a console and opens its options window on an unknown switch. T
 `--collision` check verifies that a user's own unnamed Everything instance keeps
 running untouched beside ours. Findings are recorded in
 [Find Files 003](Plan/FindFiles003.md).
+
+## Troubleshooting
+
+| Symptom | Cause and fix |
+| --- | --- |
+| `python build.py doc` reports `No module named mkdocs` | The environment predates the documentation dependencies. Run `conda env update -f environment.yml`. If `mkdocs` then fails on `click`, run `micromamba update click --no-deps`. |
+| `run`, `test` or `freeze` fails while downloading `7za.exe` | The first run needs internet access. Transient HTTP errors are retried; rerun after an outage. A hash mismatch always fails. |
+| A focused test cannot import `fman`, `core` or a plug-in | Run it with the repository environment, as shown below. A terminal's previous `PYTHONPATH` is not enough. |
+| A Qt test opens windows or behaves differently from CI | Set `QT_QPA_PLATFORM=offscreen`, as `build.py test` does. Use `windows` only for native checks. |
+| `build.py test` stalls | Use the last printed test name and the thread dump emitted every two minutes. Each discovery group times out after ten minutes. |
+| `python -m conda_lock` fails importing `BuildBackendException` | The repository's `build.py` shadows conda-lock's `build` dependency. Use the `conda-lock` command instead. |
+| Symbolic-link tests are skipped | Creating symbolic links needs Developer Mode or the matching privilege. These skips are expected. |
+| CI path assertions fail on `RUNNER~1` | Windows short temporary paths differ from resolved long paths. Resolve fixture roots with `Path(...).resolve(strict=True)` before building expected paths. |
+| A benchmark or smoke test reads real settings | Set `ROYIFILEMANAGER_USER_SETTINGS` before importing `fman`; the data directory is captured at import. |
+| Screenshot generation times out | Source mode needs an interactive desktop session. Packaged mode also needs a frozen build. Increase `--timeout` on slow machines. |
+
+Run a focused test module with the repository environment:
+
+```powershell
+python -c "import build, os, subprocess, sys; env = build._environment(); env['QT_QPA_PLATFORM'] = 'offscreen'; sys.exit(subprocess.run([sys.executable, '-m', 'unittest', 'fman_unittest.test_url', '-v'], env=env).returncode)"
+```
+
+Replace `fman_unittest.test_url` with the module or test class to run.

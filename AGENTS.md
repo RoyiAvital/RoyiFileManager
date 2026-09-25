@@ -181,6 +181,8 @@ and use `## [X.Y.Z]` for each release. A ` - YYYY-MM-DD` date suffix is optional
 Section bodies are free-form and may be empty; no API compatibility statement
 is required. Describe compatibility changes and migration guidance when relevant.
 
+Documentation changes should appear under `Documentation` sub section (Like `Added`, `Changed` and `Fixed`).
+
 ## Documentation Quality
 
 - Keep task documents factual and implementation-oriented.

@@ -19,15 +19,16 @@ parsed 144 Python/spec files, 29,310 lines and 2,590 functions, excluding test
 modules, generated output and installed dependencies. This is not a claim that
 every branch was executed or every line received an exhaustive audit.
 
-Selected work: ten small changes below, grouped by their existing owners. No
+Selected work: twenty-one small changes below, grouped by their existing owners. No
 new dependency, setting, command, background service or public API is needed.
 Preserve portable UserSettings paths, plug-in contracts, Qt thread ownership,
 ordinary overwrite prompts, case-only rename behavior and disabled-feature cost.
 
 Excluded: redesigning snapshots, file-transfer transactions, archive verification,
-plug-in lifecycles, shared command concurrency, search engines, packaging or
-release policy. No README, changelog, application or test edits in this planning
-pass. Larger findings are recorded below, not silently included in the batch.
+plug-in lifecycles, shared command concurrency, search-engine redesigns,
+packaging or release policy. No README, changelog, application or test edits in
+this planning pass. Larger findings are recorded below, not silently included
+in the batch.
 
 ## Design
 
@@ -328,6 +329,93 @@ Owners: [reconcile](../src/main/python/fman/listing.py#L86),
 
 Risk: very low; equality tests on the projection/selection outcome.
 
+### 17. Reap Search Children When Reader/Writer Thread Startup Fails (P2)
+
+Owners: [SearchFiles Child](../src/main/resources/base/Plugins/SearchFiles/search_files/engine.py#L302),
+[FindFiles Child](../src/main/resources/base/Plugins/FindFiles/find_files/engine.py#L278).
+
+Evidence: both constructors spawn and register a subprocess before starting the
+stderr-reader thread; SearchFiles may then start a stdin-writer thread. Injecting
+`Thread.start()` failure left SearchFiles with one child in `runner.children`
+and FindFiles with `runner.child` set; neither subprocess received `kill()`.
+The constructors raise before their normal `finish()` cleanup is reachable.
+
+Design: on reader or writer startup failure, kill and reap the subprocess,
+join only threads that started successfully, close owned pipes and unregister
+the child under the runner lock before re-raising the original exception.
+Preserve normal process arguments, output/error collection and cancellation.
+
+Risk: very low; only failed child initialization changes. Test first-reader and
+second-writer startup failures independently and assert no registered/live child.
+
+### 18. Roll Back Snapshot Job Capacity When Worker Startup Fails (P2)
+
+Owner: [LatestJobs._start](../src/main/python/fman/impl/model/listing.py#L76).
+
+Evidence: `_start` adds a cancellation token to `_active` and removes the pending
+job before `Thread.start()`. An injected startup failure left one active token
+with no worker. At capacity one, the next submission remained pending forever;
+at capacity two, each failure permanently consumes a scan slot.
+
+Design: if construction/start fails, remove the token, retire the unstarted job
+exactly once using its existing cancellation callback, and re-raise. Keep the
+rollback lock-safe and preserve latest-only replacement, capacity and delivery
+semantics for successfully started workers.
+
+Risk: low because this shared scheduler owns scans, refreshes and projections;
+the failure branch is isolated, but tests must cover capacity one/two, callback
+identity, retry, cancel and close to prevent double retirement.
+
+### 19. Let Shell-Icon Loading Retry After Worker Startup Failure (P3)
+
+Owner: [ListingIcons.icon](../src/main/python/fman/impl/model/listing_icons.py#L97).
+
+Evidence: the method marks `_running = True` and queues the key before starting
+its worker. Injecting `Thread.start()` failure left `_running` true with one
+pending key and no thread. Later icon requests returned the generic fallback
+without attempting another worker, so asynchronous shell icons stayed disabled
+for that `ListingIcons` instance.
+
+Design: on startup failure, restore `_running` and remove the just-queued item
+before re-raising, allowing the next request to enqueue and retry normally.
+Preserve queue bounds, cache behavior, Qt-thread delivery and close handling.
+
+Risk: very low; only the startup exception path changes.
+
+### 20. Clear Search Preference-Saver State When Worker Startup Fails (P3)
+
+Owners: [SearchSession.changed](../src/main/resources/base/Plugins/SearchFiles/search_files/__init__.py#L103),
+[FindSession.changed](../src/main/resources/base/Plugins/FindFiles/find_files/__init__.py#L110).
+
+Evidence: each session sets `saving = True` and records pending settings before
+calling `Thread.start()`. Injected startup failure left both `saving` flags true
+and the pending snapshots unwritten. Every later change then assumes a saver is
+already running and returns, disabling preference persistence for the session.
+
+Design: if thread construction/start fails, reset `saving` under `save_lock`
+before re-raising. Keep the latest pending snapshot available for the next real
+change/save attempt; do not add retries, timers or synchronous disk I/O.
+
+Risk: very low; successful coalescing and save behavior are unchanged. Test both
+plug-ins, a later successful start and concurrent replacement of pending values.
+
+### 21. Terminate 7-Zip When Its Output Reader Cannot Start (P2)
+
+Owner: [_7zip.progress_records](../src/main/resources/base/Plugins/Core/core/fs/zip.py#L755).
+
+Evidence: the subprocess already exists when the output-reader thread starts.
+Injected `Thread.start()` failure escaped before the generator's cleanup block;
+the surrounding `_7zip.__exit__` then called `wait()` without killing the child
+or draining its pipe. A real 7-Zip process can block on a full output pipe and
+make that wait unbounded.
+
+Design: if the reader cannot start, kill and reap the owned subprocess before
+re-raising. Preserve the original startup exception, normal progress parsing,
+cancellation and warning handling; do not add a timeout to successful archives.
+
+Risk: very low; only an archive operation whose required reader did not start is
+terminated. A fake process/reader regression can prove kill-before-wait ordering.
+
 ### Findings Outside This Low-Risk Batch
 
 - **P1: local-to-archive move can delete its source after a packing error.**
@@ -393,8 +481,9 @@ Risk: very low; equality tests on the projection/selection outcome.
 - I/O: same-file copy detection adds fresh metadata checks before overwriting;
   junction classification adds bounded metadata checks during deletion. Atomic
   settings writes add one small sibling temp file and rename per flush.
-- Threading/processes: unchanged. Existing locks and the two-worker budget remain;
-  failed starts no longer consume capacity. Qt widgets/models stay on Qt thread.
+- Threading/processes: no new workers or processes. Existing locks and worker
+  budgets remain; failed starts no longer consume capacity, wedge service state
+  or leave search/archive children running. Qt widgets/models stay on Qt thread.
 - Cancellation: skipped merge entries become responsive between enumeration
   results. No guarantee of interrupting a blocked OS call. No new polling/timer.
 - Disabled/no-op path: no status feature work is introduced while disabled;
@@ -415,6 +504,13 @@ large generic review-test module or run the complete suite automatically.
 | 7-8 | Construction/start failures release exactly once; normal delivery/work errors release; busy rejection unchanged; same-key resource identity and one constructor, distinct keys and concurrent lookups | [test_ui_elements](../src/unittest/python/fman_unittest/test_ui_elements.py) |
 | 9 | Selected/unselected unreadable and vanished files; real zero sizes; supported/unsupported providers; partial/limited/empty/canceled totals and rendered incomplete label | [test_status_bar](../src/unittest/python/fman_unittest/impl/test_status_bar.py) |
 | 10 | Empty/filtered/reordered/selected rows produce identical immutable entries; 10,000 visible rows construct 10,000 URLs; no feature work while disabled | [test_status_bar](../src/unittest/python/fman_unittest/impl/test_status_bar.py) |
+| 11-13 | New-destination partial copy cleanup; existing destination retention; cross-device junction/directory-link move retains target or refuses; accepted symlink overwrite and dangling directory-link type | [Core local tests](../src/main/resources/base/Plugins/Core/core/tests/fs/test_local.py), [transfer tests](../src/main/resources/base/Plugins/Core/core/tests/test_fileoperations.py) |
+| 14-16 | Failed/disappeared QuickView load recovers; inaccessible refresh uses expected fallback; unchanged/changed remap and refresh results stay equivalent without full-size avoidable work | [test_quick_view](../src/unittest/python/fman_unittest/test_quick_view.py), [test_listing](../src/unittest/python/fman_unittest/test_listing.py), [Qt integration tests](../src/integrationtest/python/fman_integrationtest/test_qt.py) |
+| 17 | Reader and writer startup failures kill/reap, close pipes and unregister children; later searches start normally | [test_search_files](../src/unittest/python/fman_unittest/test_search_files.py), [test_find_files](../src/unittest/python/fman_unittest/test_find_files.py) |
+| 18 | Capacity-one/two startup failures leave no active token; unstarted callback retires once; retry/cancel/close and successful delivery remain correct | [test_listing](../src/unittest/python/fman_unittest/test_listing.py) |
+| 19 | Failed icon-worker start restores idle/queue state; next request starts and delivers; close and queue bounds unchanged | [Qt integration tests](../src/integrationtest/python/fman_integrationtest/test_qt.py) |
+| 20 | Both preference savers clear `saving` after start failure, preserve the latest pending values and save after a later change | [test_search_files](../src/unittest/python/fman_unittest/test_search_files.py), [test_find_files](../src/unittest/python/fman_unittest/test_find_files.py) |
+| 21 | Reader startup failure kills before waiting, preserves the startup exception and leaves normal/canceled progress behavior unchanged | [Core ZIP tests](../src/main/resources/base/Plugins/Core/core/tests/fs/test_zip.py) |
 
 Run the single new failing test first, then its owning module immediately after
 each implementation edit. The focused aggregate is:
@@ -422,7 +518,7 @@ each implementation edit. The focused aggregate is:
 ```powershell
 @'
 import build, subprocess, sys
-modules = ['core.tests.fs.test_local', 'core.tests.test_fileoperations', 'fman_unittest.impl.test_status_bar', 'fman_unittest.impl.test_session', 'fman_unittest.test_ui_elements', 'fman_unittest.test_util']
+modules = ['core.tests.fs.test_local', 'core.tests.fs.test_zip', 'core.tests.test_fileoperations', 'fman_unittest.impl.test_status_bar', 'fman_unittest.impl.test_session', 'fman_unittest.test_find_files', 'fman_unittest.test_listing', 'fman_unittest.test_quick_view', 'fman_unittest.test_search_files', 'fman_unittest.test_ui_elements', 'fman_unittest.test_util']
 environment = build._environment()
 environment['QT_QPA_PLATFORM'] = 'offscreen'
 sys.exit(subprocess.run([sys.executable, '-X', 'faulthandler', '-m', 'unittest', *modules, '-q'], env=environment, timeout=180).returncode)
@@ -456,7 +552,7 @@ benchmark workload, freeze, package or remote release is required by this plan.
 
 ## Implementation Steps
 
-1. Independently review the ten proposed items and exclusions. Do not absorb the
+1. Independently review the twenty-one proposed items and exclusions. Do not absorb the
    archive redesign or other deferred findings without separate scope approval.
 2. Implement items 1-3 as separate local-file changes, each with its first failing
    regression and focused rerun. Complete native junction target-retention checks.
@@ -468,8 +564,14 @@ benchmark workload, freeze, package or remote release is required by this plan.
 6. Implement items 7-8 in the existing UI utility owner, checking failure cleanup
    and allocation counts separately.
 7. Implement items 9-10 with pure aggregation/call-count tests and native status
-   widget checks. Preserve off-mode behavior.
-8. Run the focused aggregate and required native/manual gates, record exact
+  widget checks. Preserve off-mode behavior.
+8. Implement items 11-13 separately with failure cleanup and native link-target
+  retention gates before changing transfer behavior.
+9. Implement items 14-16 with focused model/QuickView tests and only the measured
+  snapshot work reductions described above.
+10. Implement items 17-21 owner by owner. Inject the first thread-start failure,
+   prove cleanup/state rollback, then rerun the owning module before proceeding.
+11. Run the focused aggregate and required native/manual gates, record exact
    commands/results and any remaining limitations. Update changelog only for
    qualifying implemented application changes. Add implementation provenance,
    then move this canonical document to Done and its index link to Completed.
@@ -486,6 +588,8 @@ benchmark workload, freeze, package or remote release is required by this plan.
 - Skipped merges check cancellation; unreadable sizes are not shown as complete.
 - Resource construction occurs only on misses; status URL construction occurs
   once per visible row. No unmeasured end-to-end speedup claim is required.
+- Failed worker starts leave no search/archive child, active scheduler token,
+  stuck icon loader or stuck preference saver; a later attempt can proceed.
 - Required focused/native tests pass; skips and deferred risks are explicit.
   Application implementation is not marked complete based on this review alone.
 
@@ -495,7 +599,7 @@ benchmark workload, freeze, package or remote release is required by this plan.
   1.105 seconds. These are baseline tests, not proof that proposed fixes exist.
 - Listener/native widget command above: **7 passed** in 0.580 seconds. This
   validates the current integration baseline, not future regression coverage.
-- Disposable/mocked probes reproduced all ten selected issues. Junction tasks
+- Disposable/mocked probes reproduced the initial ten selected issues. Junction tasks
   were enumerated but not executed; archive cleanup was mocked. Real direct and
   merged hardlink copies used only temporary files. No user files were modified.
 - No editor diagnostics were reported. The static inventory parsed the recorded
@@ -503,6 +607,10 @@ benchmark workload, freeze, package or remote release is required by this plan.
 - Additional source reads covered the release-notes helper and performance
   launcher, outside that initial inventory count. No selected change affects
   those tools, release publication, generated documentation or packaging.
+- Injected startup failures reproduced items 17-21 without launching a real
+  search or archive executable: both search children remained registered and
+  un-killed; snapshot capacity, icon loading and both preference savers stayed
+  wedged; the archive path reached `wait()` without first killing its process.
 - No full suite, real archive mutation, production startup, package/freeze,
   environment/package installation, remote workflow or release was performed.
 - Review scope limitations: exhaustive execution, hostile concurrent path
@@ -550,3 +658,20 @@ benchmark workload, freeze, package or remote release is required by this plan.
   executed reproductions; item 12 must be reproduced on a disposable second
   volume or a mocked `st_dev` before implementation. No application code
   changed.
+
+### 2026_09_25 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-5.6 Sol
+- Effort: High
+- Context Window: 272K
+- Outcome: Reviewed first-party runtime, bundled plug-ins and test/build tooling
+  for additional none-to-low-risk findings. Added five injected and reproduced
+  thread-start failure cases (17-21): leaked search children, stranded snapshot
+  capacity, a wedged icon loader, disabled search preference saving and an
+  archive reader failure that waits without draining output. Rejected unsupported
+  candidates concerning hash completion, scandir cleanup, Favorites commits,
+  build measurement, test teardown, hidden imports and deliberate blocking test
+  fixtures. No application code changed.

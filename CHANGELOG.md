@@ -21,6 +21,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Custom names are validated; portable settings and compatibility identifiers
   remain unchanged. The packaging specification is now `application.spec`.
 
+### Documentation
+
+- Added documentation to more tools: Favorites, Directory Size, File Hash and
+  Process Pane, each with a generated screenshot.
+- Added an Archives page covering browsing, Pack, Unpack and archive transfers.
+- Renamed the **Main Tools** page to **Tools**.
+- Completed the keyboard shortcut reference with find/search, clipboard,
+  Go To and drive-root shortcuts, using Command Center names.
+- The plug-in UI guide links now point to the
+  [UI extension reference](PlugIn.md#ui-extension) instead of a pending plan.
+- Added a Troubleshooting section to [DEVELOPMENT.md](DEVELOPMENT.md) and
+  removed its broken `UPSTREAM.md` link.
+
 ## [0.9.1] - 2026-09-22
 
 ### Added

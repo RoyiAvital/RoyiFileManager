@@ -1,7 +1,29 @@
 # Improve Pane Scan
 
-Status: Proposed design; review before implementation. Only the standalone
-benchmark and its tests are implemented. Application scanning is unchanged.
+Status: Retired by user decision on 2026_09_25; superseded by
+[the snapshot architecture](FSPaneArch001.md). The selectable scan methods and
+`LazyStat` alternative were not implemented. The original proposal, measurements,
+implementation steps and reviewer history below are historical, not pending work.
+
+## Retirement Decision
+
+- Native NTFS/ReFS scans collect display metadata and file IDs in bulk. Pane
+  rendering, sorting and filtering use immutable snapshots; other local paths
+  build snapshots with scandir. No per-entry lazy-stat proxy is needed.
+- Full-stat queries and their cache remain separate for file operations. Do not
+  seed that cache with display snapshots or revive the proposed scan-mode toggle.
+- Removed `core.tests.fs.test_local_scan`, whose 19 cases were all skipped until
+  the absent `LazyStat` implementation existed. Retained coverage in
+  [local filesystem tests](../src/main/resources/base/Plugins/Core/core/tests/fs/test_local.py)
+  and [snapshot tests](../src/unittest/python/fman_unittest/test_listing.py) covers
+  metadata, identity, transfers, links, invalidation, cancellation and cleanup.
+- The standalone listing benchmark remains a developer diagnostic. Further
+  measured pane optimizations belong to
+  [FSPaneArch002](../Plan/FSPaneArch002.md), not this retired design.
+
+Retirement is complete when the old module is absent from discovery, retained
+tests pass with documented environment skips, and this canonical document is
+archived and indexed as retired. No application behavior or dependency changes.
 
 ## Task
 
@@ -191,7 +213,7 @@ cache. Obtain names and metadata from the same scan, not different cached scans.
 
 Use a narrow private adapter between the local provider,
 [filesystem dispatch](../src/main/python/fman/impl/plugins/mother_fs.py) and
-[model](../src/main/python/fman/impl/model/model.py). In optimized mode the
+former `Model` (removed by the snapshot migration). In optimized mode the
 built-in [columns](../src/main/resources/base/Plugins/Core/core/__init__.py)
 and row directory flags consume available snapshots. Replacing only the names
 iterator would leave per-entry stat calls in place and lose the main benefit.
@@ -324,9 +346,9 @@ passed directory/size/time queries, hard-link identity, copy/delete preparation
 and an actual same-device move. It did not exercise lazy upgrades, concurrency,
 all operations or external plug-ins; it is not implementation acceptance.
 
-Acceptance tests for this alternative are written ahead of implementation in
-[test_local_scan.py](../src/main/resources/base/Plugins/Core/core/tests/fs/test_local_scan.py)
-(19 cases, skipped until `core.fs.local.LazyStat` exists): zero path stats for
+Acceptance tests for this alternative were written ahead of implementation in
+`core.tests.fs.test_local_scan` (retired 2026_09_25).
+The 19 cases skipped until `core.fs.local.LazyStat` existed: zero path stats for
 display queries after a scan, exactly one memoized full stat on identity
 access, hard-link `samefile`, same/cross-device `prepare_move` decisions,
 symlink and broken-link fallback, directory/single-entry invalidation,
@@ -417,7 +439,7 @@ Minimize initial waiting conservatively, but do not shift expensive work into
 the period when the user expects to navigate or issue commands.
 
 **Code path and measured contribution:** after initial publication,
-[Model._load_remaining_files](../src/main/python/fman/impl/model/model.py)
+the former `Model._load_remaining_files` (removed by the snapshot migration)
 continues loading icons and columns in nominal 200 ms worker batches. Each batch
 synchronously enters `_record_files_main` on the Qt thread. That publication
 time, `RecordFiles` filtering and transaction listeners are outside the worker
@@ -844,3 +866,53 @@ python -m unittest fman_integrationtest.test_qt.SortedFileSystemModelIT
   and paint timings supersede handler-return timings. Added these results and
   the diagnostic procedure; production code remains unchanged and the task
   remains pending implementation and its full interaction checks.
+
+### 2026_09_25 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Not exposed by host
+- Effort: Medium
+- Context Window: Not exposed by host
+- Outcome: Approved retirement at the user's request. The adopted snapshot
+  architecture supersedes per-path display-cache seeding and lazy identity
+  upgrades. Current local-filesystem and snapshot tests cover the relevant
+  behavior; the 19 skipped proxy-design tests are not a pending implementation
+  gate. Historical measurements and reviews remain intact.
+
+## Implementer
+
+### 2026_09_25 - GitHub Copilot
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: Not exposed by host
+- Effort: Medium
+- Context Window: Not exposed by host
+- Outcome: Removed the obsolete test module, archived the canonical proposal
+  as retired and updated its index and incoming link. No application code was
+  changed; this is retirement bookkeeping, not implementation of LazyStat.
+
+## Validation Results
+
+Using the existing project interpreter and build environment:
+
+```powershell
+python -c "import build, subprocess, sys; sys.exit(subprocess.run([sys.executable, '-m', 'unittest', 'discover', '-s', 'src/main/resources/base/Plugins/Core', '-p', 'test_local*.py', '-v'], env=build._environment(), timeout=90).returncode)"
+python -c "import build, subprocess, sys; sys.exit(subprocess.run([sys.executable, '-m', 'unittest', 'fman_unittest.test_listing'], env=build._environment(), timeout=90).returncode)"
+```
+
+- Local filesystem: 30 tests, 27 passed and 3 expected Windows symlink-privilege
+  skips. Snapshot: all 39 tests passed, including native handle cleanup,
+  cancellation, fallback metadata and identity cases.
+- Canonical move: SHA-256 before/after matched; no duplicate remains in Plan.
+- Discovery-only check with `unittest.TestLoader().discover('src/main/resources/base/Plugins/Core', pattern='test*.py')`:
+  391 tests collected, no import errors or retired LazyStat cases. The 19
+  feature-not-implemented skips are gone; 5 declared symlink-privilege skips
+  remain. No test bodies ran during discovery, so runtime skips are not counted.
+- Document checks passed: required sections, all 11 local links, the single
+  retired index entry and historical reviewer records preserved verbatim.
+- Full application/Core suites, heavy benchmarks, clean/freeze and packaging
+  were not run. Symlink permissions were not changed; other skip policies remain.

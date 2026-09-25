@@ -58,7 +58,49 @@ class GenerateDocsScreenshotsTest(TestCase):
 			'royifilemanager-search-files-panel.png',
 			'royifilemanager-find-files-fd.png',
 			'royifilemanager-find-files-fd-panel.png',
+			'royifilemanager-favorites.png',
+			'royifilemanager-directory-size.png',
+			'royifilemanager-file-hash.png',
+			'royifilemanager-process-pane.png',
+			'royifilemanager-pack-archive.png',
 		), outputs)
+
+	def test_seeds_public_favorites(self):
+		with TemporaryDirectory() as temporary_directory, \
+				patch.dict(os.environ, {'WINDIR': 'C:\\Windows'}):
+			settings = Path(temporary_directory)
+			screenshots._seed_settings(settings, 'favorites')
+			document = json.loads((
+				settings / 'Plugins' / 'User' / 'Settings' / 'Favorites (Windows).json'
+			).read_text(encoding='utf-8'))
+		urls = [favorite['url'] for favorite in document['favorites']]
+		self.assertIn('file://C:', urls)
+		self.assertTrue(all(
+			url == 'file://C:' or url.casefold().startswith('file://c:/windows') for url in urls
+		))
+
+	def test_seeds_enabled_directory_sizes(self):
+		with TemporaryDirectory() as temporary_directory, \
+				patch.dict(os.environ, {'WINDIR': 'C:\\Windows'}):
+			settings = Path(temporary_directory)
+			screenshots._seed_settings(settings, 'directory-size')
+			document = json.loads((
+				settings / 'Plugins' / 'User' / 'Settings' / 'DirectorySize (Windows).json'
+			).read_text(encoding='utf-8'))
+		self.assertEqual({'enabled': True}, document)
+
+	def test_other_captures_use_default_settings(self):
+		with TemporaryDirectory() as temporary_directory, \
+				patch.dict(os.environ, {'WINDIR': 'C:\\Windows'}):
+			settings = Path(temporary_directory)
+			screenshots._seed_settings(settings, 'file-hash')
+			self.assertEqual([], list(settings.iterdir()))
+
+	def test_directory_size_uses_small_public_folders(self):
+		with patch.dict(os.environ, {'WINDIR': 'C:\\Windows'}):
+			left, right = screenshots._source_capture_paths('directory-size')
+		self.assertEqual(Path('C:\\Windows\\Web'), left)
+		self.assertIn(right, (left, left / 'Wallpaper'))
 
 	def test_prepares_non_first_run_session(self):
 		with TemporaryDirectory() as temporary_directory, \

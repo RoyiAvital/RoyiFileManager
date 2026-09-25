@@ -12,7 +12,7 @@ objects for all existing metadata and filesystem-operation consumers.
 Date-format configuration is a separate task in [DateFormat.md](../Plan/DateFormat.md).
 It is not part of this task's implementation or acceptance gates.
 
-This independent first step follows [ImprovePaneScan.md](../Plan/ImprovePaneScan.md).
+This independent first step follows [ImprovePaneScan.md](ImprovePaneScan.md).
 Its 202,603-entry baseline measured 1.991 s in post-render filter evaluations,
 out of 2.636 s in Qt commits. Removing that repeated work targets the user's
 priority of smooth interaction after rendering; it does not promise to eliminate
