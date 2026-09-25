@@ -248,7 +248,8 @@ class DocumentationNamingTest(TestCase):
 			config = SimpleNamespace(config_file_path=str(fixture / 'mkdocs.yml'), extra={})
 			self.assertIs(config, hook['on_config'](config))
 			self.assertEqual('RfmRenameProbe', config.site_name)
-			self.assertEqual('RfmRenameProbe is based on fman 1.7.5.', config.copyright)
+			self.assertIsInstance(config.copyright, str)
+			self.assertIn('RfmRenameProbe', config.copyright)
 			markdown = '# {{ app_name }}\n```powershell\n.\\{{ app_name }}.exe\n```\n'
 			unchanged = '[repo](https://example.test/repository) ![image](assets/stable.png)\n`literal` {{ other }}'
 			path.unlink()

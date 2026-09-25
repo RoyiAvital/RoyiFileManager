@@ -64,6 +64,13 @@ class FormatSizeTest(TestCase):
 
 
 class CalculateStatusSummaryTest(TestCase):
+	def test_unreadable_total_does_not_invalidate_readable_selection(self):
+		from unittest.mock import Mock
+		entries = (StatusEntry('selected', False, True, True), StatusEntry('denied', False, True, False))
+		result = calculate_status_summary(entries, Mock(side_effect=[0, PermissionError()]), True, 10)
+		self.assertFalse(result.size_complete)
+		self.assertTrue(result.selected_size_complete)
+		self.assertEqual(0, result.size_bytes)
 	def test_counts_and_sizes_visible_entries(self):
 		entries = (
 			StatusEntry('file://dir', True, True, True),

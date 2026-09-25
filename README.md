@@ -28,6 +28,9 @@ Each release is validated by hundreds of correctness tests and accompanied by a 
 RoyiFileManager is portable. Keep the extracted files together and move the
 folder whenever needed.
 
+Session state is saved under `UserSettings/Local`. A failed save reports an error
+once per application session; linked session settings are left untouched.
+
 ## Features
 
 Significant additions compared with `fman`:
@@ -51,8 +54,21 @@ Significant additions compared with `fman`:
 - **New File**: Press <kbd>Ctrl</kbd>+<kbd>N</kbd> to create an empty file without opening an editor.
 - **Text Editor / Viewer**: Set external programs on <kbd>F4</kbd> / <kbd>F3</kbd>, configured through **Set text editor** / **Set text viewer** in the Command Center. Presets include [CudaText](https://github.com/Alexey-T/CudaText), [EmEditor](https://www.emeditor.com), [Notepad++](https://github.com/notepad-plus-plus/notepad-plus-plus) and [Notepad 4](https://github.com/zufuliu/notepad4). See [Text Editor and Viewer Usage](src/main/resources/base/Plugins/Core/README.md#text-editor-and-viewer).
 - **File / Folder Comparators**: Configure independent external tools with **Set file comparator** / **Set folder comparator**, then run **Compare files** / **Compare folders**. Presets include [Meld](https://meldmerge.org), [Beyond Compare](https://www.scootersoftware.com), [WinMerge](https://github.com/winmerge/winmerge), [SmartSynchronize](https://www.syntevo.com/smartsynchronize). See [Comparator Usage](src/main/resources/base/Plugins/Core/README.md#file-and-folder-comparators).
-- **Archive Transfers**: Extraction progress and cancellation, with verified output before source deletion when moving out of or between archives. See [Archive Transfers Usage](src/main/resources/base/Plugins/Core/README.md#archive-transfers).
+- **Archive Transfers**: Extraction progress and cancellation, with verified output before source deletion when moving out of an archive or between archives of the same format. See [Archive Transfers Usage](src/main/resources/base/Plugins/Core/README.md#archive-transfers).
 - **Unpack Archive**: Works like `Extract Here` in `7-Zip` / `WinRar`. See [Unpack Archive Usage](src/main/resources/base/Plugins/Core/README.md#unpack-archive).
+
+### File-Operation Safety
+
+Regular copies need temporary space beside the destination before publishing the
+result. Linked overwrite targets and source/destination directory-link merges
+are refused for both Copy and Move. On rare
+Windows replacement failures, an error may identify a retained recovery copy;
+keep it until the destination has been checked.
+
+Moving local files into archives is disabled. Copy them into the archive, verify
+the contents, then delete originals explicitly. Moving out of an archive or between
+archives of the same format still verifies output before source deletion.
+Cross-format Move is not supported. See [transfer details](src/main/resources/base/Plugins/Core/README.md#local-transfers).
 
 > [!TIP]
 > Open an issue for new feature requests.  
@@ -66,30 +82,30 @@ Significant additions compared with `fman`:
     
 Results of the performance test suite per version.
 
-| Test                      	| Version: `0.9.0` 	|
-|---------------------------	|------------------	|
-| Pane Load - Small Folder  	| 44.14   [ms]      |
-| Pane Load - Large Folder  	| 1030.26 [ms]     	|
-| Filter Bar - Small Folder 	| 9.72    [ms]      |
-| Filter Bar - Large Folder 	| 332.28  [ms]    	|
-| Fuzzy Find - Small Folder 	| 4.67    [ms]     	|
-| Fuzzy Find - Large Folder 	| 350.86  [ms]    	|
-| Fuzzy Find (Recursive)     	| 89.82   [ms]      |
-| QuickView - Small Folder  	| 109.73  [ms]    	|
-| QuickView - Large Folder  	| 118.74  [ms]    	|
-| Navigation                	| 6.79    [ms]      |
-| Refresh / Selection       	| 482.95  [ms]    	|
+| Test                      	| Version: `0.9.0` 	| Version: `0.9.2` 	|
+|---------------------------	|------------------	|------------------	|
+| Pane Load - Small Folder  	| 44.14   [ms]      | 42.37   [ms]      |
+| Pane Load - Large Folder  	| 1030.26 [ms]     	| 983.77  [ms]     	|
+| Filter Bar - Small Folder 	| 9.72    [ms]      | 10.08   [ms]      |
+| Filter Bar - Large Folder 	| 332.28  [ms]    	| 328.40  [ms]    	|
+| Fuzzy Find - Small Folder 	| 4.67    [ms]     	| 4.82    [ms]     	|
+| Fuzzy Find - Large Folder 	| 350.86  [ms]    	| 349.39  [ms]    	|
+| Fuzzy Find (Recursive)     	| 89.82   [ms]      | 89.72   [ms]      |
+| QuickView - Small Folder  	| 109.73  [ms]     	| 111.81  [ms]     	|
+| QuickView - Large Folder  	| 118.74  [ms]     	| 115.70  [ms]     	|
+| Navigation                	| 6.79    [ms]      | 6.80    [ms]      |
+| Refresh / Selection       	| 482.95  [ms]     	| 471.10  [ms]     	|
 
 Comparisons with previous versions:
 
 [CelebA](https://mmlab.ie.cuhk.edu.hk/projects/CelebA.html) folder with about 200,000 entries. Lower is better.
 
-| Measurement                | Version 0.8.0 | Version 0.8.1 | Version 0.9.0 |
-|----------------------------|---------------|---------------|---------------|
-| First Populated Pane Paint | 8.949 [s]     | 5.663 [s]     | 0.583 [s]     |
-| Metadata Loading Complete  | 17.786 [s]    | 11.498 [s]    | 0.571 [s]     |
-| Post Paint Qt Commit Work  | 2.765 [s]     | 1.282 [s]     | 0 [s]         |
-| Settled Working Memory     | Not recorded  | 771.3 [MiB]   | 165.6 [MiB]   |
+| Measurement                | Version 0.8.0 | Version 0.8.1 | Version 0.9.0 | Version 0.9.2 |
+|----------------------------|---------------|---------------|---------------|---------------|
+| First Populated Pane Paint | 8.949 [s]     | 5.663 [s]     | 0.583 [s]     | 0.506 [s]     |
+| Metadata Loading Complete  | 17.786 [s]    | 11.498 [s]    | 0.571 [s]     | 0.494 [s]     |
+| Post Paint Qt Commit Work  | 2.765 [s]     | 1.282 [s]     | 0 [s]         | 0 [s]         |
+| Settled Working Memory     | Not recorded  | 771.3 [MiB]   | 165.6 [MiB]   | 167.4 [MiB]   |
 
 > [!NOTE]
 > * Version `0.9.0` is the 1st version with the new architecture (_Snapshot Architecture_) which is an order of magnitude faster than `0.8.1`.

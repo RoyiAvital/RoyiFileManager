@@ -172,11 +172,16 @@ class _7ZipFileSystem(FileSystem):
 				return [MoveBetweenArchives(self, src_url, dst_url)]
 		elif src_scheme == self.scheme and dst_scheme == 'file://':
 			return [MoveOutOfArchive(self, src_url, dst_url)]
+		elif src_scheme == 'file://':
+			raise UnsupportedOperation(
+				'Moving local files into archives is disabled for safety. '
+				'Copy and verify them before deleting the originals.'
+			)
 		else:
-			result = list(self.prepare_copy(src_url, dst_url))
-			title = 'Cleaning up ' + basename(src_url)
-			result.append(Task(title, fn=self._fs.delete, args=(src_url,)))
-			return result
+			raise UnsupportedOperation(
+				'Moves between archives require the same archive format. '
+				'Extract and verify the files before copying them into another format.'
+			)
 	def mkdir(self, path):
 		if self.exists(path):
 			raise FileExistsError(path)
@@ -772,8 +777,16 @@ class _7zip:
 				errors.append(error)
 			finally:
 				done.set()
-		reader = Thread(target=read, name='7zip-output')
-		reader.start()
+		try:
+			reader = Thread(target=read, name='7zip-output')
+			reader.start()
+		except BaseException:
+			try:
+				self.kill()
+				self.wait()
+			except Exception:
+				pass
+			raise
 		buffer = ''
 		try:
 			while not done.is_set() or not chunks.empty():

@@ -9,6 +9,35 @@ from find_files.engine import Collector, Options, Result, Runner, arguments, cou
 
 
 class FindFilesTest(TestCase):
+	def test_child_start_failure_reaps_and_unregisters(self):
+		from find_files.engine import Child
+		from unittest.mock import Mock
+		runner = Runner(self.options)
+		process = Mock()
+		with patch('find_files.engine.subprocess.Popen', return_value=process), \
+			patch('find_files.engine.Thread', side_effect=RuntimeError('start failed')):
+			with self.assertRaises(RuntimeError):
+				Child(runner)
+		process.kill.assert_called_once()
+		process.wait.assert_called_once()
+		process.stdout.close.assert_called_once()
+		process.stderr.close.assert_called_once()
+		self.assertIsNone(runner.child)
+	def test_saver_start_failure_retains_pending_values(self):
+		from find_files import FindSession, DEFAULTS
+		from threading import Lock
+		from unittest.mock import Mock
+		session = FindSession.__new__(FindSession)
+		session.settings = dict(DEFAULTS)
+		session.save_lock = Lock()
+		session.saving = False
+		session.enable_form = Mock()
+		values = dict(DEFAULTS, recursive=False)
+		with patch('find_files.Thread', side_effect=RuntimeError('start failed')):
+			with self.assertRaises(RuntimeError):
+				session.changed(values)
+		self.assertFalse(session.saving)
+		self.assertEqual(values, dict(session.pending_settings))
 	def test_fd_command_uses_find_label(self):
 		from find_files import FindFiles
 		self.assertEqual(('Find files with fd', 'Find files'), FindFiles.aliases)

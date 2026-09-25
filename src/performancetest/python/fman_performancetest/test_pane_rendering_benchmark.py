@@ -1,6 +1,9 @@
 import importlib.util
 import io
 import json
+import os
+import subprocess
+import sys
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -23,6 +26,41 @@ PANE_SPEC.loader.exec_module(pane_measurement)
 
 
 class PaneRenderingBenchmarkTest(TestCase):
+	def test_navigation_paint_hook_after_initial_paint(self):
+		script = '''
+from unittest.mock import patch
+from PyQt5.QtWidgets import QApplication, QTableView
+from fman.impl import view as views
+from fman_performancetest.quickview import _install_paint_dispatch
+
+application = QApplication([])
+class View(QTableView):
+    pass
+with patch.object(views, 'FileListView', View):
+    _install_paint_dispatch()
+view = View()
+view.resize(320, 200)
+view.show()
+application.processEvents()
+completed = []
+original = View.paintEvent
+def measured(widget, event):
+    result = original(widget, event)
+    completed.append(widget)
+    return result
+with patch.object(View, 'paintEvent', measured):
+    view.viewport().repaint()
+assert completed == [view], completed
+view.close()
+application.processEvents()
+'''
+		environment = dict(os.environ, QT_QPA_PLATFORM='offscreen')
+		environment['PYTHONPATH'] = os.pathsep.join((str(SCRIPT.parents[1] /
+			'performancetest/python'), environment.get('PYTHONPATH', '')))
+		result = subprocess.run([sys.executable, '-c', script], env=environment,
+			capture_output=True, text=True, timeout=30)
+		self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
 	def test_refresh_selection_patterns(self):
 		for count in (8, 256, 200000):
 			for pattern in pane_measurement.REFRESH_SELECTIONS:
@@ -52,6 +90,10 @@ class PaneRenderingBenchmarkTest(TestCase):
 	def test_default_directories(self):
 		self.assertEqual([benchmark.ROOT / 'target/performance/fixtures' / identity / 'data'
 			for identity in ('flat-small-v1', 'flat-large-v1')], benchmark.default_directories())
+		self.assertEqual('v0.8.0', benchmark.normalize_release_ref('0.8.0'))
+		self.assertEqual('feature/ref', benchmark.normalize_release_ref('feature/ref'))
+		self.assertEqual(Path('results-v0.8.0.json'),
+			benchmark.comparison_output(Path('results.json'), 'v0.8.0'))
 
 	def test_summary_uses_medians_and_handles_no_loading_samples(self):
 		rows = self.records()
@@ -129,6 +171,32 @@ class PaneRenderingBenchmarkTest(TestCase):
 			redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as stderr:
 			self.assertEqual(7, benchmark.main([temporary]))
 			self.assertIn('child failed', stderr.getvalue())
+
+	def test_main_adds_release_comparison(self):
+		with TemporaryDirectory() as temporary:
+			folder = Path(temporary)
+			output = folder / 'results.json'
+			rows = self.records([folder.name], 'current', 1)
+			for row in rows:
+				if row['mode'] == 'after':
+					row['mode'] = 'snapshot'
+			commands = []
+			def run(command, **kwargs):
+				commands.append(command)
+				result_path = Path(command[command.index('--output') + 1])
+				result_path.write_text(json.dumps(rows), encoding='utf-8')
+				return SimpleNamespace(returncode=0)
+			with patch.object(benchmark.sys, 'platform', 'win32'), \
+				patch.object(benchmark, 'benchmark_environment', return_value={}), \
+				patch.object(benchmark.subprocess, 'run', side_effect=run), \
+				redirect_stdout(io.StringIO()):
+				self.assertEqual(0, benchmark.main([temporary, '--repeat', '1',
+					'--compare-version', '0.8.0', '--output', str(output)]))
+		self.assertEqual(2, len(commands))
+		self.assertNotIn('--baseline-ref', commands[0])
+		self.assertEqual('v0.8.0', commands[1][commands[1].index('--baseline-ref') + 1])
+		self.assertEqual(str(output.with_name('results-v0.8.0.json').resolve()),
+			commands[1][commands[1].index('--output') + 1])
 
 	def test_invalid_inputs_never_launch_children(self):
 		with TemporaryDirectory() as temporary, \

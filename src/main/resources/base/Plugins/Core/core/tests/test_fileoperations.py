@@ -12,6 +12,72 @@ import os.path
 import stat
 
 class ArchiveTransferErrorTest(TestCase):
+	def test_real_merged_hardlink_copy_retains_source(self):
+		from pathlib import Path
+		with TemporaryDirectory() as directory:
+			root = Path(directory)
+			source, destination = root / 'source' / 'folder', root / 'destination' / 'folder'
+			source.mkdir(parents=True)
+			destination.mkdir(parents=True)
+			(source / 'keep').write_bytes(b'keep')
+			os.link(source / 'keep', destination / 'keep')
+			operation = CopyFiles([as_url(source)], as_url(destination.parent), fs=StubFS())
+			with patch.object(operation, 'show_alert', return_value=YES):
+				operation()
+			self.assertEqual(b'keep', (source / 'keep').read_bytes())
+			self.assertEqual(b'keep', (destination / 'keep').read_bytes())
+	@skipUnless(PLATFORM == 'Windows', 'Windows junctions')
+	def test_real_nested_link_merge_refuses_before_mutation(self):
+		from pathlib import Path
+		from subprocess import run
+		for operation_class in (CopyFiles, MoveFiles):
+			for destination_link in (False, True):
+				with self.subTest(operation=operation_class.__name__, destination_link=destination_link), TemporaryDirectory() as directory:
+					root = Path(directory)
+					source, destination, target = root / 'source' / 'folder', root / 'destination' / 'folder', root / 'target'
+					for path in (source, destination, target):
+						path.mkdir(parents=True)
+					(target / 'keep').write_bytes(b'keep')
+					linked, regular = (destination, source) if destination_link else (source, destination)
+					(regular / 'nested').mkdir()
+					(regular / 'nested' / 'original').write_bytes(b'original')
+					result = run(['cmd', '/c', 'mklink', '/J', str(linked / 'nested'), str(target)], capture_output=True, timeout=10)
+					self.assertEqual(0, result.returncode, result.stderr)
+					operation = operation_class([as_url(source)], as_url(destination.parent), fs=StubFS())
+					with patch.object(operation, 'show_alert', return_value=YES) as alert:
+						operation()
+						alert.assert_called_once()
+					self.assertEqual(b'keep', (target / 'keep').read_bytes())
+					self.assertEqual(b'original', (regular / 'nested' / 'original').read_bytes())
+					self.assertTrue(os.path.isjunction(linked / 'nested'))
+	def test_local_archive_move_refuses_before_gathering_or_mutation(self):
+		filesystem = Mock()
+		operation = MoveFiles(['file://C:/source'], 'zip://C:/archive.zip', fs=filesystem)
+		with patch.object(operation, 'show_alert') as alert:
+			operation()
+			alert.assert_called_once()
+		self.assertEqual([], filesystem.mock_calls)
+	def test_merge_refuses_source_and_destination_links(self):
+		for operation_class in (CopyFiles, MoveFiles):
+			for linked in ('file://C:/source/folder', 'file://C:/destination/folder'):
+				with self.subTest(operation=operation_class.__name__, linked=linked):
+					filesystem = Mock()
+					operation = operation_class(['file://C:/source/folder'], 'file://C:/destination', fs=filesystem)
+					with patch('core.fileoperations.os.path.islink',
+						side_effect=lambda path: path == as_human_readable(linked)):
+						with self.assertRaises(OSError):
+							operation._merge_directory('file://C:/source/folder')
+					filesystem.iterdir.assert_not_called()
+	def test_no_to_all_merge_checks_cancellation(self):
+		filesystem = Mock()
+		filesystem.iterdir.return_value = ['one', 'two']
+		filesystem.is_dir.return_value = False
+		filesystem.exists.return_value = True
+		operation = CopyFiles(['stub://source/folder'], 'stub://destination', fs=filesystem)
+		operation._override_all = False
+		with patch.object(operation, 'check_canceled', side_effect=[None, Task.Canceled()]):
+			with self.assertRaises(Task.Canceled):
+				operation._merge_directory('stub://source/folder')
 	def test_update_failure_stops_even_after_ignore_all(self):
 		operation = MoveFiles(['zip://source.zip/item'], 'file:///destination')
 		operation._ignore_exceptions = True

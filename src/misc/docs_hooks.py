@@ -13,7 +13,7 @@ def on_config(config):
 	settings = load_build_settings(root / 'src/build/settings/base.json')
 	name = settings['app_name']
 	config.site_name = name
-	config.copyright = '%s is based on fman 1.7.5.' % name
+	config.copyright = '%s is a fast keyboard focused file manager for Windows.' % name
 	config.extra['app_name'] = name
 	return config
 

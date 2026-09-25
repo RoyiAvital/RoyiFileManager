@@ -2038,12 +2038,17 @@ class RememberSortSettings(DirectoryPaneListener):
 		settings = load_json('Sort Settings.json', default={})
 		default = (self.pane.get_columns()[0], True)
 		if (column, is_ascending) == default:
-			settings.pop(url, None)
+			if url not in settings:
+				return
+			del settings[url]
 		else:
-			settings[url] = {
+			updated = {
 				'column': column,
 				'is_ascending': is_ascending
 			}
+			if settings.get(url) == updated:
+				return
+			settings[url] = updated
 		save_json('Sort Settings.json')
 
 class Minimize(ApplicationCommand):
@@ -2311,8 +2316,18 @@ class CompareDirectories(DirectoryPaneCommand):
 		other_index = (this_index + 1) % len(panes)
 		left = panes[min(this_index, other_index)]
 		right = panes[max(this_index, other_index)]
-		res_left = self._select_nonexistent_in_other(left, right)
-		res_right = self._select_nonexistent_in_other(right, left)
+		try:
+			left_url, right_url = left.get_path(), right.get_path()
+			left_names, right_names = set(iterdir(left_url)), set(iterdir(right_url))
+		except OSError as error:
+			show_alert('Could not compare directories: ' + str(error))
+			return
+		left_only, right_only = left_names - right_names, right_names - left_names
+		left.clear_selection()
+		right.clear_selection()
+		left.select(join(left_url, name) for name in left_only)
+		right.select(join(right_url, name) for name in right_only)
+		res_left, res_right = len(left_only), len(right_only)
 		if res_left == res_right == 0:
 			message = 'The directories contain the same file <em>names</em>.' \
 			          '<br/>(Did not compare contents, Size or Modified.)'
@@ -2328,14 +2343,6 @@ class CompareDirectories(DirectoryPaneCommand):
 			report(res_right, 'right', 'left')
 			message = '<br/>'.join(msg_parts)
 		show_alert(message)
-	def _select_nonexistent_in_other(self, this, other):
-		this.clear_selection()
-		other_files = set(iterdir(other.get_path()))
-		url = this.get_path()
-		nonexistent = set(f for f in iterdir(url) if f not in other_files)
-		this.select(join(url, f) for f in nonexistent)
-		return len(nonexistent)
-
 class none(DirectoryPaneCommand):
 	"""
 	Assign key bindings to this command to effectively deactivate them.

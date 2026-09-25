@@ -8,8 +8,6 @@ from fman.url import as_url, splitscheme, as_human_readable
 from itertools import islice, chain
 from os.path import expanduser, islink, isabs, normpath
 from pathlib import Path, PurePath
-from random import shuffle
-from time import time
 
 import os
 import re
@@ -154,10 +152,6 @@ class GoToListener(DirectoryPaneListener):
 		visited_paths[path] = visited_paths.get(path, 0) + 1
 		if len(visited_paths) > 500:
 			_shrink_visited_paths(visited_paths, 250)
-		else:
-			# Spend a little time cleaning up outdated paths. This method is
-			# called asynchronously, so no problem performing some work here.
-			_remove_nonexistent(visited_paths, timeout_secs=0.01)
 
 def _shrink_visited_paths(vps, size):
 	paths_per_count = {}
@@ -175,26 +169,6 @@ def _shrink_visited_paths(vps, size):
 	for i, (count, paths) in enumerate(count_paths):
 		for p in paths:
 			vps[p] = i + 1
-
-def _remove_nonexistent(vps, timeout_secs):
-	# Randomly check visited paths for existence, until the timeout expires.
-	# Choose all elts. with equal probability. It's tempting to be more clever
-	# and use the visit counts somehow. But it's not clear this will be better:
-	# Higher counts may indicate that a directory is "stable" and doesn't change
-	# often. On the other hand, they also appear in search results more often,
-	# hence incur a higher "penalty" when we get it wrong. So keep it simple.
-	end_time = time() + timeout_secs
-	paths = list(vps)
-	shuffle(paths)
-	for path in paths:
-		if time() >= end_time:
-			break
-		try:
-			is_dir = os.path.isdir(path)
-		except OSError:
-			continue
-		if not is_dir:
-			_remove_from_visited_paths(vps, path)
 
 def _remove_from_visited_paths(vps, path):
 	for p in list(vps):

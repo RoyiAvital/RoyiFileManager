@@ -11,11 +11,26 @@ from fman.fs import Column
 from fman.impl.status_bar import format_size
 from fman.url import basename
 from PyQt5.QtCore import QLocale, QDateTime
+from unicodedata import decimal
 
 import fman.fs
 import re
 
 _DIGITS = re.compile(r'(\d+)')
+
+def _natural_name_key(name):
+	parts = _DIGITS.split(name.lower())
+	for index in range(1, len(parts), 2):
+		digits = parts[index]
+		if not digits.isascii():
+			digits = ''.join(str(decimal(character)) for character in digits)
+		digits = digits.lstrip('0') or '0'
+		if len(digits) <= 6:
+			parts[index] = '0' + digits.zfill(6)
+		else:
+			length = str(len(digits))
+			parts[index] = '1' + '1' * len(length) + '0' + length + digits
+	return ''.join(parts)
 
 # Define here so get_default_columns(...) can reference it as core.Name:
 class Name(Column):
@@ -31,9 +46,7 @@ class Name(Column):
 	def keys(self, listing, ascending):
 		result = []
 		for name, is_dir in zip_columns(listing.display_names, listing.is_dir):
-			parts = _DIGITS.split(name.lower())
-			parts[1::2] = ['%06d' % int(part) for part in parts[1::2]]
-			result.append((is_dir ^ ascending, ''.join(parts)))
+			result.append((is_dir ^ ascending, _natural_name_key(name)))
 		return tuple(result)
 	def get_sort_value(self, url, is_ascending):
 		try:
@@ -43,10 +56,7 @@ class Name(Column):
 		except OSError:
 			is_dir = False
 		major = is_dir ^ is_ascending
-		str_ = self.get_str(url).lower()
-		minor = _DIGITS.sub(
-			lambda match: '%06d' % int(match.group(0)), str_
-		)
+		minor = _natural_name_key(self.get_str(url))
 		return major, minor
 
 # Define here so get_default_columns(...) can reference it as core.Size:

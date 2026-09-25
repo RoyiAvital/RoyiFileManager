@@ -7,8 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-09-25
+
+This release is mainly focused on solving edge cases, improve data safety and optimize performance.
+
+### Fixed
+
+- File operations no longer traverse junction targets during deletion or merge
+  through source or destination directory links in Copy and Move.
+  Same-file/hardlink copies are refused before writing,
+  and failed deletes no longer emit success notifications.
+- Regular copies stage output before publication. Windows overwrites preserve
+  destination DACLs and named streams, retain recovery data on partial replacement
+  failure, support read-only sources and missing identity metadata, and refuse
+  linked or known-hardlinked overwrite targets. Compact, extended Windows staging
+  paths avoid adding legacy path-length restrictions to deep destinations. Local-to-archive
+  Move is disabled; use Copy, verify the archive, then delete originals explicitly.
+- Session/dialog saves publish atomically and refuse linked settings files.
+  Failed session saves report once instead of silently losing state.
+  Temporary command targets are isolated between threads and restored after errors;
+  file comparison captures context-menu targets before dispatching to Qt.
+- Worker/process startup failures release capacity and clean up launched children;
+  queued jobs report startup failure once. Icon and preference workers can retry
+  on a later request. Skipped merges remain
+  cancellable, and unreadable status totals are marked incomplete.
+- Expected folder-access failures recover through normal navigation, including
+  QuickView refreshes. UTF-8/BOM configuration works across settings, plug-in
+  components and the shortcut list.
+- Natural sorting handles long numeric runs and Unicode decimal digits. Go To
+  retains offline history without background existence probes, and failed directory
+  comparisons leave both selections unchanged.
+
 ### Changed
 
+- Resource cache hits avoid allocation; status snapshots join each URL once;
+  unchanged sort preferences no longer trigger disk writes.
 - Replaced the stale public `FMAN_VERSION` compatibility value with
   `APP_VERSION`, backed by the RoyiFileManager product version. Session state
   now writes `app_version` while migrating the legacy `fman_version` key.
@@ -33,6 +66,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [UI extension reference](PlugIn.md#ui-extension) instead of a pending plan.
 - Added a Troubleshooting section to [DEVELOPMENT.md](DEVELOPMENT.md) and
   removed its broken `UPSTREAM.md` link.
+
+#### Performance Report
+
+The new architecture is the baseline for the performance suite.
+
+| Test                      	| Run Time (ms) 	|
+|---------------------------	|---------------	|
+| Pane Load - Small Folder  	| 42.37          	|
+| Pane Load - Large Folder  	| 983.77         	|
+| Filter Bar - Small Folder 	| 10.08          	|
+| Filter Bar - Large Folder 	| 328.40         	|
+| Fuzzy Find - Small Folder 	| 4.82           	|
+| Fuzzy Find - Large Folder 	| 349.39         	|
+| Fuzzy Find (Recursive)     	| 89.72          	|
+| QuickView - Small Folder  	| 111.81         	|
+| QuickView - Large Folder  	| 115.70         	|
+| Navigation                	| 6.80           	|
+| Refresh / Selection       	| 471.10         	|
+
+The results were measured on the main development PC:
+ - CPU: AMD64 Family 26 Model 68 Stepping 0, AuthenticAMD.
+ - Memory (RAM): 93.60 [GiB].
+ - OS: Windows-11-10.0.26200-SP0.
+ - Machine ID: `352fff5e51b22dfd`.
+ - Python: 3.14.7 | Packaged by conda-forge | (main, Sep 2 2026, 21:12:42) [MSC v.1944 64 bit (AMD64)].
+ - Qt / PyQt: 5.15.15 / 5.15.11.
+ - Viewport: 1280 x 800 / 1x DPI.
 
 ## [0.9.1] - 2026-09-22
 

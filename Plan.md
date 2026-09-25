@@ -8,6 +8,7 @@
 - [Favorites 003: Favorites as a Pane Location](Plan/Favorites003.md)
 - [File System and Pane Architecture 002: Responsiveness and Memory](Plan/FSPaneArch002.md)
 - [Filter Files 002: Multiple Terms (AND)](Plan/FilterFiles002.md)
+- [Filesystem Link Operation Policy](Plan/LinkOperationPolicy.md)
 - [Find Files 003: Everything-Style Query Syntax](Plan/FindFiles003.md)
 - [Flat View](Plan/FlatView.md)
 - [Migrate to PyQt6](Plan/MigrateToPyQt6.md)

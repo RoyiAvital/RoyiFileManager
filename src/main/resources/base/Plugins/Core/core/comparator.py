@@ -182,7 +182,7 @@ def validate_operands(paths, role, check):
 
 
 @run_in_main_thread
-def _capture(pane, role):
+def _capture(pane, role, invoking_cursor):
 	window = pane.window
 	if window in _pending:
 		raise ValueError('Another comparison is still validating or stopping.')
@@ -199,7 +199,9 @@ def _capture(pane, role):
 		snapshots = []
 		for current in panes:
 			marks = tuple(current.get_selected_files()) if role == 'file' else ()
-			cursor = current.get_file_under_cursor() if role == 'file' and not marks else None
+			cursor = None
+			if role == 'file' and not marks:
+				cursor = invoking_cursor if current is pane else current.get_file_under_cursor()
 			snapshots.append(PaneSnapshot(current.get_path(), marks, cursor))
 		active = panes.index(pane)
 	urls, involved = select_operands(role, snapshots, active)
@@ -233,7 +235,8 @@ class _Compare(Task):
 def compare(pane, role):
 	token = None
 	try:
-		urls, token = _capture(pane, role)
+		invoking_cursor = pane.get_file_under_cursor() if role == 'file' else None
+		urls, token = _capture(pane, role, invoking_cursor)
 		for url in urls:
 			_check_text(url)
 			splitscheme(url)

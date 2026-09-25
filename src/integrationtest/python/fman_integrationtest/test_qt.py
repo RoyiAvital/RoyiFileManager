@@ -481,6 +481,45 @@ class QuickViewImagesIT(QtIT):
 						self.run_in_app(source._model.location_loaded.disconnect, on_loaded)
 						session.shutdown()
 
+	def test_quickview_unreadable_refresh_finishes_parent_recovery(self):
+		from core.fs.local import LocalFileSystem
+		from fman.impl.quick_view import QuickViewSession
+		from fman.impl.quick_view_images import ImageResult
+		from fman.url import as_url
+		from unittest.mock import Mock, patch
+		source = self.panes[0]
+		scan = LocalFileSystem.scan
+		for index, error in enumerate((PermissionError('denied'), NotADirectoryError('not a directory'), OSError(5, 'not ready', None, 21))):
+			with self.subTest(error=type(error)):
+				destination = self.root / ('refresh-failure-%s' % index)
+				destination.mkdir()
+				loaded = Event()
+				source.set_location(as_url(destination), callback=loaded.set)
+				self.assertTrue(loaded.wait(5))
+				self.drain(source)
+				recovered = Event()
+				def on_loaded(url):
+					if url == as_url(self.root):
+						recovered.set()
+				def scan_directory(provider, path, check):
+					if 'file://' + path == as_url(destination):
+						raise error
+					return scan(provider, path, check)
+				with patch('fman.load_json', return_value={}):
+					session = self.run_in_app(QuickViewSession, self.window, *self.panes,
+						load=Mock(return_value=ImageResult(message='preview')))
+				try:
+					self.run_in_app(source._model.location_loaded.connect, on_loaded)
+					with patch.object(LocalFileSystem, 'scan', scan_directory):
+						source.reload()
+						self.assertTrue(recovered.wait(5), 'Unreadable refresh did not recover')
+						self.drain(source)
+					self.assertFalse(self.run_in_app(lambda: session._loading_location))
+					self.assertEqual(as_url(self.root), source.get_location())
+				finally:
+					self.run_in_app(source._model.location_loaded.disconnect, on_loaded)
+					session.shutdown()
+
 	def test_large_edge_paint_and_zoom_anchor(self):
 		from fman.impl.quick_view import QuickViewOverlay
 		from PyQt5.QtCore import QPointF
@@ -3225,6 +3264,26 @@ class ComparatorIT(QtIT):
 		self.assertEqual([str(self.left_root / 'a.txt'), str(self.left_root / 'b.txt')], self.launch.call_args.kwargs['args'][-2:])
 		CompareFolders(self.right)()
 		self.assertEqual([str(self.left_root), str(self.right_root)], self.launch.call_args.kwargs['args'][-2:])
+		self.alert.assert_not_called()
+
+	def test_context_menu_cursor_survives_qt_snapshot(self):
+		from core.commands import CompareFiles
+		from fman.url import as_url
+		for pane, root in ((self.left, self.left_root), (self.right, self.right_root)):
+			for marked in (False, True):
+				with self.subTest(pane=str(root), marked=marked):
+					pane.clear_selection()
+					if marked:
+						pane.select([as_url(root / 'a.txt')])
+					with pane._override_file_under_cursor(as_url(root / 'b.txt')):
+						self.assertEqual(as_url(root / 'a.txt'), self.run_in_app(pane.get_file_under_cursor))
+						CompareFiles(pane)()
+					left_name = 'b.txt' if pane is self.left and not marked else 'a.txt'
+					right_name = 'b.txt' if pane is self.right and not marked else 'a.txt'
+					self.launch.assert_called_with(args=[sys.executable,
+						str(self.left_root / left_name), str(self.right_root / right_name)], shell=False)
+					self.assertEqual(as_url(root / 'a.txt'), pane.get_file_under_cursor())
+					pane.clear_selection()
 		self.alert.assert_not_called()
 
 	def test_snapshot_on_qt_and_metadata_off_qt(self):

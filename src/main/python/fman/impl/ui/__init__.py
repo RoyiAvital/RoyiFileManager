@@ -79,7 +79,9 @@ _resources_lock = RLock()
 
 def resource(name):
 	with _resources_lock:
-		return _resources.setdefault(name, Resource())
+		if name not in _resources:
+			_resources[name] = Resource()
+		return _resources[name]
 
 
 class UiOwner:
@@ -189,5 +191,9 @@ def submit_work(work, deliver):
 				deliver(result, None)
 		finally:
 			_work_slots.release()
-	Thread(target=run, daemon=True).start()
+	try:
+		Thread(target=run, daemon=True).start()
+	except BaseException:
+		_work_slots.release()
+		raise
 	return True

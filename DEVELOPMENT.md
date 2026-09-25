@@ -273,17 +273,22 @@ python src/misc/benchmark_pane_rendering.py
 The runner sets up application import paths automatically, performs three
 alternating baseline/current pairs per folder, and prints median first-paint,
 completion and loading arrow-to-paint timings. The default compares the snapshot
-implementation with pre-change commit `56e840a`, extracted into temporary storage.
-Git and that commit must be available; `--baseline-ref` overrides it. Raw samples go to
-`target/diagnostics/pane-rendering-three-folders.json`; `--output` changes that
-destination. A missing folder, failed child or row/metadata mismatch returns
-nonzero; invalid comparisons do not produce a summary. OS caches are not flushed.
+implementation with release `v0.8.1` commit `56e840a`, extracted into temporary
+storage. Git and the compared revisions must be available locally.
+`--baseline-ref` replaces the primary baseline. `--compare-version` adds another
+release or Git revision and may be repeated; a semantic version such as `0.8.0`
+resolves to tag `v0.8.0`. Each comparison gets a separate raw JSON artifact.
+Raw samples normally go to `target/diagnostics/pane-rendering-three-folders.json`;
+`--output` changes that destination. A missing folder, failed child or row/metadata
+mismatch returns nonzero; invalid comparisons do not produce a summary. OS caches
+are not flushed.
 
 Folder arguments override the defaults; `--repeat 1` is a shorter smoke run:
 
 ```powershell
 python src/misc/benchmark_pane_rendering.py --baseline reviewed --repeat 1
 python src/misc/benchmark_pane_rendering.py "C:\Path\To\Folder" --show-hidden
+python src/misc/benchmark_pane_rendering.py "D:\TMP\CelebAAligned" --compare-version 0.8.0
 python -m unittest src/performancetest/python/fman_performancetest/test_pane_rendering_benchmark.py -v
 ```
 

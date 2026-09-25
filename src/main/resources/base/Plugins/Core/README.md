@@ -151,14 +151,54 @@ always shown. Units follow
 `toggle_directory_size_column`, `sort_by_directory_size`,
 `recalculate_directory_sizes` and `show_directory_size`.
 
+## Local Transfers
+
+Regular-file copies write to a sibling temporary file before publishing output.
+Allow free space for the complete new file in addition to an existing destination.
+Cancellation or a data-copy error before publication leaves the source and
+previous destination intact. Read-only sources can overwrite writable files;
+their read-only mode is restored after publication. If restoring that mode fails,
+the error states that content was published; the source is retained.
+Windows overwrite publication preserves the destination DACL and named streams;
+staging uses the destination DACL before writing data. Source named streams are
+not copied. Final inherited ACL flags may be normalized by Windows.
+
+An owned `.fb-*` directory protects the original during Windows
+replacement. A partial failure restores the original name when possible; otherwise
+the error reports the retained recovery file. Do not remove that file until the
+destination has been checked. Crash/power-loss recovery is not automatic.
+
+Copies onto the same file or a hardlink alias are refused. Existing linked,
+non-regular or known-multiply-linked destinations are not overwritten. When file
+identity is unavailable, resolved paths provide the alias check; this cannot
+detect every alias on a filesystem that withholds identity. A zero link count is
+treated as unknown, not as proof of a hardlink. Access-time-only changes do not
+prevent publication; identity, size and nanosecond modification-time changes do.
+Symlink overwrite attempts report an explicit refusal. Both Copy and Move refuse
+merges through source or destination directory links, including nested links.
+Copy/delete move fallbacks for links are refused; standalone same-volume
+link renames remain supported. Deleting a junction removes the junction, not its
+target. Metadata-preserving overwrite is supported on Windows only.
+
+Temporary `.fc-*` and `.fb-*` entries may appear during a refresh.
+They are not hidden with extra per-file attribute operations; do not edit them.
+Windows staging uses extended-path syntax, including UNC shares, so staging does
+not depend on the system long-path opt-in. This does not extend every operation's
+path support or change the Windows Registry.
+
+Avoid changing transfer sources or destinations concurrently. These checks do not
+provide a filesystem transaction or protection against hostile path replacement.
+
 ## Archive Transfers
 
 Enter an archive as a folder, select items, then use the existing Copy or Move
 workflow. Extraction reports 7-Zip progress when available. Cancel stops
 extraction and removes unfinished staging; completed items remain.
 
-Moving out of or between archives verifies file contents before removing source
-entries. Cross-archive Move re-extracts the destination for verification. These
+Moving out of an archive or between archives of the same format verifies file
+contents before removing source entries. Cross-format Move is not supported;
+extract and verify the files first, then copy them into the destination archive.
+Cross-archive Move re-extracts the destination for verification. These
 checks deliberately add reads, temporary space, and time. During an archive
 update, Cancel waits for that update and empty-parent restoration to finish.
 Source-update failure stops the operation and retains the copied output.
@@ -166,8 +206,9 @@ Source-update failure stops the operation and retains the copied output.
 Avoid editing either archive or the destination concurrently. Change detection
 does not lock files or guarantee recovery from crashes or storage failure.
 Verified Moves reject symbolic links, junctions, and the archive root itself;
-select its contents instead. Local-to-archive Move and same-archive rename keep
-their existing behavior.
+select its contents instead. Local-to-archive Move is disabled before mutation:
+use Copy, verify the archive contents, then delete originals explicitly.
+Same-archive rename keeps its existing behavior.
 
 ## Unpack Archive
 

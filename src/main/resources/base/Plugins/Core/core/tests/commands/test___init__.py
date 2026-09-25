@@ -20,6 +20,35 @@ import os
 import os.path
 
 class HiddenFileFilterTest(TestCase):
+	def test_unchanged_sort_settings_do_not_write(self):
+		from core.commands import RememberSortSettings
+		pane = Mock()
+		pane.get_path.return_value = 'file://C:/root'
+		pane.get_columns.return_value = ['core.Name', 'core.Size']
+		settings = {}
+		listener = RememberSortSettings(pane)
+		with patch('core.commands.load_json', return_value=settings), patch('core.commands.save_json') as save:
+			pane.get_sort_column.return_value = ('core.Name', True)
+			listener._remember_curr_sort_column()
+			save.assert_not_called()
+			pane.get_sort_column.return_value = ('core.Size', False)
+			listener._remember_curr_sort_column()
+			listener._remember_curr_sort_column()
+			self.assertEqual(1, save.call_count)
+			pane.get_sort_column.return_value = ('core.Name', True)
+			listener._remember_curr_sort_column()
+			self.assertEqual(2, save.call_count)
+			self.assertEqual({}, settings)
+	def test_compare_listing_failure_preserves_both_selections(self):
+		from core.commands import CompareDirectories
+		left, right = Mock(), Mock()
+		left.window.get_panes.return_value = [left, right]
+		with patch('core.commands.iterdir', side_effect=[['one'], PermissionError('denied')]), \
+			patch('core.commands.show_alert') as alert:
+			CompareDirectories(left)()
+			alert.assert_called_once()
+		left.clear_selection.assert_not_called()
+		right.clear_selection.assert_not_called()
 	def setUp(self):
 		self.platform = patch('core.commands.PLATFORM', 'Windows')
 		self.platform.start()

@@ -183,7 +183,7 @@ The file uses Qt Style Sheet syntax. Restart after changing it.
 
 Press ++ctrl+shift+p++ and run **Set text editor** or **Set text viewer**.
 
-1. Choose Notepad++, CudaText, Notepad 4, EmEditor or **Manual configuration**.
+1. Choose [CudaText](https://github.com/Alexey-T/CudaText), [EmEditor](https://www.emeditor.com), [Notepad++](https://github.com/notepad-plus-plus/notepad-plus-plus), [Notepad 4](https://github.com/zufuliu/notepad4) or **Manual configuration**.
 2. Select the program's `.exe` file.
 3. Enter arguments when using Manual configuration.
 
@@ -197,7 +197,7 @@ The editor and viewer are independent. Each setup list also has a Clear option.
 
 Press ++ctrl+shift+p++ and run **Set file comparator** or **Set folder comparator**.
 
-Choose Meld, Beyond Compare, WinMerge, SmartSynchronize or **Manual configuration**.
+Choose [Beyond Compare](https://www.scootersoftware.com), [Meld](https://meldmerge.org), [SmartSynchronize](https://www.syntevo.com/smartsynchronize), [WinMerge](https://github.com/winmerge/winmerge) or **Manual configuration**.
 
 Run **Compare files** or **Compare folders** from the Command Center.
 

@@ -60,6 +60,7 @@ class LatestJobs:
 		self._closed = False
 
 	def submit(self, work, deliver, canceled_callback=None):
+		failed = None
 		with self._lock:
 			if self._closed:
 				retired = work, deliver, canceled_callback
@@ -68,8 +69,12 @@ class LatestJobs:
 				for canceled in self._active:
 					canceled.set()
 				self._pending = work, deliver, canceled_callback
-				self._start()
+				failed = self._start()
 		self._retire(retired)
+		if failed is not None:
+			job, error = failed
+			self._retire(job)
+			raise error
 
 	@staticmethod
 	def _retire(job):
@@ -83,7 +88,11 @@ class LatestJobs:
 		self._pending = None
 		canceled = ThreadEvent()
 		self._active.add(canceled)
-		Thread(target=self._run, args=(work, deliver, canceled, canceled_callback), daemon=True).start()
+		try:
+			Thread(target=self._run, args=(work, deliver, canceled, canceled_callback), daemon=True).start()
+		except BaseException as error:
+			self._active.remove(canceled)
+			return (work, deliver, canceled_callback), error
 
 	def _run(self, work, deliver, canceled, canceled_callback):
 		deadline = perf_counter() + .004
@@ -116,7 +125,10 @@ class LatestJobs:
 		finally:
 			with self._lock:
 				self._active.remove(canceled)
-				self._start()
+				failed = self._start()
+			if failed is not None:
+				job, error = failed
+				job[1](None, error)
 
 	def cancel(self):
 		with self._lock:
@@ -349,7 +361,8 @@ class ListingModel(DragAndDrop):
 		if error is not None:
 			if self._navigation_request and self._navigation_request.active:
 				self._navigation_request.fail(error)
-			elif isinstance(error, FileNotFoundError):
+			elif isinstance(error, (FileNotFoundError, PermissionError, NotADirectoryError)) or \
+				isinstance(error, OSError) and getattr(error, 'winerror', None) in (2, 3, 5, 21):
 				self.location_disappeared.emit(self._location)
 			else:
 				sys.excepthook(type(error), error, error.__traceback__)
@@ -449,10 +462,11 @@ class ListingModel(DragAndDrop):
 			raise ValueError('%r is not in list' % url)
 		return self.index(self._names[basename(url)], 0)
 	def get_status_entries(self, selected_urls):
-		return tuple(StatusEntry(join(self._location, self._displayed.names[index]),
-			self._displayed.is_dir[index], True,
-			join(self._location, self._displayed.names[index]) in selected_urls)
-			for index in self._visible)
+		entries = []
+		for index in self._visible:
+			url = join(self._location, self._displayed.names[index])
+			entries.append(StatusEntry(url, self._displayed.is_dir[index], True, url in selected_urls))
+		return tuple(entries)
 	@run_in_main_thread
 	def sort(self, column, order=Qt.AscendingOrder):
 		ascending = order == Qt.AscendingOrder

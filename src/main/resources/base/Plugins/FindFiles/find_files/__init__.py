@@ -119,7 +119,12 @@ class FindSession:
 			if self.saving:
 				return
 			self.saving = True
-		Thread(target=self.save_preferences, name='find-files-settings', daemon=True).start()
+		try:
+			Thread(target=self.save_preferences, name='find-files-settings', daemon=True).start()
+		except BaseException:
+			with self.save_lock:
+				self.saving = False
+			raise
 
 	def save_preferences(self):
 		resource = settings_resource(SETTINGS_NAME)

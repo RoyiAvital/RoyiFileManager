@@ -7,6 +7,7 @@ from fbs_runtime import platform
 from os import getenv
 from os.path import abspath, dirname, join
 from PyQt5.QtWidgets import QMessageBox
+from threading import local
 
 import re
 import sys
@@ -71,7 +72,7 @@ class DirectoryPane:
 		self._widget = widget
 		self._command_registry = command_registry
 		self._listeners = []
-		self._get_file_under_cursor_orig = self.get_file_under_cursor
+		self._command_context = local()
 
 	def _add_listener(self, listener):
 		self._listeners.append(listener)
@@ -152,6 +153,9 @@ class DirectoryPane:
 	def get_selected_files(self):
 		return self._widget.get_selected_files()
 	def get_file_under_cursor(self):
+		override = getattr(self._command_context, 'cursor', ())
+		if override:
+			return override[0]
 		return self._widget.get_file_under_cursor()
 	def move_cursor_down(self, toggle_selection=False):
 		self._widget.move_cursor_down(toggle_selection)
@@ -217,9 +221,12 @@ class DirectoryPane:
 		return self._widget.hasFocus()
 	@contextmanager
 	def _override_file_under_cursor(self, value):
-		self.get_file_under_cursor = lambda: value
-		yield
-		self.get_file_under_cursor = self._get_file_under_cursor_orig
+		previous = getattr(self._command_context, 'cursor', ())
+		self._command_context.cursor = (value,)
+		try:
+			yield
+		finally:
+			self._command_context.cursor = previous
 
 class Window:
 	def __init__(self, widget, panecmd_registry):

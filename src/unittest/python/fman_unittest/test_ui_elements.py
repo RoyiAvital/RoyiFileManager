@@ -113,6 +113,22 @@ class TableDataTest(TestCase):
 
 
 class UiStateTest(TestCase):
+	def test_resource_hit_does_not_construct(self):
+		from fman.impl import ui
+		from unittest.mock import patch
+		with patch.object(ui, '_resources', {}), patch.object(ui, 'Resource') as factory:
+			self.assertIs(ui.resource('same'), ui.resource('same'))
+			factory.assert_called_once()
+	def test_worker_start_failure_releases_slot(self):
+		from fman.impl import ui
+		from threading import BoundedSemaphore
+		from unittest.mock import patch
+		slots = BoundedSemaphore(1)
+		with patch.object(ui, '_work_slots', slots), patch.object(ui, 'Thread') as thread:
+			thread.return_value.start.side_effect = RuntimeError('start failed')
+			with self.assertRaises(RuntimeError):
+				ui.submit_work(lambda: None, lambda *args: None)
+			self.assertTrue(slots.acquire(blocking=False))
 	def test_controller_requires_loader_owner(self):
 		from fman.ui import UiController
 		class Controller(UiController):

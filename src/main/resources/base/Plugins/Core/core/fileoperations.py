@@ -5,6 +5,7 @@ from fman.url import basename, join, dirname, splitscheme, relpath, \
 from os.path import pardir
 
 import fman.fs
+import os
 
 class ArchiveUpdateError(OSError):
 	pass
@@ -41,7 +42,12 @@ class FileTreeOperation(Task):
 		return None
 	def __call__(self):
 		self.set_text('Gathering files...')
-		if not self._gather_files():
+		try:
+			gathered = self._gather_files()
+		except OSError as error:
+			self.show_alert(str(error), OK, OK)
+			return
+		if not gathered:
 			return
 		self.set_size(sum(task.get_size() for task in self._tasks))
 		for i, task in enumerate(self._iter(self._tasks)):
@@ -107,7 +113,12 @@ class FileTreeOperation(Task):
 				self._enqueue(self._prepare_transfer(src, dest))
 		return True
 	def _merge_directory(self, src):
-		for file_name in self._fs.iterdir(src):
+		for url in (src, self._get_dest_url(src)):
+			if splitscheme(url)[0] == 'file://':
+				path = as_human_readable(url)
+				if os.path.islink(path) or os.path.isjunction(path):
+					raise OSError('Cannot merge through a directory link: ' + path)
+		for file_name in self._iter(self._fs.iterdir(src)):
 			file_url = join(src, file_name)
 			try:
 				src_is_dir = self._fs.is_dir(file_url)
@@ -245,6 +256,12 @@ class CopyFiles(FileTreeOperation):
 class MoveFiles(FileTreeOperation):
 	def __init__(self, *super_args, **super_kwargs):
 		super().__init__('move', *super_args, **super_kwargs)
+	def _gather_files(self):
+		if splitscheme(self._get_dest_dir_url())[0] == 'zip://' and any(
+			splitscheme(source)[0] == 'file://' for source in self._files
+		):
+			raise OSError('Moving local files into archives is disabled for safety. Copy and verify them before deleting the originals.')
+		return super()._gather_files()
 	def _transfer(self, src, dest):
 		self._fs.move(src, dest)
 	def _can_transfer_samefile(self):

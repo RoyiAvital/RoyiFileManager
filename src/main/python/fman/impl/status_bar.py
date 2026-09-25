@@ -86,6 +86,7 @@ def calculate_status_summary(
 	size_supported = True
 	size_limited = False
 	selected_size_complete = True
+	size_complete = all_rows_loaded
 	queried = 0
 	for entry in entries:
 		if is_cancelled():
@@ -99,6 +100,7 @@ def calculate_status_summary(
 		if entry.is_selected:
 			selected_file_count += 1
 		if not entry.is_loaded:
+			size_complete = False
 			if entry.is_selected:
 				selected_size_complete = False
 			continue
@@ -111,15 +113,18 @@ def calculate_status_summary(
 		try:
 			size = query_size(entry.url)
 		except NotImplementedError:
+			size_complete = False
 			size_supported = False
 			if entry.is_selected:
 				selected_size_complete = False
 			continue
 		except (FileNotFoundError, OSError):
+			size_complete = False
 			if entry.is_selected:
 				selected_size_complete = False
 			continue
 		if size is None:
+			size_complete = False
 			size_supported = False
 			if entry.is_selected:
 				selected_size_complete = False
@@ -129,7 +134,7 @@ def calculate_status_summary(
 			selected_size_bytes += size
 	return StatusSummary(
 		directory_count, file_count, size_bytes,
-		all_rows_loaded and not size_limited, size_supported, size_limited,
+		size_complete and not size_limited, size_supported, size_limited,
 		selected_directory_count, selected_file_count, selected_size_bytes,
 		selected_size_complete
 	)

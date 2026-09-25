@@ -91,12 +91,19 @@ class Config:
 			elif json_name in self._save_on_quit:
 				self._cache[json_name] = old
 
+def read_json_file(path):
+	try:
+		with open(path, 'r', encoding='utf-8-sig') as source:
+			return json.load(source)
+	except UnicodeDecodeError:
+		with open(path, 'r') as source:
+			return json.load(source)
+
 def load_json(paths):
 	result = None
 	for path in paths:
 		try:
-			with open(path, 'r') as f:
-				next_value = json.load(f)
+			next_value = read_json_file(path)
 		except FileNotFoundError:
 			continue
 		if result is None:

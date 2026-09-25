@@ -281,6 +281,7 @@ class Child:
 	def __init__(self, runner):
 		self.runner = runner
 		self.tail = bytearray()
+		self.reader = None
 		command = arguments(runner.options)
 		with runner.lock:
 			runner.check()
@@ -288,8 +289,16 @@ class Child:
 				stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
 				creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
 			runner.child = self
-		self.reader = Thread(target=self.read_errors, daemon=True)
-		self.reader.start()
+		try:
+			reader = Thread(target=self.read_errors, daemon=True)
+			reader.start()
+			self.reader = reader
+		except BaseException:
+			try:
+				self.finish()
+			except Exception:
+				pass
+			raise
 
 	def read_errors(self):
 		try:
@@ -308,8 +317,10 @@ class Child:
 	def finish(self):
 		self.kill()
 		code = self.process.wait()
-		self.reader.join()
+		if self.reader is not None:
+			self.reader.join()
 		self.process.stdout.close()
+		self.process.stderr.close()
 		with self.runner.lock:
 			self.runner.child = None
 		return code, bytes(self.tail).decode('utf-8', errors='replace')

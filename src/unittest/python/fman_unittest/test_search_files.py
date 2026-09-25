@@ -9,6 +9,41 @@ from search_files.engine import Collector, Options, Runner, command_fits, masks,
 
 
 class SearchEngineTest(TestCase):
+	def test_child_start_failure_reaps_and_unregisters(self):
+		from search_files.engine import Child
+		from unittest.mock import Mock
+		for writer_fails in (False, True):
+			with self.subTest(writer_fails=writer_fails):
+				runner = Runner(Options('C:\\root', 'text'))
+				process = Mock()
+				first, second = Mock(), Mock()
+				error = RuntimeError('start failed')
+				(second if writer_fails else first).start.side_effect = error
+				with patch('search_files.engine.subprocess.Popen', return_value=process), \
+					patch('search_files.engine.Thread', side_effect=[first, second]):
+					with self.assertRaises(RuntimeError) as raised:
+						Child(runner, ['rg'], b'input')
+					self.assertIs(error, raised.exception)
+				process.kill.assert_called_once()
+				process.wait.assert_called_once()
+				self.assertFalse(runner.children)
+				self.assertEqual(int(writer_fails), first.join.call_count)
+				second.join.assert_not_called()
+				for pipe in (process.stdin, process.stdout, process.stderr):
+					pipe.close.assert_called_once()
+	def test_saver_start_failure_retains_pending_values(self):
+		from search_files import SearchSession, DEFAULTS
+		from threading import Lock
+		session = SearchSession.__new__(SearchSession)
+		session.settings = dict(DEFAULTS)
+		session.save_lock = Lock()
+		session.saving = False
+		values = dict(DEFAULTS, recursive=False)
+		with patch('search_files.Thread', side_effect=RuntimeError('start failed')):
+			with self.assertRaises(RuntimeError):
+				session.changed(values)
+		self.assertFalse(session.saving)
+		self.assertEqual(values, dict(session.pending_settings))
 	def test_search_command_label(self):
 		from fman.impl.plugins.command_registry import PaneCommandRegistry
 		from threading import Event

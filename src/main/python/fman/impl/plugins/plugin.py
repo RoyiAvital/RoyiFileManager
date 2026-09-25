@@ -3,6 +3,7 @@ from fman.fs import FileSystem, Column
 from fman.impl.font_database import FontError
 from fman.impl.util import listdir_absolute
 from fman.impl.ui import UiController, UiOwner
+from fman.impl.plugins.config import read_json_file
 from glob import glob
 from importlib.util import module_from_spec, spec_from_file_location
 from inspect import getmro
@@ -233,8 +234,7 @@ class ExternalPlugin(Plugin):
 	def _configure_component_from_json(self, component, json_name, *args):
 		for json_file in self._config.locate(json_name, self._path):
 			try:
-				with open(json_file, 'r') as f:
-					config = json.load(f)
+				config = read_json_file(json_file)
 			except FileNotFoundError:
 				pass
 			except JSONDecodeError as e:

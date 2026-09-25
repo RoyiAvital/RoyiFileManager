@@ -12,8 +12,9 @@ from os import remove, rmdir
 from os.path import islink, samestat, isabs, splitdrive
 from pathlib import Path
 from PyQt5.QtCore import QFileSystemWatcher
-from shutil import copystat
-from stat import S_ISDIR, S_IWRITE
+from shutil import copystat, SameFileError
+from stat import S_ISDIR, S_ISREG, S_IWRITE
+from tempfile import mkstemp, mkdtemp
 
 import errno
 import os
@@ -138,8 +139,10 @@ class LocalFileSystem(FileSystem):
 		if expected_st_dev is None:
 			expected_st_dev = {}
 		src_path, dst_path = self._check_transfer_precnds(src_url, dst_url)
+		src_os_path = self._url_to_os_path(src_path)
+		src_is_link = islink(src_os_path) or os.path.isjunction(src_os_path)
 		if use_rename:
-			src_stat = self.stat(src_path)
+			src_stat = os.lstat(src_os_path) if src_is_link else self.stat(src_path)
 			dst_par_path = splitscheme(dirname(dst_url))[1]
 			try:
 				dst_par_dev = expected_st_dev[dst_par_path]
@@ -151,6 +154,8 @@ class LocalFileSystem(FileSystem):
 					fn=self._rename, args=(src_url, dst_url)
 				)
 				return
+		if src_is_link:
+			raise UnsupportedOperation('Cannot move links by copying; source retained.')
 		src_is_dir = self.is_dir(src_path)
 		if src_is_dir:
 			yield Task(
@@ -213,10 +218,11 @@ class LocalFileSystem(FileSystem):
 		os_path = self._url_to_os_path(path)
 		if not self._isabs(os_path):
 			raise filenotfounderror(path)
-		# is_dir(...) follows symlinks. But if `path` is a symlink, we need to
-		# use remove(...) instead of rmdir(...) to avoid NotADirectoryError.
-		# So check if `path` is a symlink:
-		if self.is_dir(path) and not islink(os_path):
+		if os.path.isjunction(os_path):
+			delete_fn = rmdir
+		elif islink(os_path):
+			delete_fn = remove
+		elif self.is_dir(path):
 			for name in self.iterdir(path):
 				try:
 					yield from self.prepare_delete(path + '/' + name)
@@ -234,10 +240,12 @@ class LocalFileSystem(FileSystem):
 		try:
 			delete_fn(os_path)
 		except OSError as orig_exc:
+			if islink(os_path) or os.path.isjunction(os_path):
+				raise
 			try:
 				mode = self.stat(path).st_mode
 			except OSError:
-				mode = 0
+				raise orig_exc
 			if not (mode & S_IWRITE):
 				try:
 					Path(os_path).chmod(mode | S_IWRITE)
@@ -245,6 +253,8 @@ class LocalFileSystem(FileSystem):
 					raise orig_exc
 				# Try again, now the file is writeable:
 				delete_fn(os_path)
+			else:
+				raise
 		self.notify_file_removed(path)
 	def resolve(self, path):
 		path = self._url_to_os_path(path)
@@ -363,25 +373,131 @@ class CopyFile(Task):
 		self._dst_url = dst_url
 	def __call__(self):
 		dst_urlpath = splitscheme(self._dst_url)[1]
-		dst_existed = self._fs.exists(dst_urlpath)
 		src = as_human_readable(self._src_url)
 		dst = as_human_readable(self._dst_url)
+		try:
+			destination = os.lstat(dst)
+		except FileNotFoundError:
+			destination = None
 		if islink(src):
+			if destination is not None:
+				raise UnsupportedOperation('Symlink overwrite refused; destination retained')
 			os.symlink(os.readlink(src), dst)
+			copystat(src, dst, follow_symlinks=False)
 		else:
 			with open(src, 'rb') as fsrc:
-				with open(dst, 'wb') as fdst:
-					num_written = 0
-					while True:
-						self.check_canceled()
-						buf = fsrc.read(_COPY_BUFFER_SIZE)
-						if not buf:
-							break
-						num_written += fdst.write(buf)
-						self.set_progress(num_written)
-		copystat(src, dst, follow_symlinks=False)
-		if not dst_existed:
+				source = os.fstat(fsrc.fileno())
+				if destination is not None:
+					if not S_ISREG(destination.st_mode):
+						raise UnsupportedOperation('Cannot safely overwrite a linked or non-regular destination')
+					identified = source.st_ino and source.st_dev and destination.st_ino and destination.st_dev
+					same_file = samestat(source, destination) if identified else \
+						self._fs.resolve(splitscheme(self._src_url)[1]) == self._fs.resolve(dst_urlpath)
+					if same_file:
+						raise SameFileError(src, dst, 'Source and destination are the same file')
+					if destination.st_nlink > 1:
+						raise UnsupportedOperation('Cannot safely overwrite a hardlinked destination')
+					if not destination.st_mode & S_IWRITE:
+						raise PermissionError(errno.EACCES, os.strerror(errno.EACCES), dst)
+				if not S_ISREG(source.st_mode):
+					raise UnsupportedOperation('Only regular files can be copied')
+				descriptor, temporary = mkstemp(dir=self._staging_directory(dst), prefix='.fc-')
+				try:
+					with os.fdopen(descriptor, 'wb') as fdst:
+						if destination is not None and PLATFORM == 'Windows':
+							import win32security
+							security = win32security.GetFileSecurity(dst, win32security.DACL_SECURITY_INFORMATION)
+							win32security.SetNamedSecurityInfo(temporary, win32security.SE_FILE_OBJECT,
+								win32security.DACL_SECURITY_INFORMATION | win32security.PROTECTED_DACL_SECURITY_INFORMATION,
+								None, None, security.GetSecurityDescriptorDacl(), None)
+						self._copy_bytes(fsrc, fdst)
+					copystat(src, temporary, follow_symlinks=False)
+					copied_mode = source.st_mode
+					restore_mode = destination is not None and PLATFORM == 'Windows' and not copied_mode & S_IWRITE
+					if restore_mode:
+						os.chmod(temporary, copied_mode | S_IWRITE)
+					self.check_canceled()
+					self._publish(temporary, dst, destination)
+					if restore_mode:
+						try:
+							os.chmod(dst, copied_mode)
+						except OSError as error:
+							error.strerror = 'Copy published, but restoring file mode failed: ' + (error.strerror or str(error))
+							self._fs.notify_file_changed(dst_urlpath)
+							raise
+				finally:
+					try:
+						os.unlink(temporary)
+					except PermissionError:
+						try:
+							os.chmod(temporary, S_IWRITE)
+							os.unlink(temporary)
+						except OSError:
+							pass
+					except OSError:
+						pass
+		if destination is None:
 			self._fs.notify_file_added(dst_urlpath)
+		else:
+			self._fs.notify_file_changed(dst_urlpath)
+	@staticmethod
+	def _staging_directory(destination):
+		directory = os.path.dirname(destination)
+		if PLATFORM == 'Windows':
+			directory = os.path.abspath(directory)
+			if not directory.startswith('\\\\?\\'):
+				directory = '\\\\?\\UNC\\' + directory[2:] if directory.startswith('\\\\') else '\\\\?\\' + directory
+		return directory
+	def _copy_bytes(self, fsrc, fdst):
+		num_written = 0
+		while True:
+			self.check_canceled()
+			buffer = fsrc.read(_COPY_BUFFER_SIZE)
+			if not buffer:
+				break
+			num_written += fdst.write(buffer)
+			self.set_progress(num_written)
+	def _publish(self, temporary, destination_path, destination):
+		if destination is None:
+			if PLATFORM == 'Windows':
+				os.rename(temporary, destination_path)
+			else:
+				os.link(temporary, destination_path)
+			return
+		current = os.lstat(destination_path)
+		fields = ('st_ino', 'st_dev', 'st_size', 'st_mtime_ns')
+		if any(getattr(current, name) != getattr(destination, name) for name in fields) or \
+			not S_ISREG(current.st_mode) or current.st_nlink > 1 or not current.st_mode & S_IWRITE:
+			raise OSError('Destination changed while copying; replacement refused')
+		if PLATFORM != 'Windows':
+			raise UnsupportedOperation('Metadata-preserving overwrite is not supported on this platform')
+		import ctypes
+		from ctypes import wintypes
+		replace = ctypes.WinDLL('kernel32', use_last_error=True).ReplaceFileW
+		replace.argtypes = (wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.LPCWSTR,
+			wintypes.DWORD, wintypes.LPVOID, wintypes.LPVOID)
+		replace.restype = wintypes.BOOL
+		backup_directory = mkdtemp(dir=self._staging_directory(destination_path), prefix='.fb-')
+		backup = os.path.join(backup_directory, 'o')
+		try:
+			if not replace(destination_path, temporary, backup, 0, None, None):
+				error = ctypes.WinError(ctypes.get_last_error())
+				if os.path.lexists(backup):
+					try:
+						os.rename(backup, destination_path)
+					except OSError:
+						error.strerror += ' Previous destination retained at: ' + backup
+					raise error
+				raise error
+			try:
+				os.unlink(backup)
+			except OSError:
+				pass
+		finally:
+			try:
+				os.rmdir(backup_directory)
+			except OSError:
+				pass
 
 class MoveByCopying(Task):
 	def __init__(self, fs, src_url, dst_url, size_bytes):

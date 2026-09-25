@@ -35,8 +35,13 @@ It works like **Extract Here**: `Reports.zip` in `C:\Work` creates `C:\Work\Repo
 
 ## Copy and Move
 
-Use ++f5++ and ++f6++ between an archive and a folder, or between two archives.
+Use ++f5++ to copy into or out of an archive. Use ++f6++ to move out of an archive
+or between two archives of the same format.
 
+- Moving local files into archives is disabled for safety. Copy them, verify the
+  archive contents, then delete originals explicitly.
+- Moving between different archive formats is not supported. Extract and verify
+  the files first, then copy them into the destination archive.
 - Extraction shows progress and can be canceled.
 - Moving out of or between archives checks the copied files before removing them from the source. This takes extra time and temporary space.
 - Avoid changing the archive or destination while an operation runs.

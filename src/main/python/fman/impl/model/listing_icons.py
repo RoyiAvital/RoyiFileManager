@@ -110,7 +110,12 @@ class ListingIcons(QObject):
 				self._pending[key] = ('file' + key if generic else key[0], attributes, generic)
 				if not self._running:
 					self._running = True
-					Thread(target=self._run, daemon=True).start()
+					try:
+						Thread(target=self._run, daemon=True).start()
+					except BaseException:
+						self._running = False
+						self._pending.pop(key, None)
+						raise
 		return fallback
 
 	def _run(self):

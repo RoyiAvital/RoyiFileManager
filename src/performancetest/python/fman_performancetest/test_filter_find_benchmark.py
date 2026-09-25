@@ -32,6 +32,14 @@ finally:
 
 
 class PerformanceReportTest(TestCase):
+	def test_report_product_name_comes_from_settings(self):
+		with patch.object(report, 'get_build_settings', return_value={'app_name': 'RfmRenameProbe'}):
+			html = report.render_html(self.record(), {})
+		self.assertIn('<title>RfmRenameProbe | Performance</title>', html)
+		self.assertIn('RfmRenameProbe <small>Performance', html)
+		self.assertIn('RfmRenameProbe / Performance', html)
+		self.assertNotIn('__APP_NAME__', html)
+
 	def test_report_labels_recursive_fuzzy_find(self):
 		html = report.render_html(self.record(), {})
 		self.assertIn("'recursive.tree':'Fuzzy Find (Recursive)'", html)

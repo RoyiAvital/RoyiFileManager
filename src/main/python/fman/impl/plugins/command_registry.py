@@ -1,4 +1,4 @@
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from fman.impl.plugins.plugin import ReportExceptions
 from threading import Thread, get_ident
 from weakref import WeakKeyDictionary
@@ -150,12 +150,10 @@ class PaneCommandRegistry(CommandRegistry):
 			return result
 	@contextmanager
 	def _set_context(self, pane, file_under_cursor=_DEFAULT):
-		if file_under_cursor is not self._DEFAULT:
-			cm = pane._override_file_under_cursor(file_under_cursor)
-			cm.__enter__()
-		yield
-		if file_under_cursor is not self._DEFAULT:
-			cm.__exit__(None, None, None)
+		context = nullcontext() if file_under_cursor is self._DEFAULT else \
+			pane._override_file_under_cursor(file_under_cursor)
+		with context:
+			yield
 
 def _get_default_aliases(cmd_class):
 	return re.sub(r'([a-z])([A-Z])', r'\1 \2', cmd_class.__name__)\

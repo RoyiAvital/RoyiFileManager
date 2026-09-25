@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 from statistics import median
 import subprocess
 import sys
@@ -28,7 +29,7 @@ def benchmark_environment():
 	return environment
 
 
-def summarize(results, labels, baseline, repeat, show_hidden):
+def summarize(results, labels, baseline, repeat, show_hidden, baseline_label=None):
 	current = 'snapshot' if baseline == 'current' else 'after'
 	expected = {(label, mode, iteration) for label in labels
 		for mode in (baseline, current) for iteration in range(1, repeat + 1)}
@@ -45,7 +46,7 @@ def summarize(results, labels, baseline, repeat, show_hidden):
 	if seen != expected:
 		raise ValueError('Incomplete benchmark results')
 	lines = [
-		'Medians in milliseconds; warm OS caches; baseline: %s.' % baseline,
+		'Medians in milliseconds; warm OS caches; baseline: %s.' % (baseline_label or baseline),
 		'Loading paint p95 is the median of per-run p95 values, not a pooled p95.',
 		'| Folder | Entries | First paint (baseline -> current) | Complete (baseline -> current) | Loading paint p95 (baseline -> current) |',
 		'| --- | ---: | ---: | ---: | ---: |',
@@ -68,6 +69,16 @@ def summarize(results, labels, baseline, repeat, show_hidden):
 	return '\n'.join(lines)
 
 
+def normalize_release_ref(value):
+	value = value.strip()
+	return 'v' + value if re.fullmatch(r'\d+\.\d+\.\d+', value) else value
+
+
+def comparison_output(output, revision):
+	suffix = re.sub(r'[^A-Za-z0-9_.-]+', '-', revision).strip('-') or 'revision'
+	return output.with_name(output.stem + '-' + suffix + output.suffix)
+
+
 def main(argv=None):
 	parser = argparse.ArgumentParser(description=__doc__)
 	parser.add_argument('directories', nargs='*', type=Path,
@@ -75,7 +86,10 @@ def main(argv=None):
 	parser.add_argument('--repeat', type=int, default=3, help='Alternating pairs per folder')
 	parser.add_argument('--baseline', choices=('before', 'reviewed', 'current'), default='current',
 		help='current: committed pre-snapshot application; before/reviewed: historical hidden-cache comparisons')
-	parser.add_argument('--baseline-ref', help='Override the pinned historical application commit')
+	parser.add_argument('--baseline-ref', type=normalize_release_ref,
+		help='Override the pinned historical application commit or release')
+	parser.add_argument('--compare-version', action='append', default=[], metavar='VERSION',
+		help='Also compare the current tree with a release or Git revision; may be repeated')
 	parser.add_argument('--show-hidden', action='store_true', help='Measure with hidden filtering off')
 	parser.add_argument('--output', type=Path,
 		default=ROOT / 'target/diagnostics/pane-rendering-three-folders.json')
@@ -84,6 +98,8 @@ def main(argv=None):
 		parser.error('--repeat must be positive')
 	if sys.platform != 'win32':
 		parser.error('This application benchmark requires Windows')
+	if args.compare_version and args.baseline != 'current':
+		parser.error('--compare-version requires --baseline current')
 	directories = args.directories or default_directories()
 	for directory in directories:
 		if not directory.is_dir():
@@ -93,27 +109,38 @@ def main(argv=None):
 	if len(set(labels)) != len(labels):
 		parser.error('Folders must have distinct names for benchmark grouping')
 	output = args.output.resolve()
-	command = [sys.executable, '-m', 'fman_performancetest.pane_rendering_benchmark',
-		*map(str, directories), '--baseline', args.baseline, '--repeat', str(args.repeat),
-		'--output', str(output)]
-	if args.baseline_ref:
-		command.extend(('--baseline-ref', args.baseline_ref))
-	if args.show_hidden:
-		command.append('--show-hidden')
-	print('Measuring %d folders, %d pairs each. Raw results: %s' % (
-		len(directories), args.repeat, output), flush=True)
-	try:
-		run = subprocess.run(command, cwd=ROOT, env=benchmark_environment(),
-			capture_output=True, text=True, timeout=180 * 2 * args.repeat * len(directories) + 30)
-		if run.returncode:
-			print(run.stdout + run.stderr, file=sys.stderr)
-			return run.returncode
-		results = json.loads(output.read_text(encoding='utf-8'))
-		print(summarize(results, labels, args.baseline, args.repeat, args.show_hidden))
-		print('Row/metadata parity and settings isolation: PASS. Raw results: %s' % output)
-	except (OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired) as error:
-		print('Benchmark failed: %s. Inspect raw results: %s' % (error, output), file=sys.stderr)
-		return 1
+	comparisons = [(args.baseline_ref, output)]
+	seen_refs = {args.baseline_ref} if args.baseline_ref else set()
+	for version in args.compare_version:
+		revision = normalize_release_ref(version)
+		if revision in seen_refs:
+			parser.error('Duplicate comparison revision: ' + revision)
+		seen_refs.add(revision)
+		comparisons.append((revision, comparison_output(output, revision)))
+	for baseline_ref, comparison_path in comparisons:
+		command = [sys.executable, '-m', 'fman_performancetest.pane_rendering_benchmark',
+			*map(str, directories), '--baseline', args.baseline, '--repeat', str(args.repeat),
+			'--output', str(comparison_path)]
+		if baseline_ref:
+			command.extend(('--baseline-ref', baseline_ref))
+		if args.show_hidden:
+			command.append('--show-hidden')
+		print('Measuring %d folders, %d pairs each. Raw results: %s' % (
+			len(directories), args.repeat, comparison_path), flush=True)
+		try:
+			run = subprocess.run(command, cwd=ROOT, env=benchmark_environment(),
+				capture_output=True, text=True, timeout=180 * 2 * args.repeat * len(directories) + 30)
+			if run.returncode:
+				print(run.stdout + run.stderr, file=sys.stderr)
+				return run.returncode
+			results = json.loads(comparison_path.read_text(encoding='utf-8'))
+			label = baseline_ref or ('56e840a' if args.baseline == 'current' else args.baseline)
+			print(summarize(results, labels, args.baseline, args.repeat, args.show_hidden, label))
+			print('Row/metadata parity and settings isolation: PASS. Raw results: %s' % comparison_path)
+		except (OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired) as error:
+			print('Benchmark failed: %s. Inspect raw results: %s' %
+				(error, comparison_path), file=sys.stderr)
+			return 1
 	return 0
 
 

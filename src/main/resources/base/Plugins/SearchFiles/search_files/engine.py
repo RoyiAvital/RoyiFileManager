@@ -306,6 +306,7 @@ class Child:
 		self.tail = bytearray()
 		self.input_error = None
 		self.writer = None
+		self.reader = None
 		with runner.lock:
 			runner.check()
 			self.process = subprocess.Popen(arguments, shell=False, bufsize=0,
@@ -313,11 +314,20 @@ class Child:
 				stdout=subprocess.PIPE, stderr=subprocess.PIPE,
 				creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
 			runner.children.add(self)
-		self.reader = Thread(target=self.read_errors, daemon=True)
-		self.reader.start()
-		if input_data is not None:
-			self.writer = Thread(target=self.write_input, args=(input_data,), daemon=True)
-			self.writer.start()
+		try:
+			reader = Thread(target=self.read_errors, daemon=True)
+			reader.start()
+			self.reader = reader
+			if input_data is not None:
+				writer = Thread(target=self.write_input, args=(input_data,), daemon=True)
+				writer.start()
+				self.writer = writer
+		except BaseException:
+			try:
+				self.finish(kill=True)
+			except Exception:
+				pass
+			raise
 
 	def read_errors(self):
 		try:
@@ -350,10 +360,14 @@ class Child:
 		if kill:
 			self.kill()
 		code = self.process.wait()
-		self.reader.join()
+		if self.reader is not None:
+			self.reader.join()
 		if self.writer is not None:
 			self.writer.join()
 		self.process.stdout.close()
+		self.process.stderr.close()
+		if self.process.stdin is not None:
+			self.process.stdin.close()
 		with self.runner.lock:
 			self.runner.children.discard(self)
 		return code, bytes(self.tail).decode('utf-8', errors='replace')

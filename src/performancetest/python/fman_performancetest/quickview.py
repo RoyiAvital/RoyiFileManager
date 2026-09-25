@@ -11,6 +11,14 @@ from time import perf_counter, process_time
 from fman_performancetest.filter_find import distribution, memory
 
 
+def _install_paint_dispatch():
+	from fman.impl.view import FileListView
+	original_paint = FileListView.paintEvent
+	def dispatch_paint(view, event):
+		return original_paint(view, event)
+	FileListView.paintEvent = dispatch_paint
+
+
 def child(directory, viewport, navigation_repetitions=5):
 	with TemporaryDirectory(prefix='quickview-performance-') as temporary:
 		settings = Path(temporary) / 'UserSettings'
@@ -22,6 +30,7 @@ def child(directory, viewport, navigation_repetitions=5):
 		from PyQt5.QtCore import QCoreApplication, QEvent, QObject, QTimer
 		if Path(DATA_DIRECTORY).resolve() != settings:
 			raise RuntimeError('Settings isolation failed')
+		_install_paint_dispatch()
 		user = settings / 'Plugins/User/Settings'
 		user.mkdir(parents=True)
 		(user / 'Panes.json').write_text(json.dumps([{'show_hidden_files': True}] * 2), encoding='utf-8')

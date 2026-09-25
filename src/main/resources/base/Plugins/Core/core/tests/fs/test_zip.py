@@ -286,6 +286,17 @@ class UnpackExtractionTest(TestCase):
 				self.output.rmdir()
 
 class ArchiveProcessTest(TestCase):
+	def test_reader_start_failure_kills_before_wait(self):
+		process = FakePipeProcess(quiet=True)
+		archive = _7zip([])
+		archive._process = process
+		error = RuntimeError('start failed')
+		with patch('core.fs.zip.Thread', side_effect=error):
+			with self.assertRaises(RuntimeError) as raised:
+				list(archive.progress_records(lambda: None))
+			self.assertIs(error, raised.exception)
+		self.assertTrue(process.killed)
+		self.assertTrue(process.waited)
 	def test_unpack_rejects_wrong_archive_or_member(self):
 		with TemporaryDirectory() as directory:
 			selected = Path(directory, 'selected.zip')
@@ -932,16 +943,31 @@ class ZipFileSystemTest(TestCase):
 			self.assertEqual(expected_zip_contents, self._get_zip_contents())
 			self.assertEqual(removed, self._read_directory(dst_dir))
 	def test_move_file_into_archive(self):
+		from io import UnsupportedOperation
 		expected_zip_contents = self._get_zip_contents()
 		with TemporaryDirectory() as tmp_dir:
 			file_path = os.path.join(tmp_dir, 'test.txt')
 			with open(file_path, 'w') as f:
 				f.write('success!')
 			dst_url = self._url('test_dest.txt')
-			self._fs.move(as_url(file_path), dst_url)
-			self.assertFalse(Path(file_path).exists())
-			expected_zip_contents['test_dest.txt'] = 'success!'
+			with self.assertRaises(UnsupportedOperation):
+				self._fs.move(as_url(file_path), dst_url)
+			self.assertEqual('success!', Path(file_path).read_text())
 			self.assertEqual(expected_zip_contents, self._get_zip_contents())
+	def test_cross_format_move_refuses_without_mutation(self):
+		from io import UnsupportedOperation
+		before = Path(self._zip).read_bytes()
+		with TemporaryDirectory() as directory:
+			destination = Path(directory, 'destination.archive')
+			destination.write_bytes(b'destination retained')
+			for scheme in (SevenZipFileSystem.scheme, TarFileSystem.scheme):
+				with self.subTest(scheme=scheme), patch('core.fs.zip._run_7zip') as run:
+					with self.assertRaisesRegex(UnsupportedOperation, 'same archive format'):
+						self._fs.move(self._url('ZipFileTest/file.txt'), as_url(destination, scheme) + '/item.txt')
+					run.assert_not_called()
+					self.assertEqual(before, Path(self._zip).read_bytes())
+					self.assertEqual(b'destination retained', destination.read_bytes())
+
 	def test_rename_directory(self):
 		expected_contents = self._get_zip_contents()
 		file_path = 'ZipFileTest/Directory'

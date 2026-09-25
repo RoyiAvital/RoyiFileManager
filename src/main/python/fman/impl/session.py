@@ -27,6 +27,7 @@ class SessionManager:
 		self._error_handler = error_handler
 		self._app_version = app_version
 		self._is_licensed = is_licensed
+		self._save_failure_reported = False
 	@property
 	def was_licensed_on_last_run(self):
 		return self._settings.get('is_licensed', False)
@@ -157,10 +158,7 @@ class SessionManager:
 	def reset_window_geometry(self, window):
 		self._settings.pop('window_geometry', None)
 		self._settings.pop('window_state', None)
-		try:
-			self._settings.flush()
-		except OSError:
-			pass
+		self._flush_settings()
 		window.reset_geometry(*self.DEFAULT_WINDOW_SIZE)
 	def on_close(self, main_window):
 		self._settings['window_geometry'] = _encode(main_window.saveGeometry())
@@ -171,10 +169,14 @@ class SessionManager:
 		self._settings['app_version'] = self._app_version
 		self._settings.pop('fman_version', None)
 		self._settings['is_licensed'] = self._is_licensed
+		self._flush_settings()
+	def _flush_settings(self):
 		try:
 			self._settings.flush()
-		except OSError:
-			pass
+		except OSError as error:
+			if not self._save_failure_reported:
+				self._save_failure_reported = True
+				self._error_handler.report('Session state could not be saved: %s' % error, exc=False)
 	def _read_pane_settings(self, pane):
 		return {
 			'location': pane.get_location(),

@@ -283,16 +283,21 @@ class NativeListingTest(TestCase):
 
 	def test_name_keys_preserve_padding_and_unicode_digit_semantics(self):
 		from core import Name
-		import re
+		from types import SimpleNamespace
 		names = ('file999999', 'file1000000', 'file02', 'file2', '002a09b',
 			'no-digits', 'FILE0000000', 'v\u0662\u0663', 'v\uff12', '9' * 80)
 		listing = Listing.create('file://C:/fixture', names,
 			is_dir=tuple(index % 2 == 0 for index in range(len(names))), labels=tuple(reversed(names)))
+		labels = dict(zip(listing.names, listing.display_names))
+		directories = dict(zip(listing.names, listing.is_dir))
+		column = Name(SimpleNamespace(is_dir=directories.__getitem__, query=lambda name, method: labels[name]))
 		for ascending in (True, False):
-			expected = tuple((is_dir ^ ascending, re.sub(r'\d+',
-				lambda match: '%06d' % int(match.group(0)), name.lower()))
-				for name, is_dir in zip(listing.display_names, listing.is_dir))
-			self.assertEqual(expected, Name().keys(listing, ascending))
+			keys = column.keys(listing, ascending)
+			self.assertEqual(tuple(column.get_sort_value(name, ascending) for name in listing.names), keys)
+			minor = dict(zip(listing.display_names, (key[1] for key in keys)))
+			self.assertLess(minor['file999999'], minor['file1000000'])
+			self.assertEqual(minor['file02'], minor['file2'])
+			self.assertLess(minor['v\uff12'], minor['v\u0662\u0663'])
 
 	def test_core_column_goldens_both_sort_directions(self):
 		from core import LocalFileSystem, Name, Size, Modified
@@ -371,6 +376,102 @@ class NativeListingTest(TestCase):
 
 
 class SnapshotJobsTest(TestCase):
+	def test_icon_start_failure_can_retry(self):
+		from collections import OrderedDict
+		from threading import Lock
+		from types import SimpleNamespace
+		from unittest.mock import Mock, patch
+		from fman.impl.model.listing_icons import ListingIcons
+		icons = SimpleNamespace(_folder=None, _file=None, _cache={}, _pending=OrderedDict(),
+			_inflight=set(), _lock=Lock(), _closed=False, _running=False, key=Mock(return_value='.txt'), _run=Mock())
+		listing = SimpleNamespace(location='file://C:/root', attributes=(0,), is_dir=(False,))
+		with patch('fman.impl.model.listing_icons.Thread') as thread:
+			thread.return_value.start.side_effect = [RuntimeError('start failed'), None]
+			with self.assertRaises(RuntimeError):
+				ListingIcons.icon(icons, listing, 0)
+			self.assertFalse(icons._running)
+			self.assertFalse(icons._pending)
+			ListingIcons.icon(icons, listing, 0)
+			self.assertEqual(2, thread.return_value.start.call_count)
+	def test_status_entries_join_each_visible_url_once(self):
+		from types import SimpleNamespace
+		from unittest.mock import patch
+		from fman.impl.model.listing import ListingModel
+		from fman.url import join
+		model = SimpleNamespace(_location='file://C:/root', _visible=(0, 1),
+			_displayed=SimpleNamespace(names=('one', 'two'), is_dir=(False, True)))
+		with patch('fman.impl.model.listing.join', wraps=join) as joined:
+			entries = ListingModel.get_status_entries(model, {'file://C:/root/one'})
+			self.assertEqual(2, joined.call_count)
+		self.assertTrue(entries[0].is_selected)
+		self.assertFalse(entries[1].is_selected)
+	def test_refresh_expected_errors_use_fallback(self):
+		from types import SimpleNamespace
+		from unittest.mock import Mock, patch
+		from fman.impl.model.listing import ListingModel
+		model = SimpleNamespace(_shutdown=False, _scan_revision=1, _dirty=False,
+			_navigation_request=None, _location='file://C:/root', location_disappeared=Mock())
+		with patch('fman.impl.model.listing.sys.excepthook') as report:
+			for error in (PermissionError(), FileNotFoundError(), NotADirectoryError()):
+				ListingModel._receive(model, 'scan', 1, None, error)
+			report.assert_not_called()
+			self.assertEqual(3, model.location_disappeared.emit.call_count)
+			ListingModel._receive(model, 'scan', 1, None, ValueError('unexpected'))
+			report.assert_called_once()
+	def test_start_failure_releases_capacity_and_retires_outside_lock(self):
+		from fman.impl.model.listing import LatestJobs
+		from unittest.mock import Mock, patch
+		from threading import Event
+		for capacity in (1, 2):
+			for construction in (False, True):
+				with self.subTest(capacity=capacity, construction=construction):
+					jobs = LatestJobs(capacity)
+					error = RuntimeError('start failed')
+					def retired():
+						self.assertTrue(jobs._lock.acquire(blocking=False))
+						jobs._lock.release()
+					callback = Mock(side_effect=retired)
+					with patch('fman.impl.model.listing.Thread') as thread:
+						if construction:
+							thread.side_effect = error
+						else:
+							thread.return_value.start.side_effect = error
+						with self.assertRaises(RuntimeError) as raised:
+							jobs.submit(Mock(), Mock(), callback)
+						self.assertIs(error, raised.exception)
+					callback.assert_called_once()
+					self.assertEqual(set(), jobs._active)
+					finished = Event()
+					jobs.submit(lambda check: 1, lambda *args: finished.set())
+					self.assertTrue(finished.wait(5))
+					jobs.close()
+	def test_queued_start_failure_delivers_once_outside_lock(self):
+		from fman.impl.model.listing import LatestJobs
+		from unittest.mock import Mock, patch
+		for construction in (False, True):
+			with self.subTest(construction=construction):
+				jobs = LatestJobs()
+				error = RuntimeError('queued start failed')
+				def delivered(*args):
+					self.assertTrue(jobs._lock.acquire(blocking=False))
+					jobs._lock.release()
+				deliver = Mock(side_effect=delivered)
+				canceled, work = Mock(), Mock()
+				with patch('fman.impl.model.listing.Thread') as thread:
+					jobs.submit(Mock(), Mock())
+					active_args = thread.call_args.kwargs['args']
+					jobs.submit(work, deliver, canceled)
+					if construction:
+						thread.side_effect = error
+					else:
+						thread.return_value.start.side_effect = error
+					jobs._run(*active_args)
+				work.assert_not_called()
+				canceled.assert_not_called()
+				deliver.assert_called_once_with(None, error)
+				self.assertEqual(set(), jobs._active)
+				self.assertIsNone(jobs._pending)
+				jobs.close()
 	def test_batch_hidden_filter_matches_scalar_and_composes_with_plugin_filters(self):
 		from core import Name
 		from core.commands import _hidden_file_filter

@@ -7,6 +7,18 @@ from unittest import TestCase, skipIf
 import os
 
 class ShrinkVisiblePathsTest(TestCase):
+	def test_navigation_retains_offline_history_without_probing(self):
+		from core.commands.goto import GoToListener
+		from unittest.mock import Mock, patch
+		pane = Mock()
+		pane.get_path.return_value = 'file://C:/current'
+		listener = GoToListener(pane)
+		listener.is_first_path_change = False
+		visited = {'Z:\\offline': 3}
+		with patch('core.commands.goto.load_json', return_value=visited), \
+			patch('core.commands.goto.os.path.isdir', side_effect=AssertionError('No background probing')):
+			listener.on_path_changed()
+		self.assertEqual(3, visited['Z:\\offline'])
 	def test_basic(self):
 		vps = {'a': 1, 'b': 2, 'c': 3, 'd': 4, 'e': 5}
 		_shrink_visited_paths(vps, 3)

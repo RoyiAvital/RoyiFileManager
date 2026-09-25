@@ -107,6 +107,10 @@ optional `args`, optional `caption`, and optional grouping `id`. A caption of
 commands see the clicked item's context for visibility and execution, which may
 differ from the ordinary cursor context.
 
+The cursor override applies only on the command's thread. Capture
+`pane.get_file_under_cursor()` there before passing the URL to a Qt-thread helper
+or another worker; reading it on that other thread returns the ordinary cursor.
+
 ```json
 [
   { "id": "my_plugin", "command": "show_example", "caption": "Example" }

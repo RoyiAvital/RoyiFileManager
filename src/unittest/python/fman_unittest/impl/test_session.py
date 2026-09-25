@@ -2,9 +2,85 @@ from unittest import TestCase
 from unittest.mock import Mock, patch
 
 from fman.impl.session import SessionManager, _encode
+from fman.impl.util.settings import Settings
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+
+class SettingsSafetyTest(TestCase):
+	def test_unknown_link_count_allows_settings_save(self):
+		from types import SimpleNamespace
+		with TemporaryDirectory() as directory:
+			path = Path(directory, 'settings.json')
+			path.write_text('{"saved": 1}')
+			settings = Settings(path)
+			settings['saved'] = 2
+			metadata = SimpleNamespace(st_mode=path.stat().st_mode, st_nlink=0)
+			with patch('fman.impl.util.settings.os.lstat', return_value=metadata):
+				settings.flush()
+			self.assertEqual(2, Settings(path).get('saved', None))
+			self.assertEqual([path], list(Path(directory).iterdir()))
+
+	def test_hardlinked_settings_are_not_replaced(self):
+		import os
+		with TemporaryDirectory() as directory:
+			path, alias = Path(directory, 'settings.json'), Path(directory, 'alias.json')
+			path.write_text('{"saved": 1}')
+			os.link(path, alias)
+			settings = Settings(path)
+			settings['saved'] = 2
+			with self.assertRaises(OSError):
+				settings.flush()
+			self.assertTrue(os.path.samefile(path, alias))
+			self.assertEqual('{"saved": 1}', alias.read_text())
+	def test_failed_serialization_and_replace_preserve_old_json(self):
+		for serialize_failure in (False, True):
+			with self.subTest(serialize_failure=serialize_failure), TemporaryDirectory() as directory:
+				path = Path(directory, 'settings.json')
+				path.write_text('{"saved": 1}')
+				settings = Settings(path)
+				settings['new'] = object() if serialize_failure else 2
+				with patch('fman.impl.util.settings.os.replace', side_effect=PermissionError('locked')):
+					with self.assertRaises((TypeError, PermissionError)):
+						settings.flush()
+				self.assertEqual('{"saved": 1}', path.read_text())
+				self.assertEqual([path], list(Path(directory).iterdir()))
+	def test_non_object_roots_reset_and_round_trip(self):
+		for root in ('[]', 'null', '42', '"text"'):
+			with self.subTest(root=root), TemporaryDirectory() as directory:
+				path = Path(directory, 'settings.json')
+				path.write_text(root)
+				settings = Settings(path)
+				self.assertIsNone(settings.get('missing', None))
+				settings['saved'] = 1
+				settings.flush()
+				self.assertEqual(1, Settings(path).get('saved', None))
 
 
 class SessionManagerWindowTest(TestCase):
+	def test_linked_settings_save_failure_is_reported_once(self):
+		import os
+		with TemporaryDirectory() as directory:
+			path, alias = Path(directory, 'Session.json'), Path(directory, 'alias.json')
+			path.write_text('{}')
+			os.link(path, alias)
+			errors = Mock()
+			manager = SessionManager(Settings(path), Mock(), errors, 'test', True)
+			window = Mock()
+			window.saveGeometry.return_value = b'geometry'
+			window.saveState.return_value = b'state'
+			window.get_panes.return_value = []
+			manager.reset_window_geometry(window)
+			manager.on_close(window)
+			manager.on_close(window)
+			errors.report.assert_called_once()
+			self.assertIn('Session state could not be saved', errors.report.call_args.args[0])
+			self.assertIn('linked settings', errors.report.call_args.args[0])
+			self.assertEqual({'exc': False}, errors.report.call_args.kwargs)
+			self.assertTrue(os.path.samefile(path, alias))
+			self.assertEqual('{}', alias.read_text())
+			self.assertEqual({path, alias}, set(Path(directory).iterdir()))
+
 	def test_named_widths_and_legacy_widths_are_forwarded(self):
 		manager = SessionManager({}, Mock(), Mock(), 'test', True)
 		for named in (None, {'core.Name': 181, 'core.Size': 91}):

@@ -188,6 +188,382 @@ class NativeEntryAttributesTest(TestCase):
 		self.assertIs(type(self.fs.stat(_urlpath(self.root / 'broken-link'))), os.stat_result)
 
 class LocalFileSystemTest(TestCase):
+	@skipUnless(PLATFORM == 'Windows', 'Windows read-only replacement')
+	def test_readonly_mode_failure_reports_published_data(self):
+		with TemporaryDirectory() as directory:
+			source, destination = Path(directory, 'source'), Path(directory, 'destination')
+			source.write_bytes(b'new')
+			destination.write_bytes(b'old')
+			source.chmod(0o444)
+			chmod = os.chmod
+			def denied(path, mode, **kwargs):
+				if os.fspath(path) == str(destination):
+					raise PermissionError(13, 'Access is denied', str(destination))
+				return chmod(path, mode, **kwargs)
+			try:
+				with patch('core.fs.local.os.chmod', side_effect=denied), patch.object(self._fs, 'notify_file_changed') as changed:
+					with self.assertRaisesRegex(PermissionError, 'Copy published'):
+						self._fs.copy(as_url(source), as_url(destination))
+					changed.assert_called_once_with(_urlpath(destination))
+				self.assertEqual(b'new', source.read_bytes())
+				self.assertEqual(b'new', destination.read_bytes())
+				self.assertEqual({'source', 'destination'}, {path.name for path in Path(directory).iterdir()})
+			finally:
+				source.chmod(S_IWRITE)
+				destination.chmod(S_IWRITE)
+
+	def test_copy_refuses_known_hardlinks_with_unknown_inode(self):
+		from io import UnsupportedOperation
+		with TemporaryDirectory() as directory:
+			source, destination, alias = (Path(directory, name) for name in ('source', 'destination', 'alias'))
+			source.write_bytes(b'new')
+			destination.write_bytes(b'old')
+			os.link(destination, alias)
+			lstat = os.lstat
+			def unidentified(*args, **kwargs):
+				metadata = lstat(*args, **kwargs)
+				fields = {name: getattr(metadata, name) for name in dir(metadata) if name.startswith('st_')}
+				fields.update(st_ino=0, st_dev=0)
+				return SimpleNamespace(**fields)
+			with patch('core.fs.local.os.lstat', side_effect=unidentified):
+				with self.assertRaises(UnsupportedOperation):
+					self._fs.copy(as_url(source), as_url(destination))
+			self.assertEqual(b'old', destination.read_bytes())
+			self.assertEqual(b'old', alias.read_bytes())
+			self.assertEqual(b'new', source.read_bytes())
+
+	@skipUnless(PLATFORM == 'Windows', 'Windows copy metadata calls')
+	def test_copy_avoids_extra_staging_metadata_calls(self):
+		stat = os.stat
+		for exists in (False, True):
+			with self.subTest(exists=exists), TemporaryDirectory() as directory:
+				source, destination = Path(directory, 'source'), Path(directory, 'destination')
+				source.write_bytes(b'new')
+				if exists:
+					destination.write_bytes(b'old')
+				def check_stat(path, **kwargs):
+					self.assertFalse(Path(path).name.startswith(('.fc-', '.fb-')))
+					return stat(path, **kwargs)
+				with patch('core.fs.local.os.stat', side_effect=check_stat), \
+					patch('win32api.GetFileAttributes', side_effect=AssertionError('Extra attributes read')), \
+					patch('win32api.SetFileAttributes', side_effect=AssertionError('Extra attributes write')):
+					self._fs.copy(as_url(source), as_url(destination))
+				self.assertEqual(b'new', destination.read_bytes())
+				self.assertEqual({'source', 'destination'}, {path.name for path in Path(directory).iterdir()})
+
+	@skipUnless(PLATFORM == 'Windows', 'Windows legacy path limits')
+	def test_staging_near_legacy_path_limit(self):
+		from core.fs.local import mkstemp, mkdtemp
+		with TemporaryDirectory() as directory:
+			root = Path(directory).resolve()
+			source = root / 'source'
+			source.write_bytes(b'new')
+			parent = root / ('a' * 80)
+			parent /= 'b' * (257 - len(str(parent)) - 1)
+			extended_parent = Path('\\\\?\\' + str(parent))
+			extended_parent.mkdir(parents=True)
+			destination = parent / 'd'
+			self.assertEqual(259, len(str(destination)))
+			def legacy_create(factory, limit, **kwargs):
+				path = os.path.join(kwargs['dir'], kwargs['prefix'] + '12345678')
+				if not path.startswith('\\\\?\\') and len(path) >= limit:
+					raise OSError(36, 'Legacy path limit exceeded', path)
+				return factory(**kwargs)
+			for exists in (False, True):
+				with self.subTest(exists=exists):
+					if exists:
+						destination.write_bytes(b'old')
+					with patch('core.fs.local.mkstemp', side_effect=lambda **kwargs: legacy_create(mkstemp, 260, **kwargs)), \
+						patch('core.fs.local.mkdtemp', side_effect=lambda **kwargs: legacy_create(mkdtemp, 248, **kwargs)):
+						self._fs.copy(as_url(source), as_url(destination))
+					self.assertEqual(b'new', destination.read_bytes())
+					self.assertEqual({'d'}, {path.name for path in extended_parent.iterdir()})
+				self.assertEqual(b'new', source.read_bytes())
+
+	@skipUnless(PLATFORM == 'Windows', 'Windows staging path syntax')
+	def test_staging_directory_preserves_unc_and_extended_paths(self):
+		from core.fs.local import CopyFile
+		for destination, expected in (
+			('C:\\folder\\file', '\\\\?\\C:\\folder'),
+			('\\\\server\\share\\folder\\file', '\\\\?\\UNC\\server\\share\\folder'),
+			('\\\\?\\C:\\folder\\file', '\\\\?\\C:\\folder'),
+			('\\\\?\\UNC\\server\\share\\folder\\file', '\\\\?\\UNC\\server\\share\\folder'),
+		):
+			with self.subTest(destination=destination):
+				self.assertEqual(expected, CopyFile._staging_directory(destination))
+
+	@skipUnless(PLATFORM == 'Windows', 'Windows overwrite publication')
+	def test_copy_ignores_access_time_but_rejects_destination_changes(self):
+		from core.fs.local import CopyFile
+		for change in ('access', 'size', 'modified', 'identity', 'hardlink'):
+			with self.subTest(change=change), TemporaryDirectory() as directory:
+				source, destination = Path(directory, 'source'), Path(directory, 'destination')
+				source.write_bytes(b'new')
+				destination.write_bytes(b'old')
+				task = CopyFile(self._fs, as_url(source), as_url(destination), 3)
+				copy_bytes = task._copy_bytes
+				def changed_destination(input_file, output_file):
+					copy_bytes(input_file, output_file)
+					before = destination.stat()
+					if change == 'access':
+						os.utime(destination, ns=(before.st_atime_ns + 1_000_000_000, before.st_mtime_ns))
+					elif change == 'modified':
+						os.utime(destination, ns=(before.st_atime_ns, before.st_mtime_ns + 1_000))
+					elif change == 'identity':
+						replacement = Path(directory, 'replacement')
+						replacement.write_bytes(b'old')
+						os.utime(replacement, ns=(before.st_atime_ns, before.st_mtime_ns))
+						os.replace(replacement, destination)
+					elif change == 'hardlink':
+						os.link(destination, Path(directory, 'alias'))
+					else:
+						destination.write_bytes(b'changed')
+				with patch.object(task, '_copy_bytes', side_effect=changed_destination):
+					if change == 'access':
+						task()
+					else:
+						with self.assertRaisesRegex(OSError, 'Destination changed'):
+							task()
+				self.assertEqual(b'new', source.read_bytes())
+				self.assertEqual(b'new' if change == 'access' else b'changed' if change == 'size' else b'old', destination.read_bytes())
+				self.assertFalse(list(Path(directory).glob('.f[cb]-*')))
+
+	def test_symlink_overwrite_reports_explicit_refusal(self):
+		from io import UnsupportedOperation
+		with TemporaryDirectory() as directory:
+			source, destination = Path(directory, 'source'), Path(directory, 'destination')
+			source.write_bytes(b'source')
+			destination.write_bytes(b'keep')
+			with patch('core.fs.local.islink', return_value=True), \
+				patch('core.fs.local.os.readlink', return_value='target'), \
+				patch('core.fs.local.os.symlink', side_effect=FileExistsError('exists')) as create:
+				with self.assertRaisesRegex(UnsupportedOperation, 'Symlink overwrite refused'):
+					self._fs.copy(as_url(source), as_url(destination))
+				create.assert_not_called()
+			self.assertEqual(b'keep', destination.read_bytes())
+
+	@skipUnless(PLATFORM == 'Windows', 'Windows overwrite publication')
+	def test_copy_with_unknown_identity_uses_resolved_paths(self):
+		from shutil import SameFileError
+		for same_path in (False, True):
+			for source_unknown in (False, True):
+				for link_count in (0, 1):
+					with self.subTest(same_path=same_path, source_unknown=source_unknown, link_count=link_count), TemporaryDirectory() as directory:
+						source = Path(directory, 'source')
+						destination = source if same_path else Path(directory, 'destination')
+						source.write_bytes(b'new')
+						if not same_path:
+							destination.write_bytes(b'old')
+						lstat, fstat = os.lstat, os.fstat
+						def unknown(metadata):
+							fields = {name: getattr(metadata, name) for name in dir(metadata) if name.startswith('st_')}
+							fields.update(st_ino=0, st_dev=0, st_nlink=link_count)
+							return SimpleNamespace(**fields)
+						with patch('core.fs.local.os.lstat', side_effect=lambda *args, **kwargs: unknown(lstat(*args, **kwargs))), \
+							patch('core.fs.local.os.fstat', side_effect=lambda descriptor: unknown(fstat(descriptor)) if source_unknown else fstat(descriptor)):
+							if same_path:
+								with self.assertRaises(SameFileError):
+									self._fs.copy(as_url(source), as_url(destination))
+							else:
+								self._fs.copy(as_url(source), as_url(destination))
+						self.assertEqual(b'new', source.read_bytes())
+						self.assertEqual(b'new', destination.read_bytes())
+
+	@skipUnless(PLATFORM == 'Windows', 'Windows read-only replacement')
+	def test_readonly_source_copy_preserves_mode_and_contents(self):
+		for exists in (False, True):
+			with self.subTest(exists=exists), TemporaryDirectory() as directory:
+				source, destination = Path(directory, 'source'), Path(directory, 'destination')
+				source.write_bytes(b'new')
+				os.utime(source, ns=(1_700_000_000_000_000_000, 1_700_000_000_000_000_000))
+				if exists:
+					destination.write_bytes(b'old')
+				source.chmod(0o444)
+				try:
+					self._fs.copy(as_url(source), as_url(destination))
+					self.assertEqual(b'new', source.read_bytes())
+					self.assertEqual(b'new', destination.read_bytes())
+					self.assertFalse(source.stat().st_mode & S_IWRITE)
+					self.assertFalse(destination.stat().st_mode & S_IWRITE)
+					self.assertEqual(source.stat().st_mtime_ns, destination.stat().st_mtime_ns)
+					self.assertEqual({'source', 'destination'}, {path.name for path in Path(directory).iterdir()})
+				finally:
+					source.chmod(S_IWRITE)
+					if destination.exists():
+						destination.chmod(S_IWRITE)
+
+	@skipUnless(PLATFORM == 'Windows', 'Windows partial replacement failures')
+	def test_partial_windows_replace_retains_original_backup(self):
+		import ctypes
+		for competing in (False, True):
+			with self.subTest(competing=competing), TemporaryDirectory() as directory:
+				source, destination = Path(directory, 'source'), Path(directory, 'destination')
+				source.write_bytes(b'new')
+				destination.write_bytes(b'old')
+				def partial_replace(old, temporary, backup, *args):
+					os.replace(old, backup)
+					if competing:
+						Path(old).write_bytes(b'competing')
+					ctypes.set_last_error(1177)
+					return False
+				with patch('ctypes.WinDLL') as library:
+					library.return_value.ReplaceFileW.side_effect = partial_replace
+					with self.assertRaises(OSError) as raised:
+						self._fs.copy(as_url(source), as_url(destination))
+				self.assertEqual(1177, raised.exception.winerror)
+				self.assertEqual(b'new', source.read_bytes())
+				self.assertEqual(b'competing' if competing else b'old', destination.read_bytes())
+				backups = list(Path(directory).glob('.fb-*/o'))
+				if competing:
+					self.assertEqual(1, len(backups))
+					self.assertEqual(b'old', backups[0].read_bytes())
+					self.assertIn(str(backups[0]), raised.exception.strerror)
+				else:
+					self.assertFalse(backups)
+	def test_copy_does_not_replace_competing_creator(self):
+		from core.fs.local import CopyFile
+		with TemporaryDirectory() as directory:
+			source, destination = Path(directory, 'source'), Path(directory, 'destination')
+			source.write_bytes(b'new')
+			task = CopyFile(self._fs, as_url(source), as_url(destination), 3)
+			copy_bytes = task._copy_bytes
+			def competing_copy(input_file, output_file):
+				copy_bytes(input_file, output_file)
+				destination.write_bytes(b'competing creator')
+			with patch.object(task, '_copy_bytes', side_effect=competing_copy):
+				with self.assertRaises(FileExistsError):
+					task()
+			self.assertEqual(b'competing creator', destination.read_bytes())
+			self.assertEqual({'source', 'destination'}, {path.name for path in Path(directory).iterdir()})
+	@skipUnless(PLATFORM == 'Windows', 'Windows replacement metadata')
+	def test_overwrite_preserves_destination_security_and_named_stream(self):
+		from core.fs.local import CopyFile
+		from win32security import GetFileSecurity, SetNamedSecurityInfo, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION, SE_DACL_PROTECTED
+		def security_entries(path):
+			acl = GetFileSecurity(str(path), DACL_SECURITY_INFORMATION).GetSecurityDescriptorDacl()
+			return tuple(acl.GetAce(index) for index in range(acl.GetAceCount()))
+		with TemporaryDirectory() as directory:
+			source, destination = Path(directory, 'source'), Path(directory, 'destination')
+			source.write_bytes(b'new')
+			destination.write_bytes(b'old')
+			descriptor = GetFileSecurity(str(destination), DACL_SECURITY_INFORMATION)
+			SetNamedSecurityInfo(str(destination), SE_FILE_OBJECT,
+				DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+				None, None, descriptor.GetSecurityDescriptorDacl(), None)
+			self.assertTrue(GetFileSecurity(str(destination), DACL_SECURITY_INFORMATION).GetSecurityDescriptorControl()[0] & SE_DACL_PROTECTED)
+			stream = Path(str(destination) + ':retained')
+			stream.write_bytes(b'stream')
+			security = security_entries(destination)
+			copy_bytes = CopyFile._copy_bytes
+			def protected_copy(task, input_file, output_file):
+				temporary = next(Path(directory).glob('.fc-*'))
+				self.assertEqual(security, security_entries(temporary))
+				self.assertTrue(GetFileSecurity(str(temporary), DACL_SECURITY_INFORMATION).GetSecurityDescriptorControl()[0] & SE_DACL_PROTECTED)
+				return copy_bytes(task, input_file, output_file)
+			with patch.object(CopyFile, '_copy_bytes', protected_copy):
+				self._fs.copy(as_url(source), as_url(destination))
+			self.assertEqual(b'new', destination.read_bytes())
+			self.assertEqual(b'stream', stream.read_bytes())
+			self.assertEqual(security, security_entries(destination))
+			self.assertTrue(GetFileSecurity(str(destination), DACL_SECURITY_INFORMATION).GetSecurityDescriptorControl()[0] & SE_DACL_PROTECTED)
+	@skipUnless(PLATFORM == 'Windows', 'Windows junctions')
+	def test_junction_move_fallback_refuses_and_rename_preserves_target(self):
+		from io import UnsupportedOperation
+		from subprocess import run
+		with TemporaryDirectory() as directory:
+			target, link, destination = (Path(directory, name) for name in ('target', 'link', 'destination'))
+			target.mkdir()
+			(target / 'keep').write_bytes(b'keep')
+			result = run(['cmd', '/c', 'mklink', '/J', str(link), str(target)], capture_output=True, timeout=10)
+			self.assertEqual(0, result.returncode, result.stderr)
+			with self.assertRaises(UnsupportedOperation):
+				list(self._fs._prepare_move(as_url(link), as_url(destination), use_rename=False))
+			self.assertTrue(os.path.isjunction(link))
+			self._fs.move(as_url(link), as_url(destination))
+			self.assertTrue(os.path.isjunction(destination))
+			self.assertEqual(b'keep', (target / 'keep').read_bytes())
+	@skipUnless(SYMLINKS_SUPPORTED, 'Symbolic links require Windows privilege')
+	def test_copy_refuses_dangling_destination_link(self):
+		from io import UnsupportedOperation
+		with TemporaryDirectory() as directory:
+			source, destination, target = (Path(directory, name) for name in ('source', 'destination', 'missing'))
+			source.write_bytes(b'keep')
+			destination.symlink_to(target)
+			with self.assertRaises(UnsupportedOperation):
+				self._fs.copy(as_url(source), as_url(destination))
+			self.assertTrue(destination.is_symlink())
+			self.assertFalse(target.exists())
+	def test_failed_copy_preserves_old_or_absent_destination(self):
+		from core.fs.local import CopyFile
+		from fman import Task
+		for exists in (False, True):
+			for failure in (OSError('disk full'), Task.Canceled()):
+				with self.subTest(exists=exists, failure=type(failure)), TemporaryDirectory() as directory:
+					source, destination = Path(directory, 'source'), Path(directory, 'destination')
+					source.write_bytes(b'source')
+					if exists:
+						destination.write_bytes(b'old')
+					with patch.object(CopyFile, '_copy_bytes', side_effect=failure):
+						with self.assertRaises(type(failure)):
+							self._fs.copy(as_url(source), as_url(destination))
+					self.assertEqual(b'source', source.read_bytes())
+					self.assertEqual(b'old' if exists else None, destination.read_bytes() if destination.exists() else None)
+					self.assertEqual({'source', 'destination'} if exists else {'source'}, {path.name for path in Path(directory).iterdir()})
+	def test_failed_copy_publication_retains_destination(self):
+		from core.fs.local import CopyFile
+		with TemporaryDirectory() as directory:
+			source, destination = Path(directory, 'source'), Path(directory, 'destination')
+			source.write_bytes(b'new')
+			destination.write_bytes(b'old')
+			with patch.object(CopyFile, '_publish', side_effect=PermissionError('locked')):
+				with self.assertRaises(PermissionError):
+					self._fs.copy(as_url(source), as_url(destination))
+			self.assertEqual(b'old', destination.read_bytes())
+	def test_copy_same_file_and_hardlink_preserves_bytes(self):
+		from shutil import SameFileError
+		for alias in (False, True):
+			with self.subTest(alias=alias), TemporaryDirectory() as directory:
+				source = Path(directory, 'source')
+				source.write_bytes(b'keep this data')
+				destination = Path(directory, 'alias') if alias else source
+				if alias:
+					os.link(source, destination)
+				with self.assertRaises(SameFileError):
+					self._fs.copy(as_url(source), as_url(destination))
+				self.assertEqual(b'keep this data', source.read_bytes())
+				self.assertEqual(b'keep this data', destination.read_bytes())
+	def test_delete_failure_preserves_exception_and_notifications(self):
+		for stat_failure in (False, True):
+			with self.subTest(stat_failure=stat_failure), TemporaryDirectory() as directory:
+				path = Path(directory, 'file')
+				path.write_bytes(b'keep')
+				error = PermissionError('locked')
+				with patch.object(self._fs, 'stat', side_effect=OSError('stat') if stat_failure else None,
+					return_value=path.stat()), patch.object(self._fs, 'notify_file_removed') as removed:
+					with self.assertRaises(PermissionError) as raised:
+						self._fs._do_delete(_urlpath(path), Mock(side_effect=error))
+					self.assertIs(error, raised.exception)
+					removed.assert_not_called()
+				self.assertEqual(b'keep', path.read_bytes())
+	@skipUnless(PLATFORM == 'Windows', 'Windows junctions')
+	def test_delete_nested_and_dangling_junction_preserves_target(self):
+		from subprocess import run
+		with TemporaryDirectory() as directory:
+			root = Path(directory)
+			target = root / 'target'
+			target.mkdir()
+			(target / 'keep').write_bytes(b'keep')
+			for dangling in (False, True):
+				with self.subTest(dangling=dangling):
+					parent = root / 'selected'
+					parent.mkdir()
+					link = parent / 'link'
+					result = run(['cmd', '/c', 'mklink', '/J', str(link),
+						str(root / 'missing' if dangling else target)], capture_output=True, timeout=10)
+					self.assertEqual(0, result.returncode, result.stderr)
+					self._fs.delete(_urlpath(parent))
+					self.assertFalse(parent.exists())
+					self.assertEqual(b'keep', (target / 'keep').read_bytes())
 	@skipUnless(PLATFORM == 'Windows', 'Windows non-replacing directory rename')
 	def test_directory_rename_conflict_emits_no_notifications(self):
 		with TemporaryDirectory() as directory:

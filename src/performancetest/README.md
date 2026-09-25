@@ -104,6 +104,9 @@ fixtures and results are local; nothing is uploaded.
   not character-by-character typing or held-arrow backlog.
 - Active-only 10 ms heartbeat and posted-event probes, without idle padding.
   Paint means completed Qt paint cycle, not compositor presentation.
+  QuickView registers Python paint dispatch before creating panes so Qt can see
+  the later navigation hook. Navigation still timestamps immediately after the
+  original paint handler returns; no queued acknowledgement is used.
 - QuickView includes its normal 100 ms debounce and first lazy renderer import.
   Scenarios cover disabled navigation, PNG/JPEG/BMP switching, invalid inputs,
   fit/actual size/zoom/pan, 30 ms rapid navigation, close/reopen and cancellation
