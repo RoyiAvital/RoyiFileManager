@@ -18,6 +18,8 @@ The _File Manager_ focuses on:
 Development prioritizes _correctness_ and _performance_.  
 Each release is validated by hundreds of correctness tests and accompanied by a detailed performance report.
 
+![](https://i.imgur.com/2t8CmJF.png)
+
 ## Installation
 
 1. Open the [latest release](https://github.com/RoyiAvital/RoyiFileManager/releases/latest).
@@ -35,13 +37,14 @@ once per application session; linked session settings are left untouched.
 
 Significant additions compared with `fman`:
 
+- **Data Safety**: Additional safeguards protect data integrity during file copies and moves, archive operations and work with file system links.
 - **Performance**: Newly written file system abstraction with an order of magnitude faster performance to deliver **reactive experience**. The system utilizes bulk NTFS/ReFS listing for a snapshot model, virtual rows and background filter/find projections. See [measured gains and remaining limits](CHANGELOG.md#performance-compared-with-081).
 - **Fuzzy Find Files**: Open the Quicksearch dialog with <kbd>Ctrl</kbd>+<kbd>F</kbd> or search recursively with <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>. Supports [`fzf`](https://github.com/junegunn/fzf) style exact terms, anchors, negation, `AND` / `OR` and match highlights, separately from the substring/glob Filter Bar. Using **Toggle find result metadata** adds metadata to results. See [Usage, Syntax and Performance](src/main/resources/base/Plugins/SearchFileFuzzy/README.md).
 - **Search Files**: Press <kbd>Alt</kbd>+<kbd>F7</kbd> for [`ripgrep`](https://github.com/burntsushi/ripgrep) based filename and content search in Glob, Literal or RegEx mode. Leave content empty to list files by name. See [Search Files Usage](src/main/resources/base/Plugins/SearchFiles/README.md).
 - **Find Files with `fd`**: Press <kbd>Shift</kbd>+<kbd>F7</kbd> for [`fd`](https://github.com/sharkdp/fd) based filename search with date, size, type and traversal filters. See [Find Files Usage](src/main/resources/base/Plugins/FindFiles/README.md).
 - **Pane Filter / Files Filter**: Type to filter file names with globs, anchors and negation with [`fzf`](https://github.com/junegunn/fzf) inspired syntax. See [Pane Filter Usage](src/main/resources/base/Plugins/Core/README.md#pane-filter).
 - **Hidden Files**: Windows panes reuse entry attributes to reduce repeated visibility checks. Press <kbd>Ctrl</kbd>+<kbd>R</kbd> after external hidden-attribute changes. See [Hidden Files](src/main/resources/base/Plugins/Core/README.md#hidden-files).
-- **QuickView Layer**: Press <kbd>Ctrl</kbd>+<kbd>Q</kbd> to enter the **Quick View Mode** which previews the cursor file (image) over the other pane. See [QuickView Usage](src/main/resources/base/Plugins/Core/README.md#quickview).
+- **QuickView Layer**: Press <kbd>Ctrl</kbd>+<kbd>Q</kbd> to preview the cursor file over the other pane: images, plain text, Markdown and highlighted source code. See [QuickView Usage](src/main/resources/base/Plugins/Core/README.md#quickview).
 - **UI Components**: New building blocks that expand what plug-ins can do. [Plug-in UI guide](PlugIn.md#ui-extension).
 - **Docked Panel**: Allows controlling states and operations. Exposed to be used by Plug-In's.
 - **Favorites**: Press <kbd>Ctrl</kbd>+<kbd>B</kbd> for a fully featured Favorites Manager, built entirely with the plug-in APIs.
@@ -56,19 +59,6 @@ Significant additions compared with `fman`:
 - **File / Folder Comparators**: Configure independent external tools with **Set file comparator** / **Set folder comparator**, then run **Compare files** / **Compare folders**. Presets include [Meld](https://meldmerge.org), [Beyond Compare](https://www.scootersoftware.com), [WinMerge](https://github.com/winmerge/winmerge), [SmartSynchronize](https://www.syntevo.com/smartsynchronize). See [Comparator Usage](src/main/resources/base/Plugins/Core/README.md#file-and-folder-comparators).
 - **Archive Transfers**: Extraction progress and cancellation, with verified output before source deletion when moving out of an archive or between archives of the same format. See [Archive Transfers Usage](src/main/resources/base/Plugins/Core/README.md#archive-transfers).
 - **Unpack Archive**: Works like `Extract Here` in `7-Zip` / `WinRar`. See [Unpack Archive Usage](src/main/resources/base/Plugins/Core/README.md#unpack-archive).
-
-### File-Operation Safety
-
-Regular copies need temporary space beside the destination before publishing the
-result. Linked overwrite targets and source/destination directory-link merges
-are refused for both Copy and Move. On rare
-Windows replacement failures, an error may identify a retained recovery copy;
-keep it until the destination has been checked.
-
-Moving local files into archives is disabled. Copy them into the archive, verify
-the contents, then delete originals explicitly. Moving out of an archive or between
-archives of the same format still verifies output before source deletion.
-Cross-format Move is not supported. See [transfer details](src/main/resources/base/Plugins/Core/README.md#local-transfers).
 
 > [!TIP]
 > Open an issue for new feature requests.  
