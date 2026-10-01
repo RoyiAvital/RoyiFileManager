@@ -31,7 +31,7 @@ SELECTION_SPEC.loader.exec_module(selection_measurement)
 
 
 class PaneRenderingBenchmarkTest(TestCase):
-	def test_native_selection_measures_real_pane_and_status_modes(self):
+	def test_native_selection_measures_real_pane_patterns(self):
 		script = '''
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -40,7 +40,7 @@ from fman_performancetest import selection
 from fman_performancetest.pane_rendering_benchmark import child
 import sys
 original_measure = selection.measure
-def blocked_measure(view, gui, pane, window, case):
+def blocked_measure(view, gui, pane, case):
 	original_select = pane.select
 	def select(urls):
 		until = perf_counter() + 0.04
@@ -48,26 +48,23 @@ def blocked_measure(view, gui, pane, window, case):
 			pass
 		return original_select(urls)
 	pane.select = select
-	return original_measure(view, gui, pane, window, case)
+	return original_measure(view, gui, pane, case)
 selection.measure = blocked_measure
 with TemporaryDirectory() as temporary:
     folder = Path(temporary)
     for index in range(16):
         (folder / ('entry%02d.txt' % index)).touch()
-	action = sys.argv[2]
-	full = action in ('select-all', 'clear', 'invert')
-	case = dict(action_id='smoke.' + action, pattern='full' if full else 'alternating',
-		requested_count=None if full else 4, action=action, row_count=16, status_enabled=sys.argv[1] == 'on')
+	case = next(case for case in selection.selection_cases(4) if case['pattern'] == sys.argv[1])
+	case['row_count'] = 16
     raise SystemExit(child(folder, 'selection-smoke', 'snapshot', True,
         viewport=(1280, 800), selection_case=case))
 '''.expandtabs(4)
 		environment = dict(os.environ, QT_QPA_PLATFORM='windows')
 		environment['PYTHONPATH'] = os.pathsep.join((str(SCRIPT.parents[1] /
 			'performancetest/python'), environment.get('PYTHONPATH', '')))
-		for mode, action, expected in ((mode, action, expected) for mode in ('off', 'on')
-			for action, expected in (('select', 4), ('reselect', 4), ('overlap', 5), ('deselect', 1), ('select-all', 16), ('clear', 0), ('invert', 8))):
-			with self.subTest(mode=mode, action=action):
-				result = subprocess.run([sys.executable, '-X', 'faulthandler', '-c', script, mode, action],
+		for pattern, expected in (('single', 1), ('all', 16), ('contiguous', 4), ('alternating', 4), ('scattered', 4)):
+			with self.subTest(pattern=pattern):
+				result = subprocess.run([sys.executable, '-X', 'faulthandler', '-c', script, pattern],
 					env=environment, capture_output=True, text=True, timeout=45)
 				self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 				payload = json.loads(next(line.removeprefix('PANE_RESULT ')
@@ -82,35 +79,35 @@ with TemporaryDirectory() as temporary:
 					self.assertGreaterEqual(measurement[field], 0)
 				for field in ('heartbeat_gap_ms', 'queue_dispatch_ms', 'readback_heartbeat_gap_ms', 'readback_queue_dispatch_ms'):
 					self.assertGreaterEqual(measurement[field]['max'], 0)
-				if action in ('select', 'reselect', 'overlap', 'invert'):
+				if pattern != 'all':
 					self.assertGreaterEqual(measurement['heartbeat_gap_ms']['max'], 35)
 
 	def test_selection_patterns_have_exact_repeatable_membership(self):
-		for row_count, counts in ((256, (64, 128)), (50000, (10000, 20000)), (200000, (10000, 20000))):
-			for requested in counts:
-				for pattern in selection_measurement.PATTERNS:
-					with self.subTest(rows=row_count, requested=requested, pattern=pattern):
-						rows = selection_measurement.selection_rows(pattern, row_count, requested)
-						self.assertEqual(requested, len(rows))
-						self.assertEqual(requested, len(set(rows)))
-						self.assertTrue(all(0 <= row < row_count for row in rows))
-						self.assertEqual(rows, selection_measurement.selection_rows(pattern, row_count, requested))
-						if pattern != 'scattered':
-							step = 1 if pattern == 'contiguous' else 2
-							self.assertTrue(all(second - first == step for first, second in zip(rows, rows[1:])))
+		for row_count, count in ((256, 64), (200000, 1000)):
+			for case in selection_measurement.selection_cases(count):
+				pattern = case['pattern']
+				requested = case['requested_count']
+				with self.subTest(rows=row_count, pattern=pattern):
+					rows = selection_measurement.selection_rows(pattern, row_count, requested)
+					expected = row_count if pattern == 'all' else requested
+					self.assertEqual(expected, len(rows))
+					self.assertEqual(expected, len(set(rows)))
+					self.assertTrue(all(0 <= row < row_count for row in rows))
+					self.assertEqual(rows, selection_measurement.selection_rows(pattern, row_count, requested))
+					if pattern != 'scattered':
+						step = 2 if pattern == 'alternating' else 1
+						self.assertTrue(all(second - first == step for first, second in zip(rows, rows[1:])))
 		for pattern, count in (('unknown', 10), ('contiguous', 0), ('scattered', 257), ('alternating', 129)):
 			with self.assertRaises(ValueError):
 				selection_measurement.selection_rows(pattern, 256, count)
 
-	def test_selection_cases_cover_shapes_actions_and_status_modes(self):
-		cases = selection_measurement.selection_cases((10000, 20000))
-		self.assertEqual(36, len(cases))
-		self.assertEqual(len(cases), len({case['action_id'] for case in cases}))
-		for status in (False, True):
-			current = [case for case in cases if case['status_enabled'] == status]
-			self.assertEqual({'select', 'reselect', 'overlap', 'deselect', 'select-all', 'clear', 'invert'},
-				{case['action'] for case in current})
-			self.assertEqual({10000, 20000}, {case['requested_count'] for case in current if case['pattern'] != 'full'})
+	def test_selection_cases_are_five_representative_patterns(self):
+		for count in (64, 1000):
+			cases = selection_measurement.selection_cases(count)
+			self.assertEqual(['single', 'all', 'contiguous', 'alternating', 'scattered'],
+				[case['pattern'] for case in cases])
+			self.assertEqual(5, len({case['action_id'] for case in cases}))
+			self.assertEqual([1, None, count, count, count], [case['requested_count'] for case in cases])
 
 	def test_navigation_paint_hook_after_initial_paint(self):
 		script = '''

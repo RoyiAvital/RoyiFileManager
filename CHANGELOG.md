@@ -10,8 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.10.1] - 2026-10-01
 
 This version focuses on code cleanup, removing unused features inherited from
-`fman` and remaining non Windows support. The result is a more focused codebase
-that is easier to understand and maintain.
+`fman` and remaining non Windows support. The codebase is focused and easier 
+to understand and maintain.
 
 ### Removed
 

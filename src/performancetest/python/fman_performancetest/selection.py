@@ -3,12 +3,16 @@
 import random
 
 
-PATTERNS = ('contiguous', 'alternating', 'scattered')
+PATTERNS = ('single', 'all', 'contiguous', 'alternating', 'scattered')
 
 
 def selection_rows(pattern, row_count, requested):
+	if pattern == 'all':
+		return tuple(range(row_count))
 	if type(requested) is not int or requested < 1 or requested > row_count:
 		raise ValueError('Invalid selection count')
+	if pattern == 'single':
+		return (row_count // 2,)
 	if pattern == 'contiguous':
 		first = (row_count - requested) // 2
 		return tuple(range(first, first + requested))
@@ -22,30 +26,18 @@ def selection_rows(pattern, row_count, requested):
 	raise ValueError('Unknown selection pattern: ' + pattern)
 
 
-def selection_cases(counts):
-	cases = []
-	for status in (False, True):
-		prefix = 'status-on' if status else 'status-off'
-		for pattern in PATTERNS:
-			for requested in counts:
-				actions = ('select', 'reselect', 'overlap', 'deselect') if requested == max(counts) else ('select',)
-				for action in actions:
-					cases.append(dict(action_id=f'{prefix}.{pattern}.{requested}.{action}',
-						pattern=pattern, requested_count=requested, action=action, status_enabled=status))
-		for action in ('select-all', 'clear', 'invert'):
-			cases.append(dict(action_id=prefix + '.full.' + action, pattern='full',
-				requested_count=None, action=action, status_enabled=status))
-	return cases
+def selection_cases(count):
+	return [dict(action_id='selection.' + pattern, pattern=pattern,
+		requested_count=None if pattern == 'all' else 1 if pattern == 'single' else count)
+		for pattern in PATTERNS]
 
 
-def measure(view, gui, pane, window, case):
+def measure(view, gui, pane, case):
 	import json
 	from threading import Event
 	from time import perf_counter, process_time
-	from core.commands import InvertSelection
-	from fman.impl.status_bar import PER_PANE
 	from fman.impl.view import FileListView
-	from PyQt5.QtCore import QCoreApplication, QEvent, QItemSelection, QItemSelectionModel, QObject, QTimer
+	from PyQt5.QtCore import QCoreApplication, QEvent, QObject, QTimer
 
 	measurement = dict(case, status='running')
 	active = {}
@@ -62,53 +54,18 @@ def measure(view, gui, pane, window, case):
 		count = model.rowCount()
 		if count != case['row_count']:
 			raise ValueError('Selection fixture row count differs: %d != %d' % (count, case['row_count']))
-		urls = tuple(model.url(model.index(row, 0)) for row in range(count))
 		requested = count if case['requested_count'] is None else case['requested_count']
-		rows = tuple(range(count)) if case['pattern'] == 'full' else selection_rows(case['pattern'], count, requested)
-		desired = set(rows)
-		outside = next((row for row in range(count) if row not in desired), None)
-		action = case['action']
-		initial = set()
-		expected = desired
-		if action == 'reselect':
-			initial = desired
-		elif action == 'overlap':
-			initial = set(rows[:requested // 2]) | {outside}
-			expected = desired | {outside}
-		elif action == 'deselect':
-			initial = desired | {outside}
-			expected = {outside}
-		elif action == 'clear':
-			initial, expected = desired, set()
-		elif action == 'invert':
-			initial = set(range(count // 2))
-			expected = desired - initial
-		if None in initial or None in expected:
-			raise ValueError('Selection case requires an unmarked outside row')
-		selection = QItemSelection()
-		ordered = sorted(initial)
-		first = last = None
-		for row in ordered:
-			if last is not None and row != last + 1:
-				selection.select(model.index(first, 0), model.index(last, model.columnCount() - 1))
-				first = None
-			if first is None:
-				first = row
-			last = row
-		if first is not None:
-			selection.select(model.index(first, 0), model.index(last, model.columnCount() - 1))
-		view.selectionModel().select(selection, QItemSelectionModel.ClearAndSelect)
+		rows = selection_rows(case['pattern'], count, requested)
+		urls = tuple(model.url(model.index(row, 0)) for row in rows)
+		pane.clear_selection()
 		view.setCurrentIndex(model.index(count // 2, 0))
-		if case['status_enabled']:
-			window.set_extended_status_bar(dict(window._status_settings, mode=PER_PANE))
-			pane._widget.layout().activate()
-		if pane._widget._status_tracking != case['status_enabled']:
-			raise RuntimeError('Wrong selection status mode')
+		if pane._widget._status_tracking:
+			raise RuntimeError('Selection benchmark requires status disabled')
 		view.scrollTo(view.currentIndex(), view.PositionAtCenter)
 		view.viewport().repaint()
 		measurement.update(row_count=count, requested_count=requested,
-			initial_count=len(initial), expected_count=len(expected))
-		return tuple(urls[row] for row in rows), {urls[row] for row in expected}, (
+			initial_count=0, expected_count=len(rows))
+		return urls, set(urls), (
 			view.currentIndex().row(), view.verticalScrollBar().value())
 
 	class Probe(QObject):
@@ -169,19 +126,10 @@ def measure(view, gui, pane, window, case):
 		def mutate():
 			active['start'] = dispatched
 			start, cpu = perf_counter(), process_time()
-			action = case['action']
-			if action in ('select', 'reselect', 'overlap'):
-				pane.select(requested_urls)
-			elif action == 'deselect':
-				pane.deselect(requested_urls)
-			elif action == 'select-all':
+			if case['pattern'] == 'all':
 				pane.select_all()
-			elif action == 'clear':
-				pane.clear_selection()
-			elif action == 'invert':
-				InvertSelection(pane)()
 			else:
-				raise ValueError('Unknown selection action: ' + action)
+				pane.select(requested_urls)
 			measurement.update(wall_ms=(perf_counter() - start) * 1000,
 				cpu_ms=(process_time() - cpu) * 1000)
 			progress('mutated')

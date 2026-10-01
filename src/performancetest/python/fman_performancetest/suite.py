@@ -96,7 +96,7 @@ def invoke(test, directory, catalog_path, profile_directory=None, algorithm=Fals
 
 def selection_run(test, directory, catalog_path, catalog):
 	from fman_performancetest.selection import selection_cases
-	cases = selection_cases(test['counts'])
+	cases = selection_cases(test['selection_count'])
 	samples, failures = [], []
 	timeout = catalog['protocol']['selection_timeout_seconds']
 	for index, case in enumerate(cases, 1):
@@ -135,7 +135,7 @@ def child(test, catalog, directory, algorithm, profile_directory, selection_case
 	if workload == 'selection':
 		from fman_performancetest.selection import selection_cases
 		from fman_performancetest.pane_rendering_benchmark import child as pane
-		case = next(case for case in selection_cases(test['counts']) if case['action_id'] == selection_case)
+		case = next(case for case in selection_cases(test['selection_count']) if case['action_id'] == selection_case)
 		case['row_count'] = catalog['fixtures'][test['fixture']]['files']
 		return pane(directory, test['id'], 'snapshot', True,
 			viewport=protocol['viewport'], selection_case=case)

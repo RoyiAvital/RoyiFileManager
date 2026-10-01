@@ -75,9 +75,8 @@ def load_catalog(path=CATALOG):
 			raise ValueError('Invalid test definition: ' + identity)
 		if test['workload'] == 'selection':
 			fixture = catalog['fixtures'][test['fixture']]
-			counts = test.get('counts', [])
-			if fixture['kind'] != 'flat' or not counts or any(not positive(count) for count in counts) or \
-				counts != sorted(set(counts)) or max(counts) * 2 > fixture['files'] or \
+			count = test.get('selection_count')
+			if fixture['kind'] != 'flat' or not positive(count) or count * 2 > fixture['files'] or \
 				not positive(protocol.get('selection_timeout_seconds')):
 				raise ValueError('Invalid selection definition: ' + identity)
 	for workload in ('filter', 'fuzzy', 'recursive'):

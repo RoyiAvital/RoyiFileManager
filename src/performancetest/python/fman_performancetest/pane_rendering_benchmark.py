@@ -426,7 +426,7 @@ def child(directory, label, mode, show_hidden, rows_output=None, interactions=Fa
 				if selection_case is not None:
 					from fman_performancetest.selection import measure
 					state['samples'] = [measure(view, gui, context.window.get_panes()[0],
-						context.main_window, selection_case)]
+						selection_case)]
 				if refresh_patterns:
 					from PyQt5.QtCore import QItemSelection, QItemSelectionModel
 					from time import process_time
