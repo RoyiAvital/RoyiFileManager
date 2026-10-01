@@ -82,6 +82,18 @@ class ListingTest(TestCase):
 		self.assertEqual({}, reconcile(self.listing(), self.listing(created=(6, 6))))
 		self.assertEqual({}, reconcile(self.listing(ids=(0, 0)), self.listing(ids=(0, 0))))
 
+	def test_changed_reconciliation_distinguishes_zero_and_sparse_ids(self):
+		for byte_index in range(16):
+			identity = 1 << (8 * byte_index)
+			previous = self.listing(('unknown', 'known'), (0, identity))
+			for current, expected in (
+				(self.listing(('known', 'unknown'), (identity, 0)), {1: 0}),
+				(self.listing(('renamed', 'unknown'), (identity, 0)), {1: 0}),
+				(replace(previous, created_ns=(5, 6)), {}),
+			):
+				with self.subTest(byte_index=byte_index, names=current.names, created=current.created_ns):
+					self.assertEqual(expected, reconcile(previous, current))
+
 	def test_unchanged_reconciliation_keeps_only_known_ids_including_hardlinks(self):
 		previous = self.listing(('first', 'alias', 'unknown'), (1, 1, 0))
 		current = replace(previous, sizes=(3, 4, 5), mtimes_ns=(6, 7, 8))
@@ -270,7 +282,7 @@ class NativeListingTest(TestCase):
 			self.assertEqual(expected, column.text(listing, 0))
 			self.assertEqual(1, len(column.keys(listing, True)))
 		with patch.object(DrivesFileSystem, '_get_drives', return_value=['C:']), \
-			patch.object(DriveName, '_get_volume_name', return_value='System'):
+			patch.object(DrivesFileSystem, '_get_volume_name', return_value='System'):
 			listing = DrivesFileSystem().scan('', Mock())
 		self.assertEqual(('C: System', 'Network...'), listing.display_names)
 		self.assertEqual('C: System', DriveName().text(listing, 0))
@@ -304,17 +316,17 @@ class NativeListingTest(TestCase):
 
 	def test_name_keys_preserve_padding_and_unicode_digit_semantics(self):
 		from core import Name
-		from types import SimpleNamespace
 		names = ('file999999', 'file1000000', 'file02', 'file2', '002a09b',
 			'no-digits', 'FILE0000000', 'v\u0662\u0663', 'v\uff12', '9' * 80)
 		listing = Listing.create('file://C:/fixture', names,
 			is_dir=tuple(index % 2 == 0 for index in range(len(names))), labels=tuple(reversed(names)))
-		labels = dict(zip(listing.names, listing.display_names))
-		directories = dict(zip(listing.names, listing.is_dir))
-		column = Name(SimpleNamespace(is_dir=directories.__getitem__, query=lambda name, method: labels[name]))
+		expected = ('file0999999', 'file11071000000', 'file0000002', 'file0000002',
+			'0000002a0000009b', 'no-digits', 'file0000000', 'v0000023', 'v0000002', '111080' + '9' * 80)
+		column = Name()
 		for ascending in (True, False):
 			keys = column.keys(listing, ascending)
-			self.assertEqual(tuple(column.get_sort_value(name, ascending) for name in listing.names), keys)
+			self.assertEqual(tuple((is_dir ^ ascending, minor)
+				for is_dir, minor in zip(listing.is_dir, reversed(expected))), keys)
 			minor = dict(zip(listing.display_names, (key[1] for key in keys)))
 			self.assertLess(minor['file999999'], minor['file1000000'])
 			self.assertEqual(minor['file02'], minor['file2'])
@@ -322,29 +334,41 @@ class NativeListingTest(TestCase):
 
 	def test_core_column_goldens_both_sort_directions(self):
 		from core import LocalFileSystem, Name, Size, Modified
+		from datetime import datetime
 		from fman.url import as_url, splitscheme
+		from PyQt5.QtCore import QDateTime, QLocale
 		provider = LocalFileSystem()
-		class Queries:
-			def query(self, url, method):
-				return getattr(provider, method)(splitscheme(url)[1])
-			def is_dir(self, url):
-				return self.query(url, 'is_dir')
 		with TemporaryDirectory() as temporary:
 			folder = Path(temporary).resolve()
 			for name in ('file999999', 'file1000000', 'file02', 'file2', 'Zeta', 'alpha'):
 				(folder / name).write_bytes(b'payload' * len(name))
 			for name in ('directory02', 'Directory1'):
 				(folder / name).mkdir()
+			for entry in folder.iterdir():
+				os.utime(entry, (1473339042, 1473339042))
 			location = as_url(folder)
 			listing = provider.scan(splitscheme(location)[1], lambda: None)
-			for column in (Name(Queries()), Size(Queries()), Modified(Queries())):
+			natural = {'file999999': 'file0999999', 'file1000000': 'file11071000000',
+				'file02': 'file0000002', 'file2': 'file0000002', 'Zeta': 'zeta', 'alpha': 'alpha',
+				'directory02': 'directory0000002', 'Directory1': 'directory0000001'}
+			modified = datetime.fromtimestamp(1473339042)
+			date_text = QDateTime.fromMSecsSinceEpoch(1473339042000).toString(
+				QLocale().dateTimeFormat(QLocale.ShortFormat).replace('yyyy', 'yy'))
+			for column in (Name(), Size(), Modified()):
 				for ascending in (True, False):
 					keys = column.keys(listing, ascending)
 					for index, name in enumerate(listing.names):
-						url = location + '/' + name
+						is_dir = name in ('directory02', 'Directory1')
+						if isinstance(column, Name):
+							text, minor = name, natural[name]
+						elif isinstance(column, Size):
+							text = '' if is_dir else '%d B' % (7 * len(name))
+							minor = tuple(ord(character) if ascending else -ord(character) for character in name.lower()) if is_dir else 7 * len(name)
+						else:
+							text, minor = date_text, modified
 						with self.subTest(column=type(column).__name__, ascending=ascending, name=name):
-							self.assertEqual(column.get_str(url), column.text(listing, index))
-							self.assertEqual(column.get_sort_value(url, ascending), keys[index])
+							self.assertEqual(text, column.text(listing, index))
+							self.assertEqual((is_dir ^ ascending, minor), keys[index])
 
 	def test_record_bounds_and_128_bit_identity(self):
 		from core.fs.local.windows.listing import _RECORD, records
@@ -499,15 +523,13 @@ class SnapshotJobsTest(TestCase):
 		from fman.impl.model.listing import project
 		from unittest.mock import Mock
 		listing = Listing.create('file:///', ['Volumes', 'visible', 'hidden'], attributes=[2, 0, 2])
-		for platform, expected in (('Windows', (1,)), ('Mac', (1, 0))):
-			with patch('core.commands.PLATFORM', platform):
-				predicate = _hidden_file_filter.snapshot_filter()
-			order = (2, 1, 0)
-			self.assertEqual(expected, tuple(predicate.filter_indices(listing, order, Mock())))
-			self.assertEqual(expected, tuple(index for index in order if predicate(listing, index)))
-			result = project(listing, None, Name(), 0, True,
-				(predicate, lambda snapshot, index: snapshot.names[index] != 'visible'), Mock(), order=order)
-			self.assertEqual(tuple(index for index in expected if index != 1), result.visible)
+		predicate = _hidden_file_filter.snapshot_filter()
+		order = (2, 1, 0)
+		self.assertEqual((1,), tuple(predicate.filter_indices(listing, order, Mock())))
+		self.assertEqual((1,), tuple(index for index in order if predicate(listing, index)))
+		result = project(listing, None, Name(), 0, True,
+			(predicate, lambda snapshot, index: snapshot.names[index] != 'visible'), Mock(), order=order)
+		self.assertEqual((), result.visible)
 
 	def test_batch_hidden_filter_checks_cancellation_between_chunks(self):
 		from core.commands import _hidden_file_filter

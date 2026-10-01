@@ -1,39 +1,29 @@
-from fbs_runtime.platform import is_mac
-from fman import show_alert, YES, NO, run_application_command, load_json, \
+from fman import show_alert, YES, NO, load_json, \
 	save_json, DATA_DIRECTORY, unload_plugin, load_plugin
 from fman.fs import is_dir
 from fman.impl.html_style import highlight
 from fman.impl.product import APP_NAME
-from fman.impl.util.qt import Key_Up
 from os.path import dirname, basename, join
 from pathlib import PurePath
-from PyQt5.QtCore import QEvent
 from PyQt5.QtWidgets import QDialog, QLabel, QVBoxLayout, QRadioButton, \
-	QLineEdit, QDialogButtonBox, QCheckBox
+	QDialogButtonBox, QCheckBox
 
 class NonexistentShortcutHandler:
-
-	_THANK_YOU_FOR_FEEDBACK_MESSAGE = \
-		'Thank you for your feedback. We will take it into account for ' \
-		f'future versions of {APP_NAME}!'
-
-	def __init__(self, main_window, settings, metrics):
+	def __init__(self, main_window, settings, tour_state):
 		self._main_window = main_window
 		self._settings = settings
-		self._metrics = metrics
+		self._tour_state = tour_state
 	def __call__(self, key_event, pane):
 		if key_event.is_modifier_only():
 			return False
-		self._metrics.track('UsedNonexistentShortcut', {
-			'shortcut': str(key_event)
-		})
+		self._tour_state.activity()
 		if key_event.matches('Left'):
 			self._handle_key_left(pane)
 		elif key_event.matches('Right'):
 			self._handle_key_right(pane)
 		elif key_event.matches('F2'):
 			self._handle_f2(pane)
-		elif key_event.matches(('Cmd' if is_mac() else 'Ctrl') + '+T'):
+		elif key_event.matches('Ctrl+T'):
 			self._handle_ctrl_cmd_t()
 		else:
 			return False
@@ -74,9 +64,9 @@ class NonexistentShortcutHandler:
 		if not choice:
 			return
 		if choice == 'Go to parent directory':
-			self._offer_to_install_arrownavigation_plugin(
+			self._offer_to_customize_keybindings(
 				'The normal shortcut for going to the parent directory '
-				'is %s. ' % highlight('Backspace')
+				'is %s. ' % highlight('Backspace'), 'Left', 'go_up'
 			)
 		elif choice == 'Open in left pane':
 			self._offer_to_customize_keybindings(
@@ -87,11 +77,14 @@ class NonexistentShortcutHandler:
 			self._offer_to_customize_keybindings(
 				'The normal shortcut for going back to the previous '
 				'folder is %s. '
-				% highlight(('Cmd' if is_mac() else 'Alt') + '+Left'),
+				% highlight('Alt+Left'),
 				'Left', 'go_back'
 			)
 		elif choice == 'Switch to left pane':
-			self._offer_to_install_switchpanes_plugin()
+			self._offer_to_customize_keybindings(
+				'The normal shortcut for switching between panes is %s. '
+				% highlight('Tab'), 'Left', 'switch_panes'
+			)
 		elif choice == 'Move home':
 			self._offer_to_customize_keybindings(
 				'The normal shortcut for jumping to the first file is %s. '
@@ -131,9 +124,9 @@ class NonexistentShortcutHandler:
 		if not choice:
 			return
 		if choice == 'Open directory':
-			self._offer_to_install_arrownavigation_plugin(
+			self._offer_to_customize_keybindings(
 				'The normal shortcut for opening a directory is %s. '
-				% highlight('Enter')
+				'This also opens files. ' % highlight('Enter'), 'Right', 'open'
 			)
 		elif choice == 'Open in right pane':
 			self._offer_to_customize_keybindings(
@@ -144,11 +137,14 @@ class NonexistentShortcutHandler:
 		elif choice == 'Go forward':
 			self._offer_to_customize_keybindings(
 				'The normal shortcut for going forward in history is %s. '
-				% highlight(('Cmd' if is_mac() else 'Alt') + '+Right'),
+				% highlight('Alt+Right'),
 				'Right', 'go_forward'
 			)
 		elif choice == 'Switch to right pane':
-			self._offer_to_install_switchpanes_plugin()
+			self._offer_to_customize_keybindings(
+				'The normal shortcut for switching between panes is %s. '
+				% highlight('Tab'), 'Right', 'switch_panes'
+			)
 		elif choice == 'Move end':
 			self._offer_to_customize_keybindings(
 				'The normal shortcut for jumping to the last file is %s. '
@@ -176,7 +172,7 @@ class NonexistentShortcutHandler:
 			'F2', 'rename'
 		)
 	def _handle_ctrl_cmd_t(self):
-		key = lambda mod, k: highlight(('Cmd' if is_mac() else mod) + '+' + k)
+		key = lambda modifier, key_name: highlight(modifier + '+' + key_name)
 		show_alert(
 			f"Sorry, {APP_NAME} does not yet support tabs. But you might "
 			"not need "
@@ -214,14 +210,8 @@ class NonexistentShortcutHandler:
 				self._settings.flush()
 			except OSError:
 				pass
-		choice = dialog.get_choice()
-		self._metrics.track('AnsweredNonexistentShortcutDialog', {
-			'choice': choice,
-			'text': dialog.get_other_text()
-		})
-		if choice == 'Other':
-			show_alert(self._THANK_YOU_FOR_FEEDBACK_MESSAGE)
-		return choice
+		self._tour_state.activity()
+		return dialog.get_choice()
 	def _offer_to_customize_keybindings(self, pretext, keys, command):
 		choice = show_alert(
 			pretext + 'Do you want to use %s too?' % highlight(keys),
@@ -242,35 +232,14 @@ class NonexistentShortcutHandler:
 				'Your key bindings were updated. You can change them later in '
 				'the Settings plug-in.'
 			)
-	def _offer_to_install_arrownavigation_plugin(self, pretext):
-		choice = show_alert(
-			pretext +
-			'There is a plugin that lets you use %s to go up, %s to open '
-			'directories. Do you want to install it?'
-			% (highlight('Left'), highlight('Right')),
-			YES | NO, YES
-		)
-		if choice & YES:
-			run_application_command('install_plugin', {
-				'github_repo': 'mherrmann/ArrowNavigation'
-			})
-	def _offer_to_install_switchpanes_plugin(self):
-		choice = show_alert(
-			'The normal shortcut for switching between panes is %s. There is a '
-			'plugin that lets you use the Arrows keys %s and %s instead. Would '
-			'you like to install it?'
-			% (highlight('Tab'), highlight('Left'), highlight('Right')),
-			YES | NO, YES
-		)
-		if choice & YES:
-			run_application_command('install_plugin', {
-				'github_repo': 'mherrmann/SwitchPanesWithArrowKeys'
-			})
+
 class NonexistentShortcutDialog(QDialog):
 	def __init__(self, parent, title, options):
 		super().__init__(parent)
-		self._options = options + [('Other', 'Other (please specify):')]
-		self._choice = self._checked_dont_ask_again = self._other_text = None
+		if not options:
+			raise ValueError('At least one shortcut choice is required')
+		self._options = list(options)
+		self._choice = self._checked_dont_ask_again = None
 
 		layout = QVBoxLayout(self)
 
@@ -284,12 +253,6 @@ class NonexistentShortcutDialog(QDialog):
 			layout.addWidget(radio_button)
 		self._radio_buttons[0].setChecked(True)
 
-		self._other_text_edit = QLineEdit()
-		self._other_text_edit.installEventFilter(self)
-		self._other_radio_button = self._radio_buttons[-1]
-		self._other_radio_button.setFocusProxy(self._other_text_edit)
-		layout.addWidget(self._other_text_edit)
-
 		self._dont_ask_again = QCheckBox("Don't &ask again")
 		layout.addWidget(self._dont_ask_again)
 
@@ -300,25 +263,13 @@ class NonexistentShortcutDialog(QDialog):
 		layout.addWidget(buttons)
 
 		self.setLayout(layout)
-	def eventFilter(self, object, event):
-		if object == self._other_text_edit:
-			if event.type() == QEvent.FocusIn:
-				self._other_radio_button.setChecked(True)
-			elif event.type() == QEvent.KeyPress and event.key() == Key_Up:
-				btn_before_other = self._radio_buttons[-2]
-				btn_before_other.setChecked(True)
-				btn_before_other.setFocus()
-		return False
 	def accept(self):
 		choice_index = \
 			[rb.isChecked() for rb in self._radio_buttons].index(True)
 		self._choice = self._options[choice_index][0]
-		self._other_text = self._other_text_edit.text()
 		self._checked_dont_ask_again = self._dont_ask_again.isChecked()
 		super().accept()
 	def get_choice(self):
 		return self._choice
-	def get_other_text(self):
-		return self._other_text
 	def checked_dont_ask_again(self):
 		return self._checked_dont_ask_again

@@ -1,6 +1,5 @@
-from fbs_runtime.platform import is_mac
-from fman.impl.util.qt import KeypadModifier, Key_Down, Key_Up, Key_Left, \
-	Key_Right, Key_Return, Key_Enter, Key_Shift, Key_Control, Key_Meta, \
+from fman.impl.util.qt import KeypadModifier, Key_Return, Key_Enter, \
+	Key_Shift, Key_Control, Key_Meta, \
 	Key_Alt, Key_AltGr, Key_CapsLock, Key_NumLock, Key_ScrollLock
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QKeySequence
@@ -10,17 +9,7 @@ class QtKeyEvent:
 		self.key = key
 		self.modifiers = modifiers
 	def matches(self, keys):
-		if is_mac():
-			keys = self._replace(keys, {'Cmd': 'Ctrl', 'Ctrl': 'Meta'})
 		modifiers = self.modifiers
-		if is_mac() and self.key in (Key_Down, Key_Up, Key_Left, Key_Right):
-			# According to the Qt documentation ([1]), the KeypadModifier flag
-			# is set when an arrow key is pressed on OS X because the arrow keys
-			# are part of the keypad. We don't want our users to have to specify
-			# this modifier in their keyboard binding files. So we overwrite
-			# this behaviour of Qt.
-			# [1]: http://doc.qt.io/qt-5/qt.html#KeyboardModifier-enum
-			modifiers &= ~KeypadModifier
 		key, modifiers, keys = self._alias_return_and_enter(modifiers, keys)
 		return QKeySequence(modifiers | key).matches(QKeySequence(keys)) \
 			   == QKeySequence.ExactMatch

@@ -385,9 +385,8 @@ documentation; verify behavior with the installed version, especially new window
 * [local/](core/fs/local/__init__.py) lets fman work with the files on your local hard drive
 * [zip.py](core/fs/zip.py) adds support for ZIP files
 
-## Location in your installation directory
-You can also find these source files in your fman installation directory. Their exact path depends on your operating system:
+## Portable Installation Location
 
- * **Windows:** `C:/​Users/​<username>/​AppData/​Local/​fman/​Versions/​<version>/​Plugins/​Core`
- * **Mac:** `/​Applications/​fman.app/​Contents/​Resources/​Plugins/​Core`
- * **Linux:** `/opt/​fman/​Plugins/​Core`
+Bundled Core files are under `resources/Plugins/Core/` in the portable application
+folder. Put custom settings in `UserSettings/Plugins/User/Settings/` instead of
+editing the bundled files.

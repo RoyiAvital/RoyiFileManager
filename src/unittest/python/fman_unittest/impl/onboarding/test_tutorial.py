@@ -1,4 +1,3 @@
-from fbs_runtime.platform import is_windows
 from fman.impl.onboarding.tutorial import _get_navigation_steps
 from fman.url import as_url, basename, dirname, as_human_readable, join
 from pathlib import PurePath
@@ -19,28 +18,22 @@ class GetNavigationStepsTest(TestCase):
 			join(dirname(self._root), 'util'), self._root
 		)
 	def test_wrong_scheme(self):
-		if is_windows():
-			root_drive = PurePath(as_human_readable(self._root)).anchor
-		else:
-			root_drive = '/'
+		root_drive = PurePath(as_human_readable(self._root)).anchor
 
 		self._expect(
 			[('go to', root_drive), ('open', 'test')],
 			join(as_url(root_drive), 'test'), 'null://'
 		)
-	@skipIf(not is_windows(), 'Skipping Windows-only test')
 	def test_switch_drives(self):
 		self._expect(
 			[('show drives', ''), ('open', 'D:'), ('open', '64Bit')],
 			as_url(r'D:\64Bit'), as_url(r'C:\Users\Michael')
 		)
-	@skipIf(not is_windows(), 'Skipping Windows-only test')
 	def test_start_from_drives(self):
 		self._expect(
 			[('open', 'D:'), ('open', '64Bit')],
 			as_url(r'D:\64Bit'), 'drives://'
 		)
-	@skipIf(not is_windows(), 'Skipping Windows-only test')
 	def test_network_share(self):
 		from core.fs.local.windows.drives import DrivesFileSystem
 		self._expect(

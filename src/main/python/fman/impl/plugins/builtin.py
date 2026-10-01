@@ -108,7 +108,3 @@ class NullColumn(Column):
 	def keys(self, listing, ascending):
 		return (0,) * len(listing.names)
 
-	def get_str(self, url):
-		return ''
-	def get_sort_value(self, url, is_ascending):
-		return None

@@ -1,41 +1,32 @@
-from fbs_runtime.platform import is_windows
 from fman.url import as_url, dirname, relpath, as_human_readable, normalize
 from unittest import TestCase, skipIf
 
 class AsFileUrlTest(TestCase):
 	def test_does_not_escape_space(self):
-		if is_windows():
-			self.assertEqual('file://C:/a b', as_url(r'C:\a b'))
-		else:
-			self.assertEqual('file:///a b', as_url('/a b'))
+		self.assertEqual('file://C:/a b', as_url(r'C:\a b'))
 	def test_root(self):
-		if is_windows():
-			self.assertEqual('file://C:', as_url('C:\\'))
-		else:
-			self.assertEqual('file:///', as_url('/'))
+		self.assertEqual('file://C:', as_url('C:\\'))
 	def test_empty(self):
 		self.assertEqual('file://', as_url(''))
-	@skipIf(not is_windows(), 'Skipping Windows-only test')
 	def test_network_share(self):
 		self.assertEqual('file:////HERRWIN7/Users', as_url(r'\\HERRWIN7\Users'))
 
 class AsHumanReadableTest(TestCase):
 	def test_normal_file_url(self):
-		path = r'C:\Users\Michael' if is_windows() else '/home/michael'
+		path = r'C:\Users\Michael'
 		self.assertEqual(path, as_human_readable(as_url(path)))
 	def test_non_file_url(self):
 		url = 'https://fman.io/docs'
 		self.assertEqual(url, as_human_readable(url))
 	def test_root(self):
-		root = 'C:\\' if is_windows() else '/'
+		root = 'C:\\'
 		self.assertEqual(root, as_human_readable(as_url(root)))
 	def test_percent(self):
-		path = r'C:\%62.txt' if is_windows() else '/%62.txt'
+		path = r'C:\%62.txt'
 		self.assertEqual(path, as_human_readable(as_url(path)))
 	def test_cons(self):
-		path = r'C:\18:14:12.jpg' if is_windows() else '/18:14:12.jpg'
+		path = r'C:\18:14:12.jpg'
 		self.assertEqual(path, as_human_readable(as_url(path)))
-	@skipIf(not is_windows(), 'Skipping Windows-only test')
 	def test_unc(self):
 		path = r'\\host\path\on\remote'
 		self.assertEqual(path, as_human_readable(as_url(path)))

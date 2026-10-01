@@ -87,8 +87,8 @@ def reconcile(previous, current, check_canceled=lambda: None) -> dict | None:
 	if previous.location != current.location or previous.scope != current.scope:
 		return {}
 	same_names = previous.names == current.names
+	unknown = bytes(16)
 	if same_names and previous.identities == current.identities and previous.created_ns == current.created_ns:
-		unknown = bytes(16)
 		offset = 0
 		while True:
 			check_canceled()
@@ -111,7 +111,7 @@ def reconcile(previous, current, check_canceled=lambda: None) -> dict | None:
 		if index % 256 == 0:
 			check_canceled()
 		identity, created = previous.identity(index)
-		if not any(identity):
+		if identity == unknown:
 			continue
 		target = index if same_names else exact.get(name)
 		if target is not None and current.identity(target) == (identity, created):

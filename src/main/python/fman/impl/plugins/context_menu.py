@@ -1,5 +1,4 @@
 from collections import OrderedDict
-from fbs_runtime.platform import is_mac
 from fman.impl.plugins.util import describe_type, ordered_set
 
 import json
@@ -126,8 +125,6 @@ class ContextMenuProvider:
 			if binding['command'] != command:
 				continue
 			shortcut = binding['keys'][0]
-			if is_mac():
-				shortcut = _insert_mac_key_symbols(shortcut)
 			yield shortcut
 	def _join_iterables(self, separator, iterables):
 		is_first = True
@@ -189,14 +186,3 @@ def sanitize_context_menu(cm, file_name, available_commands):
 				continue
 		result.append(item)
 	return result, errors
-
-# Copied from the Core plugin:
-def _insert_mac_key_symbols(shortcut):
-	keys = shortcut.split('+')
-	return ''.join(_KEY_SYMBOLS_MAC.get(key, key) for key in keys)
-
-# Copied from the Core plugin:
-_KEY_SYMBOLS_MAC = {
-	'Cmd': '⌘', 'Alt': '⌥', 'Ctrl': '⌃', 'Shift': '⇧', 'Backspace': '⌫',
-	'Up': '↑', 'Down': '↓', 'Left': '←', 'Right': '→', 'Enter': '↩'
-}

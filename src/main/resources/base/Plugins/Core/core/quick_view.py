@@ -1,4 +1,3 @@
-from fbs_runtime.platform import is_windows
 from fman import DirectoryPaneCommand
 from fman.impl.plugins.plugin import PluginService
 from fman.impl.util.qt.thread import run_in_main_thread
@@ -49,7 +48,7 @@ class ToggleQuickView(DirectoryPaneCommand):
 		QuickViewSession(window, source, target, owner)
 
 	def is_visible(self):
-		return is_windows() and len(self.pane.window.get_panes()) == 2
+		return (len(self.pane.window.get_panes()) == 2)
 
 
 @run_in_main_thread

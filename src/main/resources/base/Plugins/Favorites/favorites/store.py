@@ -1,5 +1,4 @@
 from collections import namedtuple
-from os import name as os_name
 
 from fman.url import as_human_readable, basename, normalize, splitscheme
 
@@ -14,7 +13,7 @@ class FavoritesStore:
 		self, favorites=(), max_favorites=DEFAULT_MAX_FAVORITES,
 		invalid_count=0, windows=None
 	):
-		self._windows = os_name == 'nt' if windows is None else windows
+		self._windows = True if windows is None else windows
 		self._favorites = list(favorites)
 		self._keys = [self.key(favorite.url, self._windows)
 					  for favorite in self._favorites]
@@ -140,7 +139,7 @@ class FavoritesStore:
 		url = FavoritesStore._normalize_url(url)
 		scheme = splitscheme(url)[0]
 		if windows is None:
-			windows = os_name == 'nt'
+			windows = True
 		if windows and scheme == 'file://':
 			return url.casefold()
 		return url

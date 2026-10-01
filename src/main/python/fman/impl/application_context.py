@@ -2,13 +2,11 @@ from fbs_runtime import application_context as fbs_appctxt
 from fbs_runtime.application_context import cached_property
 from fbs_runtime.application_context.PyQt5 import ApplicationContext
 from fbs_runtime.excepthook import StderrExceptionHandler
-from fbs_runtime.platform import is_mac
 from fman import PLATFORM, DATA_DIRECTORY, Window
 from fman.impl.controller import Controller
 from fman.impl.font_database import FontDatabase
-from fman.impl.metrics import DisabledMetrics
-from fman.impl.model.icon_provider import GnomeFileIconProvider, \
-	GnomeNotAvailable, IconProvider
+from fman.impl.tour_state import TourState
+from fman.impl.model.icon_provider import IconProvider
 from fman.impl.nonexistent_shortcut_handler import NonexistentShortcutHandler
 from fman.impl.plugins import PluginSupport, CommandCallback, PluginFactory
 from fman.impl.plugins.builtin import BuiltinPlugin, NullFileSystem
@@ -46,11 +44,10 @@ import sys
 
 
 def _set_windows_app_id():
-	if PLATFORM == 'Windows':
-		from ctypes import windll
-		windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-			APP_NAME
-		)
+	from ctypes import windll
+	windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+		APP_NAME
+	)
 
 def get_application_context():
 	return fbs_appctxt.get_application_context(
@@ -107,17 +104,10 @@ class DevelopmentApplicationContext(ApplicationContext):
 		result.setStyle(self.style)
 		result.setPalette(self.palette)
 		result.aboutToQuit.connect(self.on_quit)
-		# We need to instantiate this somewhere. So why not here:
-		_ = self.mac_clipboard_fix
 		return result
 	@cached_property
-	def mac_clipboard_fix(self):
-		if is_mac():
-			from fman.impl.mac_clipboard_fix import MacClipboardFix
-			return MacClipboardFix()
-	@cached_property
 	def command_callback(self):
-		return CommandCallback(self.metrics)
+		return CommandCallback(self.tour_state)
 	@cached_property
 	def exception_handlers(self):
 		return [self.plugin_error_handler, StderrExceptionHandler()]
@@ -125,7 +115,7 @@ class DevelopmentApplicationContext(ApplicationContext):
 	def main_window(self):
 		if self._main_window is None:
 			self._main_window = MainWindow(
-				self.app, self.help_menu_actions, self.theme,
+				self.app, self.theme,
 				self.progress_bar_palette, self.mother_fs, NullFileSystem.scheme
 			)
 			# Resolve the cyclic dependency main_window <-> controller
@@ -165,28 +155,6 @@ class DevelopmentApplicationContext(ApplicationContext):
 			self.main_window, shortcuts, get_command_title
 		).exec_()
 	@cached_property
-	def help_menu_actions(self):
-		if is_mac():
-			def app_command(name):
-				return lambda _: \
-					self.plugin_support.run_application_command(name)
-			def directory_pane_command(name):
-				def result(_):
-					active_pane = self.plugin_support.get_active_pane()
-					if active_pane:
-						active_pane.run_command(name)
-				return result
-			return [
-				('Keyboard shortcuts', 'F1', app_command('help')),
-				(
-					'Command Palette', 'Ctrl+Shift+P',
-					directory_pane_command('command_palette')
-				),
-				('Tutorial', '', directory_pane_command('tutorial'))
-			]
-		else:
-			return []
-	@cached_property
 	def font_database(self):
 		return FontDatabase()
 	@cached_property
@@ -207,13 +175,7 @@ class DevelopmentApplicationContext(ApplicationContext):
 		result._icon_provider = self._get_icon_provider(result)
 		return result
 	def _get_icon_provider(self, fs):
-		if PLATFORM == 'Windows':
-			qt_icon_provider = QFileIconProvider()
-		else:
-			try:
-				qt_icon_provider = GnomeFileIconProvider()
-			except GnomeNotAvailable:
-				qt_icon_provider = QFileIconProvider()
+		qt_icon_provider = QFileIconProvider()
 		icons_dir = self._get_local_data_file('Cache', 'Icons')
 		makedirs(icons_dir, exist_ok=True)
 		return IconProvider(qt_icon_provider, fs, icons_dir)
@@ -227,13 +189,13 @@ class DevelopmentApplicationContext(ApplicationContext):
 	def tutorial_factory(self):
 		return lambda pane: Tutorial(
 			self.session_manager.is_first_run, self.main_window, pane, self.app,
-			self.command_callback, self.metrics
+			self.command_callback, self.tour_state
 		)
 	@cached_property
 	def cleanupguide_factory(self):
 		return lambda pane: CleanupGuide(
 			self.main_window, pane, self.app, self.command_callback,
-			self.metrics
+			self.tour_state
 		)
 	@cached_property
 	def plugin_support(self):
@@ -273,20 +235,20 @@ class DevelopmentApplicationContext(ApplicationContext):
 	def controller(self):
 		return Controller(
 			self.plugin_support, self.nonexistent_shortcut_handler,
-			self.usage_helper, self.metrics
+			self.usage_helper, self.tour_state
 		)
 	@cached_property
 	def nonexistent_shortcut_handler(self):
 		settings = Settings(self._get_local_data_file('Dialogs.json'))
 		return NonexistentShortcutHandler(
-			self.main_window, settings, self.metrics
+			self.main_window, settings, self.tour_state
 		)
 	@cached_property
 	def usage_helper(self):
 		return UsageHelper(self.session_manager.is_first_run)
 	@cached_property
-	def metrics(self):
-		return DisabledMetrics()
+	def tour_state(self):
+		return TourState()
 	@cached_property
 	def palette(self):
 		result = QPalette()
@@ -367,35 +329,6 @@ class FrozenApplicationContext(DevelopmentApplicationContext):
 	def init_logging(self):
 		logging.basicConfig(level=logging.CRITICAL)
 	def on_main_window_shown(self):
-		if PLATFORM == 'Linux':
-			"""
-			PyInstaller sets LD_LIBRARY_PATH to /opt/fman. Processes we spawn,
-			be it via Popen(...) or QDesktopServices.openUrl(...), inherit this
-			value. This leads to problems, especially when the app we launch is
-			based on Qt. The reason is that the OS then attempts to load our 
-			libraries, which are most likely incompatible with those of the app.
-			An example where this happens is VLC, which errors out with 'This 
-			application failed to start because it could not find or load the Qt
-			platform plugin "xcb"'. Plugin developers have also encountered this
-			unexpected behaviour when trying to launch apps.
-			
-			To fix the problem, we restore LD_LIBRARY_PATH to its original value
-			here. According to the docs [1], PyInstaller stores this value in a
-			separate environment variable.
-			
-			A drawback of unsetting the environment variable here is that
-			libraries from PyInstaller's search path cannot be loaded after this
-			method was called. In other words, we assume that all required
-			libraries have been loaded once we reach here. This assumption may
-			turn out to be wrong in the future.
-			
-			[1]: http://pyinstaller.readthedocs.io/en/stable/runtime-information.html#ld-library-path-libpath-considerations
-			"""
-			lp_orig = os.environ.pop('LD_LIBRARY_PATH_ORIG', None)
-			if lp_orig is not None:
-				os.environ['LD_LIBRARY_PATH'] = lp_orig
-			else:
-				os.environ.pop('LD_LIBRARY_PATH', None)
 		# Similarly to above, PyInstaller sets various QT_... environment
 		# variables. This can confuse Qt-based apps which we launch via
 		# Popen(...) or QDesktopServices.openUrl(...). An example of this is

@@ -275,6 +275,8 @@ class PanelForm(QWidget):
 		for previous, current in zip(self.tab_controls, self.tab_controls[1:]):
 			QWidget.setTabOrder(previous, current)
 		self.reflow(False)
+		for record, widget, label in self.fields:
+			label.installEventFilter(self)
 
 	def create(self, record):
 		session = self.session
@@ -385,6 +387,11 @@ class PanelForm(QWidget):
 		super().resizeEvent(event)
 		self.reflow(self.width() < 620)
 
+	def eventFilter(self, watched, event):
+		if event.type() in (QEvent.FontChange, QEvent.StyleChange):
+			self.reflow(self.width() < 620)
+		return super().eventFilter(watched, event)
+
 	def reflow(self, narrow):
 		if self.structured:
 			for record, control in self.session.controls.values():
@@ -397,6 +404,8 @@ class PanelForm(QWidget):
 			return
 		for record, widget, label in self.fields:
 			label.ensurePolished()
+			label.setMinimumWidth(0)
+			label.setMaximumWidth(16777215)
 		label_width = max((label.sizeHint().width() for record, widget, label in self.fields), default=0)
 		for record, widget, label in self.fields:
 			label.setFixedWidth(label_width)
@@ -528,7 +537,13 @@ class PanelSession(ToolWindow):
 				self.alert(str(error))
 
 	def action(self, name):
-		if self.on_action is not None:
+		if self.on_action is not None and self.alive.is_set() and self.owner.active:
+			for record, control in self.controls.values():
+				if isinstance(record, DateField):
+					control.editor.interpretText()
+					if not self.alive.is_set() or not self.owner.active:
+						return
+			self.capture_values()
 			self.invoke(self.on_action, name, self.state.values)
 
 	def alert(self, message):

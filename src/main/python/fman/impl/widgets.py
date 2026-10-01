@@ -1,4 +1,3 @@
-from fbs_runtime.platform import is_windows, is_mac
 from fman import OK
 from fman.impl.filter_pattern import compile_filter, MAX_FILTER_LENGTH
 from fman.impl.model import SortedFileSystemModel
@@ -7,18 +6,16 @@ from fman.impl.quicksearch import Quicksearch
 from fman.impl.status_bar import ACTIVE_PANE, DISABLED, PER_PANE, \
 	PaneStatusSnapshot, PaneStatusWidget, StatusCalculationService, \
 	set_size_divisor
-from fman.impl.util.qt import disable_window_animations_mac, Key_Escape, \
-	NoFocus, Key_Backspace
+from fman.impl.util.qt import Key_Escape, NoFocus, Key_Backspace
 from fman.impl.util.qt.thread import run_in_main_thread
 from fman.impl.view.location_bar import LocationBar
 from fman.impl.view import FileListView, Layout, set_selection
 from fman.url import as_human_readable, dirname
 from PyQt5.QtCore import pyqtSignal, QTimer, Qt, QEvent, QSize
-from PyQt5.QtGui import QKeySequence
 from PyQt5.QtWidgets import QWidget, QMainWindow, QSplitter, QStatusBar, \
 	QMessageBox, QInputDialog, QLineEdit, QFileDialog, QLabel, QDialog, \
 	QHBoxLayout, QPushButton, QVBoxLayout, QSplitterHandle, QApplication, \
-	QFrame, QAction, QSizePolicy, QProgressDialog, QProgressBar
+	QFrame, QSizePolicy, QProgressDialog, QProgressBar
 from PyQt5 import sip
 
 class Application(QApplication):
@@ -450,7 +447,7 @@ class MainWindow(QMainWindow):
 	before_dialog = pyqtSignal(QDialog)
 
 	def __init__(
-		self, app, help_menu_actions, theme, progress_bar_palette, fs,
+		self, app, theme, progress_bar_palette, fs,
 		null_location
 	):
 		super().__init__()
@@ -489,7 +486,6 @@ class MainWindow(QMainWindow):
 		self._shown_timer.setSingleShot(True)
 		self._shown_timer.timeout.connect(self.shown)
 		self._dialog = None
-		self._init_help_menu(help_menu_actions)
 		self._app.focusChanged.connect(self._on_focus_changed)
 		self._status_focus_tracking = True
 	def set_controller(self, controller):
@@ -514,35 +510,6 @@ class MainWindow(QMainWindow):
 		dock.hide()
 		self._central_layout.removeWidget(dock)
 		dock.deleteLater()
-	def _init_help_menu(self, help_menu_actions):
-		if not help_menu_actions:
-			return
-		help_menu_text = 'Help'
-		if is_mac():
-				# On OS X, any menu named "Help" has the "Spotlight search for
-				# Help" bar displayed in it. We don't need or want this. Add an
-				# invisible character to fool OS X into not treating it as
-				# "Help" (' ' doesn't work):
-				help_menu_text += '\u2063'
-		help_menu = self.menuBar().addMenu(help_menu_text)
-		actions = []
-		for action_name, shortcut, handler in help_menu_actions:
-			action = QAction(action_name, help_menu)
-			action.triggered.connect(handler)
-			help_menu.addAction(action)
-			actions.append(action)
-		# On at least Mac, pressing a shortcut from a menu briefly highlights
-		# the menu. We don't want this - especially for the Command Palette.
-		# We therefore only enable the shortcuts when the menu is open:
-		def enable_shortcuts():
-			for i, (_, shortcut, _) in enumerate(help_menu_actions):
-				if shortcut:
-					actions[i].setShortcut(QKeySequence(shortcut))
-		help_menu.aboutToShow.connect(enable_shortcuts)
-		def disable_shortcuts():
-			for action in actions:
-				action.setShortcut(QKeySequence())
-		help_menu.aboutToHide.connect(disable_shortcuts)
 	@run_in_main_thread
 	def show_alert(
 		self, text, buttons=OK, default_button=OK, allow_escape=True
@@ -597,8 +564,6 @@ class MainWindow(QMainWindow):
 		self.before_dialog.emit(dialog)
 		dialog.moveToThread(self._app.thread())
 		dialog.setParent(self)
-		if is_mac():
-			disable_window_animations_mac(dialog)
 		result = dialog.exec()
 		self._dialog = None
 		return result
@@ -782,20 +747,6 @@ class MessageBox(QMessageBox):
 		self._allow_escape = allow_escape
 	def setStandardButtons(self, buttons):
 		super().setStandardButtons(buttons)
-		if is_mac():
-			# The shortcut keys don't work out of the box on Mac, even though
-			# they are displayed by our theme. (The standard macOS theme does
-			# not display them.) The code below ensures that they work.
-			# We do have to perform these steps _here_ because self.button(...)
-			# returns None when called from the constructor.
-			for button, shortcut in (
-				(self.Yes, Qt.Key_Y), (self.No, Qt.Key_N),
-				(self.YesToAll, Qt.Key_A), (self.NoToAll, Qt.Key_O)
-			):
-				if buttons & button:
-					self.button(button).setShortcut(
-						QKeySequence(Qt.CTRL + shortcut)
-					)
 	def keyPressEvent(self, event):
 		if self._allow_escape or event.key() != Key_Escape:
 			super().keyPressEvent(event)
@@ -955,7 +906,7 @@ class ProgressDialog(QProgressDialog):
 		# Would like the dialog to be non-resizable on all platforms, but only
 		# Windows supports it as a flag. On other platforms, we use
 		# setFixedSize(...). See #resizeEvent(...) below.
-		args = (Qt.MSWindowsFixedSizeDialogHint,) if is_windows() else ()
+		args = (Qt.MSWindowsFixedSizeDialogHint,)
 		super().__init__(parent, *args)
 		self._title = title
 		self._size = self.maximum()
@@ -1015,8 +966,6 @@ class ProgressDialog(QProgressDialog):
 	def resizeEvent(self, e):
 		super().resizeEvent(e)
 		# Prevent the dialog from being resizable:
-		if not is_windows():
-			self.setFixedSize(self.size())
 	def _update(self):
 		if self.wasCanceled():
 			return

@@ -1,4 +1,5 @@
 from os.path import exists
+from fman.url import join
 
 class StubCommandCallback:
 	def before_command(self, command_name):
@@ -38,14 +39,14 @@ class StubDirectoryPaneWidget:
 		if url != self._location:
 			self._location = url
 			self._columns = self._fs.get_columns(url)
+			listing = self._fs.scan(url, lambda: None)
+			keys = [(column.keys(listing, True), column.keys(listing, False)) for column in self._columns]
 			self._rows = [
-				(row_url, self._fs.is_dir(row_url), [(
-					column.get_str(row_url),
-					column.get_sort_value(row_url, True),
-					column.get_sort_value(row_url, False)
-				)])
-				for column in self._columns
-				for row_url in self._fs.iterdir(url)
+				(join(url, name), listing.is_dir[index], [
+					(column.text(listing, index), ascending[index], descending[index])
+					for column, (ascending, descending) in zip(self._columns, keys)
+				])
+				for index, name in enumerate(listing.names)
 			]
 		callback()
 	def get_file_under_cursor(self):

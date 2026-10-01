@@ -95,7 +95,7 @@ For a Norton Commander or Total Commander style workflow.
 | ++f10++ | Open in Explorer |
 | ++f11++ | Copy paths to clipboard |
 
-++f2++ and ++f12++ are currently unassigned.
+++f2++ offers a rename binding when a file is under the cursor; ++f12++ is unassigned.
 
 ### Modified Function Keys
 

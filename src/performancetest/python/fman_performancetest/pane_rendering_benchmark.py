@@ -69,7 +69,7 @@ def install_baseline(destination, revision):
 	return commit
 
 
-def child(directory, label, mode, show_hidden, rows_output=None, interactions=False, output=None, baseline_ref='56e840a', viewport=None, navigation_repetitions=0, refresh_patterns=()):
+def child(directory, label, mode, show_hidden, rows_output=None, interactions=False, output=None, baseline_ref='56e840a', viewport=None, navigation_repetitions=0, refresh_patterns=(), selection_case=None):
 	temporary_settings = TemporaryDirectory(prefix='pane-rendering-')
 	os.environ['ROYIFILEMANAGER_USER_SETTINGS'] = str(Path(temporary_settings.name) / 'UserSettings')
 	baseline_commit = None
@@ -368,6 +368,10 @@ def child(directory, label, mode, show_hidden, rows_output=None, interactions=Fa
 				settled_start = None
 				deadline = perf_counter() + 90
 				while perf_counter() < deadline:
+					if selection_case is not None:
+						if not completed.wait(90):
+							raise TimeoutError('Selection pane completion')
+						break
 					phase = 'settled' if completed.is_set() else 'loading'
 					if phase == 'settled' and settled_start is None:
 						settled_start = perf_counter()
@@ -411,7 +415,7 @@ def child(directory, label, mode, show_hidden, rows_output=None, interactions=Fa
 								output.write(serialized + '\n')
 					state['rows'] = model.rowCount()
 					state['fingerprint'] = digest.hexdigest()
-				if not refresh_patterns:
+				if not refresh_patterns and selection_case is None:
 					gui(fingerprint)
 				else:
 					state['rows'] = gui(lambda: view.model().rowCount())
@@ -419,6 +423,10 @@ def child(directory, label, mode, show_hidden, rows_output=None, interactions=Fa
 				state['metadata_tail_ms'] = max(0, state['complete_ms'] - state['first_paint_ms'])
 				state['commits_total_ms'] = sum(state['commits_ms'])
 				state['commits_ms'] = distribution(state['commits_ms'])
+				if selection_case is not None:
+					from fman_performancetest.selection import measure
+					state['samples'] = [measure(view, gui, context.window.get_panes()[0],
+						context.main_window, selection_case)]
 				if refresh_patterns:
 					from PyQt5.QtCore import QItemSelection, QItemSelectionModel
 					from time import process_time

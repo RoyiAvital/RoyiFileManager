@@ -1,12 +1,10 @@
 from core import Name, Size, Modified
-from core.tests import StubFS
-from core.tests.fs import StubFileSystem
-from fman.url import as_url
+from fman.listing import Listing
 from unittest import TestCase
 
 class ColumnTest:
 	def setUp(self):
-		self._fs = StubFileSystem({
+		self._entries = {
 			'a': {
 				'is_dir': False, 'size': 1, 'mtime': 1473339042.0
 			},
@@ -23,25 +21,29 @@ class ColumnTest:
 				'is_dir': True, 'size': 4, 'mtime': 1473339046.0
 			}
 
-		})
-		self._column = self.column_class(StubFS(self._fs))
+		}
+		self._column = self.column_class()
 	def assert_is_less(self, left, right, is_ascending=True):
-		left_val = self._get_sort_value(left, is_ascending)
-		right_val = self._get_sort_value(right, is_ascending)
+		left_val = self._key(left, is_ascending)
+		right_val = self._key(right, is_ascending)
 		self.assertLess(left_val, right_val)
 	def assert_is_greater(self, left, right, is_ascending=True):
 		self.assertGreater(
-			self._get_sort_value(left, is_ascending),
-			self._get_sort_value(right, is_ascending),
+			self._key(left, is_ascending),
+			self._key(right, is_ascending),
 			"%s is not > %s" % (left, right)
 		)
 	def check_less_than_chain(self, *chain, is_ascending=True):
 		for i, left in enumerate(chain[:-1]):
 			right = chain[i + 1]
 			self.assert_is_less(left, right, is_ascending)
-	def _get_sort_value(self, path, is_ascending):
-		url = as_url(path, StubFileSystem.scheme)
-		return self._column.get_sort_value(url, is_ascending)
+	def _key(self, path, is_ascending):
+		entry = self._entries.get(path, {})
+		mtime = entry.get('mtime')
+		listing = Listing.create('test://', (path,),
+			is_dir=(entry.get('is_dir', False),), sizes=(entry.get('size'),),
+			mtimes_ns=(None if mtime is None else int(mtime * 1_000_000_000),))
+		return self._column.keys(listing, is_ascending)[0]
 
 class NameTest(ColumnTest, TestCase):
 
@@ -49,18 +51,15 @@ class NameTest(ColumnTest, TestCase):
 
 	def test_numeric_boundaries_unicode_and_arbitrary_lengths(self):
 		from core import _natural_name_key
-		from types import SimpleNamespace
 		names = ['file' + digits for digits in ('0', '2', '10', '999999', '1000000', '9' * 99, '1' + '0' * 99, '9' * 5000)]
 		self.assertEqual(names, sorted(reversed(names), key=_natural_name_key))
 		self.assertEqual(_natural_name_key('file2'), _natural_name_key('file\u0660\u0662'))
 		self.assertEqual(_natural_name_key('FILE000'), _natural_name_key('file\u0660'))
-		listing = SimpleNamespace(display_names=tuple(names), is_dir=(False,) * len(names))
+		listing = Listing.create('test://', names)
 		for ascending in (False, True):
 			keys = self._column.keys(listing, ascending)
 			self.assertEqual(names, sorted(names, key=dict(zip(names, keys)).__getitem__))
-			for name, key in zip(names[:-1], keys):
-				self._fs.touch(name)
-				self.assertEqual(key, self._get_sort_value(name, ascending))
+			self.assertEqual((ascending,) * len(names), tuple(key[0] for key in keys))
 	def test_mixed_text_punctuation_and_numeric_ties(self):
 		from core import _natural_name_key
 		names = ['a', 'a!', 'a-2', 'a.2', 'a0', 'a2', 'a02', 'a2!', 'a2a', 'a10', 'a_', 'ab']
@@ -86,12 +85,6 @@ class NameTest(ColumnTest, TestCase):
 			'a', 'b', 'a_dir', 'b_dir',
 			is_ascending=False
 		)
-	def assert_is_less(self, left, right, is_ascending=True):
-		if not self._fs.exists(left):
-			self._fs.touch(left)
-		if not self._fs.exists(right):
-			self._fs.touch(right)
-		super().assert_is_less(left, right, is_ascending)
 
 class SizeTest(ColumnTest, TestCase):
 

@@ -1,7 +1,6 @@
-from fbs_runtime.platform import is_windows
 from fman.url import splitscheme, as_human_readable, as_url
 from pathlib import PureWindowsPath
-from PyQt5.QtCore import Qt, QObject, QEvent, QUrl
+from PyQt5.QtCore import Qt, QObject, QUrl
 
 def connect_once(signal, slot):
 	def _connect_once(*args, **kwargs):
@@ -9,18 +8,6 @@ def connect_once(signal, slot):
 		slot(*args, **kwargs)
 	signal.connect(_connect_once)
 
-def disable_window_animations_mac(window):
-	# We need to access `.winId()` below. This method has an unwanted (and not
-	# very well-documented) side effect: Calling it before the window is shown
-	# makes Qt turn the window into a "native window". This incurs performance
-	# penalties and leads to subtle changes in behaviour. We therefore wait for
-	# the Show event:
-	def eventFilter(target, event):
-		from objc import objc_object
-		view = objc_object(c_void_p=int(target.winId()))
-		NSWindowAnimationBehaviorNone = 2
-		view.window().setAnimationBehavior_(NSWindowAnimationBehaviorNone)
-	FilterEventOnce(window, QEvent.Show, eventFilter)
 
 class FilterEventOnce(QObject):
 	def __init__(self, parent, event_type, callback):
@@ -44,7 +31,7 @@ def as_qurl(url):
 		path = as_human_readable(url)
 		result = QUrl.fromLocalFile(path)
 	else:
-		if is_windows() and PureWindowsPath(path).is_absolute():
+		if PureWindowsPath(path).is_absolute():
 			result = QUrl.fromLocalFile(path)
 		else:
 			result = QUrl('ftp://' + path)
@@ -64,11 +51,10 @@ def from_qurl(qurl):
 			# Once saw QUrl('ftp:user:pass@123.45.67.89/dir') on the clipboard
 			# on Linux.
 			raise ValueError('Invalid URL: %r' % result)
-		path = ('/' if is_windows() else '//') + path
+		path = '/' + path
 	return ':'.join([scheme, path])
 
 AscendingOrder = Qt.AscendingOrder
-WA_MacShowFocusRect = Qt.WA_MacShowFocusRect
 TextAlignmentRole = Qt.TextAlignmentRole
 AlignRight = Qt.AlignRight
 AlignTop = Qt.AlignTop

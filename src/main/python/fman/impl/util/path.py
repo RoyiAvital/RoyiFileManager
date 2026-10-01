@@ -1,4 +1,3 @@
-from fbs_runtime.platform import is_windows
 from os.path import splitdrive, normpath, expanduser, realpath
 from pathlib import PurePosixPath
 
@@ -15,7 +14,7 @@ def _add_backslash_to_drive_if_missing(file_path): # Copied from Core plugin
 	"""
 	Normalize "C:" -> "C:\". Required for some path functions on Windows.
 	"""
-	if is_windows() and file_path:
+	if file_path:
 		drive_or_unc, path = splitdrive(file_path)
 		is_drive = drive_or_unc.endswith(':')
 		if is_drive and file_path == drive_or_unc:

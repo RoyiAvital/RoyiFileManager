@@ -83,7 +83,7 @@ def decode_text(data, complete):
 		return codecs.getincrementaldecoder(encoding)().decode(data, final=complete), encoding, ''
 	except UnicodeError:
 		text = codecs.getincrementaldecoder(encoding)(errors='replace').decode(data, final=complete)
-		if encoding == 'utf-8' and os.name == 'nt':
+		if (encoding == 'utf-8'):
 			valid_text = codecs.getincrementaldecoder(encoding)(errors='ignore').decode(data, final=complete)
 			replacements = len(text) - len(valid_text)
 			keep_utf8 = not valid_text.isascii() and replacements <= max(3, len(text) // 100)

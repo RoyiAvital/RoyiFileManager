@@ -1,5 +1,4 @@
-from fbs_runtime.platform import is_mac
-from fman.impl.util.qt import WA_MacShowFocusRect, Key_Home, Key_End, \
+from fman.impl.util.qt import Key_Home, Key_End, \
 	ShiftModifier, Key_Return, Key_Enter, ToolTipRole, connect_once
 from fman.impl.view.drag_and_drop import DragAndDrop
 from fman.impl.view.move_without_updating_selection import \
@@ -7,9 +6,9 @@ from fman.impl.view.move_without_updating_selection import \
 from fman.impl.view.resize_cols_to_contents import ResizeColumnsToContents
 from fman.impl.view.single_row_mode import SingleRowMode
 from PyQt5.QtCore import QEvent, QItemSelection, QItemSelectionModel as QISM, QPointF, QRect, Qt, \
-	pyqtSignal, QRectF
-from PyQt5.QtGui import QPen, QContextMenuEvent, QKeySequence, QPainterPath, \
-	QRegion, QTextLayout, QTextCharFormat, QPalette, QDrag
+	pyqtSignal
+from PyQt5.QtGui import QPen, QContextMenuEvent, QKeySequence, \
+	QTextLayout, QTextCharFormat, QPalette, QDrag
 from PyQt5.QtWidgets import QTableView, QLineEdit, QVBoxLayout, QStyle, \
 	QStyledItemDelegate, QStyleOptionViewItem, QProxyStyle, QHeaderView, QToolTip, QMenu, QAction
 
@@ -23,7 +22,6 @@ class FileListView(
 		self.key_press_event_filter = lambda event: False
 		self.setShowGrid(False)
 		self.setSortingEnabled(True)
-		self.setAttribute(WA_MacShowFocusRect, 0)
 		self.horizontalHeader().setStretchLastSection(True)
 		self.horizontalHeader().setHighlightSections(False)
 		self.horizontalHeader().setDefaultAlignment(Qt.AlignLeft)
@@ -271,22 +269,6 @@ class FileListView(
 
 class Menu(QMenu):
 	def resizeEvent(self, e):
-		if is_mac():
-			"""
-			To mimic macOS's context menu, we need rounded corners.
-			Ideally, we would want to simply use `border-radius` in QSS.
-			Unfortunately, this does not work: Due to a bug in Qt [1], we get a
-			completely filled rectangle with rounded corners drawn inside it.
-			To work around this, we add a mask with rounded corners. This has
-			the shortcoming that we don't get anti-aliasing because masks are
-			only 0 or 1. Combining mask and border-radius to use a colored
-			border does not work well either (the background color still shines
-			through beyond the border). So we just use the mask.
-			 [1]: https://bugreports.qt.io/browse/QTBUG-49965
-			"""
-			path = QPainterPath()
-			path.addRoundedRect(QRectF(self.rect()), 4, 4)
-			self.setMask(QRegion(path.toFillPolygon().toPolygon()))
 		super().resizeEvent(e)
 
 def set_selection(qlineedit, selection_start, selection_end=None):

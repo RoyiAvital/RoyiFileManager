@@ -6,7 +6,6 @@ from threading import Lock
 import ntpath
 import os
 import re
-import sys
 
 
 @dataclass(frozen=True)
@@ -55,8 +54,6 @@ class ProcessError(Exception):
 
 @lru_cache(maxsize=1)
 def get_provider():
-	if sys.platform != 'win32':
-		raise ProcessError('Process Pane is available on Windows only.')
 	try:
 		from win32process import EnumProcesses
 	except ImportError as error:

@@ -14,6 +14,8 @@ the current search and reject stale results. Search starts only on request.
   dot is optional. **Exclude:** semicolon-separated globs; `\;` means a literal
   semicolon. Exclusions are independent of the main pattern mode.
 - **Modification Date:** optional Start and End local calendar days, both inclusive.
+  Typed dates commit on Enter, when leaving the field, or when clicking Search.
+  Search availability follows the typed bounds without leaving the field.
   Leave either field blank to omit that bound. Unsupported, ambiguous or
   nonexistent boundary times are rejected.
 - **File Size:** optional exact integer Min/Max bounds, inclusive; blank means no

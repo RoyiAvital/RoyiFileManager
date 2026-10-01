@@ -132,6 +132,11 @@ def headline(identity, metrics):
 		metric, label = 'first_paint_ms', 'First populated paint'
 	elif identity.startswith('quickview.'):
 		metric, label = 'enable.png.input_to_paint_ms', 'First preview paint'
+	elif identity.startswith('selection.'):
+		candidates = {name: value for name, value in metrics.items()
+			if name.endswith(('.wall_ms', '.readback_ms'))}
+		metric = max(candidates, key=lambda name: candidates[name]['median']) if candidates else ''
+		label = 'Slowest completed selection/readback median'
 	else:
 		candidates = {name: value for name, value in metrics.items()
 			if name.endswith('.paint_ms') and name != 'open.paint_ms'}
@@ -143,7 +148,8 @@ def headline(identity, metrics):
 
 def overview(record):
 	tests = [dict(test_id=result['test_id'], status=result['status'],
-		fixture_id=result['fixture_id'], metrics=summarize(result)) for result in record['results']]
+		fixture_id=result['fixture_id'], metrics=summarize(result),
+		failures=result.get('failures', [])) for result in record['results']]
 	refresh = [test for test in tests if test['test_id'] in REFRESH_TESTS]
 	tests = [test for test in tests if test['test_id'] not in REFRESH_TESTS]
 	for test in tests:

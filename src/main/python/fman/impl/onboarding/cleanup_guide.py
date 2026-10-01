@@ -1,21 +1,13 @@
-from fbs_runtime.platform import is_mac
 from fman.impl.onboarding import Tour, TourStep
 from fman.impl.product import APP_NAME
 from fman.url import basename
 
 class CleanupGuide(Tour):
-	def __init__(self, *args, **kwargs):
-		super().__init__('Cleanup', *args, **kwargs)
 	def _get_steps(self):
-		if is_mac():
-			cmd_p = 'Cmd+P'
-			delete_key = 'Cmd+Backspace'
-			cmd_shift_p = 'Cmd+Shift+P'
-		else:
-			cmd_p = 'Ctrl+P'
-			delete_key = 'Delete'
-			cmd_shift_p = 'Ctrl+Shift+P'
-		selection_key = 'Space' if is_mac() else 'Insert'
+		cmd_p = 'Ctrl+P'
+		delete_key = 'Delete'
+		cmd_shift_p = 'Ctrl+Shift+P'
+		selection_key = 'Insert'
 		panes = self._pane.window.get_panes()
 		this_pane_index = panes.index(self._pane)
 		other_pane_index = (this_pane_index + 1) % len(panes)

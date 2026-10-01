@@ -1,4 +1,3 @@
-from fbs_runtime.platform import is_mac, is_windows
 from fman import load_json
 from fman.impl.onboarding import Tour, TourStep
 from fman.impl.product import APP_NAME
@@ -18,20 +17,11 @@ import os.path
 
 class Tutorial(Tour):
 	def __init__(self, is_first_run, *args, **kwargs):
-		if is_mac():
-			self._cmd_p = 'Cmd+P'
-			self._native_fm = 'Finder'
-			self._delete_key = 'Cmd+Backspace'
-			self._cmd_shift_p = 'Cmd+Shift+P'
-		else:
-			self._cmd_p = 'Ctrl+P'
-			if is_windows():
-				self._native_fm = 'Explorer'
-			else:
-				self._native_fm = 'your native file manager'
-			self._delete_key = 'Delete'
-			self._cmd_shift_p = 'Ctrl+Shift+P'
-		super().__init__('Tutorial', *args, **kwargs)
+		self._cmd_p = 'Ctrl+P'
+		self._native_fm = 'Explorer'
+		self._delete_key = 'Delete'
+		self._cmd_shift_p = 'Ctrl+Shift+P'
+		super().__init__(*args, **kwargs)
 		self._is_first_run = is_first_run
 		self._dst_url = self._src_url = self._start_time = self._time_taken \
 			= None
@@ -257,7 +247,7 @@ class Tutorial(Tour):
 		self._dst_url = as_url(dir_path)
 		self._src_url = self._get_src_url(dir_path)
 		self._curr_step_index += 1
-		self._track_current_step()
+		self._tour_state.activity()
 		self._go_to_src_url()
 	def _go_to_src_url(self):
 		"""
@@ -357,7 +347,7 @@ class Tutorial(Tour):
 				encouragement +
 				"We%s want to open your *%s* folder, but it is hidden. Please "
 				"press *%s+.* to show hidden files." %
-				(now, path, 'Cmd' if is_mac() else 'Ctrl')
+				(now, path, 'Ctrl')
 			)
 		else:
 			assert instruction == 'go to'
@@ -477,7 +467,7 @@ def _get_navigation_steps(
 	dst_drive = splitdrive(dst_path)[0]
 	dst_is_unc = dst_drive.startswith(r'\\')
 	dst_drive_path = \
-		(dst_drive + ('' if dst_is_unc else '\\')) if is_windows() else '/'
+		dst_drive + ('' if dst_is_unc else '\\')
 	src_scheme = splitscheme(src_url)[0]
 	if src_scheme == 'drives://':
 		if dst_is_unc:

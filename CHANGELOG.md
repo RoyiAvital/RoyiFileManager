@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+This version focuses on code cleanup, removing unused features inherited from
+`fman` and remaining non Windows support. The result is a more focused codebase
+that is easier to understand and maintain.
+
+### Removed
+
+- Removed unused macOS/Linux runtime branches and bundled settings; the application
+  remains Windows-only, with archive URLs and network-drive support preserved.
+- Removed the GitHub plug-in installer and installation-revision hints. Existing
+  plug-ins still load; manual installation uses `UserSettings/Plugins/Third-party/<PluginName>/`.
+- Removed telemetry/event history. Retained tours use bounded, session-only state.
+- Removed legacy Column `get_str`/`get_sort_value` methods and the bundled columns'
+  filesystem constructor arguments. Plug-ins must implement snapshot `text` and
+  `keys`; there is no compatibility shim. See [Column migration](PlugIn.md#columns).
+
+### Changed
+
+- Renamed **Show processes** to **Show OS' processes** in Command Center;
+  the `show_processes` command ID is unchanged.
+- Reduced unknown-identity checking overhead when reconciling changed directory
+  listings.
+- Arrow-key suggestions now offer local bindings for parent navigation, opening
+  files/directories, and pane switching. Removed the unused "Other" feedback field.
+- Drive-label lookup now belongs to the filesystem scanner instead of the
+  column. Removed the obsolete update statement from Zen.
+- Optional date edits commit on Enter, focus loss or a panel action, allowing
+  minimum-boundary dates regardless of today's date and preventing stale Search
+  values. Valid pending bounds update Search availability before commit.
+  Form labels realign when their font changes.
+
+### Documentation
+
+- Documented manual plug-in installation and the snapshot Column migration;
+  corrected F2/F12 shortcut notes and the portable Core location.
+
 ## [0.10.0] - 2026-09-26
 
 This release focuses on extending the QuickView mode to support text based files.

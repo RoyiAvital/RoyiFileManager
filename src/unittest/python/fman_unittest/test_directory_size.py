@@ -48,33 +48,38 @@ class DirectorySizeCommandTest(TestCase):
 
 	def test_column_reads_results_without_scanning_and_sorts_both_directions(self):
 		from core import Size
+		from fman.listing import Listing
 		service = Mock(enabled=True, _active=True)
 		service.result.return_value = DirSize(12, complete=True)
-		filesystem = Mock()
-		filesystem.is_dir.side_effect = lambda url: 'folder' in url
-		filesystem.query.return_value = 1024
-		column = Size(filesystem)
+		local = Listing.create('file://C:/fixture', ('file', 'folder'), is_dir=(False, True), sizes=(1024, None))
+		archive = Listing.create('zip://C:/fixture.zip', ('file', 'folder'), is_dir=(False, True), sizes=(1024, None))
+		column = Size()
 		with patch('core.directory_size._service', service), patch('core.directory_size.scan_parents', side_effect=AssertionError()):
-			self.assertEqual('12 B', column.get_str('file://folder'))
-			self.assertEqual('', column.get_str('zip://folder'))
-			on_keys = [column.get_sort_value('file://folder', ascending) for ascending in (False, True)]
+			self.assertEqual('12 B', column.text(local, 1))
+			self.assertEqual('', column.text(archive, 1))
+			on_keys = [column.keys(local, ascending)[1] for ascending in (False, True)]
 			for ascending in (False, True):
-				values = [column.get_sort_value(url, ascending) for url in ('file://file', 'file://folder')]
-				sorted(values, reverse=not ascending)
+				values = column.keys(local, ascending)
+				self.assertEqual(((ascending, 1024), (not ascending, (12,))), values)
+				self.assertEqual([1, 0], sorted(range(2), key=values.__getitem__, reverse=not ascending))
 			from fman.impl.status_bar import format_size
 			for enabled in (False, True):
 				service.enabled = enabled
 				for divisor in (1000, 1024):
 					with patch('fman.impl.status_bar._size_divisor', divisor):
-						for url in ('file://file', 'zip://file'):
-							self.assertEqual(format_size(1024, divisor), column.get_str(url))
+						for listing in (local, archive):
+							self.assertEqual(format_size(1024, divisor), column.text(listing, 0))
 			service.result.return_value = None
-			self.assertEqual('...', column.get_str('file://folder'))
-			self.assertEqual((-1,), column.get_sort_value('file://folder', True)[1])
+			self.assertEqual('...', column.text(local, 1))
+			self.assertEqual((-1,), column.keys(local, True)[1][1])
+			service.result.return_value = DirSize(12, complete=True, capped=True)
+			self.assertEqual('12 B+', column.text(local, 1))
+			service.result.return_value = DirSize(None, complete=True, errors=True)
+			self.assertEqual('?', column.text(local, 1))
 			service.enabled = False
-			self.assertEqual('', column.get_str('file://folder'))
+			self.assertEqual('', column.text(local, 1))
 			for index, ascending in enumerate((False, True)):
-				sorted([on_keys[index], column.get_sort_value('file://folder', ascending)])
+				sorted([on_keys[index], column.keys(local, ascending)[1]])
 
 	def test_toggle_saves_only_own_settings_and_notifies_after_success(self):
 		from core.directory_size import DirectorySizeService

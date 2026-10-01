@@ -303,13 +303,112 @@ class UniformRowHeightsIT(QtIT):
 				view.deleteLater()
 		self.run_in_app(check)
 
+class WindowsCleanupIT(QtIT):
+	def test_clipboard_copy_cut_formats_and_text_preservation(self):
+		def check():
+			from fman import clipboard
+			from PyQt5.QtCore import QMimeData
+			from unittest.mock import Mock, patch
+			storage = Mock()
+			storage.mimeData.return_value = QMimeData()
+			storage.text.side_effect = lambda: storage.mimeData.return_value.text()
+			storage.setText.side_effect = lambda text: storage.mimeData.return_value.setText(text)
+			storage.setMimeData.side_effect = lambda data: setattr(storage.mimeData, 'return_value', data)
+			with patch.object(clipboard, '_clipboard', return_value=storage):
+				urls = ['file://C:/sample.txt', 'zip://C:/archive.zip/entry.txt']
+				clipboard.set_text('preserved name')
+				clipboard.copy_files(urls)
+				self.assertEqual(urls, clipboard.get_files())
+				self.assertFalse(clipboard.files_were_cut())
+				clipboard.cut_files(urls)
+				self.assertEqual(urls, clipboard.get_files())
+				self.assertTrue(clipboard.files_were_cut())
+				mime = storage.mimeData()
+				for mime_type in (clipboard._CFSTR_PREFERREDDROPEFFECT, clipboard._CF_PREFERREDDROPEFFECT):
+					self.assertEqual(clipboard._DROPEFFECT_MOVE, bytes(mime.data(mime_type)))
+				clipboard.copy_files(urls)
+				self.assertFalse(clipboard.files_were_cut())
+				self.assertEqual('preserved name', clipboard.get_text())
+		self.run_in_app(check)
+
+	def test_windows_drag_actions_and_move_acknowledgment(self):
+		def check():
+			from fman.impl.view.drag_and_drop import DragAndDrop
+			from PyQt5.QtWidgets import QTableView
+			from unittest.mock import Mock, patch
+			view = DragAndDrop()
+			try:
+				for modifiers, action in ((Qt.NoModifier, Qt.MoveAction), (Qt.ControlModifier, Qt.CopyAction), (Qt.AltModifier, Qt.MoveAction)):
+					event = Mock()
+					event.keyboardModifiers.return_value = modifiers
+					with patch.object(QTableView, 'dropEvent') as dispatch:
+						view.dropEvent(event)
+						dispatch.assert_called_once_with(event)
+					event.setDropAction.assert_called_once_with(action)
+					self.assertEqual(action == Qt.MoveAction, event.ignore.called)
+			finally:
+				view.deleteLater()
+		self.run_in_app(check)
+
+	def test_native_prompts_and_shortcut_choices(self):
+		def check():
+			from fman import OK
+			from fman.impl.nonexistent_shortcut_handler import NonexistentShortcutDialog, NonexistentShortcutHandler
+			from fman.impl.tour_state import TourState
+			from fman.impl.widgets import MainWindow, Prompt
+			from PyQt5.QtCore import QTimer
+			from PyQt5.QtTest import QTest
+			from PyQt5.QtWidgets import QDialog, QLineEdit
+			from unittest.mock import Mock
+			window = MainWindow(QApplication.instance(), Mock(), Mock(), Mock(), 'null://')
+			state = TourState()
+			class Settings(dict):
+				def flush(self):
+					self.flushed = True
+			settings = Settings()
+			handler = NonexistentShortcutHandler(window, settings, state)
+			def answer(dialog):
+				def choose():
+					if isinstance(dialog, NonexistentShortcutDialog):
+						self.assertEqual(['first', 'second'], [value for value, _ in dialog._options])
+						self.assertEqual([], dialog.findChildren(QLineEdit))
+						dialog._radio_buttons[1].setFocus()
+						QTest.keyClick(dialog._radio_buttons[1], Qt.Key_Space)
+						dialog._dont_ask_again.setChecked(True)
+						dialog.accept()
+					elif isinstance(dialog, Prompt):
+						dialog.setTextValue('renamed')
+						dialog.accept()
+					else:
+						dialog.done(OK)
+				QTimer.singleShot(0, choose)
+			window.before_dialog.connect(answer)
+			try:
+				self.assertEqual(('renamed', True), window.show_prompt('Rename', 'sample'))
+				self.assertEqual(OK, window.show_alert('Windows message'))
+				state.finished('completed')
+				self.assertEqual('second', handler._show_suggestions('probe', 'Choose', [('first', 'First'), ('second', 'Second')]))
+				self.assertEqual({'suppress': True}, settings['probe'])
+				self.assertTrue(settings.flushed)
+				self.assertEqual((None, 0), state.take())
+				window.before_dialog.disconnect(answer)
+				window.before_dialog.connect(lambda dialog: QTimer.singleShot(0, dialog.reject))
+				self.assertEqual(('', False), window.show_prompt('Cancel', 'sample'))
+				self.assertIsNone(handler._show_suggestions('canceled', 'Choose', [('first', 'First')]))
+				self.assertNotIn('canceled', settings)
+			finally:
+				window.close()
+				window.deleteLater()
+		self.run_in_app(check)
+
+
 class MainWindowIT(QtIT):
 	def test_forced_minimum_size(self):
 		from fman.impl.widgets import MainWindow
 		from PyQt5.QtCore import QSize
 		from unittest.mock import Mock
 		def check():
-			window = MainWindow(Mock(), [], Mock(), Mock(), Mock(), 'null://')
+			window = MainWindow(Mock(), Mock(), Mock(), Mock(), 'null://')
 			try:
 				self.assertEqual(QSize(960, 600), window.minimumSize())
 				for width, height in ((960, 600), (1280, 800), (1440, 900)):
@@ -1095,10 +1194,10 @@ class FilterBarIT(QtIT):
 		self.filesystem = MotherFileSystem(Mock(get_icon=Mock(return_value=QIcon())))
 		for backend in (LocalFileSystem(), NullFileSystem()):
 			self.filesystem.add_child(backend.scheme, FileSystemWrapper(backend, self.filesystem, self.errors))
-		for column in (Name(self.filesystem), Size(self.filesystem), Modified(self.filesystem), NullColumn()):
+		for column in (Name(), Size(), Modified(), NullColumn()):
 			self.filesystem.register_column(column.get_qualified_name(), column)
 		def create():
-			self.window = MainWindow(QApplication.instance(), [], Mock(), Mock(), self.filesystem, 'null://')
+			self.window = MainWindow(QApplication.instance(), Mock(), Mock(), self.filesystem, 'null://')
 			self.controller = Mock(handle_shortcut=Mock(return_value=False),
 				handle_nonexistent_shortcut=Mock(return_value=False))
 			self.window.set_controller(self.controller)
@@ -1455,23 +1554,6 @@ class SnapshotFilterBarIT(FilterBarIT):
 				self.assertEqual(count, len(snapshot.entries))
 				self.assertTrue(all(entry.is_loaded for entry in snapshot.entries))
 		self.run_in_app(check_large)
-
-	def test_nonwindows_watching_still_dispatches_to_qt(self):
-		from core.fs.local import LocalFileSystem
-		from PyQt5.QtCore import QThread
-		from unittest.mock import Mock, patch
-		provider = LocalFileSystem()
-		threads = []
-		watcher = Mock()
-		watcher.addPath.side_effect = lambda path: threads.append(QThread.currentThread())
-		watcher.removePath.side_effect = lambda path: threads.append(QThread.currentThread())
-		with patch('core.fs.local.PLATFORM', 'Linux'), patch.object(provider, '_get_watcher', return_value=watcher):
-			provider.watch('C:/probe')
-			provider.unwatch('C:/probe')
-		path = provider._url_to_os_path('C:/probe')
-		watcher.addPath.assert_called_once_with(path)
-		watcher.removePath.assert_called_once_with(path)
-		self.assertEqual([self.run_in_app(QThread.currentThread)] * 2, threads)
 
 	def test_unchanged_sentinel_restores_all_marks_cursor_and_scroll(self):
 		from dataclasses import replace
@@ -2101,7 +2183,7 @@ class DirectorySizeIT(QtIT):
 		from fman.impl.widgets import MainWindow
 		from threading import Thread
 		from unittest.mock import Mock, patch
-		window = self.run_in_app(MainWindow, Mock(), [], Mock(), Mock(), Mock(), 'null://')
+		window = self.run_in_app(MainWindow, Mock(), Mock(), Mock(), Mock(), 'null://')
 		self.panes[0].place_cursor_at(self.url)
 		command = module.ShowDirectorySize(self.panes[0])
 		real_walk = module.walk_directory
@@ -2296,7 +2378,7 @@ sys.exit(context.run())
 		from fman.impl.widgets import MainWindow
 		from PyQt5.QtWidgets import QLabel
 		from unittest.mock import Mock, patch
-		window = self.run_in_app(MainWindow, Mock(), [], Mock(), Mock(), Mock(), 'null://')
+		window = self.run_in_app(MainWindow, Mock(), Mock(), Mock(), Mock(), 'null://')
 		try:
 			with patch('core.directory_size.save_json'), \
 				patch('core.directory_size.scan_parents'), \
@@ -2494,7 +2576,7 @@ sys.exit(context.run())
 		self.filesystem = MotherFileSystem(Mock(get_icon=Mock(return_value=QIcon())))
 		for backend in (LocalFileSystem(), NullFileSystem()):
 			self.filesystem.add_child(backend.scheme, FileSystemWrapper(backend, self.filesystem, self.errors))
-		for column in (Name(self.filesystem), Size(self.filesystem), Modified(self.filesystem), NullColumn()):
+		for column in (Name(), Size(), Modified(), NullColumn()):
 			self.filesystem.register_column(column.get_qualified_name(), column)
 		self.owner = UiOwner()
 		self.service = DirectorySizeService(Mock(), self.owner)
@@ -2787,7 +2869,7 @@ class ProcessPaneIT(QtIT):
 		self.filesystem = MotherFileSystem(Mock(get_icon=Mock(return_value=QIcon())))
 		for backend in (LocalFileSystem(), NullFileSystem()):
 			self.filesystem.add_child(backend.scheme, FileSystemWrapper(backend, self.filesystem, self.errors))
-		for column in (Name(self.filesystem), Size(self.filesystem), Modified(self.filesystem), NullColumn()):
+		for column in (Name(), Size(), Modified(), NullColumn()):
 			self.filesystem.register_column(column.get_qualified_name(), column)
 		applications, commands = self.run_in_app(lambda: (
 			ApplicationCommandRegistry(Mock(), self.errors, callbacks), PaneCommandRegistry(self.errors, callbacks)))
@@ -2824,7 +2906,7 @@ class ProcessPaneIT(QtIT):
 			self.addCleanup(patcher.stop)
 		self.controller = Controller(self.support, Mock(), Mock(), Mock())
 		def create():
-			self.window = MainWindow(QApplication.instance(), [], Mock(), Mock(), self.filesystem, 'null://')
+			self.window = MainWindow(QApplication.instance(), Mock(), Mock(), self.filesystem, 'null://')
 			self.window.set_controller(self.controller)
 			self.panes = [self.window.add_pane() for index in range(2)]
 			public_window = Mock()
@@ -3030,7 +3112,7 @@ class UnpackArchiveIT(QtIT):
 			filesystem = MotherFileSystem(Mock(get_icon=Mock(return_value=QIcon())))
 			for backend in (LocalFileSystem(), NullFileSystem(), ZipFileSystem(filesystem, {'.zip'})):
 				filesystem.add_child(backend.scheme, FileSystemWrapper(backend, filesystem, errors))
-			for column in (Name(filesystem), Size(filesystem), Modified(filesystem), NullColumn()):
+			for column in (Name(), Size(), Modified(), NullColumn()):
 				filesystem.register_column(column.get_qualified_name(), column)
 			def create():
 				parent = QWidget()
@@ -3447,7 +3529,7 @@ class TextEditorIT(QtIT):
 			root = Path(__file__).parents[3] / 'main/resources/base'
 			theme = Theme(Mock(), [])
 			theme.load(str(root / 'Plugins/Core/Theme.css'))
-			self.window = MainWindow(QApplication.instance(), [], theme, None, Mock(), 'null://')
+			self.window = MainWindow(QApplication.instance(), theme, None, Mock(), 'null://')
 			self.window.before_dialog.connect(self._on_dialog)
 		self.run_in_app(prepare)
 		self.addCleanup(lambda: self.run_in_app(self.window.deleteLater))
@@ -3640,12 +3722,12 @@ class ComparatorIT(QtIT):
 		self.filesystem = MotherFileSystem(Mock(get_icon=Mock(return_value=QIcon())))
 		for backend in (LocalFileSystem(), NullFileSystem()):
 			self.filesystem.add_child(backend.scheme, FileSystemWrapper(backend, self.filesystem, self.errors))
-		for column in (Name(self.filesystem), Size(self.filesystem), Modified(self.filesystem), NullColumn()):
+		for column in (Name(), Size(), Modified(), NullColumn()):
 			self.filesystem.register_column(column.get_qualified_name(), column)
 		def prepare():
 			theme = Theme(Mock(), [])
 			theme.load(str(Path(__file__).parents[3] / 'main/resources/base/Plugins/Core/Theme.css'))
-			self.main = MainWindow(QApplication.instance(), [], theme, QPalette(), self.filesystem, 'null://')
+			self.main = MainWindow(QApplication.instance(), theme, QPalette(), self.filesystem, 'null://')
 			self.main.set_controller(Mock(handle_shortcut=Mock(return_value=False), handle_nonexistent_shortcut=Mock(return_value=False)))
 			registry = PaneCommandRegistry(self.errors, Mock())
 			for command in (CompareFiles, CompareFolders, SetFileComparator, SetFolderComparator):
@@ -3902,12 +3984,12 @@ class FindFilesIT(QtIT):
 		self.filesystem = MotherFileSystem(Mock(get_icon=Mock(return_value=QIcon())))
 		for backend in (LocalFileSystem(), NullFileSystem()):
 			self.filesystem.add_child(backend.scheme, FileSystemWrapper(backend, self.filesystem, self.errors))
-		for column in (Name(self.filesystem), Size(self.filesystem), Modified(self.filesystem), NullColumn()):
+		for column in (Name(), Size(), Modified(), NullColumn()):
 			self.filesystem.register_column(column.get_qualified_name(), column)
 		self.plugin_root = Path(__file__).parents[3] / 'main/resources/base/Plugins/FindFiles'
 		self.owner = UiOwner(resource_root=str(self.plugin_root))
 		def prepare():
-			self.main = MainWindow(QApplication.instance(), [], Mock(), Mock(), self.filesystem, 'null://')
+			self.main = MainWindow(QApplication.instance(), Mock(), Mock(), self.filesystem, 'null://')
 			self.main.set_controller(Mock(handle_shortcut=Mock(return_value=False), handle_nonexistent_shortcut=Mock(return_value=False)))
 			self.main.setStyleSheet((self.plugin_root.parents[1] / 'styles.qss').read_text())
 			registry = PaneCommandRegistry(self.errors, Mock())
@@ -3955,6 +4037,131 @@ class FindFilesIT(QtIT):
 		self.assertTrue(finished.wait(10))
 		self.session.completed = completed
 		self.run_in_app(QApplication.processEvents)
+
+	def test_date_entry_is_independent_of_current_month(self):
+		from PyQt5.QtCore import QDate
+		from PyQt5.QtTest import QTest
+		from unittest.mock import patch
+		def check():
+			editor = self.host.controls['start_date'][1].editor
+			for seed in (QDate(2026, 1, 1), QDate(2026, 9, 20), QDate(2026, 10, 1), QDate(2026, 12, 31)):
+				class SeedDate(QDate):
+					@staticmethod
+					def currentDate():
+						return seed
+				with patch('fman.impl.ui.panel.QDate', SeedDate):
+					for date in ('2024-02-29', '2026-09-20', '1752-09-14', '9999-12-31'):
+						with self.subTest(seed=seed.toString('yyyy-MM-dd'), date=date):
+							editor.set_value(None)
+							editor.setFocus()
+							editor.selectAll()
+							QTest.keyClicks(editor, date)
+							QTest.keyClick(editor, Qt.Key_Tab)
+							self.assertEqual(date, self.session.panel.snapshot()['start_date'])
+		self.run_in_app(check)
+
+	def test_search_click_commits_date_without_focus_change(self):
+		from PyQt5.QtTest import QTest
+		from unittest.mock import Mock
+		def check():
+			search = self.host.controls['search'][1]
+			for name in ('start_date', 'end_date'):
+				for previous in (None, '2026-09-20'):
+					for date in ('2024-02-29', '2000-01-01'):
+						with self.subTest(field=name, previous=previous, date=date):
+							self.session.panel.update(values={'start_date': None, 'end_date': None, name: previous})
+							self.session.enable_form()
+							self.assertTrue(search.isEnabled())
+							editor = self.host.controls[name][1].editor
+							editor.setFocus()
+							editor.setSelectedSection(editor.YearSection)
+							QTest.keyClicks(editor, date)
+							self.assertEqual(date, editor.text())
+							self.assertNotEqual(date, editor.date().toString('yyyy-MM-dd'))
+							self.assertEqual(date, self.session.panel.snapshot()[name])
+							action = Mock()
+							self.host.on_action = action
+							QTest.mouseClick(search, Qt.LeftButton)
+							self.assertIs(editor, QApplication.focusWidget())
+							action.assert_called_once()
+							self.assertEqual('search', action.call_args.args[0])
+							self.assertEqual(date, action.call_args.args[1][name])
+							self.assertEqual(date, self.session.panel.snapshot()[name])
+		self.run_in_app(check)
+
+	def test_pending_date_bounds_update_search_eligibility(self):
+		from PyQt5.QtCore import QDate
+		from PyQt5.QtTest import QTest
+		from unittest.mock import Mock, patch
+		def check():
+			class SeedDate(QDate):
+				@staticmethod
+				def currentDate():
+					return QDate(2026, 10, 1)
+			search = self.host.controls['search'][1]
+			cases = (
+				('start_date', 'end_date', '2024-12-31', '2024-02-29', '2025-01-01'),
+				('end_date', 'start_date', '2028-01-01', '2028-06-30', '2027-12-31'),
+			)
+			with patch('fman.impl.ui.panel.QDate', SeedDate):
+				for name, opposite, bound, valid, invalid in cases:
+					for previous in (None, valid, invalid):
+						with self.subTest(field=name, previous=previous):
+							self.session.panel.update(values={name: previous, opposite: bound})
+							self.session.enable_form()
+							editor = self.host.controls[name][1].editor
+							for date, enabled in ((valid, True), (invalid, False), (valid, True)):
+								editor.setFocus()
+								editor.setSelectedSection(editor.YearSection)
+								QTest.keyClicks(editor, date)
+								self.assertEqual(date, editor.text())
+								self.assertEqual(enabled, search.isEnabled())
+								action = Mock()
+								self.host.on_action = action
+								QTest.mouseClick(search, Qt.LeftButton)
+								self.assertIs(editor, QApplication.focusWidget())
+								if enabled:
+									action.assert_called_once()
+									self.assertEqual('search', action.call_args.args[0])
+									self.assertEqual(date, action.call_args.args[1][name])
+									self.assertEqual(bound, action.call_args.args[1][opposite])
+								else:
+									action.assert_not_called()
+		self.run_in_app(check)
+
+	def test_date_commit_can_close_panel_before_search_action(self):
+		from PyQt5.QtTest import QTest
+		from unittest.mock import Mock
+		def check():
+			editor = self.host.controls['start_date'][1].editor
+			editor.setFocus()
+			QTest.keyClicks(editor, '2024-02-29')
+			action = Mock()
+			self.host.on_action = action
+			self.host.on_change = lambda values: self.session.panel.close()
+			QTest.mouseClick(self.host.controls['search'][1], Qt.LeftButton)
+			action.assert_not_called()
+			self.assertFalse(self.session.panel.is_open)
+			self.host.action('search')
+			action.assert_not_called()
+		self.run_in_app(check)
+
+	def test_date_commit_can_invalidate_owner_before_search_action(self):
+		from PyQt5.QtTest import QTest
+		from unittest.mock import Mock
+		def check():
+			editor = self.host.controls['start_date'][1].editor
+			editor.setFocus()
+			QTest.keyClicks(editor, '2024-02-29')
+			action = Mock()
+			self.host.on_action = action
+			self.host.on_change = lambda values: self.owner.invalidate()
+			QTest.mouseClick(self.host.controls['search'][1], Qt.LeftButton)
+			action.assert_not_called()
+			self.assertFalse(self.owner.active)
+			self.host.action('search')
+			action.assert_not_called()
+		self.run_in_app(check)
 
 	def test_controls_optional_bounds_validation_and_wrapping(self):
 		from PyQt5.QtCore import QDate, QPoint
@@ -4014,6 +4221,7 @@ class FindFilesIT(QtIT):
 				self.assertEqual('', controls['start_date'].editor.text().strip())
 				for date in ('2024-02-29', '2026-09-20', '1752-09-14', '9999-12-31'):
 					editor = controls['start_date'].editor
+					editor.setFocus()
 					editor.selectAll()
 					QTest.keyClicks(editor, date)
 					QTest.keyClick(editor, Qt.Key_Tab)
@@ -4208,12 +4416,12 @@ class SearchFilesIT(QtIT):
 			filesystem = MotherFileSystem(Mock(get_icon=Mock(return_value=QIcon())))
 			for backend in (LocalFileSystem(), NullFileSystem()):
 				filesystem.add_child(backend.scheme, FileSystemWrapper(backend, filesystem, errors))
-			for column in (Name(filesystem), Size(filesystem), Modified(filesystem), NullColumn()):
+			for column in (Name(), Size(), Modified(), NullColumn()):
 				filesystem.register_column(column.get_qualified_name(), column)
 			plugin_root = Path(__file__).parents[3] / 'main/resources/base/Plugins/SearchFiles'
 			owner = UiOwner(resource_root=str(plugin_root))
 			def prepare():
-				main = MainWindow(QApplication.instance(), [], Mock(), Mock(), filesystem, 'null://')
+				main = MainWindow(QApplication.instance(), Mock(), Mock(), filesystem, 'null://')
 				main.set_controller(Mock())
 				widget = main.add_pane()
 				registry = PaneCommandRegistry(errors, Mock())
@@ -4318,7 +4526,7 @@ class SearchFilesIT(QtIT):
 				def get_location(self):
 					return self.location
 			plugin_root = Path(__file__).parents[3] / 'main/resources/base/Plugins/SearchFiles'
-			main = MainWindow(Mock(), [], Mock(), Mock(), Mock(), 'null://')
+			main = MainWindow(Mock(), Mock(), Mock(), Mock(), 'null://')
 			main.setStyleSheet((plugin_root.parents[1] / 'styles.qss').read_text())
 			window = Window(main, Mock())
 			widgets = [PaneWidget(main), PaneWidget(main)]
@@ -4385,6 +4593,13 @@ class SearchFilesIT(QtIT):
 							centers = [button.mapTo(host.form, button.rect().center()).y() for button in buttons]
 							self.assertLessEqual(max(centers) - min(centers), 1)
 							self.assertLessEqual(buttons[-1].mapTo(host.form, buttons[-1].rect().topRight()).x(), host.form.width())
+						large_label_width = host.form.fields[0][2].width()
+						host.form.setStyleSheet('QLabel { font-size: 12px; }')
+						QApplication.processEvents()
+						self.assertLess(host.form.fields[0][2].width(), large_label_width)
+						for record, wrapper, label in host.form.fields:
+							self.assertEqual(host.form.fields[0][2].width(), label.width())
+							self.assertGreaterEqual(label.width(), label.fontMetrics().horizontalAdvance(label.text()))
 						widgets[1 - index].location = as_url('C:\\other')
 						widgets[1 - index].location_changed.emit(widgets[1 - index])
 						self.assertEqual('C:\\initial', session.root)
@@ -4441,7 +4656,7 @@ class SearchFilesIT(QtIT):
 				Path(root, 'report.txt').write_text('needle', encoding='utf-8')
 				owner = UiOwner(resource_root=str(plugin_root))
 				def prepare():
-					main = MainWindow(Mock(), [], Mock(), Mock(), Mock(), 'null://')
+					main = MainWindow(Mock(), Mock(), Mock(), Mock(), 'null://')
 					pane = DirectoryPane(Window(main, Mock()), QWidget(main), Mock())
 					from fman.url import as_url
 					pane.get_path = lambda: as_url(root)
@@ -4513,7 +4728,7 @@ class SearchFilesIT(QtIT):
 		with TemporaryDirectory() as root:
 			Path(root, 'report.txt').write_text('first\nneedle here\n', encoding='utf-8')
 			def prepare():
-				main = MainWindow(Mock(), [], Mock(), Mock(), Mock(), 'null://')
+				main = MainWindow(Mock(), Mock(), Mock(), Mock(), 'null://')
 				pane = DirectoryPane(Window(main, Mock()), QWidget(main), Mock())
 				from fman.url import as_url
 				pane.get_path = lambda: as_url(root)
@@ -4604,7 +4819,7 @@ class TableIT(QtIT):
 			from unittest.mock import Mock
 			for active_index in (0, 1):
 				with self.subTest(active=active_index):
-					main = MainWindow(Mock(), [], Mock(), Mock(), Mock(), 'null://')
+					main = MainWindow(Mock(), Mock(), Mock(), Mock(), 'null://')
 					panes = [QLineEdit(main), QLineEdit(main)]
 					for widget in panes:
 						main._central_layout.addWidget(widget)
@@ -4647,7 +4862,7 @@ class TableIT(QtIT):
 			for modal in (False, True):
 				for action in ('ordinary', 'navigate', 'close_panel', 'replace_panel', 'replace_table', 'invalidate', 'delete_pane', 'close_main'):
 					with self.subTest(modal=modal, action=action):
-						main = MainWindow(Mock(), [], Mock(), Mock(), Mock(), 'null://')
+						main = MainWindow(Mock(), Mock(), Mock(), Mock(), 'null://')
 						pane_widget = QLineEdit(main)
 						main._central_layout.addWidget(pane_widget)
 						pane = DirectoryPane(Window(main, Mock()), pane_widget, Mock())
@@ -4714,7 +4929,7 @@ class TableIT(QtIT):
 			from pathlib import Path
 			from unittest.mock import Mock
 			owner = UiOwner(resource_root=str(Path(__file__).parents[3] / 'main/resources/base/Plugins/SearchFiles'))
-			main = MainWindow(Mock(), [], Mock(), Mock(), Mock(), 'null://')
+			main = MainWindow(Mock(), Mock(), Mock(), Mock(), 'null://')
 			pane = DirectoryPane(Window(main, Mock()), QWidget(main), Mock())
 			calls = []
 			options = (('literal', 'icons/search.svg', 'Literal'), ('glob', 'icons/square.svg', 'Glob'), ('regex', 'icons/regex.svg', 'RegEx'))
@@ -4923,7 +5138,7 @@ class TableIT(QtIT):
 		from PyQt5.QtWidgets import QWidget
 		from unittest.mock import Mock
 		def prepare():
-			main = MainWindow(Mock(), [], Mock(), Mock(), Mock(), 'null://')
+			main = MainWindow(Mock(), Mock(), Mock(), Mock(), 'null://')
 			pane = DirectoryPane(Window(main, Mock()), QWidget(main), Mock())
 			main.show()
 			main.activateWindow()
@@ -4972,7 +5187,7 @@ class TableIT(QtIT):
 			from PyQt5.QtWidgets import QWidget
 			from pathlib import Path
 			from unittest.mock import Mock
-			main = MainWindow(Mock(), [], Mock(), Mock(), Mock(), 'null://')
+			main = MainWindow(Mock(), Mock(), Mock(), Mock(), 'null://')
 			pane = DirectoryPane(Window(main, Mock()), QWidget(main), Mock())
 			root = Path(__file__).parents[3] / 'main/resources/base/Plugins/SearchFiles'
 			owner = UiOwner(resource_root=str(root))
@@ -5244,7 +5459,7 @@ class HashResultIT(QtIT):
 			from PyQt5.QtWidgets import QWidget
 			theme = Mock()
 			theme.get_quicksearch_item_css.return_value = None
-			self.main = MainWindow(Mock(), [], theme, Mock(), Mock(), 'null://')
+			self.main = MainWindow(Mock(), theme, Mock(), Mock(), 'null://')
 			self.pane = DirectoryPane(Window(self.main, Mock()), QWidget(self.main), Mock())
 			self.pane.get_file_under_cursor = Mock(return_value=self.url)
 			self.pane.get_path = Mock(return_value='file://C:/')
@@ -5591,7 +5806,7 @@ class DockedPanelIT(QtIT):
 		def prepare():
 			theme = Mock()
 			theme.get_quicksearch_item_css.return_value = None
-			main = MainWindow(Mock(), [], theme, Mock(), Mock(), 'null://')
+			main = MainWindow(Mock(), theme, Mock(), Mock(), 'null://')
 			pane = DirectoryPane(Window(main, Mock()), QWidget(main), Mock())
 			main.show()
 			return main, pane
@@ -5644,12 +5859,13 @@ class DockedPanelIT(QtIT):
 			from PyQt5.QtTest import QTest
 			from PyQt5.QtWidgets import QWidget
 			from unittest.mock import Mock
-			window = MainWindow(Mock(), [], Mock(), Mock(), Mock(), 'null://')
+			window = MainWindow(Mock(), Mock(), Mock(), Mock(), 'null://')
 			window._splitter.addWidget(QWidget())
 			window._splitter.addWidget(QWidget())
 			window.resize(960, 600)
 			window.show()
 			QApplication.processEvents()
+			window.layout().activate()
 			original_height = window._splitter.height()
 			panel = Panel()
 			panel.add(TextButton('Run'))
@@ -5943,7 +6159,7 @@ class PanelIT(QtIT):
 			from fman.impl.widgets import MainWindow
 			from PyQt5.QtWidgets import QWidget
 			from unittest.mock import Mock
-			main = MainWindow(Mock(), [], Mock(), Mock(), Mock(), 'null://')
+			main = MainWindow(Mock(), Mock(), Mock(), Mock(), 'null://')
 			pane = DirectoryPane(Window(main, Mock()), QWidget(main), Mock())
 			owner = UiOwner()
 			main.show()
@@ -6185,7 +6401,7 @@ class FavoritesManagerIT(QtIT):
 		self.addCleanup(settings_patch.stop)
 		def create():
 			from fman import DirectoryPane
-			self.parent = MainWindow(Mock(), [], Mock(), Mock(), Mock(), 'null://')
+			self.parent = MainWindow(Mock(), Mock(), Mock(), Mock(), 'null://')
 			self.parent._theme.get_quicksearch_item_css.return_value = None
 			self.parent.resize(960, 600)
 			self.parent.show()
@@ -6450,7 +6666,7 @@ class FavoritesManagerIT(QtIT):
 		def create():
 			from fman import DirectoryPane
 			from fman.impl.widgets import MainWindow
-			parent = MainWindow(Mock(), [], Mock(), Mock(), Mock(), 'null://')
+			parent = MainWindow(Mock(), Mock(), Mock(), Mock(), 'null://')
 			parent._theme.get_quicksearch_item_css.return_value = None
 			pane = Mock()
 			pane._widget = QWidget(parent)

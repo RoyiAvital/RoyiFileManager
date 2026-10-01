@@ -62,14 +62,12 @@ class Pid(Column):
 	def keys(self, listing, ascending):
 		return listing.column('pid')
 
-	def get_str(self, url):
-		return str(self.get_sort_value(url))
 
-	def get_sort_value(self, url, is_ascending=True):
-		return query(url, 'process_record').pid
 
 
 class ShowProcesses(DirectoryPaneCommand):
+	aliases = ("Show OS' processes",)
+
 	def __call__(self):
 		try:
 			get_provider()

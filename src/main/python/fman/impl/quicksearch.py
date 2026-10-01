@@ -1,6 +1,5 @@
-from fbs_runtime.platform import is_mac
 from fman.impl.util.qt import Key_Tab, Key_Down, Key_Up, Key_PageDown, \
-	Key_Home, Key_End, Key_PageUp, UserRole, AlignRight, AlignVCenter, \
+	Key_PageUp, UserRole, AlignRight, AlignVCenter, \
 	NoFocus, FramelessWindowHint, AlignTop, AccessibleTextRole
 from PyQt5.QtCore import QAbstractListModel, QVariant, QModelIndex, QSize, \
 	QPointF, QRectF, QPoint, pyqtSignal
@@ -77,8 +76,7 @@ class Quicksearch(QDialog):
 			if completion is not None:
 				self._query.setText(completion)
 				return True
-		if event.key() in (Key_Down, Key_Up, Key_PageDown, Key_PageUp) or \
-				is_mac() and event.key() in (Key_Home, Key_End):
+		if (event.key() in (Key_Down, Key_Up, Key_PageDown, Key_PageUp)):
 			self._items.keyPressEvent(event)
 			return True
 		if event.matches(QKeySequence.Quit):

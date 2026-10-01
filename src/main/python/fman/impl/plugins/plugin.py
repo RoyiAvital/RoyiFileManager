@@ -448,16 +448,5 @@ class FileSystemWrapper(Wrapper):
 class ColumnWrapper(Wrapper):
 	def __init__(self, wrapped, error_handler):
 		super().__init__(wrapped, 'Column', error_handler)
-	def get_str(self, url):
-		with self._report_exceptions(exclude={FileNotFoundError}):
-			return self._wrapped.get_str(url)
-		return ''
-	def get_sort_value(self, url, is_ascending):
-		# We always return a tuple (error occurred, sort value) to ensure
-		# comparisons can be performed even when errors occur and there is no
-		# sort value.
-		with self._report_exceptions(exclude={FileNotFoundError}):
-			return False, self._wrapped.get_sort_value(url, is_ascending)
-		return True, 0
 	def __getattr__(self, item):
 		return getattr(self._wrapped, item)

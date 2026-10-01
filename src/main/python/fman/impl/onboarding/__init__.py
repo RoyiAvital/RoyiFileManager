@@ -15,13 +15,12 @@ class TourController:
 		self._tour.start(step)
 
 class Tour:
-	def __init__(self, name, main_window, pane, app, command_callback, metrics):
-		self._name = name
+	def __init__(self, main_window, pane, app, command_callback, tour_state):
 		self._main_window = main_window
 		self._pane = pane
 		self._app = app
 		self._command_callback = command_callback
-		self._metrics = metrics
+		self._tour_state = tour_state
 		self._curr_step_index = -1
 		self._curr_step = None
 		self._steps = self._get_steps()
@@ -34,11 +33,11 @@ class Tour:
 		self._curr_step_index = step - 1
 		self._next_step()
 	def reject(self):
-		self._track('AbortedTour', step=self._curr_step_index)
+		self._tour_state.finished('aborted')
 		self.close_current_step()
 		self.on_close()
 	def complete(self):
-		self._track('CompletedTour', step=self._curr_step_index)
+		self._tour_state.finished('completed')
 		self.close_current_step()
 		self.on_close()
 	def on_close(self):
@@ -53,7 +52,7 @@ class Tour:
 		self._curr_step = None
 	def _next_step(self, delta=1):
 		self._curr_step_index += delta
-		self._track_current_step()
+		self._tour_state.activity()
 		self._show_current_screen()
 	def _format_next_step_paragraph(self, *values):
 		step_paras = self._steps[self._curr_step_index + 1]._paragraphs
@@ -61,8 +60,6 @@ class Tour:
 			step_paras[i] %= value
 	def _skip_steps(self, num_steps):
 		return lambda: self._next_step(num_steps + 1)
-	def _track_current_step(self):
-		self._track('StartedTourStep', step=self._curr_step_index)
 	def _show_current_screen(self):
 		if self._curr_step:
 			self.close_current_step()
@@ -82,9 +79,6 @@ class Tour:
 		)
 	def _after_dialog_shown(self, callback):
 		return AfterDialogShown(self._main_window, callback)
-	def _track(self, event, **kwargs):
-		kwargs['tour'] = self._name
-		self._metrics.track(event, kwargs)
 
 class AfterDialogShown:
 	def __init__(self, main_window, callback):

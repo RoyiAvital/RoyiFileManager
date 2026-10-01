@@ -1,4 +1,3 @@
-from fbs_runtime.platform import is_windows
 from fman.impl.util.path import parent
 from pathlib import PurePath
 
@@ -33,8 +32,6 @@ def as_human_readable(url):
 	scheme, path = splitscheme(url)
 	if scheme != 'file://':
 		return url
-	if not is_windows():
-		return path
 	if re.fullmatch('[a-zA-Z]:', path):
 		return path + '\\'
 	return path.replace('/', '\\')

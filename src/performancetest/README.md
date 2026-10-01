@@ -9,7 +9,7 @@ uses a SafeLoader subclass that also rejects duplicate keys.
 python build.py measure
 ```
 
-This runs all eleven catalog workloads, three repetitions each, without profiling;
+This runs all fourteen catalog workloads, three repetitions each, without profiling;
 updates the version's result; generates a standalone HTML report; and opens it in
 the default browser. No arguments or profile selection are required. It does not
 run correctness verification, build the application or install dependencies.
@@ -32,8 +32,9 @@ in the result record. Repeating a version replaces its index entry, not its old 
 Corrupt history is reported, never silently reset. Earlier diagnostic runs under
 `target` are not imported as previous versions.
 
-The overview has eleven rows: pane loading, Filter Bar, Fuzzy Find and QuickView in
-small/large folders, Fuzzy Find (Recursive), Refresh / Selection, and Navigation. Headlines are first populated
+The overview has fourteen rows: pane loading, Filter Bar, Fuzzy Find and QuickView in
+small/large folders, Fuzzy Find (Recursive), Refresh / Selection, Selection for
+small/medium/large folders, and Navigation. Headlines are first populated
 paint, slowest query median, or first preview paint, respectively. Navigation is
 the arithmetic mean of 28 case medians: seven actions across small/large panes with
 QuickView off/on, equally weighted. Refresh / Selection is the mean of 16 case
@@ -54,7 +55,8 @@ stable names, not list positions. A query/action is identified by the pair
 `test_id` and `query_id`/`action_id`. Increment test revisions when changing
 semantics or measurement boundaries. Change fixture IDs when changing contents.
 
-The fixtures are `flat-small-v1` (256 files), `flat-large-v1` (200,000 files), and
+The fixtures are `flat-small-v1` (256 files), `flat-medium-v1` (50,000 files),
+`flat-large-v1` (200,000 files), and
 `recursive-v1` (50,000 files with fixed branching and depth). Names use SHA-256
 of seed/index with long repeated strings, Unicode, numbers, spaces and literal
 punctuation. PNG pixels use integer bands; JPEG/BMP conversions use the recorded
@@ -130,6 +132,47 @@ not elapsed times. Storage, antivirus, temperature and background activity can
 still affect results. NTFS and ReFS are distinct runs; select another volume
 with `--fixtures`. Dependencies and encoder versions must match for comparison.
 Historical CelebA measurements are not substituted into synthetic histories.
+
+## Selection Measurements
+
+Selection is separate from the existing untimed refresh setup. It uses the real
+pane API and Invert Selection command without changing application code.
+
+| Folder | Requested Rows per Shape |
+| --- | --- |
+| 256 files | 64, 128 |
+| 50,000 files | 10,000, 20,000 |
+| 200,000 files | 10,000, 20,000 |
+
+Each size has 36 cases: contiguous, alternating and seeded scattered selections
+at both counts; reselect, overlap and deselect at the larger count; plus full-pane
+select-all, clear and invert. All cases run with status disabled and with explicit
+per-pane status enabled. Full-pane actions record their actual folder size.
+Existing marks are seeded outside timing; no selection request is silently capped.
+
+Each case uses a fresh native Qt process, repeated three times: 324 selection
+processes across all sizes, in addition to the existing workloads. A child has
+60 seconds including startup, setup, action, readback and verification. Large
+cases on the current per-row implementation can time out, so a full reference
+run can be lengthy. Every remaining case/workload is still attempted after a
+measurement failure; invalid fixture preparation remains a prerequisite failure.
+
+Retained metrics include mutation wall/CPU time, dispatch-to-completed pane paint,
+independent readback wall/CPU time, requested/initial/expected/selected counts and
+actual pane rows. Active-only heartbeat and queue probes include the final blocked
+interval even when no timer fires. Cursor, scroll and duplicate-free membership
+are checked after timing. No row-text fingerprint or loading-arrow probe runs in
+selection cases; initial pane loading itself is outside selection timing.
+
+Completed stages are retained when a later stage times out. Failures retain case,
+repetition and last completed stage; missing durations are not zero samples.
+The HTML details show these failures and distinguish counts from milliseconds.
+Failed runs stay in `runs/` and have a report, but do not replace a successful
+version entry. Start/end application and harness hashes must agree for a valid
+reference. Keep both source trees unchanged during a measurement run.
+
+For selection-only diagnostics: `python src/performancetest/run.py suite --test "selection.*"`.
+Use `python build.py measure` for the full retained reference and HTML report.
 
 ## JSON Records
 

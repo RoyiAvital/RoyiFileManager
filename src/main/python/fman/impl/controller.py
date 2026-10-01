@@ -9,12 +9,12 @@ class Controller:
 	"""
 	def __init__(
 		self, plugin_support, nonexistent_shortcut_handler, usage_helper,
-		metrics
+		tour_state
 	):
 		self._plugin_support = plugin_support
 		self._nonexistent_shortcut_handler = nonexistent_shortcut_handler
 		self._usage_helper = usage_helper
-		self._metrics = metrics
+		self._tour_state = tour_state
 		self._panes = WeakValueDictionary()
 	def register_pane(self, pane_widget, pane):
 		self._panes[pane_widget] = pane
@@ -24,10 +24,9 @@ class Controller:
 	def on_location_changed(self, pane_widget):
 		self._panes[pane_widget]._broadcast('on_path_changed')
 	def on_location_bar_clicked(self, pane_widget):
-		past_events = self._metrics.past_events[::]
-		self._metrics.track('ClickedLocationBar')
+		outcome = self._tour_state.take()
 		pane = self._panes[pane_widget]
-		if not self._usage_helper.on_location_bar_clicked(pane, past_events):
+		if not self._usage_helper.on_location_bar_clicked(pane, outcome):
 			pane._broadcast('on_location_bar_clicked')
 	def handle_shortcut(self, pane_widget, qkeyevent):
 		pane = self._panes[pane_widget]
@@ -51,16 +50,15 @@ class Controller:
 		key_event = QtKeyEvent(qkeyevent.key(), qkeyevent.modifiers())
 		return self._nonexistent_shortcut_handler(key_event, pane)
 	def on_doubleclicked(self, pane_widget, file_path):
-		past_events = self._metrics.past_events[::]
-		self._metrics.track('DoubleclickedFile')
+		outcome = self._tour_state.take()
 		pane = self._panes[pane_widget]
-		if not self._usage_helper.on_doubleclicked(pane, past_events):
+		if not self._usage_helper.on_doubleclicked(pane, outcome):
 			pane._broadcast('on_doubleclicked', file_path)
 	def on_file_renamed(self, pane_widget, *args):
-		self._metrics.track('RenamedFile')
+		self._tour_state.activity()
 		self._panes[pane_widget]._broadcast('on_name_edited', *args)
 	def on_files_dropped(self, pane_widget, *args):
-		self._metrics.track('DroppedFile')
+		self._tour_state.activity()
 		self._panes[pane_widget]._broadcast('on_files_dropped', *args)
 	def on_context_menu(self, pane_widget, event, file_under_mouse):
 		if event.reason() == QContextMenuEvent.Mouse:
@@ -70,9 +68,8 @@ class Controller:
 		else:
 			assert event.reason() == QContextMenuEvent.Other, event.reason()
 			via = 'Other'
-		past_events = self._metrics.past_events[::]
-		self._metrics.track('OpenedContextMenu', {'via': via})
+		outcome = self._tour_state.take()
 		pane = self._panes[pane_widget]
-		if self._usage_helper.on_context_menu(pane, via, past_events):
+		if self._usage_helper.on_context_menu(pane, via, outcome):
 			return []
 		return self._plugin_support.get_context_menu(pane, file_under_mouse)

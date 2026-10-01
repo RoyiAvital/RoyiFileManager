@@ -2,7 +2,7 @@ from core.fs.local.windows.network import NetworkFileSystem
 from core.util import filenotfounderror
 from ctypes import windll
 from fman.fs import FileSystem, Column
-from fman.url import as_url, splitscheme
+from fman.url import as_url
 
 import ctypes
 import string
@@ -35,12 +35,28 @@ class DrivesFileSystem(FileSystem):
 	def scan(self, path, check_canceled):
 		from fman.listing import Listing
 		names, labels = [], []
-		column = DriveName()
 		for name in self.iterdir(path):
 			check_canceled()
 			names.append(name)
-			labels.append(column.get_str(self.scheme + name))
+			labels.append(self._get_drive_label(name))
 		return Listing.create(self.scheme + path, names, is_dir=(True,) * len(names), labels=labels)
+	def _get_drive_label(self, name):
+		if name == self.NETWORK:
+			return name
+		try:
+			volume_name = self._get_volume_name(name + '\\')
+		except OSError:
+			return name
+		return name + ' ' + volume_name if volume_name else name
+	def _get_volume_name(self, volume_path):
+		kernel32 = windll.kernel32
+		buffer = ctypes.create_unicode_buffer(1024)
+		if not kernel32.GetVolumeInformationW(
+			ctypes.c_wchar_p(volume_path), buffer, ctypes.sizeof(buffer),
+			None, None, None, None, 0
+		):
+			raise ctypes.WinError()
+		return buffer.value
 	def exists(self, path):
 		return not path or path in self._get_drives() or path == self.NETWORK
 	def _get_drives(self):
@@ -60,32 +76,3 @@ class DriveName(Column):
 	def keys(self, listing, ascending):
 		return tuple((name == DrivesFileSystem.NETWORK, label.lower())
 			for name, label in zip(listing.names, listing.display_names))
-
-	def get_str(self, url):
-		scheme, path = splitscheme(url)
-		if scheme != 'drives://':
-			raise ValueError('Unsupported URL: %r' % url)
-		if path == DrivesFileSystem.NETWORK:
-			return path
-		result = path
-		try:
-			vol_name = self._get_volume_name(path + '\\')
-		except WindowsError:
-			pass
-		else:
-			if vol_name:
-				result += ' ' + vol_name
-		return result
-	def get_sort_value(self, url, is_ascending):
-		path = splitscheme(url)[1]
-		# Always show "Network..." at the bottom/top:
-		return path == DrivesFileSystem.NETWORK, self.get_str(url).lower()
-	def _get_volume_name(self, volume_path):
-		kernel32 = windll.kernel32
-		buffer = ctypes.create_unicode_buffer(1024)
-		if not kernel32.GetVolumeInformationW(
-			ctypes.c_wchar_p(volume_path), buffer, ctypes.sizeof(buffer),
-			None, None, None, None, 0
-		):
-			raise ctypes.WinError()
-		return buffer.value

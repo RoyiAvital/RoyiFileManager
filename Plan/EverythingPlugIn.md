@@ -1,6 +1,6 @@
-# Everything Plug-In
+# Everything Plug In
 
-Machine-wide file search backed by a bundled, application-managed instance of
+Machine wide file search backed by a bundled, application managed instance of
 [voidtools Everything](https://www.voidtools.com/), queried over its `WM_COPYDATA`
 IPC channel and presented in the standard Quicksearch dialog. Status: Design;
 IPC transport is the first item to validate (Implementation Step 1).

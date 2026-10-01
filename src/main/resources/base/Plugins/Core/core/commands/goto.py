@@ -1,7 +1,7 @@
-from core.commands.util import get_user, is_hidden
+from core.commands.util import is_hidden
 from core.quicksearch_matchers import path_starts_with, basename_starts_with, \
 	contains_substring, contains_chars
-from fman import DirectoryPaneCommand, show_quicksearch, PLATFORM, load_json, \
+from fman import DirectoryPaneCommand, show_quicksearch, load_json, \
 	DirectoryPaneListener, QuicksearchItem
 from fman.fs import exists, resolve
 from fman.url import as_url, splitscheme, as_human_readable
@@ -13,8 +13,6 @@ import os
 import re
 import sys
 
-if PLATFORM == 'Mac':
-	from fman.impl.mac import get_core_services
 
 __all__ = ['GoTo', 'GoToListener']
 
@@ -37,7 +35,7 @@ class GoTo(DirectoryPaneCommand):
 			# with the mouse. If set, it always takes precedence. So return it:
 			return as_url(suggested_dir)
 		url = as_url(expanduser(query.rstrip()))
-		if PLATFORM == 'Windows' and re.match(r'\\[^\\]', query):
+		if (re.match(r'\\[^\\]', query)):
 			# Resolve '\Some\dir' to 'C:\Some\dir'.
 			try:
 				url = resolve(url)
@@ -82,17 +80,6 @@ class GoTo(DirectoryPaneCommand):
 							result.add(str(child))
 				except OSError:
 					pass
-		if PLATFORM == 'Linux':
-			media_user = os.path.join('/media', get_user())
-			if os.path.exists(media_user):
-				result.add(media_user)
-			# We need to add more suggestions on Linux, because unlike Windows
-			# and Mac, we (currently) do not integrate with the OS's native
-			# search functionality:
-			result.update(islice(self._traverse_by_mtime(home_dir), 500))
-			result.update(
-				islice(self._traverse_by_mtime('/', exclude=exclude), 500)
-			)
 		return result
 	def _get_nonhidden_subdirs(self, dir_path):
 		for file_name in os.listdir(dir_path):
@@ -203,55 +190,38 @@ class SuggestLocations:
 		def samefile(self, f1, f2):
 			return os.path.samefile(f1, f2)
 		def find_folders_starting_with(self, pattern, timeout_secs=0.02):
-			if PLATFORM == 'Mac':
-				ns = get_core_services()
-				pred = ns['NSPredicate'].predicateWithFormat_argumentArray_(
-					"kMDItemContentType == 'public.folder' && "
-					"kMDItemFSName BEGINSWITH[c] %@", [pattern]
+			import adodbapi
+			from pythoncom import com_error
+			try:
+				conn = adodbapi.connect(
+					"Provider=Search.CollatorDSO;"
+					"Extended Properties='Application=Windows';"
 				)
-				query = ns['NSMetadataQuery'].alloc().init()
-				query.setPredicate_(pred)
-				query.setSearchScopes_(ns['NSArray'].arrayWithObject_('/'))
-				query.startQuery()
-				ns['NSRunLoop'].currentRunLoop().runUntilDate_(
-					ns['NSDate'].dateWithTimeIntervalSinceNow_(timeout_secs)
+				cursor = conn.cursor()
+
+				# adodbapi claims to support "paramstyles", which would let us
+				# pass parameters as an extra arg to .execute(...), without
+				# having to worry about escaping them. Alas, adodbapi raises an
+				# error when this feature is used. We thus have to escape the
+				# param ourselves:
+				def escape(param):
+					return re.subn(r'([%_\[\]\^])', r'[\1]', param)[0]
+
+				cursor.execute(
+					"SELECT TOP 5 System.ItemPathDisplay FROM SYSTEMINDEX "
+					"WHERE "
+					"System.ItemType = 'Directory' AND "
+					"System.ItemNameDisplay LIKE %r "
+					"ORDER BY System.ItemPathDisplay"
+					% (escape(pattern) + '%')
 				)
-				query.stopQuery()
-				for item in query.results():
-					yield item.valueForAttribute_("kMDItemPath")
-			elif PLATFORM == 'Windows':
-				import adodbapi
-				from pythoncom import com_error
-				try:
-					conn = adodbapi.connect(
-						"Provider=Search.CollatorDSO;"
-						"Extended Properties='Application=Windows';"
-					)
-					cursor = conn.cursor()
-
-					# adodbapi claims to support "paramstyles", which would let us
-					# pass parameters as an extra arg to .execute(...), without
-					# having to worry about escaping them. Alas, adodbapi raises an
-					# error when this feature is used. We thus have to escape the
-					# param ourselves:
-					def escape(param):
-						return re.subn(r'([%_\[\]\^])', r'[\1]', param)[0]
-
-					cursor.execute(
-						"SELECT TOP 5 System.ItemPathDisplay FROM SYSTEMINDEX "
-						"WHERE "
-						"System.ItemType = 'Directory' AND "
-						"System.ItemNameDisplay LIKE %r "
-						"ORDER BY System.ItemPathDisplay"
-						% (escape(pattern) + '%')
-					)
-					for row in iter(cursor.fetchone, None):
-						value = row['System.ItemPathDisplay']
-						# Seems to be None sometimes:
-						if value:
-							yield value
-				except (adodbapi.Error, com_error):
-					pass
+				for row in iter(cursor.fetchone, None):
+					value = row['System.ItemPathDisplay']
+					# Seems to be None sometimes:
+					if value:
+						yield value
+			except (adodbapi.Error, com_error):
+				pass
 
 	def __init__(self, visited_paths, file_system=None):
 		if file_system is None:
@@ -289,14 +259,13 @@ class SuggestLocations:
 		return self._sorted(result)
 	def _normalize_query(self, query):
 		result = normpath(self.fs.expanduser(query))
-		if PLATFORM == 'Windows':
-			# Windows completely ignores trailing spaces in directory names at
-			# all times. Make our implementation reflect this:
-			result = result.rstrip(' ')
-			# Handle the case where the user has entered a drive such as 'E:'
-			# without the trailing backslash:
-			if re.match(r'^[A-Z]:$', result):
-				result += '\\'
+		# Windows completely ignores trailing spaces in directory names at
+		# all times. Make our implementation reflect this:
+		result = result.rstrip(' ')
+		# Handle the case where the user has entered a drive such as 'E:'
+		# without the trailing backslash:
+		if re.match(r'^[A-Z]:$', result):
+			result += '\\'
 		return result
 	def _sorted(self, dirs):
 		return sorted(dirs, key=lambda dir_: (

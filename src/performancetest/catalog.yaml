@@ -1,7 +1,7 @@
 # Human-maintained definitions. The runner never rewrites this file.
 schema_version: 1
 suite_id: royifilemanager.desktop
-suite_revision: 3
+suite_revision: 4
 protocol:
   repetitions: 3
   cache: warm
@@ -17,10 +17,12 @@ protocol:
   # is untimed; reload dispatch through completed paint is timed. Memory peaks
   # are process high-water marks, cumulative across these ordered cases.
   refresh_selections: [none, single-first, single-middle, single-last, middle-block, scattered, all-except-current, all]
+  selection_timeout_seconds: 60
   # Profiles are separate runs and are never included in timing summaries.
   notes: Fresh process per test repetition; fixture verification precedes timing.
 fixtures:
   flat-small-v1: {revision: 1, kind: flat, files: 256, seed: 1729}
+  flat-medium-v1: {revision: 1, kind: flat, files: 50000, seed: 1729}
   flat-large-v1: {revision: 1, kind: flat, files: 200000, seed: 1729}
   recursive-v1: {revision: 1, kind: recursive, files: 50000, seed: 1730}
 queries:
@@ -62,3 +64,6 @@ tests:
   # Both sizes run identical image actions; the other pane stays small and empty.
   - {id: quickview.small, revision: 1, workload: quickview, fixture: flat-small-v1}
   - {id: quickview.large, revision: 1, workload: quickview, fixture: flat-large-v1}
+  - {id: selection.small, revision: 1, workload: selection, fixture: flat-small-v1, counts: [64, 128]}
+  - {id: selection.medium, revision: 1, workload: selection, fixture: flat-medium-v1, counts: [10000, 20000]}
+  - {id: selection.large, revision: 1, workload: selection, fixture: flat-large-v1, counts: [10000, 20000]}

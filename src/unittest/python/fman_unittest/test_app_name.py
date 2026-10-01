@@ -186,7 +186,7 @@ with patch.object(widgets, 'APP_NAME', 'RfmRenameProbe'):
 			self.assertIn('RfmRenameProbe will jump', ' '.join(guide._steps[3]._paragraphs))
 		with patch.object(usage_helper, 'APP_NAME', 'RfmRenameProbe'), \
 				patch.object(usage_helper, 'show_alert') as alert:
-			usage_helper.UsageHelper(True)._on_mouse_action(pane, ['AbortedTour'])
+			usage_helper.UsageHelper(True)._on_mouse_action(pane, ('aborted', 1))
 			self.assertIn('RfmRenameProbe is optimized', alert.call_args.args[0])
 		with patch.object(nonexistent_shortcut_handler, 'APP_NAME', 'RfmRenameProbe'), \
 				patch.object(nonexistent_shortcut_handler, 'show_alert') as alert:
@@ -202,7 +202,6 @@ with patch.object(widgets, 'APP_NAME', 'RfmRenameProbe'):
 		context = runtime.DevelopmentApplicationContext()
 		context.style = Mock()
 		context.palette = Mock()
-		context.mac_clipboard_fix = None
 		context.get_resource = Mock(return_value='icon')
 		with patch.object(runtime, 'APP_NAME', 'RfmRenameProbe'), \
 				patch.object(runtime, 'Application') as factory, \
@@ -218,7 +217,6 @@ with patch.object(widgets, 'APP_NAME', 'RfmRenameProbe'):
 	def test_windows_taskbar_identity_uses_product_name(self):
 		from fman.impl import application_context as runtime
 		with patch.object(runtime, 'APP_NAME', 'RfmRenameProbe'), \
-				patch.object(runtime, 'PLATFORM', 'Windows'), \
 				patch('ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID') as set_id:
 			runtime._set_windows_app_id()
 			set_id.assert_called_once_with('RfmRenameProbe')

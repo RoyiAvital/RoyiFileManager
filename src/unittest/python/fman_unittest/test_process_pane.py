@@ -164,8 +164,7 @@ class ProviderCompatibilityTest(TestCase):
 			'OpenProcess', 'CloseHandle', 'GetProcessTimes',
 			'QueryFullProcessImageNameW', 'TerminateProcess',
 		])
-		with patch('process_pane.processes.sys.platform', 'win32'), \
-			patch.dict(sys.modules, {'win32process': Mock()}), \
+		with patch.dict(sys.modules, {'win32process': Mock()}), \
 			patch('ctypes.WinDLL', return_value=kernel, create=True):
 			with self.assertRaisesRegex(ProcessError, 'Windows 8.1.*IsProcessCritical'):
 				get_provider()
@@ -282,6 +281,15 @@ class PaneCommandTest(TestCase):
 		self.assertEqual(('process_operation_unsupported', {}), listener.on_command('move', {'files': ['file://C:/a'], 'dest_dir': self.plugin.ROOT}))
 		self.provider.assert_not_called()
 
+	def test_show_os_processes_label_preserves_command_id(self):
+		from fman.impl.plugins.command_registry import PaneCommandRegistry
+		from fman.impl.plugins.plugin import _get_command_name
+		command_name = _get_command_name(self.plugin.ShowProcesses)
+		self.assertEqual('show_processes', command_name)
+		registry = PaneCommandRegistry(Mock(), Mock())
+		registry.register_command(command_name, self.plugin.ShowProcesses)
+		self.assertEqual(("Show OS' processes",), registry.get_command_aliases('show_processes'))
+
 	def test_show_refresh_and_missing_dependency(self):
 		self.plugin.ShowProcesses(self.pane)()
 		self.pane.reload.assert_called_once()
@@ -309,19 +317,20 @@ class FilesystemTest(TestCase):
 			self.assertFalse(filesystem.is_dir(path))
 			self.assertEqual('process://' + path, filesystem.resolve(path))
 			self.assertEqual(('core.Name', 'process_pane.Pid'), filesystem.get_default_columns(''))
-			with patch('process_pane.query', return_value=filesystem.process_record(path)):
-				self.assertEqual(123, Pid().get_sort_value('process://' + path))
-				self.assertEqual('123', Pid().get_str('process://' + path))
+			listing = filesystem.scan('', Mock())
+			self.assertEqual(('report.exe',), listing.display_names)
+			self.assertEqual((123,), Pid().keys(listing, True))
+			self.assertEqual((123,), Pid().keys(listing, False))
+			self.assertEqual('123', Pid().text(listing, 0))
 			with self.assertRaises(NotADirectoryError):
 				filesystem.iterdir(path)
 			for method in (filesystem.delete, filesystem.prepare_delete, filesystem.move_to_trash, filesystem.prepare_trash, filesystem.mkdir, filesystem.touch):
 				with self.assertRaises(NotImplementedError):
 					method(path)
-			provider.snapshot.assert_called_once()
+			self.assertEqual(2, provider.snapshot.call_count)
 			provider.end.assert_not_called()
 
 
-@skipUnless(sys.platform == 'win32', 'Windows process handles required')
 class NativeProcessTest(TestCase):
 	def test_owned_child_enumeration_identity_and_termination(self):
 		import ctypes

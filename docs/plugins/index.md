@@ -41,3 +41,12 @@ The class name `SayHi` became the command ID `say_hi`.
 The host created the command and supplied its pane.
 
 Next, see the [API overview](../api/index.md).
+
+## Manual Installation
+
+Place trusted plug-in files under `UserSettings/Plugins/Third-party/<PluginName>/`.
+The Python package and configuration files belong directly inside `<PluginName>`.
+
+Run **Reload plugins** in Command Center. **List plugins** opens a plug-in's
+folder; **Remove plugin** deletes an installed third-party plug-in.
+There is no built-in downloader, and no `Plugin.json` installation metadata is required.

@@ -200,15 +200,11 @@ _PLUGIN_THEME = Path(__file__).resolve().parents[4] / \
 _RULE_SNAPSHOTS = {
 	'Theme.css': 'e6e74ecd7c8d6b5e2089864c2cc59125cc602d289f85f0e5dfcb57065a5d8521',
 	'Theme (Windows).css': '6bae24eaf5a5982ce36fbed375dda00e13738ac0969e68f42da4920de89b5725',
-	'Theme (Mac).css': 'f893ae25cd26a916651f59a7d0d6ecef01799981b4ee1a5d043da51ce18d373b',
-	'Theme (Linux).css': '466b16a936e1ceabdcadc117e05006315fc6ec541cee625821b36ae5942bd96c',
 	'Simple Plugin': '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945',
 }
 _THEME_SNAPSHOTS = {
 	'Base': '488379aa59811f1aa3f95fb9d28a7cebe2e1346ca03eda60c5090e6c2ed81ac2',
 	'Windows': '1b260fd1c52215b30b464f5ec3c5ea94f7959d2043c1de4885bdf3bc6c729c0e',
-	'Mac': '1f69d09b83b4466e3a8283c21eb149a1436773b19f9cadad423d2421f327ec87',
-	'Linux': 'e24aa941a1a687b40e301c4ad6faf3d3d474d92d4ef081a8bd25eb370e72b521',
 	'Plugin': '488379aa59811f1aa3f95fb9d28a7cebe2e1346ca03eda60c5090e6c2ed81ac2',
 }
 

@@ -1,5 +1,4 @@
-from fbs_runtime.platform import is_mac, is_windows, is_linux
-from fman.impl.util.qt import MoveAction, NoButton, AltModifier, \
+from fman.impl.util.qt import MoveAction, NoButton, \
 	ControlModifier, CopyAction
 from PyQt5.QtCore import QItemSelectionModel as QISM
 from PyQt5.QtWidgets import QTableView, QAbstractItemView
@@ -67,17 +66,11 @@ class DragAndDrop(QTableView):
 					self.selectionModel().setCurrentIndex(current, QISM.NoUpdate)
 	def dropEvent(self, event):
 		modifiers = event.keyboardModifiers()
-		if is_mac():
-			do_copy = modifiers & AltModifier
-		elif is_linux():
-			do_copy = (modifiers & ControlModifier) or (modifiers & AltModifier)
-		else:
-			# Windows
-			do_copy = modifiers & ControlModifier
+		do_copy = modifiers & ControlModifier
 		action = CopyAction if do_copy else MoveAction
 		event.setDropAction(action)
 		super().dropEvent(event)
-		if action == MoveAction and is_windows():
+		if action == MoveAction:
 			# If we accept the event (which super().dropEvent(...) does above),
 			# then Windows moves the file to the Recycle Bin!!! Avoid this:
 			event.ignore()

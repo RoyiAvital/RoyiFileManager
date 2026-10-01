@@ -93,17 +93,15 @@ class PluginFactory:
 		)
 
 class CommandCallback:
-	def __init__(self, metrics):
-		self._metrics = metrics
+	def __init__(self, tour_state):
+		self._tour_state = tour_state
 		self._listeners = []
 	def add_listener(self, listener):
 		self._listeners.append(listener)
 	def remove_listener(self, listener):
 		self._listeners.remove(listener)
 	def before_command(self, name):
-		self._metrics.track('RanCommand', {
-			'command': name
-		})
+		self._tour_state.activity()
 		for listener in self._listeners[:]:
 			listener.before_command(name)
 	def after_command(self, name):

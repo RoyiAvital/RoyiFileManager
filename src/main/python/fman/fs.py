@@ -215,17 +215,6 @@ class Column:
 		raise NotImplementedError('Pane columns must implement text(listing, index) without I/O')
 	def keys(self, listing, ascending):
 		raise NotImplementedError('Pane columns must implement keys(listing, ascending)')
-	def get_str(self, url):
-		raise NotImplementedError()
-	def get_sort_value(self, url, is_ascending):
-		"""
-		This method should generally be independent of is_ascending.
-		When is_ascending is False, Qt simply reverses the sort order.
-		However, we may sometimes want to change the sort order in a way other
-		than a simple reversal when is_ascending is False. That's why this
-		method receives is_ascending as a parameter.
-		"""
-		return self.get_str(url).lower()
 	@property
 	def display_name(self):
 		return self.__class__.__name__

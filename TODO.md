@@ -41,8 +41,14 @@
 - [x] FEATURE: Add a plan to support for GIF, APNG and other animated images formats in "QuickView" for images mode.
 - [x] CHANGE: Update the structure of the "About" box.
 - [x] CHANGE: Use `app_version` and `APP_VERSION` instead of `fman_version` and `FMAN_VERSION`.
+- [x] CHANGE: Rename the command "Show processes" to "Show OS' processes".
 
 ## Performance
 
 List of small performance focused optimization.  
 Each task should be pretty localized and low risk.
+
+- [x] `reconcile` ([listing.py](src/main/python/fman/listing.py)): in the changed-listing
+  loop, replace `if not any(identity):` with `if identity == unknown:`, defining
+  `unknown = bytes(16)` once before the loop. Measured about 2.7 ms per 200,000
+  entries. Couples the check to 16-byte identities; update it if that size changes.

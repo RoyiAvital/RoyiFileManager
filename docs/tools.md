@@ -141,7 +141,7 @@ See [File Hash usage](https://github.com/RoyiAvital/RoyiFileManager/blob/main/sr
 
 ## Process Pane
 
-Run **Show processes** from the Command Center.
+Run **Show OS' processes** from the Command Center.
 
 The active pane lists running processes by Name and PID.
 

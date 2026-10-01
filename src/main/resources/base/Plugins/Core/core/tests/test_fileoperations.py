@@ -1,6 +1,6 @@
 from core.fileoperations import CopyFiles, MoveFiles, ArchiveUpdateError
 from core.tests import StubFS, SYMLINKS_SUPPORTED
-from fman import YES, NO, OK, YES_TO_ALL, NO_TO_ALL, ABORT, PLATFORM, Task
+from fman import YES, NO, OK, YES_TO_ALL, NO_TO_ALL, ABORT, Task
 from fman.url import join, dirname, as_url, as_human_readable
 from os.path import exists
 from tempfile import TemporaryDirectory
@@ -26,7 +26,6 @@ class ArchiveTransferErrorTest(TestCase):
 				operation()
 			self.assertEqual(b'keep', (source / 'keep').read_bytes())
 			self.assertEqual(b'keep', (destination / 'keep').read_bytes())
-	@skipUnless(PLATFORM == 'Windows', 'Windows junctions')
 	def test_real_nested_link_merge_refuses_before_mutation(self):
 		from pathlib import Path
 		from subprocess import run
@@ -107,10 +106,7 @@ class ArchiveTransferErrorTest(TestCase):
 
 class FileTreeOperationAT:
 
-	if PLATFORM == 'Windows':
-		_NO_SUCH_FILE_MSG = 'the system cannot find the file specified'
-	else:
-		_NO_SUCH_FILE_MSG = 'no such file or directory'
+	_NO_SUCH_FILE_MSG = 'the system cannot find the file specified'
 
 	def __init__(self, operation, operation_descr_verb, methodName='runTest'):
 		super().__init__(methodName=methodName)
@@ -151,16 +147,11 @@ class FileTreeOperationAT:
 		self._touch(file_in_dir)
 		executable_in_dir = join(dir_, 'executable')
 		self._touch(executable_in_dir, 'abc')
-		if PLATFORM != 'Windows':
-			st_mode = self._stat(executable_in_dir).st_mode
-			self._chmod(executable_in_dir, st_mode | stat.S_IEXEC)
 		self._perform_on(file_outside_dir, dir_, dest_dir=dest_dir)
 		self._expect_files({'file1.txt', 'dir'}, dest_dir)
 		self._expect_files({'executable', 'file.txt'}, join(dest_dir, 'dir'))
 		executable_dst = join(dest_dir, 'dir', 'executable')
 		self._assert_file_contents_equal(executable_dst, 'abc')
-		if PLATFORM != 'Windows':
-			self.assertTrue(self._stat(executable_dst).st_mode & stat.S_IEXEC)
 		return [file_outside_dir, dir_]
 	def test_directory_several_files_dest_dir_does_not_exist(self):
 		self._directory_several_files(dest_dir=join(self.dest, 'subdir'))
@@ -503,7 +494,6 @@ class MoveFilesTest(FileTreeOperationAT, TestCase):
 			if expect_overrides[i]:
 				self.assertFalse(exists(file_), file_)
 		return src_files
-	@skipIf(PLATFORM == 'Linux', 'Case-insensitive file systems only')
 	def test_rename_directory_case(self):
 		container = join(self.dest, 'container')
 		directory = join(container, 'a')

@@ -2,16 +2,14 @@ from core.trash import move_to_trash
 from core.util import filenotfounderror
 from datetime import datetime
 from errno import ENOENT
-from fman import PLATFORM, Task
+from fman import Task
 from fman.fs import FileSystem, cached
-from fman.impl.util.qt.thread import run_in_main_thread
 from fman.url import as_url, splitscheme, as_human_readable, join, basename, \
 	dirname
 from io import UnsupportedOperation
 from os import remove, rmdir
 from os.path import islink, samestat, isabs, splitdrive
 from pathlib import Path
-from PyQt5.QtCore import QFileSystemWatcher
 from shutil import copystat, SameFileError
 from stat import S_ISDIR, S_ISREG, S_IWRITE
 from tempfile import mkstemp, mkdtemp
@@ -19,9 +17,8 @@ from tempfile import mkstemp, mkdtemp
 import errno
 import os
 
-if PLATFORM == 'Windows':
-	from core.fs.local.windows.drives import DrivesFileSystem, DriveName
-	from core.fs.local.windows.network import NetworkFileSystem
+from core.fs.local.windows.drives import DrivesFileSystem, DriveName
+from core.fs.local.windows.network import NetworkFileSystem
 
 _COPY_BUFFER_SIZE = 1024 * 1024
 
@@ -31,18 +28,16 @@ class LocalFileSystem(FileSystem):
 
 	def __init__(self):
 		super().__init__()
-		self._watcher = None
 	def get_default_columns(self, path):
 		return 'core.Name', 'core.Size', 'core.Modified'
 	def scan(self, path, check_canceled):
 		os_path = self._url_to_os_path(path)
 		if not self._isabs(os_path):
 			raise filenotfounderror(path)
-		if PLATFORM == 'Windows':
-			from core.fs.local.windows.listing import scan
-			listing = scan(self.scheme + path, os_path, check_canceled)
-			if listing is not None:
-				return listing
+		from core.fs.local.windows.listing import scan
+		listing = scan(self.scheme + path, os_path, check_canceled)
+		if listing is not None:
+			return listing
 		return self._scan_entries(path, os_path, check_canceled)
 	def _scan_entries(self, path, os_path, check_canceled):
 		from fman.listing import Listing
@@ -191,7 +186,7 @@ class LocalFileSystem(FileSystem):
 		os_src_path = self._url_to_os_path(src_path)
 		dst_path = splitscheme(dst_url)[1]
 		os_dst_path = self._url_to_os_path(dst_path)
-		if PLATFORM == 'Windows' and Path(os_src_path).is_dir():
+		if (Path(os_src_path).is_dir()):
 			os.rename(os_src_path, os_dst_path)
 		else:
 			Path(os_src_path).replace(os_dst_path)
@@ -260,12 +255,11 @@ class LocalFileSystem(FileSystem):
 		path = self._url_to_os_path(path)
 		if not self._isabs(path):
 			raise filenotfounderror(path)
-		if PLATFORM == 'Windows':
-			is_unc_server = path.startswith(r'\\') and not '\\' in path[2:]
-			if is_unc_server:
-				# Python can handle \\server\folder but not \\server. Defer to
-				# the network:// file system.
-				return 'network://' + path[2:]
+		is_unc_server = path.startswith(r'\\') and not '\\' in path[2:]
+		if is_unc_server:
+			# Python can handle \\server\folder but not \\server. Defer to
+			# the network:// file system.
+			return 'network://' + path[2:]
 		p = Path(path)
 		try:
 			path = p.resolve(strict=True)
@@ -313,37 +307,9 @@ class LocalFileSystem(FileSystem):
 			size = self.size_bytes(src_path) if measure_size else 0
 			yield CopyFile(self, src_url, dst_url, size)
 	def watch(self, path):
-		if PLATFORM != 'Windows':
-			self._watch(path)
+		pass
 	def unwatch(self, path):
-		if PLATFORM != 'Windows':
-			self._unwatch(path)
-	@run_in_main_thread
-	def _watch(self, path):
-		self._get_watcher().addPath(self._url_to_os_path(path))
-	@run_in_main_thread
-	def _unwatch(self, path):
-		self._get_watcher().removePath(self._url_to_os_path(path))
-	def _get_watcher(self):
-		# Instantiate QFileSystemWatcher as late as possible. It requires a
-		# QApplication which isn't available in some tests.
-		if self._watcher is None:
-			if PLATFORM == 'Windows':
-				# On Windows, QFileSystemWatcher keeps excessive locks on files
-				# and directories. This sometimes makes it impossible for fman
-				# or other apps to access them properly. One example of this are
-				# USB drives that can't be ejected as long as fman is running.
-				# So don't watch files on Windows for now, perhaps until we have
-				# a better implementation.
-				self._watcher = StubFileSystemWatcher()
-			else:
-				self._watcher = QFileSystemWatcher()
-				self._watcher.directoryChanged.connect(self._on_file_changed)
-				self._watcher.fileChanged.connect(self._on_file_changed)
-		return self._watcher
-	def _on_file_changed(self, file_path):
-		path_forward_slashes = splitscheme(as_url(file_path))[1]
-		self.notify_file_changed(path_forward_slashes)
+		pass
 	def _check_transfer_precnds(self, src_url, dst_url):
 		src_scheme, src_path = splitscheme(src_url)
 		dst_scheme, dst_path = splitscheme(dst_url)
@@ -404,7 +370,7 @@ class CopyFile(Task):
 				descriptor, temporary = mkstemp(dir=self._staging_directory(dst), prefix='.fc-')
 				try:
 					with os.fdopen(descriptor, 'wb') as fdst:
-						if destination is not None and PLATFORM == 'Windows':
+						if (destination is not None):
 							import win32security
 							security = win32security.GetFileSecurity(dst, win32security.DACL_SECURITY_INFORMATION)
 							win32security.SetNamedSecurityInfo(temporary, win32security.SE_FILE_OBJECT,
@@ -413,7 +379,7 @@ class CopyFile(Task):
 						self._copy_bytes(fsrc, fdst)
 					copystat(src, temporary, follow_symlinks=False)
 					copied_mode = source.st_mode
-					restore_mode = destination is not None and PLATFORM == 'Windows' and not copied_mode & S_IWRITE
+					restore_mode = (destination is not None and not copied_mode & S_IWRITE)
 					if restore_mode:
 						os.chmod(temporary, copied_mode | S_IWRITE)
 					self.check_canceled()
@@ -443,10 +409,9 @@ class CopyFile(Task):
 	@staticmethod
 	def _staging_directory(destination):
 		directory = os.path.dirname(destination)
-		if PLATFORM == 'Windows':
-			directory = os.path.abspath(directory)
-			if not directory.startswith('\\\\?\\'):
-				directory = '\\\\?\\UNC\\' + directory[2:] if directory.startswith('\\\\') else '\\\\?\\' + directory
+		directory = os.path.abspath(directory)
+		if not directory.startswith('\\\\?\\'):
+			directory = '\\\\?\\UNC\\' + directory[2:] if directory.startswith('\\\\') else '\\\\?\\' + directory
 		return directory
 	def _copy_bytes(self, fsrc, fdst):
 		num_written = 0
@@ -459,18 +424,13 @@ class CopyFile(Task):
 			self.set_progress(num_written)
 	def _publish(self, temporary, destination_path, destination):
 		if destination is None:
-			if PLATFORM == 'Windows':
-				os.rename(temporary, destination_path)
-			else:
-				os.link(temporary, destination_path)
+			os.rename(temporary, destination_path)
 			return
 		current = os.lstat(destination_path)
 		fields = ('st_ino', 'st_dev', 'st_size', 'st_mtime_ns')
 		if any(getattr(current, name) != getattr(destination, name) for name in fields) or \
 			not S_ISREG(current.st_mode) or current.st_nlink > 1 or not current.st_mode & S_IWRITE:
 			raise OSError('Destination changed while copying; replacement refused')
-		if PLATFORM != 'Windows':
-			raise UnsupportedOperation('Metadata-preserving overwrite is not supported on this platform')
 		import ctypes
 		from ctypes import wintypes
 		replace = ctypes.WinDLL('kernel32', use_last_error=True).ReplaceFileW
@@ -525,8 +485,3 @@ class DeleteIfEmpty(Task):
 		else:
 			self._fs.notify_file_removed(splitscheme(self._dir_url)[1])
 
-class StubFileSystemWatcher:
-	def addPath(self, path):
-		pass
-	def removePath(self, path):
-		pass

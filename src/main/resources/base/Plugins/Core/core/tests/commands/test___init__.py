@@ -8,7 +8,7 @@ from core.commands import About, CreateAndEditFile, History, Move, NewEmptyFile,
 from core.tests import StubUI
 from core.commands import _hidden_file_filter
 from core.util import filenotfounderror
-from fman import OK, YES, NO, PLATFORM
+from fman import OK, YES, NO
 from fman.impl.plugins.plugin import _get_command_name
 from fman.impl.product import APP_NAME
 from fman.url import join, as_human_readable, as_url, dirname
@@ -49,10 +49,6 @@ class HiddenFileFilterTest(TestCase):
 			alert.assert_called_once()
 		left.clear_selection.assert_not_called()
 		right.clear_selection.assert_not_called()
-	def setUp(self):
-		self.platform = patch('core.commands.PLATFORM', 'Windows')
-		self.platform.start()
-		self.addCleanup(self.platform.stop)
 	def test_url_checks_use_qt_without_querying_provider_cache(self):
 		for hidden in (True, False):
 			with patch('core.commands.query', side_effect=AssertionError), \
@@ -60,18 +56,43 @@ class HiddenFileFilterTest(TestCase):
 				for _ in range(3):
 					self.assertIs(not hidden, _hidden_file_filter('file://C:/entry'))
 				self.assertEqual(3, fallback.call_count)
-	def test_nonlocal_and_mac_volumes_bypass_local_checks(self):
-		for platform, url in (('Windows', 'zip://archive/entry'),
-			('Mac', 'file:///Volumes')):
-			with patch('core.commands.PLATFORM', platform), \
-				patch('core.commands.query', side_effect=AssertionError), \
-				patch('core.commands.is_hidden', side_effect=AssertionError):
-				self.assertTrue(_hidden_file_filter(url))
-	def test_nonwindows_keeps_qt(self):
-		with patch('core.commands.PLATFORM', 'Linux'), \
-			patch('core.commands.query', side_effect=AssertionError), \
-			patch('core.commands.is_hidden', return_value=True):
-			self.assertFalse(_hidden_file_filter('file:///tmp/entry'))
+	def test_nonlocal_urls_bypass_local_checks(self):
+		with patch('core.commands.query', side_effect=AssertionError), \
+			patch('core.commands.is_hidden', side_effect=AssertionError):
+			self.assertTrue(_hidden_file_filter('zip://archive/entry'))
+
+class ExternalAppConfigurationTest(TestCase):
+	def test_edit_app_uses_windows_picker_and_keeps_associations(self):
+		from core import commands
+		apps = {'Old': 'C:/old.exe'}
+		associations = {'.txt': {'Old': 3}}
+		with patch.object(commands, '_load_apps', return_value=apps), \
+			patch.object(commands, '_load_file_associations', return_value=associations), \
+			patch.object(commands, 'show_prompt', return_value=('New', True)), \
+			patch.object(commands, 'show_file_open_dialog', return_value='C:/new.exe') as picker, \
+			patch.object(commands, '_save_apps') as save_apps, \
+			patch.object(commands, '_save_file_associations') as save_associations, \
+			patch.object(commands, 'show_alert'):
+			commands.EditApp(['C:/sample.txt']).on_selected('Old')
+		picker.assert_called_once_with('Pick an executable', 'C:/old.exe', 'Applications (*.exe)')
+		self.assertEqual({'New': 'C:/new.exe'}, apps)
+		self.assertEqual({'.txt': {'New': 3}}, associations)
+		save_apps.assert_called_once_with()
+		save_associations.assert_called_once_with()
+
+	def test_terminal_and_explorer_keep_settings_and_missing_configuration_alerts(self):
+		from core import os_
+		for name, command in (('terminal', os_.open_terminal_in_directory), ('native_file_manager', os_.open_native_file_manager)):
+			with self.subTest(name=name), patch.object(os_, 'load_json', return_value={}), \
+				patch.object(os_, 'Popen') as process, patch.object(os_, 'show_alert') as alert:
+				command('C:/fixture')
+				process.assert_not_called()
+				self.assertIn('Core Settings.json', alert.call_args.args[0])
+			with patch.object(os_, 'load_json', return_value={name: {'args': ['app.exe', '{curr_dir}']}}), \
+				patch.object(os_, 'Popen') as process:
+				command('C:/fixture')
+				process.assert_called_once_with(args=['app.exe', 'C:/fixture'])
+
 
 class AboutTest(TestCase):
 	@patch('core.commands.show_alert')
@@ -781,7 +802,7 @@ class FindExtensionStartTest(TestCase):
 class ConfirmTreeOperationTest(TestCase):
 
 	class FileSystem:
-		def __init__(self, files, case_sensitive=PLATFORM == 'Linux'):
+		def __init__(self, files, case_sensitive=False):
 			self._files = files
 			self._case_sensitive = case_sensitive
 
@@ -934,7 +955,7 @@ class ConfirmTreeOperationTest(TestCase):
 	def setUp(self):
 		super().setUp()
 		self._ui = StubUI(self)
-		self._root = as_url('C:\\' if PLATFORM == 'Windows' else '/')
+		self._root = as_url('C:\\')
 		self._src = join(self._root, 'src')
 		self._dest = join(self._root, 'dest')
 		self._a = join(self._root, 'src/a')
@@ -967,7 +988,7 @@ class GetDestSuggestionTest(TestCase):
 		)
 	def setUp(self):
 		super().setUp()
-		self._root = 'C:\\' if PLATFORM == 'Windows' else '/'
+		self._root = 'C:\\'
 
 class FromHumanReadableTest(TestCase):
 	def test_no_src_dir(self):

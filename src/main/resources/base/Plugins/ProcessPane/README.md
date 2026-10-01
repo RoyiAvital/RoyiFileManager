@@ -1,6 +1,6 @@
 # Process Pane
 
-Open the Command Center with **Ctrl+Shift+P** and run **Show processes**.
+Open the Command Center with **Ctrl+Shift+P** and run **Show OS' processes**.
 The active pane displays a flat **Name / PID** list. Type to filter by name,
 click a column to sort, and press **Ctrl+R** to refresh.
 

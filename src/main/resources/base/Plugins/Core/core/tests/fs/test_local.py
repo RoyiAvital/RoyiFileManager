@@ -1,5 +1,4 @@
 from collections import namedtuple
-from fman import PLATFORM
 from fman.url import join, as_url, splitscheme
 from core import LocalFileSystem
 from core.tests import SYMLINKS_SUPPORTED
@@ -16,9 +15,8 @@ class ListdirTest(TestCase):
 	def setUp(self):
 		self.fs = LocalFileSystem()
 	def test_enumeration_does_not_stat_or_seed_cache(self):
-		for platform, path in (('Windows', 'C:/folder'), ('Windows', '//host/share'), ('Linux', '/tmp')):
-			with self.subTest(platform=platform), \
-				patch('core.fs.local.PLATFORM', platform), \
+		for path in ('C:/folder', '//host/share', '/tmp'):
+			with self.subTest(path=path), \
 				patch.object(self.fs, '_url_to_os_path', return_value=path), \
 				patch.object(self.fs, '_isabs', return_value=True), \
 				patch('core.fs.local.os.listdir', return_value=['entry']) as listdir, \
@@ -40,9 +38,8 @@ class WatchTest(TestCase):
 		added, removed, changed = Mock(), Mock(), Mock()
 		provider._file_added.add_callback(added)
 		provider._file_removed.add_callback(removed)
-		with patch('core.fs.local.PLATFORM', 'Windows'), \
-			patch('fman.impl.util.qt.thread.Executor.instance', side_effect=AssertionError('No Qt dispatch')), \
-			patch.object(provider, '_get_watcher', side_effect=AssertionError('No OS watcher')):
+		with patch('fman.impl.util.qt.thread.Executor.instance', side_effect=AssertionError('No Qt dispatch')), \
+			patch('PyQt5.QtCore.QFileSystemWatcher', side_effect=AssertionError('No OS watcher')):
 			provider._add_file_changed_callback('C:/probe', changed)
 			provider.notify_file_changed('C:/probe')
 			provider.notify_file_added('C:/probe/new')
@@ -53,9 +50,8 @@ class WatchTest(TestCase):
 		added.assert_called_once_with('file://C:/probe/new')
 		removed.assert_called_once_with('file://C:/probe/old')
 		self.assertEqual({}, provider._file_changed_callbacks)
-		self.assertIsNone(provider._watcher)
+		self.assertNotIn('_watcher', vars(provider))
 
-@skipUnless(PLATFORM == 'Windows', 'Windows enumeration attributes')
 class NativeEntryAttributesTest(TestCase):
 	def setUp(self):
 		self.temporary = TemporaryDirectory()
@@ -188,7 +184,6 @@ class NativeEntryAttributesTest(TestCase):
 		self.assertIs(type(self.fs.stat(_urlpath(self.root / 'broken-link'))), os.stat_result)
 
 class LocalFileSystemTest(TestCase):
-	@skipUnless(PLATFORM == 'Windows', 'Windows read-only replacement')
 	def test_readonly_mode_failure_reports_published_data(self):
 		with TemporaryDirectory() as directory:
 			source, destination = Path(directory, 'source'), Path(directory, 'destination')
@@ -232,7 +227,6 @@ class LocalFileSystemTest(TestCase):
 			self.assertEqual(b'old', alias.read_bytes())
 			self.assertEqual(b'new', source.read_bytes())
 
-	@skipUnless(PLATFORM == 'Windows', 'Windows copy metadata calls')
 	def test_copy_avoids_extra_staging_metadata_calls(self):
 		stat = os.stat
 		for exists in (False, True):
@@ -251,7 +245,6 @@ class LocalFileSystemTest(TestCase):
 				self.assertEqual(b'new', destination.read_bytes())
 				self.assertEqual({'source', 'destination'}, {path.name for path in Path(directory).iterdir()})
 
-	@skipUnless(PLATFORM == 'Windows', 'Windows legacy path limits')
 	def test_staging_near_legacy_path_limit(self):
 		from core.fs.local import mkstemp, mkdtemp
 		with TemporaryDirectory() as directory:
@@ -280,7 +273,6 @@ class LocalFileSystemTest(TestCase):
 					self.assertEqual({'d'}, {path.name for path in extended_parent.iterdir()})
 				self.assertEqual(b'new', source.read_bytes())
 
-	@skipUnless(PLATFORM == 'Windows', 'Windows staging path syntax')
 	def test_staging_directory_preserves_unc_and_extended_paths(self):
 		from core.fs.local import CopyFile
 		for destination, expected in (
@@ -292,7 +284,6 @@ class LocalFileSystemTest(TestCase):
 			with self.subTest(destination=destination):
 				self.assertEqual(expected, CopyFile._staging_directory(destination))
 
-	@skipUnless(PLATFORM == 'Windows', 'Windows overwrite publication')
 	def test_copy_ignores_access_time_but_rejects_destination_changes(self):
 		from core.fs.local import CopyFile
 		for change in ('access', 'size', 'modified', 'identity', 'hardlink'):
@@ -342,7 +333,6 @@ class LocalFileSystemTest(TestCase):
 				create.assert_not_called()
 			self.assertEqual(b'keep', destination.read_bytes())
 
-	@skipUnless(PLATFORM == 'Windows', 'Windows overwrite publication')
 	def test_copy_with_unknown_identity_uses_resolved_paths(self):
 		from shutil import SameFileError
 		for same_path in (False, True):
@@ -369,7 +359,6 @@ class LocalFileSystemTest(TestCase):
 						self.assertEqual(b'new', source.read_bytes())
 						self.assertEqual(b'new', destination.read_bytes())
 
-	@skipUnless(PLATFORM == 'Windows', 'Windows read-only replacement')
 	def test_readonly_source_copy_preserves_mode_and_contents(self):
 		for exists in (False, True):
 			with self.subTest(exists=exists), TemporaryDirectory() as directory:
@@ -392,7 +381,6 @@ class LocalFileSystemTest(TestCase):
 					if destination.exists():
 						destination.chmod(S_IWRITE)
 
-	@skipUnless(PLATFORM == 'Windows', 'Windows partial replacement failures')
 	def test_partial_windows_replace_retains_original_backup(self):
 		import ctypes
 		for competing in (False, True):
@@ -435,7 +423,6 @@ class LocalFileSystemTest(TestCase):
 					task()
 			self.assertEqual(b'competing creator', destination.read_bytes())
 			self.assertEqual({'source', 'destination'}, {path.name for path in Path(directory).iterdir()})
-	@skipUnless(PLATFORM == 'Windows', 'Windows replacement metadata')
 	def test_overwrite_preserves_destination_security_and_named_stream(self):
 		from core.fs.local import CopyFile
 		from win32security import GetFileSecurity, SetNamedSecurityInfo, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION, SE_DACL_PROTECTED
@@ -466,7 +453,6 @@ class LocalFileSystemTest(TestCase):
 			self.assertEqual(b'stream', stream.read_bytes())
 			self.assertEqual(security, security_entries(destination))
 			self.assertTrue(GetFileSecurity(str(destination), DACL_SECURITY_INFORMATION).GetSecurityDescriptorControl()[0] & SE_DACL_PROTECTED)
-	@skipUnless(PLATFORM == 'Windows', 'Windows junctions')
 	def test_junction_move_fallback_refuses_and_rename_preserves_target(self):
 		from io import UnsupportedOperation
 		from subprocess import run
@@ -545,7 +531,6 @@ class LocalFileSystemTest(TestCase):
 					self.assertIs(error, raised.exception)
 					removed.assert_not_called()
 				self.assertEqual(b'keep', path.read_bytes())
-	@skipUnless(PLATFORM == 'Windows', 'Windows junctions')
 	def test_delete_nested_and_dangling_junction_preserves_target(self):
 		from subprocess import run
 		with TemporaryDirectory() as directory:
@@ -564,7 +549,6 @@ class LocalFileSystemTest(TestCase):
 					self._fs.delete(_urlpath(parent))
 					self.assertFalse(parent.exists())
 					self.assertEqual(b'keep', (target / 'keep').read_bytes())
-	@skipUnless(PLATFORM == 'Windows', 'Windows non-replacing directory rename')
 	def test_directory_rename_conflict_emits_no_notifications(self):
 		with TemporaryDirectory() as directory:
 			source = Path(directory, 'source')
@@ -581,9 +565,9 @@ class LocalFileSystemTest(TestCase):
 			self.assertTrue(destination.is_dir())
 	def test_mkdir_root(self):
 		with self.assertRaises(FileExistsError):
-			self._fs.mkdir('C:' if PLATFORM == 'Windows' else '/')
+			self._fs.mkdir('C:')
 	def test_iterdir_nonexistent(self):
-		root = 'C:/' if PLATFORM == 'Windows' else '/'
+		root = 'C:/'
 		path = root + 'nonexistent'
 		with self.assertRaises(FileNotFoundError):
 			next(iter(self._fs.iterdir(path)))
@@ -630,7 +614,6 @@ class LocalFileSystemTest(TestCase):
 				self._fs.delete(file_name)
 			with self.assertRaises(FileNotFoundError):
 				self._fs.resolve(subdir_name)
-	@skipIf(PLATFORM != 'Windows', 'Skip Windows-only test')
 	def test_isabs_windows(self):
 		self.assertTrue(self._fs._isabs(r'\\host'))
 		self.assertTrue(self._fs._isabs(r'\\host\share'))
@@ -653,7 +636,6 @@ class LocalFileSystemTest(TestCase):
 		self.assertFalse(self._fs.samefile(this, pardir))
 		self.assertFalse(self._fs.samefile(this, init))
 		self.assertFalse(self._fs.samefile(pardir, init))
-	@skipIf(PLATFORM != 'Windows', 'Skip Windows-only test')
 	def test_samefile_hardlink(self):
 		with TemporaryDirectory() as tmp_dir:
 			target = Path(tmp_dir, 'target')

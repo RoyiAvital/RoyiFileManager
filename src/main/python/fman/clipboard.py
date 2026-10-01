@@ -1,9 +1,6 @@
-from fbs_runtime.platform import is_linux, is_windows, is_gnome_based, \
-	is_kde_based
 from fman.impl.util.qt import as_qurl, from_qurl
 from fman.impl.util.qt.thread import run_in_main_thread
 from PyQt5.QtCore import QMimeData
-from PyQt5.QtGui import QClipboard
 from PyQt5.QtWidgets import QApplication
 
 import struct
@@ -19,13 +16,7 @@ def clear():
 
 @run_in_main_thread
 def set_text(text):
-	clipboard = _clipboard()
-	clipboard.setText(text)
-	# On X11, terminals paste via middle-click / Shift+Insert from the PRIMARY
-	# selection, which is separate from the CLIPBOARD selection set above. Copy
-	# the text there too so it can be pasted into a terminal:
-	if clipboard.supportsSelection():
-		clipboard.setText(text, QClipboard.Selection)
+	_clipboard().setText(text)
 
 @run_in_main_thread
 def get_text():
@@ -33,25 +24,17 @@ def get_text():
 
 @run_in_main_thread
 def copy_files(file_urls):
-	if is_linux():
-		extra_data = _get_extra_copy_cut_data_linux(file_urls, 'copy')
-	else:
-		extra_data = {}
+	extra_data = {}
 	_place_on_clipboard(file_urls, extra_data)
 
 @run_in_main_thread
 def cut_files(file_urls):
-	if is_windows():
-		extra_data = {
-			# Make pasting work in Explorer:
-			_CFSTR_PREFERREDDROPEFFECT: _DROPEFFECT_MOVE,
-			# Make pasting work in Qt:
-			_CF_PREFERREDDROPEFFECT: _DROPEFFECT_MOVE
-		}
-	elif is_linux():
-		extra_data = _get_extra_copy_cut_data_linux(file_urls, 'cut')
-	else:
-		raise NotImplementedError('Cutting files is not supported on this OS.')
+	extra_data = {
+		# Make pasting work in Explorer:
+		_CFSTR_PREFERREDDROPEFFECT: _DROPEFFECT_MOVE,
+		# Make pasting work in Qt:
+		_CF_PREFERREDDROPEFFECT: _DROPEFFECT_MOVE
+	}
 	_place_on_clipboard(file_urls, extra_data)
 
 @run_in_main_thread
@@ -68,14 +51,8 @@ def get_files():
 
 @run_in_main_thread
 def files_were_cut():
-	if is_windows():
-		data = _clipboard().mimeData().data(_CF_PREFERREDDROPEFFECT)
-		return data == _DROPEFFECT_MOVE
-	elif is_linux():
-		mime_type = _get_linux_copy_cut_mime_type()
-		if mime_type:
-			return _clipboard().mimeData().data(mime_type)[:4] == b'cut\n'
-	return False
+	data = _clipboard().mimeData().data(_CF_PREFERREDDROPEFFECT)
+	return data == _DROPEFFECT_MOVE
 
 def _clipboard():
 	return QApplication.instance().clipboard()
@@ -94,16 +71,3 @@ def _place_on_clipboard(file_urls, extra_data):
 	for key, value in extra_data.items():
 		new_clipboard_data.setData(key, value)
 	_clipboard().setMimeData(new_clipboard_data)
-
-def _get_extra_copy_cut_data_linux(file_urls, copy_or_cut):
-	result = {}
-	mime_type = _get_linux_copy_cut_mime_type()
-	if mime_type:
-		result[mime_type] = '\n'.join([copy_or_cut] + file_urls).encode('utf-8')
-	return result
-
-def _get_linux_copy_cut_mime_type():
-	if is_gnome_based():
-		return 'x-special/gnome-copied-files'
-	if is_kde_based():
-		return 'application/x-kde-cutselection'

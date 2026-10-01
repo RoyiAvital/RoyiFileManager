@@ -67,6 +67,7 @@ class OptionalDateInput(QDateEdit):
 		self.setSpecialValueText(' ')
 		self.setDisplayFormat('yyyy-MM-dd')
 		self.setCalendarPopup(True)
+		self.setKeyboardTracking(False)
 		self.set_value(None)
 		self.dateChanged.connect(lambda date: self.value_changed.emit())
 		self.lineEdit().textChanged.connect(self._edited)
@@ -84,6 +85,8 @@ class OptionalDateInput(QDateEdit):
 	def _edited(self, content):
 		if not content.strip() and self.date() != self.minimumDate():
 			self.clear()
+		else:
+			self.value_changed.emit()
 
 	def keyPressEvent(self, event):
 		activating = self.value() is None and event.text().isascii() and event.text().isdigit()
@@ -102,7 +105,11 @@ class OptionalDateInput(QDateEdit):
 		self.set_value(None)
 
 	def value(self):
-		return None if self.date() == self.minimumDate() else self.date().toString('yyyy-MM-dd')
+		content = self.text()
+		date = QDate.fromString(content, 'yyyy-MM-dd')
+		if not date.isValid() or date.toString('yyyy-MM-dd') != content or not self.minimumDate() <= date <= self.maximumDate():
+			date = self.date()
+		return None if date == self.minimumDate() else date.toString('yyyy-MM-dd')
 
 	def set_value(self, value):
 		self.setDate(self.minimumDate() if value is None else QDate.fromString(value, 'yyyy-MM-dd'))

@@ -100,6 +100,7 @@ footer { padding:24px 0 32px; color:var(--muted); font-size:12px; }
   <div class="section-head"><div><h2 id="detail-heading">Measurement details</h2><p id="detail-caption"></p></div></div>
     <details id="measurements"><summary>Queries, refresh, selection, navigation and memory</summary><div class="details-body">
    <div class="controls"><label>Workload<select id="detail-test" aria-label="Details workload"></select></label><label>Measurement filter<input id="metric-filter" type="search" placeholder="e.g. wheel, page-down, memory" aria-label="Measurement filter"></label><label>Order<select id="metric-order"><option value="name">Measurement name</option><option value="regression">Largest increase first</option><option value="improvement">Largest decrease first</option></select></label></div>
+  <pre id="case-failures" class="error" hidden></pre>
    <p id="metric-count" class="footnote" aria-live="polite"></p><div class="table-scroll"><table class="metric-table"><thead><tr><th>Measurement</th><th class="numeric">Median</th><th class="numeric">Range</th><th class="numeric">p95</th><th class="numeric">Samples</th><th class="numeric">Change</th></tr></thead><tbody id="metric-values"></tbody></table></div>
     <p class="footnote">p95 is unavailable below 20 observations. Navigation samples repeat within processes; they are not independent process runs. Refresh peak memory is the process high-water mark, cumulative across ordered selection cases, not refresh-only allocation. New run JSON records retain summary statistics and sample counts, not individual observations.</p>
   </div></details>
@@ -113,7 +114,7 @@ footer { padding:24px 0 32px; color:var(--muted); font-size:12px; }
 'use strict';
 const data = JSON.parse(document.getElementById('performance-data').textContent);
 const byId = id => document.getElementById(id);
-const names = {'pane.load.small':'Pane loading / Small','pane.load.large':'Pane loading / Large','filter.small':'Filter Bar / Small','filter.large':'Filter Bar / Large','fuzzy.small':'Fuzzy Find / Small','fuzzy.large':'Fuzzy Find / Large','recursive.tree':'Fuzzy Find (Recursive)','quickview.small':'QuickView / Small','quickview.large':'QuickView / Large','refresh.selection':'Refresh / Selection','navigation':'Navigation'};
+const names = {'pane.load.small':'Pane loading / Small','pane.load.large':'Pane loading / Large','filter.small':'Filter Bar / Small','filter.large':'Filter Bar / Large','fuzzy.small':'Fuzzy Find / Small','fuzzy.large':'Fuzzy Find / Large','recursive.tree':'Fuzzy Find (Recursive)','quickview.small':'QuickView / Small','quickview.large':'QuickView / Large','refresh.selection':'Refresh / Selection','selection.small':'Selection / 256 files','selection.medium':'Selection / 50,000 files','selection.large':'Selection / 200,000 files','navigation':'Navigation'};
 const format = value => Number.isFinite(value) ? value.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) : '\u2014';
 const numberText = (value, unit='ms') => Number.isFinite(value) ? format(value) + ' ' + unit : '\u2014';
 const difference = (before, after) => Number.isFinite(before) && Number.isFinite(after) ? {absolute:after-before, percent:before ? (after/before-1)*100 : null} : null;
@@ -256,12 +257,15 @@ function drawDetails() {
  const test=data.tests.find(item => item.test_id===byId('detail-test').value);
  byId('metric-values').replaceChildren();
  if (!test) return;
+ const failures=test.failures || [];
+ byId('case-failures').hidden=!failures.length;
+ byId('case-failures').textContent=failures.map(failure => failure.action_id + ' / repetition ' + failure.iteration + ': ' + failure.status + ' during ' + failure.stage + '\n' + failure.error).join('\n\n');
  const previous=baseline(), search=byId('metric-filter').value.toLowerCase();
  const changes=new Map((previous?.compatible ? previous.changes : []).filter(item=>item.test_id===test.test_id).map(item=>[item.metric,item]));
  const rows=Object.entries(test.metrics).filter(([name]) => (name + (name.includes('mib') ? ' memory' : '')).toLowerCase().includes(search)).sort(([first],[second])=>first.localeCompare(second)).map(([name,value])=>({name,value,change:changes.has(name) ? difference(changes.get(name).baseline_median,changes.get(name).current_median) : null}));
  sortChanges(rows,byId('metric-order').value); byId('metric-count').textContent=rows.length + ' measurements';
  for (const {name,value,change} of rows) {
-  const unit=name.includes('_mib') ? 'MiB' : 'ms', row=element('tr'); const metric=cell(row,undefined,'metric-name');
+  const unit=name.includes('_mib') ? 'MiB' : name.endsWith('_count') ? 'count' : 'ms', row=element('tr'); const metric=cell(row,undefined,'metric-name');
   metric.append(element('code',name)); cell(row,numberText(value.median,unit),'numeric'); cell(row,format(value.minimum)+' - '+format(value.maximum),'numeric'); cell(row,numberText(value.p95,unit),'numeric'); cell(row,value.count,'numeric'); deltaCell(row,change,unit); byId('metric-values').append(row);
  }
 }

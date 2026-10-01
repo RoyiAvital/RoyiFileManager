@@ -1,5 +1,4 @@
 from contextlib import contextmanager
-from fbs_runtime.platform import is_linux
 from fman.impl.model import SortedFileSystemModel
 from fman.impl.plugins.builtin import NullFileSystem, NullColumn
 from fman.impl.plugins.mother_fs import MotherFileSystem
@@ -29,7 +28,7 @@ class SortedFileSystemModelAT: # Instantiated in fman_integrationtest.test_qt
 		from pathlib import Path
 		from tempfile import TemporaryDirectory
 		from zipfile import ZipFile
-		self._register_column(Modified(self._fs))
+		self._register_column(Modified())
 		self._fs.add_child('zip://', ZipFileSystem(suffixes={'.zip'}))
 		with TemporaryDirectory() as temporary:
 			archive = Path(temporary).resolve() / 'listing.zip'
@@ -48,8 +47,6 @@ class SortedFileSystemModelAT: # Instantiated in fman_integrationtest.test_qt
 			self.assertEqual('3 B', self._get_data()[0][1])
 			self._set_location('null://')
 	def test_local_hidden_attributes_shared_panes_toggle_refresh_and_events(self):
-		if sys.platform != 'win32':
-			self.skipTest('Windows entry attributes')
 		from core import LocalFileSystem, Modified
 		from core.commands import _hidden_file_filter
 		from fman.url import as_url
@@ -69,7 +66,7 @@ class SortedFileSystemModelAT: # Instantiated in fman_integrationtest.test_qt
 			SetFileAttributes(str(root / 'hidden'), 2)
 			provider = LocalFileSystem()
 			self._fs.add_child('file://', provider)
-			self._register_column(Modified(self._fs))
+			self._register_column(Modified())
 			second = self.run_in_app(SortedFileSystemModel, None, self._fs, 'null://')
 			models = [self._model, second]
 			views = []
@@ -129,8 +126,6 @@ class SortedFileSystemModelAT: # Instantiated in fman_integrationtest.test_qt
 						self.run_in_app(model.shutdown)
 					self.run_in_app(lambda: [view.deleteLater() for view in views])
 	def test_navigation_away_from_blocked_local_scan_rejects_stale_rows(self):
-		if sys.platform != 'win32':
-			self.skipTest('Windows entry attributes')
 		from core import LocalFileSystem, Modified
 		from fman.url import as_url
 		from pathlib import Path
@@ -143,7 +138,7 @@ class SortedFileSystemModelAT: # Instantiated in fman_integrationtest.test_qt
 			(root / 'entry').touch()
 			provider = LocalFileSystem()
 			self._fs.add_child('file://', provider)
-			self._register_column(Modified(self._fs))
+			self._register_column(Modified())
 			finished = Event()
 			scan = provider.scan
 			def blocked(path, check):
@@ -435,7 +430,7 @@ class SortedFileSystemModelAT: # Instantiated in fman_integrationtest.test_qt
 			self._files['']['files'].append(fname)
 		self._folder_icon = folder_icon
 		self._file_icon = file_icon
-		files = self._files if is_linux() else CaseInsensitiveDict(self._files)
+		files = CaseInsensitiveDict(self._files)
 		self._fs = MotherFileSystem(StubIconProvider(files))
 		self._fs.add_child('null://', NullFileSystem())
 		self._null_column = NullColumn()
@@ -449,9 +444,9 @@ class SortedFileSystemModelAT: # Instantiated in fman_integrationtest.test_qt
 		# That's fair; It's actually unclean for this test to depend on Core.
 		# But it is also very useful as a kind of end-to-end test. So we do it.
 		from core import Name, Size
-		self._name_column = Name(self._fs)
+		self._name_column = Name()
 		self._register_column(self._name_column)
-		self._size_column = Size(self._fs)
+		self._size_column = Size()
 		self._register_column(self._size_column)
 		self._model = self.run_in_app(
 			SortedFileSystemModel, None, self._fs, 'null://'

@@ -1,6 +1,5 @@
 from core.commands.goto import _shrink_visited_paths, SuggestLocations
 from core.util import filenotfounderror
-from fman import PLATFORM
 from os.path import normpath
 from unittest import TestCase, skipIf
 
@@ -35,7 +34,7 @@ class SuggestLocationsTest(TestCase):
 			self.files = files
 			self.home_dir = home_dir
 		def isdir(self, path):
-			if PLATFORM == 'Windows' and path.endswith(' '):
+			if (path.endswith(' ')):
 				# Strange behaviour on Windows: isdir('X ') returns True if X
 				# (without space) exists.
 				path = path.rstrip(' ')
@@ -68,7 +67,7 @@ class SuggestLocationsTest(TestCase):
 			except KeyError as e:
 				raise filenotfounderror(path) from e
 		def resolve(self, path):
-			is_case_sensitive = PLATFORM == 'Linux'
+			is_case_sensitive = False
 			if is_case_sensitive:
 				return path
 			dir_ = os.path.dirname(path)
@@ -102,7 +101,7 @@ class SuggestLocationsTest(TestCase):
 					# want '/sub_f' but join(f, sub_f) would give just 'sub_f'.
 					yield f + os.sep + sub_f
 		def _normcase(self, path):
-			return path if PLATFORM == 'Linux' else path.lower()
+			return path.lower()
 
 	def test_empty_suggests_recent_locations(self):
 		expected_paths = [
@@ -130,7 +129,6 @@ class SuggestLocationsTest(TestCase):
 		self._check_query_returns(
 			'~/Unvisited', ['~/Unvisited', '~/Unvisited/Dir']
 		)
-	@skipIf(PLATFORM == 'Linux', 'Case-insensitive file systems only')
 	def test_existing_path_wrong_case(self):
 		self._check_query_returns(
 			'~/unvisited', ['~/Unvisited', '~/Unvisited/Dir']
@@ -162,7 +160,7 @@ class SuggestLocationsTest(TestCase):
 			'sub', ['~/My-substr', '~/s-u-b-s-t-r'], [[5, 6, 7], [2, 4, 6]]
 		)
 	def setUp(self):
-		root = 'C:' if PLATFORM == 'Windows' else ''
+		root = 'C:'
 		files = {
 			root: {
 				'Users': {
@@ -182,10 +180,7 @@ class SuggestLocationsTest(TestCase):
 			},
 			'.': {}
 		}
-		if PLATFORM == 'Windows':
-			self.home_dir = r'C:\Users\michael'
-		else:
-			self.home_dir = '/Users/michael'
+		self.home_dir = r'C:\Users\michael'
 		self.fs = self.StubLocalFileSystem(files, home_dir=self.home_dir)
 		visited_paths = {
 			self._replace_pathsep(self.fs.expanduser(k)): v

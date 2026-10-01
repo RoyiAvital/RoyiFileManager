@@ -1,6 +1,5 @@
-from getpass import getuser
 from os import listdir, strerror
-from os.path import join, basename, expanduser, dirname, realpath, relpath, \
+from os.path import join, dirname, realpath, relpath, \
 	pardir, splitdrive
 
 import errno
@@ -8,12 +7,6 @@ import os
 
 def listdir_absolute(dir_path):
 	return [join(dir_path, file_name) for file_name in listdir(dir_path)]
-
-def get_user():
-	try:
-		return getuser()
-	except Exception:
-		return basename(expanduser('~'))
 
 def is_below_dir(file_path, directory):
 	if splitdrive(file_path)[0].lower() != splitdrive(directory)[0].lower():

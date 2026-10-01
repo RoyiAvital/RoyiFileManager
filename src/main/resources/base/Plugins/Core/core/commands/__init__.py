@@ -2,7 +2,6 @@ from collections.abc import Mapping
 from core.commands.util import get_program_files, get_program_files_x86, \
 	is_hidden
 from core.fileoperations import CopyFiles, MoveFiles
-from core.github import find_repos, GitHubRepo
 from core.os_ import open_terminal_in_directory, open_native_file_manager, \
 	get_popen_kwargs_for_opening
 from core.util import listdir_absolute, is_parent
@@ -10,10 +9,9 @@ from core.quicksearch_matchers import contains_chars, \
 	contains_chars_after_separator
 from core.quick_view import switch_quick_view as _switch_quick_view
 from fman import *
-from fman.fs import exists, touch, mkdir, is_dir, delete, samefile, copy, \
+from fman.fs import exists, touch, mkdir, is_dir, delete, samefile, \
 	iterdir, resolve, prepare_copy, prepare_move, prepare_delete, \
 	FileSystem, prepare_trash, query, makedirs, notify_file_added
-from fman.impl.util import get_user
 from fman.impl.product import APP_NAME
 from fman.url import splitscheme, as_url, join, basename, as_human_readable, \
 	dirname, relpath, normalize
@@ -23,13 +21,10 @@ from itertools import chain
 from os import strerror
 from os.path import basename, pardir
 from pathlib import PurePath
-from subprocess import Popen, DEVNULL, PIPE
-from tempfile import TemporaryDirectory
-from urllib.error import URLError
+from subprocess import Popen
 
 import errno
 import fman.fs
-import json
 import os
 import os.path
 import re
@@ -100,7 +95,7 @@ class MoveToTrash(DirectoryPaneCommand):
 			show_alert('No file is selected!')
 			return
 		description = _describe(urls, 'these %d files')
-		trash = 'Recycle Bin' if PLATFORM == 'Windows' else 'Trash'
+		trash = 'Recycle Bin'
 		msg = "Do you really want to move %s to the %s?" % (description, trash)
 		if show_alert(msg, YES | NO, YES) & YES:
 			submit_task(_Delete(urls, prepare_trash, prepare_delete))
@@ -242,20 +237,6 @@ class Open(DirectoryPaneCommand):
 			# possible for plugins to modify the default open behaviour by
 			# implementing DirectoryPaneListener#on_command(...).
 			if url_is_dir:
-				if PLATFORM == 'Mac' and url.endswith('.app'):
-					dialogs = load_json('Core Dialogs.json', default={})
-					if not dialogs.get('open_app_hint_shown', False):
-						show_alert(
-							'Quick tip: Apps in macOS are directories. When '
-							'you press '
-							'<span style="color: white;">Enter</span>, '
-							f'{APP_NAME} therefore browses them. If you want to '
-							'launch the app instead, press '
-							'<span style="color: white;">Cmd+Enter</span>.'
-						)
-						dialogs['open_app_hint_shown'] = True
-						save_json('Core Dialogs.json')
-						return
 				self.pane.run_command('open_directory', {'url': url})
 			else:
 				self.pane.run_command('open_file', {'url': url})
@@ -342,13 +323,7 @@ def _is_file_url(url):
 	return splitscheme(url)[0] == 'file://'
 
 def _open_local_files(paths, pane):
-	if PLATFORM == 'Windows':
-		_open_local_files_win(paths, pane)
-	elif PLATFORM == 'Mac':
-		_open_local_files_mac(paths)
-	else:
-		assert PLATFORM == 'Linux'
-		_open_local_files_linux(paths)
+	_open_local_files_win(paths, pane)
 
 def _open_local_files_win(paths, pane):
 	# Whichever implementation is used here, it should support:
@@ -380,34 +355,6 @@ def _open_local_files_win(paths, pane):
 			# Admin privileges, but the user cancels the UAC "do you want to run
 			# this file?" dialog.
 			pass
-
-def _open_local_files_mac(paths):
-	non_executables = []
-	for path in paths:
-		try:
-			_run_executable(path)
-		except (OSError, ValueError):
-			non_executables.append(path)
-	if non_executables:
-		try:
-			Popen(['open'] + non_executables, **_quiet)
-		except OSError:
-			pass
-
-def _open_local_files_linux(paths):
-	for path in paths:
-		try:
-			_run_executable(path)
-		except (OSError, ValueError):
-			try:
-				Popen(['xdg-open', path], **_quiet)
-			except Exception as e:
-				raise e from None
-
-def _run_executable(path):
-	Popen([path], cwd=os.path.dirname(path), **_quiet)
-
-_quiet = {'stdout': DEVNULL, 'stderr': DEVNULL}
 
 class OpenSelectedFiles(DirectoryPaneCommand):
 	def __call__(self):
@@ -474,28 +421,16 @@ class CompareFolders(CompareFiles):
 def _show_app_open_dialog(caption):
 	return show_file_open_dialog(
 		caption, _get_applications_directory(),
-		_PLATFORM_APPLICATIONS_FILTER[PLATFORM]
+		'Applications (*.exe)'
 	)
 
-_PLATFORM_APPLICATIONS_FILTER = {
-	'Mac': 'Applications (*.app)',
-	'Windows': 'Applications (*.exe)',
-	'Linux': 'Applications (*)'
-}
-
 def _get_applications_directory():
-	if PLATFORM == 'Mac':
-		return '/Applications'
-	elif PLATFORM == 'Windows':
-		result = get_program_files()
-		if not os.path.exists(result):
-			result = get_program_files_x86()
-		if not os.path.exists(result):
-			result = PurePath(sys.executable).anchor
-		return result
-	elif PLATFORM == 'Linux':
-		return '/usr/bin'
-	raise NotImplementedError(PLATFORM)
+	result = get_program_files()
+	if not os.path.exists(result):
+		result = get_program_files_x86()
+	if not os.path.exists(result):
+		result = PurePath(sys.executable).anchor
+	return result
 
 def _prompt_for_file(pane, caption):
 	file_under_cursor = pane.get_file_under_cursor()
@@ -869,7 +804,7 @@ class RenameListener(DirectoryPaneListener):
 			return
 		is_relative = \
 			os.sep in new_name or new_name in (pardir, '.') \
-			or (PLATFORM == 'Windows' and '/' in new_name)
+			or (('/' in new_name))
 		if is_relative:
 			show_alert(
 				'Relative paths are not supported. Please use Move (F6) '
@@ -927,8 +862,7 @@ class CreateDirectory(DirectoryPaneCommand):
 		name, ok = show_prompt("New folder (directory)", default)
 		if ok and name:
 			# Support recursive creation of directories:
-			if PLATFORM == 'Windows':
-				name = name.replace('\\', '/')
+			name = name.replace('\\', '/')
 			base_url = self.pane.get_path()
 			dir_url = join(base_url, name)
 			try:
@@ -977,12 +911,7 @@ class OpenNativeFileManager(DirectoryPaneCommand):
 		url = self.pane.get_path()
 		scheme = splitscheme(url)[0]
 		if scheme != 'file://':
-			if PLATFORM == 'Mac':
-				native_fm = 'Finder'
-			elif PLATFORM == 'Windows':
-				native_fm = 'Explorer'
-			else:
-				native_fm = 'your native file manager'
+			native_fm = 'Explorer'
 			show_alert("Cannot open %s in %s" % (native_fm, scheme))
 			return
 		open_native_file_manager(as_human_readable(url))
@@ -1019,12 +948,6 @@ class CopyToClipboard(DirectoryPaneCommand):
 
 class Cut(DirectoryPaneCommand):
 	def __call__(self):
-		if PLATFORM == 'Mac':
-			show_alert(
-				"Sorry, macOS doesn't support cutting files. Please press "
-				"⌘-C (copy) followed by ⌘-⌥-V (move)."
-			)
-			return
 		files = self.get_chosen_files()
 		if files:
 			clipboard.cut_files(files)
@@ -1125,28 +1048,21 @@ def _get_pane_info(pane):
 	return settings[pane_index]
 
 def _hidden_file_filter(url):
-	if PLATFORM == 'Mac' and url == 'file:///Volumes':
-		return True
 	scheme, path = splitscheme(url)
 	if scheme != 'file://':
 		return True
 	return not is_hidden(path)
 
 def _snapshot_hidden_file_filter():
-	mac = PLATFORM == 'Mac'
 	def predicate(listing, index):
-		return not listing.attributes[index] & 2 or (
-			mac and listing.location == 'file:///' and listing.names[index] == 'Volumes')
+		return not listing.attributes[index] & 2
 	def filter_indices(listing, order, check):
 		attributes = listing.attributes
 		visible = []
 		for start in range(0, len(order), 256):
 			check()
 			batch = order[start:start + 256]
-			if mac and listing.location == 'file:///':
-				visible.extend(index for index in batch if predicate(listing, index))
-			else:
-				visible.extend([index for index in batch if not attributes[index] & 2])
+			visible.extend([index for index in batch if not attributes[index] & 2])
 		return visible
 	predicate.filter_indices = filter_indices
 	return predicate
@@ -1211,22 +1127,7 @@ class ShowVolumes(DirectoryPaneCommand):
 		pane.set_path(_get_volumes_url(), callback=callback)
 
 def _get_volumes_url():
-	if PLATFORM == 'Mac':
-		return 'file:///Volumes'
-	elif PLATFORM == 'Windows':
-		return 'drives://'
-	elif PLATFORM == 'Linux':
-		if os.path.isdir('/media'):
-			contents = os.listdir('/media')
-			user_name = get_user()
-			if contents == [user_name]:
-				return as_url(os.path.join('/media', user_name))
-			else:
-				return 'file:///media'
-		else:
-			return 'file:///mnt'
-	else:
-		raise NotImplementedError(PLATFORM)
+	return 'drives://'
 
 _RECENT_COMMANDS_LIMIT = 3
 _COMMAND_PALETTE_HISTORY = 'Command Palette History.json'
@@ -1321,8 +1222,6 @@ class CommandPalette(DirectoryPaneCommand):
 					if highlight is not None:
 						shortcuts = \
 							_get_shortcuts_for_command(key_bindings, cmd_name)
-						if PLATFORM == 'Mac':
-							shortcuts = map(_insert_mac_key_symbols, shortcuts)
 						hint = ', '.join(shortcuts)
 						item = QuicksearchItem(command, alias, highlight, hint)
 						result[i].append(item)
@@ -1379,15 +1278,6 @@ def _get_shortcuts_for_command(key_bindings, command):
 				yield shortcut
 		shortcuts_occupied_by_other_commands.add(shortcut)
 
-def _insert_mac_key_symbols(shortcut):
-	keys = shortcut.split('+')
-	return ''.join(_KEY_SYMBOLS_MAC.get(key, key) for key in keys)
-
-_KEY_SYMBOLS_MAC = {
-	'Cmd': '⌘', 'Alt': '⌥', 'Ctrl': '⌃', 'Shift': '⇧', 'Backspace': '⌫',
-	'Up': '↑', 'Down': '↓', 'Left': '←', 'Right': '→', 'Enter': '↩'
-}
-
 class CommandPaletteItem:
 	def __init__(self, run_fn, cmd_name, kind='pane'):
 		self._run_fn = run_fn
@@ -1417,7 +1307,6 @@ class ZenOfFman(ApplicationCommand):
 			"Customisability is important\n"
 			"But not at the expense of speed\n"
 			"I/O is better asynchronous\n"
-			"Updates should be transparent and continuous\n"
 			"Don't reinvent the wheel"
 		)
 
@@ -1488,101 +1377,6 @@ class History:
 		self._curr_path += 1
 		del self._paths[self._curr_path:]
 		self._paths.append(path)
-
-class InstallPlugin(ApplicationCommand):
-	def __init__(self, *args, **kwargs):
-		super().__init__(*args, **kwargs)
-		self._plugin_repos = None
-	def __call__(self, github_repo=None):
-		if github_repo:
-			with StatusMessage('Fetching GitHub repo %s...' % github_repo):
-				repo = GitHubRepo.fetch(github_repo)
-		else:
-			if self._plugin_repos is None:
-				with StatusMessage('Fetching available plugins...'):
-					try:
-						self._plugin_repos = \
-							find_repos(topics=['fman', 'plugin'])
-					except URLError as e:
-						show_alert(
-							'Could not fetch available plugins: %s.' % e.reason
-						)
-						return
-			result = show_quicksearch(self._get_matching_repos)
-			repo = result[1] if result else None
-		if repo:
-			with StatusMessage('Downloading %s...' % repo.name):
-				try:
-					ref = repo.get_latest_release()
-				except LookupError as no_release_yet:
-					ref = repo.get_latest_commit()
-				zipball_contents = repo.download_zipball(ref)
-			plugin_dir = self._install_plugin(repo.name, zipball_contents)
-			# Save some data in case we want to update the plugin later:
-			self._record_plugin_installation(plugin_dir, repo.url, ref)
-			success = self._load_installed_plugin(plugin_dir)
-			if success:
-				show_alert('Plugin %r was successfully installed.' % repo.name)
-	def _get_matching_repos(self, query):
-		installed_plugins = set(
-			os.path.basename(plugin_dir)
-			for plugin_dir in _get_thirdparty_plugins()
-		)
-		for repo in self._plugin_repos:
-			if repo.name in installed_plugins:
-				continue
-			match = contains_chars(repo.name.lower(), query.lower())
-			if match or not query:
-				hint = '%d ★' % repo.num_stars if repo.num_stars else ''
-				yield QuicksearchItem(
-					repo, repo.name, match, hint=hint,
-					description=repo.description
-				)
-	def _install_plugin(self, name, zipball_contents):
-		os.makedirs(_THIRDPARTY_PLUGINS_DIR, exist_ok=True)
-		dest_dir = os.path.join(_THIRDPARTY_PLUGINS_DIR, name)
-		dest_dir_url = as_url(dest_dir)
-		if exists(dest_dir_url):
-			raise ValueError('Plugin %s seems to already be installed.' % name)
-		# We purposely don't use Python's ZipFile here because it does not
-		# preserve the executable bit of extracted files. This would present a
-		# problem for plugins shipping with their own binaries.
-		with TemporaryDirectory() as tmp_dir:
-			zip_path = os.path.join(tmp_dir, 'plugin.zip')
-			with open(zip_path, 'wb') as f:
-				f.write(zipball_contents)
-			zip_url = as_url(zip_path, 'zip://')
-			dir_in_zip, = iterdir(zip_url)
-			copy(join(zip_url, dir_in_zip), dest_dir_url)
-		return dest_dir
-	def _load_installed_plugin(self, plugin_dir):
-		# Unload plugins later than the given plugin in the load order, load
-		# the plugin, then load the unloaded plugins again. This inserts the
-		# given plugin in the correct place in the load order.
-		plugins = _get_plugins()
-		plugin_index = plugins.index(plugin_dir)
-		to_unload = plugins[plugin_index + 1:]
-		with PreservePanePaths(self.window):
-			for plugin in reversed(to_unload):
-				try:
-					unload_plugin(plugin)
-				except ValueError as was_not_loaded:
-					pass
-			result = load_plugin(plugin_dir)
-			for plugin in to_unload:
-				load_plugin(plugin)
-		return result
-	def _record_plugin_installation(self, plugin_dir, repo_url, ref):
-		plugin_json = os.path.join(plugin_dir, 'Plugin.json')
-		if os.path.exists(plugin_json):
-			with open(plugin_json, 'r') as f:
-				data = json.load(f)
-		else:
-			data = {}
-		data['url'] = repo_url
-		data['ref'] = ref
-		with open(plugin_json, 'w') as f:
-			json.dump(data, f)
 
 _THIRDPARTY_PLUGINS_DIR = os.path.join(DATA_DIRECTORY, 'Plugins', 'Third-party')
 
@@ -1689,17 +1483,8 @@ class ListPlugins(DirectoryPaneCommand):
 			plugin_name = os.path.basename(plugin_dir)
 			match = contains_chars(plugin_name.lower(), query.lower())
 			if match or not query:
-				plugin_json = os.path.join(plugin_dir, 'Plugin.json')
-				try:
-					with open(plugin_json, 'r') as f:
-						ref = json.load(f).get('ref', '')
-				except OSError:
-					ref = ''
-				is_sha = len(ref) == 40
-				if is_sha:
-					ref = ref[:8]
 				result.append(QuicksearchItem(
-					plugin_dir, plugin_name, highlight=match, hint=ref
+					plugin_dir, plugin_name, highlight=match
 				))
 		for plugin_dir in _get_user_plugins():
 			plugin_name = os.path.basename(plugin_dir)
@@ -1710,63 +1495,22 @@ class ListPlugins(DirectoryPaneCommand):
 				)
 		return sorted(result, key=lambda qsi: qsi.title)
 
-class StatusMessage:
-	def __init__(self, message):
-		self._message = message
-	def __enter__(self):
-		show_status_message(self._message)
-	def __exit__(self, *_):
-		clear_status_message()
-
-if PLATFORM == 'Mac':
-	class GetInfo(DirectoryPaneCommand):
+try:
+	from .explorer_properties import ShowExplorerProperties
+except ImportError as e:
+	# If we simply refer to `e` below, we get a NameError. This is likely
+	# because the captured exception of `except` statements goes out of
+	# scope as soon as the except block exits. So introduce a separate
+	# variable that does not go out of scope:
+	error = e
+	class ShowExplorerProperties(DirectoryPaneCommand):
 		def __call__(self):
-			files = self.get_chosen_files() or [self.pane.get_path()]
-			self._run_applescript(
-				'on run args\n'
-				'	tell app "Finder"\n'
-				'		activate\n'
-				'		repeat with f in args\n'
-				'			open information window of '
-							'(posix file (contents of f) as alias)\n'
-				'		end\n'
-				'	end\n'
-				'end\n',
-				_get_local_filepaths(files)
+			show_alert(
+				'Sorry, the module for displaying file properties %r could '
+				'not be loaded. Include your Windows version and architecture '
+				'when reporting this problem.'
+				% error.name
 			)
-		def _run_applescript(self, script, args=None):
-			if args is None:
-				args = []
-			process = Popen(
-				['osascript', '-'] + args, stdin=PIPE,
-				stdout=DEVNULL, stderr=DEVNULL
-			)
-			process.communicate(script.encode('ascii'))
-elif PLATFORM == 'Windows':
-	try:
-		from .explorer_properties import ShowExplorerProperties
-	except ImportError as e:
-		# If we simply refer to `e` below, we get a NameError. This is likely
-		# because the captured exception of `except` statements goes out of
-		# scope as soon as the except block exits. So introduce a separate
-		# variable that does not go out of scope:
-		error = e
-		class ShowExplorerProperties(DirectoryPaneCommand):
-			def __call__(self):
-				show_alert(
-					'Sorry, the module for displaying file properties %r could '
-					'not be loaded. Include your Windows version and architecture '
-					'when reporting this problem.'
-					% error.name
-				)
-
-def _get_local_filepaths(urls):
-	result = []
-	for url in urls:
-		scheme, path = splitscheme(url)
-		if scheme == 'file://':
-			result.append(path)
-	return result
 
 class UnpackArchive(DirectoryPaneCommand):
 	aliases = ('Unpack archive',)
@@ -2071,7 +1815,7 @@ class LocationBarListener(DirectoryPaneListener):
 		if _is_file_url(url):
 			path = as_human_readable(url)
 			self.pane.run_command('go_to', {'query': path})
-			ctrl = 'Cmd' if PLATFORM == 'Mac' else 'Ctrl'
+			ctrl = 'Ctrl'
 			show_status_message(
 				'Hint: You can also press %s+P to open GoTo. If you merely '
 				'want to copy the current path, close GoTo, then press '
@@ -2271,7 +2015,7 @@ class EditApp(QuicksearchScreen):
 		app_path = apps[app]
 		new_path = show_file_open_dialog(
 			"Pick an executable", app_path,
-			_PLATFORM_APPLICATIONS_FILTER[PLATFORM]
+			'Applications (*.exe)'
 		)
 		if not new_path:
 			Configure(self._files).show()
@@ -2356,33 +2100,16 @@ class none(DirectoryPaneCommand):
 	def is_visible(self):
 		return False
 
-if PLATFORM == 'Mac':
-	class QuickLook(DirectoryPaneCommand):
 
-		aliases = ('Quick Look', 'Preview')
-
-		def __call__(self):
-			files = self.get_chosen_files()
-			if not files:
-				show_alert('No file is selected!')
-				return
-			if any(not _is_file_url(f) for f in files):
-				show_alert('Sorry, can only preview normal files.')
-				return
-			args = ['qlmanage', '-p']
-			args.extend(map(as_human_readable, files))
-			Popen(args, stdout=DEVNULL, stderr=DEVNULL)
-
-if PLATFORM == 'Windows':
-	class GoToRootOfCurrentDrive(DirectoryPaneCommand):
-		def __call__(self):
-			url = self.pane.get_path()
-			scheme = splitscheme(url)[0]
-			if scheme == 'file://':
-				dest = as_url(PurePath(as_human_readable(url)).anchor)
-			else:
-				dest = scheme
-			try:
-				self.pane.set_path(dest)
-			except FileNotFoundError:
-				pass
+class GoToRootOfCurrentDrive(DirectoryPaneCommand):
+	def __call__(self):
+		url = self.pane.get_path()
+		scheme = splitscheme(url)[0]
+		if scheme == 'file://':
+			dest = as_url(PurePath(as_human_readable(url)).anchor)
+		else:
+			dest = scheme
+		try:
+			self.pane.set_path(dest)
+		except FileNotFoundError:
+			pass

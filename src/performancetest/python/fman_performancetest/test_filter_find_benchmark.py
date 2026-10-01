@@ -32,6 +32,33 @@ finally:
 
 
 class PerformanceReportTest(TestCase):
+	def test_selection_report_keeps_sizes_readback_counts_and_failures(self):
+		current = self.record()
+		current['results'] = []
+		current['catalog']['tests'] = []
+		for size, count in (('small', 256), ('medium', 50000), ('large', 200000)):
+			identity = 'selection.' + size
+			result = deepcopy(self.record()['results'][0])
+			result.update(test_id=identity, samples=[dict(ui=dict(samples=[dict(
+				action_id='status-off.scattered.128.select', wall_ms=10, readback_ms=20,
+				row_count=count, selected_count=128, heartbeat_gap_ms={'max': 12})]))],
+				failures=[dict(action_id='status-on.full.invert', status='timeout', iteration=1,
+					stage='prepared', error='Timed out')], status='failed')
+			current['results'].append(result)
+			current['catalog']['tests'].append(dict(id=identity))
+		current['status'] = 'failed'
+		compact = records.statistics_record(current)
+		self.assertEqual(report.overview(current), report.overview(compact))
+		for item in report.overview(compact)[:3]:
+			self.assertEqual(20, item['headline']['median'])
+			self.assertEqual('failed', item['status'])
+			self.assertEqual('timeout', item['failures'][0]['status'])
+			self.assertEqual(128, item['metrics']['status-off.scattered.128.select.selected_count']['median'])
+		html = report.render_html(compact, {})
+		for label in ('Selection / 256 files', 'Selection / 50,000 files', 'Selection / 200,000 files', 'case-failures'):
+			self.assertIn(label, html)
+		self.assertIn("name.endsWith('_count') ? 'count'", html)
+
 	def test_report_product_name_comes_from_settings(self):
 		with patch.object(report, 'get_build_settings', return_value={'app_name': 'RfmRenameProbe'}):
 			html = report.render_html(self.record(), {})
@@ -399,6 +426,74 @@ class SyntheticFixtureTest(TestCase):
 
 
 class PerformanceRecordTest(TestCase):
+	def test_selection_timeout_preserves_progress_and_continues_cases(self):
+		from subprocess import CalledProcessError, TimeoutExpired
+		from fman_performancetest.selection import selection_cases
+		catalog = records.load_catalog()
+		test = next(test for test in catalog['tests'] if test['id'] == 'selection.small')
+		cases = selection_cases(test['counts'])
+		calls = []
+		def invoke(test, directory, catalog_path, *, selection_case, timeout):
+			calls.append(selection_case['action_id'])
+			if len(calls) == 1:
+				progress = dict(selection_case, wall_ms=123, row_count=256, stage='mutated')
+				raise TimeoutExpired('probe', timeout, output=('SELECTION_PROGRESS ' + json.dumps(progress)).encode())
+			if len(calls) == 2:
+				progress = dict(selection_case, wall_ms=12, readback_ms=34, stage='readback')
+				raise CalledProcessError(1, 'probe', output='SELECTION_PROGRESS ' + json.dumps(progress), stderr='Membership mismatch')
+			return dict(errors=[], settings_isolated=True, samples=[dict(selection_case,
+				status='passed', wall_ms=1, readback_ms=2, row_count=256, selected_count=1)])
+		with patch.object(suite, 'invoke', side_effect=invoke), redirect_stdout(io.StringIO()):
+			ui = suite.selection_run(test, 'fixture', records.CATALOG, catalog)
+		self.assertEqual([case['action_id'] for case in cases], calls)
+		self.assertEqual(2, len(ui['failures']))
+		self.assertEqual('mutated', ui['failures'][0]['stage'])
+		self.assertEqual('readback', ui['failures'][1]['stage'])
+		self.assertEqual('Membership mismatch', ui['failures'][1]['error'])
+		compact = records.statistics_record(dict(schema_version=2, results=[dict(samples=[dict(ui=ui)], failures=ui['failures'])]))
+		result, = compact['results']
+		self.assertEqual(ui['failures'], result['failures'])
+		self.assertEqual(123, result['summary'][cases[0]['action_id'] + '.wall_ms']['median'])
+		self.assertNotIn(cases[0]['action_id'] + '.readback_ms', result['summary'])
+		self.assertEqual(1, result['summary'][cases[0]['action_id'] + '.timeout_count']['median'])
+		self.assertEqual(34, result['summary'][cases[1]['action_id'] + '.readback_ms']['median'])
+
+	def test_source_change_invalidates_reference_and_later_workloads_still_run(self):
+		for changed in (False, True):
+			with self.subTest(changed=changed), TemporaryDirectory() as temporary:
+				calls = []
+				def invoke(test, directory, catalog_path):
+					calls.append(test['id'])
+					if test['id'] == 'pane.load.small' and not changed:
+						raise RuntimeError('Expected first workload failure')
+					return dict(errors=[], settings_isolated=True, first_paint_ms=10)
+				with patch.object(suite, 'provenance', return_value={'commit': 'test', 'source_sha256': 'source'}), \
+					patch.object(suite, 'environment', return_value={}), \
+					patch.object(suite, 'source_hash', side_effect=['harness', 'changed' if changed else 'source', 'harness']), \
+					patch.object(suite.fixtures, 'assets', return_value={}), \
+					patch.object(suite.fixtures, 'prepare', return_value=dict(id='fixture', sha256='hash', directory=temporary)), \
+					patch.object(suite, 'invoke', side_effect=invoke), redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+					self.assertEqual(1, suite.main(['--test', 'pane.*', '--repeat', '1', '--results', temporary]))
+				self.assertEqual(['pane.load.small', 'pane.load.large'], calls)
+				record = json.loads(next(Path(temporary).glob('*.json')).read_text())
+				self.assertEqual('failed', record['status'])
+				self.assertEqual('passed', record['results'][1]['status'])
+				self.assertIn('source changed' if changed else 'Expected first workload failure', record['error'])
+
+	def test_selection_catalog_has_three_flat_sizes_and_dispatches_exact_case(self):
+		from fman_performancetest import pane_rendering_benchmark
+		from fman_performancetest.selection import selection_cases
+		catalog = records.load_catalog()
+		tests = [test for test in catalog['tests'] if test['workload'] == 'selection']
+		self.assertEqual([256, 50000, 200000], [catalog['fixtures'][test['fixture']]['files'] for test in tests])
+		for test in tests:
+			case = selection_cases(test['counts'])[0]
+			expected = dict(case, row_count=catalog['fixtures'][test['fixture']]['files'])
+			with patch.object(pane_rendering_benchmark, 'child', return_value=0) as child:
+				self.assertEqual(0, suite.child(test, catalog, Path('fixture'), False, None, case['action_id']))
+				child.assert_called_once_with(Path('fixture'), test['id'], 'snapshot', True,
+					viewport=catalog['protocol']['viewport'], selection_case=expected)
+
 	def test_statistics_only_save_keeps_all_repetitions_and_partial_failure(self):
 		for fail_after in (None, 2):
 			with self.subTest(fail_after=fail_after), TemporaryDirectory() as temporary:
@@ -514,7 +609,7 @@ class PerformanceRecordTest(TestCase):
 	def test_catalog_has_unique_ids_and_keeps_comments_untouched(self):
 		before = records.CATALOG.read_bytes()
 		catalog = records.load_catalog()
-		self.assertEqual(11, len(catalog['tests']))
+		self.assertEqual(14, len(catalog['tests']))
 		self.assertEqual(before, records.CATALOG.read_bytes())
 		self.assertEqual(records.digest(catalog), records.digest(json.loads(json.dumps(catalog))))
 

@@ -13,7 +13,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[4]
 CATALOG = ROOT / 'src/performancetest/catalog.yaml'
-WORKLOADS = {'pane', 'refresh', 'filter', 'fuzzy', 'recursive', 'quickview'}
+WORKLOADS = {'pane', 'refresh', 'filter', 'fuzzy', 'recursive', 'quickview', 'selection'}
 
 
 def digest(value):
@@ -73,6 +73,13 @@ def load_catalog(path=CATALOG):
 		identities.add(identity)
 		if not positive(test['revision']) or test['workload'] not in WORKLOADS or test['fixture'] not in catalog['fixtures']:
 			raise ValueError('Invalid test definition: ' + identity)
+		if test['workload'] == 'selection':
+			fixture = catalog['fixtures'][test['fixture']]
+			counts = test.get('counts', [])
+			if fixture['kind'] != 'flat' or not counts or any(not positive(count) for count in counts) or \
+				counts != sorted(set(counts)) or max(counts) * 2 > fixture['files'] or \
+				not positive(protocol.get('selection_timeout_seconds')):
+				raise ValueError('Invalid selection definition: ' + identity)
 	for workload in ('filter', 'fuzzy', 'recursive'):
 		queries = catalog['queries'][workload]
 		identities = [query['id'] for query in queries]
@@ -127,10 +134,12 @@ def measurements(result):
 				add(navigation['action_id'] + '.' + name, navigation.get(name))
 		for phase in ui.get('samples', []):
 			identity = phase.get('query_id', phase.get('action_id'))
-			for name in ('paint_ms', 'input_to_paint_ms', 'cpu_ms', 'qt_commit_ms',
+			for name in ('paint_ms', 'input_to_paint_ms', 'wall_ms', 'cpu_ms', 'qt_commit_ms',
+				'readback_ms', 'readback_cpu_ms', 'row_count', 'requested_count', 'initial_count',
+				'expected_count', 'selected_count', 'timeout_count',
 				'working_set_before_mib', 'working_set_mib', 'peak_working_set_before_mib', 'peak_working_set_mib'):
 				add(identity + '.' + name, phase.get(name))
-			for name in ('heartbeat_gap_ms', 'queue_dispatch_ms'):
+			for name in ('heartbeat_gap_ms', 'queue_dispatch_ms', 'readback_heartbeat_gap_ms', 'readback_queue_dispatch_ms'):
 				add(identity + '.' + name + '.max', phase.get(name, {}).get('max'))
 		algorithm = sample.get('algorithm', {})
 		for name in ('scan_ms', 'index_ms', 'matcher_construction_ms'):

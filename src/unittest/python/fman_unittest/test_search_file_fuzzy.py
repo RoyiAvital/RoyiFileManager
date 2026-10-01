@@ -560,7 +560,6 @@ class BuildIndexTest(TestCase):
 			['visible.txt'], [entry.relative_path for entry in result.entries]
 		)
 
-	@skipUnless(os.name == 'nt', 'Windows file attributes are unavailable')
 	def test_can_exclude_windows_hidden_file(self):
 		import ctypes
 
@@ -606,7 +605,6 @@ class BuildIndexTest(TestCase):
 		)
 		self.assertFalse(result.truncated)
 
-	@skipUnless(os.name == 'nt', 'Windows junctions are unavailable')
 	def test_does_not_follow_junction_cycle(self):
 		import _winapi
 

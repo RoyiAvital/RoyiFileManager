@@ -72,19 +72,21 @@ def environment(directory):
 		configuration=config, configuration_sha256=digest(config))
 
 
-def invoke(test, directory, catalog_path, profile_directory=None, algorithm=False):
+def invoke(test, directory, catalog_path, profile_directory=None, algorithm=False, selection_case=None, timeout=300):
 	command = [sys.executable, '-m', 'fman_performancetest.suite', '--catalog', str(catalog_path),
 		'--child', test['id'], '--directory', str(directory)]
 	if algorithm:
 		command.append('--algorithm')
+	if selection_case is not None:
+		command.extend(('--selection-case', selection_case['action_id']))
 	if profile_directory is not None:
 		command.extend(('--profile-directory', str(profile_directory)))
 	env = dict(os.environ, QT_QPA_PLATFORM='windows', QT_SCALE_FACTOR='1',
 		QT_AUTO_SCREEN_SCALE_FACTOR='0', QT_ENABLE_HIGHDPI_SCALING='0',
 		QT_FONT_DPI='96', PYTHONHASHSEED='0', TZ='UTC')
-	result = subprocess.run(command, cwd=ROOT, env=env, capture_output=True, text=True, timeout=300)
+	result = subprocess.run(command, cwd=ROOT, env=env, capture_output=True, text=True, timeout=timeout)
 	if result.returncode:
-		raise RuntimeError(result.stdout + result.stderr)
+		raise subprocess.CalledProcessError(result.returncode, command, output=result.stdout, stderr=result.stderr)
 	for line in result.stdout.splitlines():
 		for prefix in ('SUITE_RESULT ', 'SEARCH_UI_RESULT ', 'PANE_RESULT ', 'QUICKVIEW_RESULT '):
 			if line.startswith(prefix):
@@ -92,9 +94,51 @@ def invoke(test, directory, catalog_path, profile_directory=None, algorithm=Fals
 	raise RuntimeError('Child returned no structured result')
 
 
-def child(test, catalog, directory, algorithm, profile_directory):
+def selection_run(test, directory, catalog_path, catalog):
+	from fman_performancetest.selection import selection_cases
+	cases = selection_cases(test['counts'])
+	samples, failures = [], []
+	timeout = catalog['protocol']['selection_timeout_seconds']
+	for index, case in enumerate(cases, 1):
+		try:
+			result = invoke(test, directory, catalog_path, selection_case=case, timeout=timeout)
+			if result['errors'] or not result['settings_isolated']:
+				raise RuntimeError('Application errors or settings isolation failure')
+			measurement, = result['samples']
+			if measurement['action_id'] != case['action_id'] or measurement['status'] != 'passed':
+				raise RuntimeError('Invalid selection case result')
+		except Exception as error:
+			measurement = dict(case)
+			output = getattr(error, 'stdout', '') or ''
+			if isinstance(output, bytes):
+				output = output.decode('utf-8', errors='replace')
+			for line in output.splitlines():
+				if line.startswith('SELECTION_PROGRESS '):
+					progress = json.loads(line.removeprefix('SELECTION_PROGRESS '))
+					if progress.get('action_id') == case['action_id']:
+						measurement.update(progress)
+			timed_out = isinstance(error, subprocess.TimeoutExpired)
+			measurement['status'] = 'timeout' if timed_out else 'failed'
+			if timed_out:
+				measurement['timeout_count'] = 1
+			reason = 'Child exceeded %ds including startup' % timeout if timed_out else getattr(error, 'stderr', None) or str(error)
+			failures.append(dict(action_id=case['action_id'], status=measurement['status'],
+				stage=measurement.get('stage', 'startup'), error=reason))
+		samples.append(measurement)
+		print('%s: case %d/%d %s %s' % (test['id'], index, len(cases), case['action_id'], measurement['status']), flush=True)
+	return dict(samples=samples, failures=failures)
+
+
+def child(test, catalog, directory, algorithm, profile_directory, selection_case=None):
 	workload = test['workload']
 	protocol = catalog['protocol']
+	if workload == 'selection':
+		from fman_performancetest.selection import selection_cases
+		from fman_performancetest.pane_rendering_benchmark import child as pane
+		case = next(case for case in selection_cases(test['counts']) if case['action_id'] == selection_case)
+		case['row_count'] = catalog['fixtures'][test['fixture']]['files']
+		return pane(directory, test['id'], 'snapshot', True,
+			viewport=protocol['viewport'], selection_case=case)
 	if workload in ('filter', 'fuzzy', 'recursive'):
 		queries = catalog['queries'][workload]
 		if algorithm:
@@ -132,6 +176,7 @@ def main(argv=None, *, record_saved=None):
 	parser.add_argument('--directory', type=Path, help=argparse.SUPPRESS)
 	parser.add_argument('--algorithm', action='store_true', help=argparse.SUPPRESS)
 	parser.add_argument('--profile-directory', type=Path, help=argparse.SUPPRESS)
+	parser.add_argument('--selection-case', help=argparse.SUPPRESS)
 	args = parser.parse_args(argv)
 	if args.compare:
 		try:
@@ -143,7 +188,7 @@ def main(argv=None, *, record_saved=None):
 	catalog = load_catalog(args.catalog)
 	if args.child:
 		test = next(test for test in catalog['tests'] if test['id'] == args.child)
-		return child(test, catalog, args.directory.resolve(strict=True), args.algorithm, args.profile_directory)
+		return child(test, catalog, args.directory.resolve(strict=True), args.algorithm, args.profile_directory, args.selection_case)
 	if args.repeat is not None and args.repeat < 1:
 		parser.error('--repeat must be positive')
 	selected = [test for test in catalog['tests'] if not args.test or any(fnmatch.fnmatchcase(test['id'], pattern) for pattern in args.test)]
@@ -179,27 +224,47 @@ def main(argv=None, *, record_saved=None):
 					fixture_sha256=fixture['sha256'], definition_sha256=digest(dict(test=test,
 					queries=catalog['queries'].get(test['workload']), protocol=record['parameters'])), status='failed', samples=[])
 				record['results'].append(result)
-				for iteration in range(repetitions):
-					sample = dict(iteration=iteration + 1, ui=invoke(test, fixture['directory'], args.catalog.resolve()))
-					if test['workload'] in ('filter', 'fuzzy', 'recursive'):
-						sample['algorithm'] = invoke(test, fixture['directory'], args.catalog.resolve(), algorithm=True)
-						if sample['algorithm']['truncated']:
-							raise ValueError('Catalog workload was truncated')
-						counts = {query['query_id']: query['returned'] for query in sample['algorithm']['queries']}
-						if any(query['rows'] != counts[query['query_id']] for query in sample['ui']['samples']):
-							raise ValueError('UI and algorithm result counts differ')
-					if sample['ui']['errors'] or not sample['ui']['settings_isolated']:
-						raise ValueError('Application errors or settings isolation failure')
-					result['samples'].append(sample)
-					print('%s: repetition %d/%d passed' % (test['id'], iteration + 1, repetitions), flush=True)
-				if args.profile and test['workload'] in ('filter', 'fuzzy', 'recursive'):
-					profile_directory = args.results / (record['run_id'] + '-profiles') / test['id']
-					invoke(test, fixture['directory'], args.catalog.resolve(), profile_directory, True)
-					record['artifacts'].append(profile_directory.relative_to(args.results).as_posix())
-				result['status'] = 'passed'
+				try:
+					for iteration in range(repetitions):
+						if test['workload'] == 'selection':
+							ui = selection_run(test, fixture['directory'], args.catalog.resolve(), catalog)
+							result.setdefault('failures', []).extend(dict(failure, iteration=iteration + 1) for failure in ui['failures'])
+						else:
+							ui = invoke(test, fixture['directory'], args.catalog.resolve())
+							if ui['errors'] or not ui['settings_isolated']:
+								raise ValueError('Application errors or settings isolation failure')
+						sample = dict(iteration=iteration + 1, ui=ui)
+						if test['workload'] in ('filter', 'fuzzy', 'recursive'):
+							sample['algorithm'] = invoke(test, fixture['directory'], args.catalog.resolve(), algorithm=True)
+							if sample['algorithm']['truncated']:
+								raise ValueError('Catalog workload was truncated')
+							counts = {query['query_id']: query['returned'] for query in sample['algorithm']['queries']}
+							if any(query['rows'] != counts[query['query_id']] for query in ui['samples']):
+								raise ValueError('UI and algorithm result counts differ')
+						result['samples'].append(sample)
+						print('%s: repetition %d/%d completed' % (test['id'], iteration + 1, repetitions), flush=True)
+					if args.profile and test['workload'] in ('filter', 'fuzzy', 'recursive'):
+						profile_directory = args.results / (record['run_id'] + '-profiles') / test['id']
+						invoke(test, fixture['directory'], args.catalog.resolve(), profile_directory, True)
+						record['artifacts'].append(profile_directory.relative_to(args.results).as_posix())
+					result['status'] = 'failed' if result.get('failures') else 'passed'
+					if result['status'] == 'failed':
+						result['error'] = '%d selection case failures' % len(result['failures'])
+				except Exception as error:
+					result['error'] = str(error)
+					traceback.print_exc()
 				result['summary'] = summarize(result)
-		record['status'] = 'prepared' if args.prepare_only else 'passed'
+		failed = [result for result in record['results'] if result['status'] != 'passed']
+		record['status'] = 'prepared' if args.prepare_only else 'failed' if failed else 'passed'
+		if failed:
+			record['error'] = '\n'.join(result['test_id'] + ': ' + result.get('error', 'Failed') for result in failed)
+		if record['application'].get('source_sha256') is not None and record['application']['source_sha256'] != source_hash(
+			'src/main', 'src/build', 'environment.yml', 'conda-lock.yml'):
+			raise RuntimeError('Application source changed during measurement; reference is invalid')
+		if record['harness']['source_sha256'] != source_hash('src/performancetest'):
+			raise RuntimeError('Benchmark harness changed during measurement; reference is invalid')
 	except Exception as error:
+		record['status'] = 'failed'
 		record['error'] = str(error)
 		traceback.print_exc()
 	finally:

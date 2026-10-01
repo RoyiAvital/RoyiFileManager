@@ -296,7 +296,7 @@ Leave this option off for ordinary settings that should refresh on plug-in reloa
 
 | Name | Meaning |
 | --- | --- |
-| `PLATFORM` | Host platform label used for platform-specific configuration. |
+| `PLATFORM` | Always `'Windows'`; generic and `(Windows)` configuration layers are loaded. |
 | `APP_VERSION` | RoyiFileManager product version from the bundled build settings. |
 | `DATA_DIRECTORY` | Native path to portable `UserSettings`; `ROYIFILEMANAGER_USER_SETTINGS` overrides it when set before importing fman. |
 | `OK`, `CANCEL`, `YES`, `NO`, `YES_TO_ALL`, `NO_TO_ALL`, `ABORT` | Dialog result/button constants. Combine choices with bitwise OR. |
@@ -495,8 +495,7 @@ The predicate must not perform filesystem I/O. Old URL-only filters are rejected
 It may also expose `filter_indices(listing, order, check_canceled)`, returning
 the same accepted indices in their input order. Check cancellation between
 bounded chunks. Predicates must be side-effect-free; evaluation order and call
-counts are not guaranteed. The bundled hidden filter uses this batch path and
-preserves the Mac root `/Volumes` exception.
+counts are not guaranteed. The bundled hidden filter uses this batch path.
 
 ### Caching and Metadata
 
@@ -528,8 +527,15 @@ The host identifier is `module.ClassName`; providers return these identifiers
 from `get_default_columns`. `get_qualified_name()` exists for host registration
 and is marked internal-use in the source. Columns should return consistent,
 comparable types and keep display/sort work bounded. Do not manipulate Qt models
-or query per-path metadata for display. Legacy `get_str`/`get_sort_value` helpers
-are not called by the pane.
+or query per-path metadata for display.
+
+Legacy `get_str` and `get_sort_value` methods have been removed from the base
+class, wrappers and bundled columns. Migrate display logic to `text(listing, index)`
+and sorting to `keys(listing, ascending)`. Acquire metadata in the filesystem's
+`scan`, not in the column. Remove calls to legacy `super()`/wrapper methods and
+filesystem arguments to bundled `Name`, `Size` and `Modified` constructors.
+There is no compatibility shim. Extra legacy methods in a plug-in are harmless
+only when it already implements the snapshot API and does not call removed methods.
 
 ## URL Helpers
 
@@ -564,10 +570,10 @@ synchronously to the UI thread. An application instance must already exist.
 | Function | Contract |
 | --- | --- |
 | `clear()` | Clear clipboard contents. |
-| `set_text(text)` | Store text; also updates the PRIMARY selection on platforms supporting it. |
+| `set_text(text)` | Store clipboard text. |
 | `get_text()` | Return clipboard text. |
 | `copy_files(file_urls)` | Store application file URLs with copy metadata. Existing clipboard text is preserved. |
-| `cut_files(file_urls)` | Store URLs with cut metadata. Supported by the Windows implementation; unsupported platforms can raise `NotImplementedError`. |
+| `cut_files(file_urls)` | Store URLs with Windows/Qt cut metadata, preserving existing clipboard text. |
 | `get_files()` | Return decoded application URLs; skip clipboard entries that cannot be converted. |
 | `files_were_cut()` | Report whether the clipboard's file metadata denotes a cut operation. |
 
@@ -700,7 +706,11 @@ Choice for Literal/Glob/RegEx; Toggle remains for independent boolean settings.
 `Select(id, label, options, value, tooltip='')` renders a dropdown with 1-128
 unique `(value, label)` string pairs. `DateField(id, label, value=None, tooltip='')`
 renders an optional calendar picker; values are canonical ISO dates from
-1752-09-14 or `None`. `IntegerField(id, label, value=None, minimum=0,
+1752-09-14 or `None`. Typed dates commit on Enter, focus loss or before a panel
+action; calendar selection and programmatic updates remain immediate.
+Snapshots and change callbacks expose complete, in-range pending ISO dates for
+live validation; incomplete text falls back to the editor's committed date.
+`IntegerField(id, label, value=None, minimum=0,
 maximum=18446744073709551615, tooltip='')` renders an optional exact integer
 stepper without a 32-bit ceiling. Booleans, fractions and out-of-range values
 are rejected. A blank date/integer field returns `None`; clearing removes the

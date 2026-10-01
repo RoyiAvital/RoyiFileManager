@@ -45,12 +45,11 @@ class SearchFilesEngineTest(TestCase):
 		self.write('.report.txt', b'')
 		self.write('.hidden/report.txt', b'')
 		self.write('report-large.txt', b'x' * 11)
-		if os.name == 'nt':
-			import ctypes
-			for path in (self.write('attribute-report.txt', b''), self.write('attribute/report.txt', b'').parent):
-				original = os.stat(path).st_file_attributes
-				self.assertTrue(ctypes.windll.kernel32.SetFileAttributesW(str(path), original | 2))
-				self.addCleanup(ctypes.windll.kernel32.SetFileAttributesW, str(path), original)
+		import ctypes
+		for path in (self.write('attribute-report.txt', b''), self.write('attribute/report.txt', b'').parent):
+			original = os.stat(path).st_file_attributes
+			self.assertTrue(ctypes.windll.kernel32.SetFileAttributesW(str(path), original | 2))
+			self.addCleanup(ctypes.windll.kernel32.SetFileAttributesW, str(path), original)
 		for mode, pattern in (('glob', '*.txt;!skip*'), ('literal', 'report'), ('regex', 'report.*\\.txt$')):
 			for recursive in (False, True):
 				with self.subTest(mode=mode, recursive=recursive):

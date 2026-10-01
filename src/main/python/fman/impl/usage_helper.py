@@ -5,17 +5,17 @@ from fman.impl.product import APP_NAME
 class UsageHelper:
 	def __init__(self, is_first_run):
 		self._is_first_run = is_first_run
-	def on_location_bar_clicked(self, pane, past_events):
-		return self._on_mouse_action(pane, past_events)
-	def on_doubleclicked(self, pane, past_events):
-		return self._on_mouse_action(pane, past_events)
-	def on_context_menu(self, pane, via, past_events):
-		return via == 'Mouse' and self._on_mouse_action(pane, past_events)
-	def _on_mouse_action(self, pane, events):
+	def on_location_bar_clicked(self, pane, outcome):
+		return self._on_mouse_action(pane, outcome)
+	def on_doubleclicked(self, pane, outcome):
+		return self._on_mouse_action(pane, outcome)
+	def on_context_menu(self, pane, via, outcome):
+		return via == 'Mouse' and self._on_mouse_action(pane, outcome)
+	def _on_mouse_action(self, pane, outcome):
 		if not self._is_first_run:
 			return False
-		assert events, events
-		if events[-1] == 'AbortedTour' and 'AbortedTour' not in events[:-1]:
+		last, aborts = outcome
+		if last == 'aborted' and aborts == 1:
 			response = show_alert(
 				"Hey, sorry to bother again. You just used the mouse. That "
 				f"works, but {APP_NAME} is optimized for the keyboard. "
@@ -25,7 +25,7 @@ class UsageHelper:
 			if response == OK:
 				pane.run_command('tutorial', {'step': 1})
 			return True
-		if events[-1] == 'CompletedTour':
+		if last == 'completed':
 			show_alert(
 				"Hey, sorry to bother one last time. You just used the mouse. "
 				f"To make the most of {APP_NAME}, use the keyboard:"
