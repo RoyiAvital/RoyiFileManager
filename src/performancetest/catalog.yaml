@@ -1,7 +1,7 @@
 # Human-maintained definitions. The runner never rewrites this file.
 schema_version: 1
 suite_id: royifilemanager.desktop
-suite_revision: 5
+suite_revision: 8
 protocol:
   repetitions: 3
   cache: warm
@@ -17,12 +17,13 @@ protocol:
   # is untimed; reload dispatch through completed paint is timed. Memory peaks
   # are process high-water marks, cumulative across these ordered cases.
   refresh_selections: [none, single-first, single-middle, single-last, middle-block, scattered, all-except-current, all]
-  selection_timeout_seconds: 60
+  selection_timeout_seconds: 25
   # Profiles are separate runs and are never included in timing summaries.
   notes: Fresh process per test repetition; fixture verification precedes timing.
 fixtures:
   flat-small-v1: {revision: 1, kind: flat, files: 256, seed: 1729}
   flat-large-v1: {revision: 1, kind: flat, files: 200000, seed: 1729}
+  flat-medium-v1: {revision: 1, kind: flat, files: 50000, seed: 1729}
   recursive-v1: {revision: 1, kind: recursive, files: 50000, seed: 1730}
 queries:
   filter:
@@ -61,7 +62,14 @@ tests:
   - {id: fuzzy.large, revision: 2, workload: fuzzy, fixture: flat-large-v1}
   - {id: recursive.tree, revision: 1, workload: recursive, fixture: recursive-v1}
   # Both sizes run identical image actions; the other pane stays small and empty.
-  - {id: quickview.small, revision: 1, workload: quickview, fixture: flat-small-v1}
-  - {id: quickview.large, revision: 1, workload: quickview, fixture: flat-large-v1}
-  - {id: selection.small, revision: 2, workload: selection, fixture: flat-small-v1, selection_count: 64}
-  - {id: selection.large, revision: 2, workload: selection, fixture: flat-large-v1, selection_count: 1000}
+  - {id: quickview.small, revision: 2, workload: quickview, fixture: flat-small-v1}
+  - {id: quickview.large, revision: 2, workload: quickview, fixture: flat-large-v1}
+  - {id: selection.small, revision: 4, workload: selection, fixture: flat-small-v1, selection_count: 64}
+  - {id: selection.large, revision: 4, workload: selection, fixture: flat-large-v1, selection_count: 1000}
+full_tests:
+  - {id: pane.load.medium, revision: 1, workload: pane, fixture: flat-medium-v1}
+  - {id: refresh.medium, revision: 1, workload: refresh, fixture: flat-medium-v1}
+  - {id: filter.medium, revision: 1, workload: filter, fixture: flat-medium-v1}
+  - {id: fuzzy.medium, revision: 2, workload: fuzzy, fixture: flat-medium-v1}
+  - {id: quickview.medium, revision: 2, workload: quickview, fixture: flat-medium-v1}
+  - {id: selection.medium, revision: 4, workload: selection, fixture: flat-medium-v1, selection_count: 1000}

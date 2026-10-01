@@ -31,6 +31,34 @@ SELECTION_SPEC.loader.exec_module(selection_measurement)
 
 
 class PaneRenderingBenchmarkTest(TestCase):
+	def test_native_quickview_measures_supported_text_and_image_restore(self):
+		script = '''
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from fman_performancetest import fixtures, quickview
+with TemporaryDirectory() as temporary:
+    fixture = fixtures.prepare(temporary, 'quickview-smoke',
+        dict(revision=1, kind='flat', files=256, seed=1729), fixtures.assets())
+    raise SystemExit(quickview.child(Path(fixture['directory']), (1280, 800), 1))
+'''
+		environment = dict(os.environ, QT_QPA_PLATFORM='windows', QT_SCALE_FACTOR='1',
+			QT_AUTO_SCREEN_SCALE_FACTOR='0', QT_ENABLE_HIGHDPI_SCALING='0', QT_FONT_DPI='96')
+		environment['PYTHONPATH'] = os.pathsep.join((str(SCRIPT.parents[1] /
+			'performancetest/python'), environment.get('PYTHONPATH', '')))
+		result = subprocess.run([sys.executable, '-X', 'faulthandler', '-c', script],
+			env=environment, capture_output=True, text=True, timeout=30)
+		self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+		payload = json.loads(next(line.removeprefix('QUICKVIEW_RESULT ')
+			for line in result.stdout.splitlines() if line.startswith('QUICKVIEW_RESULT ')))
+		self.assertEqual([], payload['errors'])
+		self.assertTrue(payload['settings_isolated'])
+		samples = {sample['action_id']: sample for sample in payload['samples']}
+		self.assertTrue(samples['switch.text']['text_verified'])
+		self.assertGreater(samples['switch.text']['input_to_paint_ms'], 0)
+		self.assertTrue(samples['restore.large-png']['pixels_verified'])
+		self.assertIn('invalid-image', samples)
+		self.assertNotIn('unsupported-file', samples)
+
 	def test_native_selection_measures_real_pane_patterns(self):
 		script = '''
 from pathlib import Path
@@ -42,41 +70,56 @@ import sys
 original_measure = selection.measure
 def blocked_measure(view, gui, pane, case):
 	original_select = pane.select
+	original_readback = pane.get_selected_files
 	def select(urls):
 		until = perf_counter() + 0.04
 		while perf_counter() < until:
 			pass
 		return original_select(urls)
+	def readback():
+		until = perf_counter() + 0.04
+		while perf_counter() < until:
+			pass
+		return original_readback()
 	pane.select = select
-	return original_measure(view, gui, pane, case)
+	pane.get_selected_files = readback
+	try:
+		return original_measure(view, gui, pane, case)
+	finally:
+		pane.select = original_select
+		pane.get_selected_files = original_readback
 selection.measure = blocked_measure
 with TemporaryDirectory() as temporary:
     folder = Path(temporary)
     for index in range(16):
         (folder / ('entry%02d.txt' % index)).touch()
-	case = next(case for case in selection.selection_cases(4) if case['pattern'] == sys.argv[1])
-	case['row_count'] = 16
+	cases = [dict(case, row_count=16) for case in selection.selection_cases(4)]
     raise SystemExit(child(folder, 'selection-smoke', 'snapshot', True,
-        viewport=(1280, 800), selection_case=case))
+		viewport=(1280, 800), selection_cases=cases))
 '''.expandtabs(4)
 		environment = dict(os.environ, QT_QPA_PLATFORM='windows')
 		environment['PYTHONPATH'] = os.pathsep.join((str(SCRIPT.parents[1] /
 			'performancetest/python'), environment.get('PYTHONPATH', '')))
-		for pattern, expected in (('single', 1), ('all', 16), ('contiguous', 4), ('alternating', 4), ('scattered', 4)):
+		result = subprocess.run([sys.executable, '-X', 'faulthandler', '-c', script],
+			env=environment, capture_output=True, text=True, timeout=25)
+		self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+		payload = json.loads(next(line.removeprefix('PANE_RESULT ')
+			for line in result.stdout.splitlines() if line.startswith('PANE_RESULT ')))
+		self.assertEqual([], payload['errors'])
+		self.assertEqual(5, len(payload['samples']))
+		for measurement, pattern, expected in zip(payload['samples'],
+			('single', 'all', 'contiguous', 'alternating', 'scattered'), (1, 16, 4, 4, 4)):
 			with self.subTest(pattern=pattern):
-				result = subprocess.run([sys.executable, '-X', 'faulthandler', '-c', script, pattern],
-					env=environment, capture_output=True, text=True, timeout=45)
-				self.assertEqual(0, result.returncode, result.stdout + result.stderr)
-				payload = json.loads(next(line.removeprefix('PANE_RESULT ')
-					for line in result.stdout.splitlines() if line.startswith('PANE_RESULT ')))
-				self.assertEqual([], payload['errors'])
-				measurement, = payload['samples']
+				self.assertEqual('selection.' + pattern, measurement['action_id'])
 				self.assertEqual('passed', measurement['status'])
 				self.assertEqual(16, measurement['row_count'])
 				self.assertEqual(expected, measurement['selected_count'])
 				self.assertTrue(measurement['state_preserved'])
-				for field in ('wall_ms', 'cpu_ms', 'paint_ms', 'readback_ms', 'readback_cpu_ms'):
+				for field in ('wall_ms', 'cpu_ms', 'paint_ms', 'readback_ms', 'readback_cpu_ms', 'responsive_ms'):
 					self.assertGreaterEqual(measurement[field], 0)
+				self.assertGreaterEqual(measurement['readback_ms'], 35)
+				self.assertGreaterEqual(measurement['responsive_ms'], measurement['paint_ms'] + measurement['readback_ms'])
+				self.assertGreaterEqual(measurement['readback_heartbeat_gap_ms']['max'], 35)
 				for field in ('heartbeat_gap_ms', 'queue_dispatch_ms', 'readback_heartbeat_gap_ms', 'readback_queue_dispatch_ms'):
 					self.assertGreaterEqual(measurement[field]['max'], 0)
 				if pattern != 'all':

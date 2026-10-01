@@ -148,7 +148,10 @@ def measure(view, gui, pane, case):
 				readback_cpu_ms=(process_time() - cpu) * 1000, selected_count=len(selected))
 			return selected
 		selected = gui(readback)
-		gui(lambda: finish('readback_'))
+		def responsive():
+			finish('readback_')
+			measurement['responsive_ms'] = (perf_counter() - dispatched) * 1000
+		gui(responsive)
 		progress('readback')
 		if len(selected) != len(set(selected)) or set(selected) != expected_urls:
 			raise RuntimeError('Incorrect or duplicate selection readback')

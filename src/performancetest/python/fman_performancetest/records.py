@@ -66,7 +66,7 @@ def load_catalog(path=CATALOG):
 		if fixture['revision'] != 1 or fixture['kind'] not in ('flat', 'recursive') or not positive(fixture['files']) or fixture['files'] < 8 or type(fixture['seed']) is not int:
 			raise ValueError('Invalid fixture definition')
 	identities = set()
-	for test in catalog['tests']:
+	for test in catalog['tests'] + catalog.get('full_tests', []):
 		identity = test['id']
 		if not isinstance(identity, str) or not re.fullmatch(r'[a-z0-9]+(?:[.-][a-z0-9]+)*', identity) or identity in identities:
 			raise ValueError('Invalid or duplicate test ID: ' + str(identity))
@@ -133,7 +133,7 @@ def measurements(result):
 				add(navigation['action_id'] + '.' + name, navigation.get(name))
 		for phase in ui.get('samples', []):
 			identity = phase.get('query_id', phase.get('action_id'))
-			for name in ('paint_ms', 'input_to_paint_ms', 'wall_ms', 'cpu_ms', 'qt_commit_ms',
+			for name in ('paint_ms', 'input_to_paint_ms', 'responsive_ms', 'wall_ms', 'cpu_ms', 'qt_commit_ms',
 				'readback_ms', 'readback_cpu_ms', 'row_count', 'requested_count', 'initial_count',
 				'expected_count', 'selected_count', 'timeout_count',
 				'working_set_before_mib', 'working_set_mib', 'peak_working_set_before_mib', 'peak_working_set_mib'):

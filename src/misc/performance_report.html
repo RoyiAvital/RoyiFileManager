@@ -88,7 +88,7 @@ footer { padding:24px 0 32px; color:var(--muted); font-size:12px; }
   </div>
   <div id="comparison-empty" class="empty" hidden><h3 id="empty-title"></h3><p id="empty-body"></p></div><div class="comparison-stats" id="comparison-stats" hidden></div>
   <div class="table-scroll"><table class="overview-table"><thead><tr><th scope="col">Workload</th><th scope="col">Headline measurement</th><th scope="col" class="numeric" id="baseline-column">Previous</th><th scope="col" class="numeric">Current</th><th scope="col" class="numeric">Change</th></tr></thead><tbody id="overview"></tbody></table></div>
-    <p class="footnote">Timings in milliseconds; lower is faster. Changes are observations, not statistical significance. Search headlines use the slowest query median. Navigation is the equal-weight mean of 28 action medians across small/large panes with QuickView off/on. Refresh / Selection is the equal-weight mean of 16 unchanged-refresh case medians across both folder sizes.</p>
+    <p class="footnote">Timings in milliseconds; lower is faster. Changes are observations, not statistical significance. Search headlines use the slowest query median. Navigation equally weights 28 action medians across small/large panes with QuickView off/on, or 42 including medium in full mode. Refresh / Selection equally weights 16 unchanged-refresh case medians, or 24 in full mode. Each Selections row equally weights five full interaction medians, including mutation, completed paint, selected-file readback and the next Qt-thread response. Fixture setup and benchmark assertions are excluded.</p>
  </section>
  <section aria-labelledby="history-heading">
   <div class="section-head"><div><h2 id="history-heading">Version history</h2><p id="trend-caption"></p></div><div class="controls"><label>Workload<select id="trend-test" aria-label="History workload"></select></label></div></div>
@@ -114,7 +114,8 @@ footer { padding:24px 0 32px; color:var(--muted); font-size:12px; }
 'use strict';
 const data = JSON.parse(document.getElementById('performance-data').textContent);
 const byId = id => document.getElementById(id);
-const names = {'pane.load.small':'Pane loading / Small','pane.load.large':'Pane loading / Large','filter.small':'Filter Bar / Small','filter.large':'Filter Bar / Large','fuzzy.small':'Fuzzy Find / Small','fuzzy.large':'Fuzzy Find / Large','recursive.tree':'Fuzzy Find (Recursive)','quickview.small':'QuickView / Small','quickview.large':'QuickView / Large','refresh.selection':'Refresh / Selection','selection.small':'Selection / 256 files','selection.medium':'Selection / 50,000 files','selection.large':'Selection / 200,000 files','navigation':'Navigation'};
+const names = {'pane.load.small':'Pane Loading / Small','pane.load.large':'Pane Loading / Large','filter.small':'Filter Bar / Small','filter.large':'Filter Bar / Large','fuzzy.small':'Fuzzy Find / Small','fuzzy.large':'Fuzzy Find / Large','recursive.tree':'Fuzzy Find (Recursive)','quickview.small':'QuickView / Small','quickview.large':'QuickView / Large','refresh.selection':'Refresh / Selection','selection.small':'Selections / Small','selection.large':'Selections / Large','navigation':'Navigation'};
+Object.assign(names, {'pane.load.medium':'Pane Loading / Medium','filter.medium':'Filter Bar / Medium','fuzzy.medium':'Fuzzy Find / Medium','quickview.medium':'QuickView / Medium','selection.medium':'Selections / Medium'});
 const format = value => Number.isFinite(value) ? value.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) : '\u2014';
 const numberText = (value, unit='ms') => Number.isFinite(value) ? format(value) + ' ' + unit : '\u2014';
 const difference = (before, after) => Number.isFinite(before) && Number.isFinite(after) ? {absolute:after-before, percent:before ? (after/before-1)*100 : null} : null;
@@ -139,7 +140,7 @@ byId('version-title').textContent = data.version;
 byId('status').textContent = data.complete ? 'Complete' : 'Incomplete';
 byId('status').classList.toggle('failed', !data.complete);
 const stamp = new Date(data.started_at).toLocaleString(undefined, {dateStyle:'medium', timeStyle:'short'});
-for (const text of [stamp, 'Source ' + data.application.version, (data.application.commit || '').slice(0,10) + (data.application.dirty ? ' / modified tree' : ' / clean tree'), config.filesystem || 'Filesystem not recorded']) byId('run-meta').append(element('span', text));
+for (const text of [stamp, data.suite_mode === 'full' ? 'Full suite' : 'Regular suite', 'Source ' + data.application.version, (data.application.commit || '').slice(0,10) + (data.application.dirty ? ' / modified tree' : ' / clean tree'), config.filesystem || 'Filesystem not recorded']) byId('run-meta').append(element('span', text));
 byId('test-total').textContent = data.completed_tests + ' / ' + data.expected_tests;
 byId('repetitions').textContent = data.parameters.repetitions;
 const seconds = Math.round((Date.parse(data.finished_at) - Date.parse(data.started_at))/1000);
@@ -214,7 +215,7 @@ function drawHistory() {
  if (data.complete && Number.isFinite(test.headline.median)) chartPoints.push({version:data.version,...test.headline});
  byId('trend-name').textContent = test.headline.label + ' / ms';
  byId('trend-caption').textContent = chartPoints.length > 1 ? 'Compatible version results, ordered by measurement date' : chartPoints.length ? 'One measured version; no trend yet' : 'No complete measurements';
- byId('range-note').textContent = ['navigation','refresh.selection'].includes(test.test_id) ? 'Range: minimum to maximum of the ' + test.headline.count + ' case medians, not a confidence interval.' : 'Range: minimum to maximum observed timing for the headline measurement, not a confidence interval.';
+ byId('range-note').textContent = test.headline.count_label === 'case medians' ? 'Range: minimum to maximum of the ' + test.headline.count + ' case medians, not a confidence interval.' : 'Range: minimum to maximum observed timing for the headline measurement, not a confidence interval.';
  byId('history-values').replaceChildren();
  for (const point of chartPoints) {
   const row=element('tr'); cell(row,point.version); cell(row,format(point.median),'numeric'); cell(row,format(point.minimum) + ' - ' + format(point.maximum),'numeric'); cell(row,point.count,'numeric'); byId('history-values').append(row);

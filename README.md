@@ -138,6 +138,12 @@ conda-lock lock -f environment.yml -p win-64
 
 See [`DEVELOPMENT.md`](DEVELOPMENT.md) for more details.
 
+Run `python build.py measure` for the regular 13-row performance report, including
+five selection patterns each for small and large folders. Add `--full` to include
+medium-folder cases for all folder-based benchmarks, with separate full-run
+history. Selection timings include painting and selected-file readback through
+the next Qt-thread response. See the [performance protocol](src/performancetest/README.md).
+
 ### Documentation
 
 Build the documentation:

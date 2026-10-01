@@ -1,5 +1,6 @@
 """Retained version history and offline presentation for the benchmark suite."""
 
+import argparse
 import base64
 from html import escape
 import json
@@ -12,6 +13,7 @@ import webbrowser
 
 from fman_performancetest.records import ROOT, compare, completed_repetitions, digest, statistics_record, summarize
 from fman_performancetest.pane_rendering_benchmark import REFRESH_SELECTIONS
+from fman_performancetest.selection import PATTERNS as SELECTION_PATTERNS
 from fbs_runtime.build_settings import get_build_settings
 
 
@@ -118,6 +120,7 @@ def report_data(current, versions):
 			item.update(compatible=False, reason=str(error), changes=[])
 		previous.append(item)
 	return dict(run_id=current['run_id'], version=version_id(current), started_at=current['started_at'],
+		suite_mode=current.get('suite_mode', 'regular'),
 		saved_versions=len(versions),
 		expected_tests=len(current['catalog']['tests']),
 		completed_tests=sum(result['status'] == 'passed' for result in current['results']),
@@ -133,10 +136,13 @@ def headline(identity, metrics):
 	elif identity.startswith('quickview.'):
 		metric, label = 'enable.png.input_to_paint_ms', 'First preview paint'
 	elif identity.startswith('selection.'):
-		candidates = {name: value for name, value in metrics.items()
-			if name.endswith(('.wall_ms', '.readback_ms'))}
-		metric = max(candidates, key=lambda name: candidates[name]['median']) if candidates else ''
-		label = 'Slowest completed selection/readback median'
+		expected = ['selection.' + pattern + '.responsive_ms' for pattern in SELECTION_PATTERNS]
+		values = [metrics[name]['median'] for name in expected if name in metrics]
+		valid = len(values) == len(expected)
+		return dict(label='Mean of full selection interaction medians', metric='selection.responsive.aggregate',
+			median=statistics.mean(values) if valid else None,
+			minimum=min(values) if valid else None, maximum=max(values) if valid else None,
+			count=len(values), count_label='case medians', p95=None)
 	else:
 		candidates = {name: value for name, value in metrics.items()
 			if name.endswith('.paint_ms') and name != 'open.paint_ms'}
@@ -147,38 +153,46 @@ def headline(identity, metrics):
 
 
 def overview(record):
+	definitions = {test['id'] for test in record['catalog']['tests']}
+	refresh_tests = REFRESH_TESTS + (('refresh.medium',) if 'refresh.medium' in definitions else ())
+	navigation_tests = NAVIGATION_TESTS + tuple(identity for identity in
+		('pane.load.medium', 'quickview.medium') if identity in definitions)
 	tests = [dict(test_id=result['test_id'], status=result['status'],
 		fixture_id=result['fixture_id'], metrics=summarize(result),
 		failures=result.get('failures', [])) for result in record['results']]
-	refresh = [test for test in tests if test['test_id'] in REFRESH_TESTS]
-	tests = [test for test in tests if test['test_id'] not in REFRESH_TESTS]
+	refresh = [test for test in tests if test['test_id'] in refresh_tests]
+	tests = [test for test in tests if test['test_id'] not in refresh_tests]
 	for test in tests:
 		test['headline'] = headline(test['test_id'], test['metrics'])
-	if any(test['id'] in REFRESH_TESTS for test in record['catalog']['tests']):
+		if test['test_id'].startswith('selection.') and test['status'] != 'passed':
+			test['headline'].update(median=None, minimum=None, maximum=None)
+	if definitions.intersection(refresh_tests):
 		metrics = {test['test_id'] + '.' + name: value for test in refresh
 			if test['status'] == 'passed' for name, value in test['metrics'].items()}
 		expected = [test + '.refresh.' + pattern + '.paint_ms'
-			for test in REFRESH_TESTS for pattern in REFRESH_SELECTIONS]
+			for test in refresh_tests for pattern in REFRESH_SELECTIONS]
 		values = [metrics[name]['median'] for name in expected if name in metrics]
 		valid = len(values) == len(expected)
 		tests.append(dict(test_id='refresh.selection', status='passed' if valid else 'incomplete',
-			fixture_id='Small + large / eight selection patterns', metrics=metrics,
+			fixture_id=('Small + medium + large' if 'refresh.medium' in definitions else 'Small + large') +
+				' / eight selection patterns', metrics=metrics,
 			headline=dict(label='Mean of refresh case medians', metric='refresh.aggregate',
 				median=statistics.mean(values) if valid else None,
 				minimum=min(values) if valid else None, maximum=max(values) if valid else None,
 				count=len(values), count_label='case medians', p95=None)))
 	components = {}
 	for test in tests:
-		if test['test_id'] not in NAVIGATION_TESTS or test['status'] != 'passed':
+		if test['test_id'] not in navigation_tests or test['status'] != 'passed':
 			continue
 		for action in NAVIGATION_ACTIONS:
 			metric = 'navigation.' + action + '.input_to_paint_ms'
 			if metric in test['metrics']:
 				components[test['test_id'] + '.' + metric] = test['metrics'][metric]
 	values = [component['median'] for component in components.values()]
-	valid = len(values) == len(NAVIGATION_TESTS) * len(NAVIGATION_ACTIONS)
+	valid = len(values) == len(navigation_tests) * len(NAVIGATION_ACTIONS)
 	tests.append(dict(test_id='navigation', status='passed' if valid else 'incomplete',
-		fixture_id='Small + large / QuickView off + on', metrics=components,
+		fixture_id=('Small + medium + large' if 'pane.load.medium' in definitions else 'Small + large') +
+			' / QuickView off + on', metrics=components,
 		headline=dict(label='Mean of action medians', metric='navigation.aggregate',
 			median=statistics.mean(values) if valid else None,
 			minimum=min(values) if valid else None, maximum=max(values) if valid else None,
@@ -195,18 +209,22 @@ def render_html(current, versions):
 		.replace('__PERFORMANCE_ICON__', icon).replace('__PERFORMANCE_DATA__', payload)
 
 
-def main():
+def main(argv=None):
 	from fman_performancetest import suite
+	parser = argparse.ArgumentParser(description=__doc__)
+	parser.add_argument('--full', action='store_true', help='Include medium-folder benchmarks')
+	args = parser.parse_args(argv)
+	history = HISTORY / 'Full' if args.full else HISTORY
 	saved = []
 	try:
-		read_history(HISTORY)
-		status = suite.main(['--results', str(HISTORY / 'runs')],
+		read_history(history)
+		status = suite.main(['--results', str(history / 'runs')] + (['--full'] if args.full else []),
 			record_saved=lambda record, path: saved.append(record))
 		if not saved:
 			raise ValueError('The benchmark suite returned no run record')
 		current = saved[0]
-		versions = update_history(HISTORY, current)
-		output = HISTORY / 'index.html'
+		versions = update_history(history, current)
+		output = history / 'index.html'
 		atomic_write(output, render_html(current, versions))
 		print('Performance report: ' + str(output), flush=True)
 	except Exception as error:

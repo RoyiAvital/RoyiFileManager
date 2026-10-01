@@ -185,11 +185,11 @@ def test():
 		_run_test_directory(test_directory, environment)
 
 
-def measure():
+def measure(full=False):
 	_require_windows()
 	launcher = ROOT / 'src' / 'performancetest' / 'run.py'
 	return subprocess.run(
-		[sys.executable, str(launcher), 'measure'], cwd=ROOT
+		[sys.executable, str(launcher), 'measure'] + (['--full'] if full else []), cwd=ROOT
 	).returncode
 
 
@@ -332,8 +332,12 @@ def main(argv=None):
 	parser = argparse.ArgumentParser(description='Build %s.' % APP_NAME)
 	commands = parser.add_subparsers(dest='command', required=True)
 	for command in sorted(COMMANDS):
-		commands.add_parser(command)
+		command_parser = commands.add_parser(command)
+		if command == 'measure':
+			command_parser.add_argument('--full', action='store_true', help='Include medium-folder benchmarks')
 	args = parser.parse_args(argv)
+	if args.command == 'measure':
+		return COMMANDS[args.command](full=args.full)
 	return COMMANDS[args.command]()
 
 

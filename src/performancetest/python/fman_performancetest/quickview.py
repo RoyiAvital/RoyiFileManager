@@ -171,9 +171,24 @@ def child(directory, viewport, navigation_repetitions=5):
 				image_case('switch.large-png', 'preview-large.png', (4096, 3072), 'png')
 				image_case('switch.jpeg', 'preview-small.jpg', (1280, 960), 'jpeg')
 				image_case('switch.bmp', 'preview-small.bmp', (1280, 960), 'bmp')
-				for identity, name in (('invalid-image', 'preview-invalid.png'), ('unsupported-file', 'preview-unsupported.txt')):
-					measure(identity, lambda name=name: select(name),
-						lambda: canvas().image is None and canvas().message.startswith('Unsupported image'), surface)
+				measure('invalid-image', lambda: select('preview-invalid.png'),
+					lambda: canvas().image is None and canvas().message.startswith('Unsupported image'), surface)
+				text_name = 'preview-unsupported.txt'
+				text_url = as_url(directory / text_name)
+				expected_text = (directory / text_name).read_text(encoding='utf-8')
+				def text_ready():
+					current = session()
+					preview = current.overlay.text_view if current is not None else None
+					return preview is not None and current._url == text_url and \
+						current.overlay.content.currentWidget() is preview and preview.browser.toPlainText() == expected_text
+				def text_surface():
+					current = session()
+					preview = current.overlay.text_view if current is not None else None
+					return preview.browser.viewport() if preview is not None else None
+				result = measure('switch.text', lambda: select(text_name), text_ready, text_surface)
+				if not gui(text_ready):
+					raise RuntimeError('Preview text does not match the synthetic fixture')
+				result['text_verified'] = True
 				image_case('restore.large-png', 'preview-large.png', (4096, 3072), 'png')
 				for identity, command, predicate, arguments in (
 					('actual-size', 'quick_view_actual_size', lambda: canvas().mode == 'actual_size', {}),

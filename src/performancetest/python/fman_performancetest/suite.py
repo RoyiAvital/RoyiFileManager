@@ -99,32 +99,40 @@ def selection_run(test, directory, catalog_path, catalog):
 	cases = selection_cases(test['selection_count'])
 	samples, failures = [], []
 	timeout = catalog['protocol']['selection_timeout_seconds']
-	for index, case in enumerate(cases, 1):
-		try:
-			result = invoke(test, directory, catalog_path, selection_case=case, timeout=timeout)
-			if result['errors'] or not result['settings_isolated']:
-				raise RuntimeError('Application errors or settings isolation failure')
-			measurement, = result['samples']
-			if measurement['action_id'] != case['action_id'] or measurement['status'] != 'passed':
-				raise RuntimeError('Invalid selection case result')
-		except Exception as error:
-			measurement = dict(case)
-			output = getattr(error, 'stdout', '') or ''
-			if isinstance(output, bytes):
-				output = output.decode('utf-8', errors='replace')
-			for line in output.splitlines():
-				if line.startswith('SELECTION_PROGRESS '):
-					progress = json.loads(line.removeprefix('SELECTION_PROGRESS '))
-					if progress.get('action_id') == case['action_id']:
-						measurement.update(progress)
-			timed_out = isinstance(error, subprocess.TimeoutExpired)
-			measurement['status'] = 'timeout' if timed_out else 'failed'
-			if timed_out:
-				measurement['timeout_count'] = 1
-			reason = 'Child exceeded %ds including startup' % timeout if timed_out else getattr(error, 'stderr', None) or str(error)
-			failures.append(dict(action_id=case['action_id'], status=measurement['status'],
-				stage=measurement.get('stage', 'startup'), error=reason))
-		samples.append(measurement)
+	try:
+		result = invoke(test, directory, catalog_path, timeout=timeout)
+		if result['errors'] or not result['settings_isolated']:
+			raise RuntimeError('Application errors or settings isolation failure')
+		if [sample['action_id'] for sample in result['samples']] != [case['action_id'] for case in cases] or \
+			any(sample['status'] != 'passed' for sample in result['samples']):
+			raise RuntimeError('Invalid selection case results')
+		samples = result['samples']
+	except Exception as error:
+		progress_by_case = {}
+		output = getattr(error, 'stdout', '') or ''
+		if isinstance(output, bytes):
+			output = output.decode('utf-8', errors='replace')
+		for line in output.splitlines():
+			if line.startswith('SELECTION_PROGRESS '):
+				progress = json.loads(line.removeprefix('SELECTION_PROGRESS '))
+				progress_by_case[progress['action_id']] = progress
+		timed_out = isinstance(error, subprocess.TimeoutExpired)
+		status = 'timeout' if timed_out else 'failed'
+		reason = 'Child exceeded %ds including startup' % timeout if timed_out else getattr(error, 'stderr', None) or str(error)
+		for index, case in enumerate(cases):
+			measurement = dict(case, **progress_by_case.get(case['action_id'], {}))
+			if measurement.get('status') != 'passed':
+				started = 'stage' in measurement or (index == 0 and not progress_by_case)
+				measurement['status'] = status if started else 'not-run'
+				if started and timed_out:
+					measurement['timeout_count'] = 1
+				failures.append(dict(action_id=case['action_id'], status=measurement['status'],
+					stage=measurement.get('stage', 'startup' if started else 'not-started'), error=reason))
+			samples.append(measurement)
+		if not failures:
+			failures.append(dict(action_id='selection.process', status=status, stage='shutdown', error=reason))
+	for index, measurement in enumerate(samples, 1):
+		case = cases[index - 1]
 		print('%s: case %d/%d %s %s' % (test['id'], index, len(cases), case['action_id'], measurement['status']), flush=True)
 	return dict(samples=samples, failures=failures)
 
@@ -135,10 +143,13 @@ def child(test, catalog, directory, algorithm, profile_directory, selection_case
 	if workload == 'selection':
 		from fman_performancetest.selection import selection_cases
 		from fman_performancetest.pane_rendering_benchmark import child as pane
-		case = next(case for case in selection_cases(test['selection_count']) if case['action_id'] == selection_case)
-		case['row_count'] = catalog['fixtures'][test['fixture']]['files']
+		cases = [dict(case, row_count=catalog['fixtures'][test['fixture']]['files'])
+			for case in selection_cases(test['selection_count'])
+			if selection_case is None or case['action_id'] == selection_case]
+		if not cases:
+			raise ValueError('Unknown selection case: ' + selection_case)
 		return pane(directory, test['id'], 'snapshot', True,
-			viewport=protocol['viewport'], selection_case=case)
+			viewport=protocol['viewport'], selection_cases=cases)
 	if workload in ('filter', 'fuzzy', 'recursive'):
 		queries = catalog['queries'][workload]
 		if algorithm:
@@ -163,6 +174,7 @@ def child(test, catalog, directory, algorithm, profile_directory, selection_case
 def main(argv=None, *, record_saved=None):
 	parser = argparse.ArgumentParser(description=__doc__)
 	parser.add_argument('--catalog', type=Path, default=CATALOG)
+	parser.add_argument('--full', action='store_true', help='Include medium-folder workloads')
 	parser.add_argument('--test', action='append', default=[], help='Test ID or glob; repeat for multiple selections')
 	parser.add_argument('--repeat', type=int, help='Override fresh-process repetitions; recorded in the result')
 	parser.add_argument('--list', action='store_true')
@@ -186,12 +198,15 @@ def main(argv=None, *, record_saved=None):
 		except ValueError as error:
 			parser.error(str(error))
 	catalog = load_catalog(args.catalog)
+	all_tests = catalog['tests'] + catalog.get('full_tests', [])
 	if args.child:
-		test = next(test for test in catalog['tests'] if test['id'] == args.child)
+		test = next(test for test in all_tests if test['id'] == args.child)
 		return child(test, catalog, args.directory.resolve(strict=True), args.algorithm, args.profile_directory, args.selection_case)
 	if args.repeat is not None and args.repeat < 1:
 		parser.error('--repeat must be positive')
-	selected = [test for test in catalog['tests'] if not args.test or any(fnmatch.fnmatchcase(test['id'], pattern) for pattern in args.test)]
+	definitions = all_tests if args.full else catalog['tests']
+	selected = [test for test in all_tests if any(fnmatch.fnmatchcase(test['id'], pattern) for pattern in args.test)] \
+		if args.test else definitions
 	if not selected:
 		parser.error('No matching test IDs')
 	if args.list:
@@ -202,7 +217,10 @@ def main(argv=None, *, record_saved=None):
 		parser.error('The native suite requires Windows')
 	args.results = args.results.resolve()
 	repetitions = args.repeat or catalog['protocol']['repetitions']
-	record = new_record(catalog, provenance(), environment(args.fixtures))
+	effective_catalog = dict(catalog, tests=definitions)
+	effective_catalog.pop('full_tests', None)
+	record = new_record(effective_catalog, provenance(), environment(args.fixtures))
+	record['suite_mode'] = 'full' if args.full else 'regular'
 	record['harness'] = dict(commit=record['application']['commit'], source_sha256=source_hash('src/performancetest'))
 	record['parameters'] = dict(catalog['protocol'], repetitions=repetitions)
 	record['notes'] = args.note

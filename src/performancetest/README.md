@@ -9,13 +9,25 @@ uses a SafeLoader subclass that also rejects duplicate keys.
 python build.py measure
 ```
 
-This runs all fourteen catalog workloads, three repetitions each, without profiling;
+This runs the thirteen regular workloads, three repetitions each, without profiling;
 updates the version's result; generates a standalone HTML report; and opens it in
 the default browser. No arguments or profile selection are required. It does not
 run correctness verification, build the application or install dependencies.
 `build.py test` does not run performance workloads or their development-tool
 checks. A failed measurement run returns nonzero and displays its failure without
 replacing the last successful version result.
+
+The regular suite keeps the original eleven workloads and two selection workloads,
+with five patterns per size. To also measure medium folders:
+
+```powershell
+python build.py measure --full
+```
+
+Full mode adds six workloads on a 50,000-file flat folder: pane loading, refresh,
+Filter Bar, Fuzzy Find, QuickView and selections. Navigation is included in pane
+and QuickView workloads. It runs nineteen workloads with the same three
+repetitions and protocols; it does not enable profiling or legacy stress tests.
 
 ## Report and Version History
 
@@ -25,6 +37,9 @@ Retained output lives under `UserSettings/Performance`, outside `build.py clean`
 - `versions.json`: atomically updated version-to-run index, one current result per version.
 - `index.html`: regenerated offline report; embedded data, charts and icon, no network requests.
 
+Full runs use the same structure under `UserSettings/Performance/Full`. Their
+version index and report are separate; they never replace regular-run history.
+
 Version identifiers are exactly `X.Y.Z` or `Unreleased`. A clean checkout at tag
 `vX.Y.Z` or `X.Y.Z` matching the application version is a release measurement.
 All other checkouts are `Unreleased`. Source version, commit and dirty state remain
@@ -32,14 +47,21 @@ in the result record. Repeating a version replaces its index entry, not its old 
 Corrupt history is reported, never silently reset. Earlier diagnostic runs under
 `target` are not imported as previous versions.
 
-The overview has fourteen rows: pane loading, Filter Bar, Fuzzy Find and QuickView in
-small/large folders, Fuzzy Find (Recursive), Refresh / Selection, Selection for
-small/medium/large folders, and Navigation. Headlines are first populated
+The overview has thirteen rows: pane loading, Filter Bar, Fuzzy Find and QuickView in
+small/large folders, Fuzzy Find (Recursive), Refresh / Selection,
+Selections / Small, Selections / Large, and Navigation. Headlines are first populated
 paint, slowest query median, or first preview paint, respectively. Navigation is
 the arithmetic mean of 28 case medians: seven actions across small/large panes with
 QuickView off/on, equally weighted. Refresh / Selection is the mean of 16 case
-medians: eight selection patterns across small/large folders. Missing cases suppress the aggregate. Details
+medians: eight selection patterns across small/large folders. Each Selections row
+is the mean of five full selection-interaction case medians for its folder size. Missing
+or failed selection cases suppress that aggregate. Details
 retain every case so the aggregate cannot conceal individual regressions.
+
+Full reports have eighteen rows, including the additional medium pane, Filter
+Bar, Fuzzy Find, QuickView and Selections / Medium rows. Refresh remains
+one aggregate, now across 24 case medians; Navigation averages 42. Both require
+all expected medium cases as well as small/large cases before showing an average.
 
 Previous-version comparisons show absolute/percentage changes, not significance
 claims. Charts show compatible versions in measurement-date order and observed
@@ -55,13 +77,18 @@ stable names, not list positions. A query/action is identified by the pair
 `test_id` and `query_id`/`action_id`. Increment test revisions when changing
 semantics or measurement boundaries. Change fixture IDs when changing contents.
 
-The fixtures are `flat-small-v1` (256 files), `flat-medium-v1` (50,000 files),
-`flat-large-v1` (200,000 files), and
-`recursive-v1` (50,000 files with fixed branching and depth). Names use SHA-256
+`tests` defines the regular suite; `full_tests` contains the six optional medium
+definitions. Records store the effective mode's definitions. Regular runs do not
+create, verify or scan the medium fixture. Explicit diagnostic `--test` patterns
+can match either list, independently of `--full`.
+
+The fixtures are `flat-small-v1` (256 files), `flat-large-v1` (200,000 files),
+optional `flat-medium-v1` (50,000 files), and `recursive-v1` (50,000 files with
+fixed branching and depth). Names use SHA-256
 of seed/index with long repeated strings, Unicode, numbers, spaces and literal
 punctuation. PNG pixels use integer bands; JPEG/BMP conversions use the recorded
 Qt encoder. Small images are 1280x960; large images are 4096x3072. Flat fixtures
-also contain corrupt and unsupported preview inputs. Filler files are empty,
+also contain corrupt images and a plain-text preview input. Filler files are empty,
 including those with image extensions; QuickView targets named preview assets.
 
 Creation/modification timestamps are fixed to 2024-01-01 UTC; file/directory
@@ -110,7 +137,9 @@ fixtures and results are local; nothing is uploaded.
   the later navigation hook. Navigation still timestamps immediately after the
   original paint handler returns; no queued acknowledgement is used.
 - QuickView includes its normal 100 ms debounce and first lazy renderer import.
-  Scenarios cover disabled navigation, PNG/JPEG/BMP switching, invalid inputs,
+  Revision 2 verifies the existing text fixture as supported text, replacing
+  the obsolete unsupported-image expectation without changing fixture contents.
+  Scenarios cover disabled navigation, PNG/JPEG/BMP/text switching, invalid images,
   fit/actual size/zoom/pan, 30 ms rapid navigation, close/reopen and cancellation
   before the debounce fires. Pixels, dimensions/format and target-pane state
   are checked after timing. In-flight decode cancellation is not stressed here.
@@ -136,33 +165,51 @@ Historical CelebA measurements are not substituted into synthetic histories.
 ## Selection Measurements
 
 Selection is separate from the existing untimed refresh setup. It uses the real
-pane API and Invert Selection command without changing application code.
+pane API without changing application code.
 
-| Folder | Requested Rows per Shape |
-| --- | --- |
-| 256 files | 64, 128 |
-| 50,000 files | 10,000, 20,000 |
-| 200,000 files | 10,000, 20,000 |
+| Pattern | Small (256 files) | Medium (50,000; full only) | Large (200,000 files) |
+| --- | ---: | ---: | ---: |
+| Single file | 1 | 1 | 1 |
+| All files, using `select_all` | 256 | 50,000 | 200,000 |
+| Contiguous block | 64 | 1,000 | 1,000 |
+| Alternating rows | 64 | 1,000 | 1,000 |
+| Seeded scattered rows | 64 | 1,000 | 1,000 |
 
-Each size has 36 cases: contiguous, alternating and seeded scattered selections
-at both counts; reselect, overlap and deselect at the larger count; plus full-pane
-select-all, clear and invert. All cases run with status disabled and with explicit
-per-pane status enabled. Full-pane actions record their actual folder size.
-Existing marks are seeded outside timing; no selection request is silently capped.
+All five patterns share one loaded pane per size and repetition. Three fresh
+processes per size give six selection processes in regular mode, nine in full
+mode. Status stays disabled; selection is cleared before each pattern, outside
+timing. There is no status matrix or reselect/deselect/invert stress matrix.
 
-Each case uses a fresh native Qt process, repeated three times: 324 selection
-processes across all sizes, in addition to the existing workloads. A child has
-60 seconds including startup, setup, action, readback and verification. Large
-cases on the current per-row implementation can time out, so a full reference
-run can be lengthy. Every remaining case/workload is still attempted after a
-measurement failure; invalid fixture preparation remains a prerequisite failure.
+The regular selection added-runtime target is at most two to three minutes. Each selection process
+has a 25-second limit including startup, setup, all five patterns, verification
+and shutdown: 150 seconds of child-runtime allowance across the six processes.
+This leaves headroom for orchestration; it is not a measured total-runtime claim.
+Existing fixtures are reused. A timeout fails the workload, preserves completed
+stages and marks unstarted patterns as not run. Later repetitions/workloads are
+still attempted; fixture preparation remains a prerequisite.
 
-Retained metrics include mutation wall/CPU time, dispatch-to-completed pane paint,
+Full mode adds three medium selection processes with the same 25-second limit,
+plus the other medium workloads and fixture preparation/verification. Full mode
+takes longer and is not subject to the regular selection's added-runtime target;
+its actual duration has not been measured.
+
+Selection revision 4 adds `responsive_ms`: elapsed time from mutation dispatch
+through completed pane paint, selected-file readback and a subsequent Qt-thread
+callback confirming it can respond again. The headline averages the five case
+medians of this full interval, not just paint time and not their sum. Fixture
+preparation, initial selection reset and benchmark-only assertions are excluded.
+Status remains disabled; this is not a benchmark of enabled optional observers.
+
+Retained diagnostic metrics include mutation wall/CPU time, dispatch-to-completed pane paint,
 independent readback wall/CPU time, requested/initial/expected/selected counts and
 actual pane rows. Active-only heartbeat and queue probes include the final blocked
 interval even when no timer fires. Cursor, scroll and duplicate-free membership
 are checked after timing. No row-text fingerprint or loading-arrow probe runs in
 selection cases; initial pane loading itself is outside selection timing.
+
+Older selection records without `responsive_ms` retain their phase details but
+do not receive a fabricated full-interaction headline. A fast select-all paint
+does not imply fast enumeration of every selected URL; both are in the new total.
 
 Completed stages are retained when a later stage times out. Failures retain case,
 repetition and last completed stage; missing durations are not zero samples.
@@ -171,13 +218,17 @@ Failed runs stay in `runs/` and have a report, but do not replace a successful
 version entry. Start/end application and harness hashes must agree for a valid
 reference. Keep both source trees unchanged during a measurement run.
 
-For selection-only diagnostics: `python src/performancetest/run.py suite --test "selection.*"`.
-Use `python build.py measure` for the full retained reference and HTML report.
+For selection-only diagnostics across all three sizes:
+`python src/performancetest/run.py suite --test "selection.*"`.
+For medium only: `python src/performancetest/run.py suite --test "selection.medium"`.
+Use `python build.py measure` for the regular thirteen-workload report and history.
+Use `python build.py measure --full` for all nineteen workloads and separate full history.
 
 ## JSON Records
 
-Each measurement creates `UserSettings/Performance/runs/<uuid>.json` with exclusive
-creation. The diagnostic launcher defaults to `target/performance/runs` and accepts
+Each regular measurement creates `UserSettings/Performance/runs/<uuid>.json` with
+exclusive creation; full measurements use `UserSettings/Performance/Full/runs`.
+The diagnostic launcher defaults to `target/performance/runs` and accepts
 `--results` and `--note`. Failed attempts retain statistics for completed
 repetitions and an error. New records use `schema_version: 2`; schema-1 records
 remain readable and are not rewritten.
@@ -185,6 +236,7 @@ remain readable and are not rewritten.
 | Field | Meaning |
 | --- | --- |
 | `run_id`, `started_at`, `finished_at`, `status` | Unique run, UTC bounds and outcome |
+| `suite_mode` | `regular` or `full`; older records without this field are regular |
 | `application` | Version identifier, source version, Git commit, dirty flag, actual application-source hash |
 | `harness` | Harness commit and actual harness-source hash |
 | `environment` | Anonymous machine/volume IDs, OS, CPU, RAM, disk inventory, filesystem, power plan, locale, Python/Qt and dependencies |
@@ -219,6 +271,7 @@ These commands do not update the version index or open the HTML report:
 
 ```powershell
 python src/performancetest/run.py suite --list
+python src/performancetest/run.py suite --full --list
 python src/performancetest/run.py suite --test "pane.*" --prepare-only
 python src/performancetest/run.py suite --test "refresh.*"
 python src/performancetest/run.py suite --test "fuzzy.*" --profile

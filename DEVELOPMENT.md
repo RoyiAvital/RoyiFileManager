@@ -321,14 +321,14 @@ python build.py measure
 ```
 
 `python build.py test` runs correctness verification; `python build.py measure`
-runs the full performance suite, updates the version result, generates an offline
+runs the regular performance suite, updates the version result, generates an offline
 HTML report and opens it in the browser. No workload/profile selection is needed.
 Results and `index.html` live under `UserSettings/Performance`, surviving `clean`.
 Version identifiers are `X.Y.Z` for clean matching release tags, or `Unreleased`;
 the source version and commit are retained separately. Reruns replace the version's
 current result but preserve earlier runs. Failed runs never replace successful results.
 
-The report has eleven overview rows, including Refresh / Selection and a Navigation
+The report has thirteen overview rows, including Refresh / Selection and a Navigation
 aggregate of Page Up/Down, Home/End and wheel scrolling. Previous-version comparisons, charts
 and detailed measurements use compatible results only; the first run establishes
 a baseline. The original `src/performancetest/run.py suite` remains available for
@@ -343,6 +343,21 @@ Refresh / Selection averages 16 unchanged-refresh case medians: eight selection
 patterns in both folder sizes, from no marks through scattered and all-marked
 selections. Reload-to-completed-paint timings check snapshot, marks, cursor and
 scroll preservation; per-case timings and process peak memory remain in the report.
+Selections / Small and Selections / Large each average five case
+medians: single file, all files, contiguous block, alternating and scattered rows.
+Each case includes mutation, completed paint, selected-file readback and the next
+Qt-thread response, so a readback stall cannot disappear behind fast painting.
+The last three select 64 rows in the small folder and 1,000 in the large folder.
+All five patterns share a pane per repetition: six added processes, each limited
+to 25 seconds.
+
+`python build.py measure --full` adds medium (50,000-file) pane loading, refresh,
+Filter Bar, Fuzzy Find, QuickView, navigation and selection cases. The six extra
+workloads produce nineteen workloads and eighteen overview rows total; refresh
+averages 24 case medians and navigation 42. Medium selections use the same five
+patterns, with 1,000 rows for each complex pattern. Full history and reports live
+separately under `UserSettings/Performance/Full`. Regular runs do not prepare or
+scan the medium fixture. Full runs take longer; no runtime has been measured yet.
 See the [protocol and result format](src/performancetest/README.md).
 
 ### Everything Search Backend Probe

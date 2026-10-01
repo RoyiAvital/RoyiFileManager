@@ -32,32 +32,103 @@ finally:
 
 
 class PerformanceReportTest(TestCase):
-	def test_selection_report_keeps_sizes_readback_counts_and_failures(self):
+	def selection_record(self, full=False):
 		current = self.record()
 		current['results'] = []
-		current['catalog']['tests'] = []
-		for size, count in (('small', 256), ('medium', 50000), ('large', 200000)):
-			identity = 'selection.' + size
+		current['catalog'] = records.load_catalog()
+		optional = current['catalog'].pop('full_tests')
+		if full:
+			current['catalog']['tests'].extend(optional)
+		current['suite_mode'] = 'full' if full else 'regular'
+		for test in current['catalog']['tests']:
 			result = deepcopy(self.record()['results'][0])
-			result.update(test_id=identity, samples=[dict(ui=dict(samples=[dict(
-				action_id='status-off.scattered.128.select', wall_ms=10, readback_ms=20,
-				row_count=count, selected_count=128, heartbeat_gap_ms={'max': 12})]))],
-				failures=[dict(action_id='status-on.full.invert', status='timeout', iteration=1,
-					stage='prepared', error='Timed out')], status='failed')
+			result.update(test_id=test['id'], fixture_id=test['fixture'])
+			if test['workload'] == 'selection':
+				count = current['catalog']['fixtures'][test['fixture']]['files']
+				selected = test['selection_count']
+				patterns = (('single', 1), ('all', count), ('contiguous', selected),
+					('alternating', selected), ('scattered', selected))
+				result['samples'] = [dict(ui=dict(samples=[dict(action_id='selection.' + pattern,
+					wall_ms=10, paint_ms=index * 10, readback_ms=100, row_count=count,
+					responsive_ms=index * 10 + 100,
+					selected_count=marked, heartbeat_gap_ms={'max': 12})
+					for index, (pattern, marked) in enumerate(patterns, 1)]))]
 			current['results'].append(result)
-			current['catalog']['tests'].append(dict(id=identity))
-		current['status'] = 'failed'
+		return current
+
+	def test_selection_report_aggregates_five_cases_into_two_rows(self):
+		current = self.selection_record()
 		compact = records.statistics_record(current)
 		self.assertEqual(report.overview(current), report.overview(compact))
-		for item in report.overview(compact)[:3]:
-			self.assertEqual(20, item['headline']['median'])
-			self.assertEqual('failed', item['status'])
-			self.assertEqual('timeout', item['failures'][0]['status'])
-			self.assertEqual(128, item['metrics']['status-off.scattered.128.select.selected_count']['median'])
+		overview = report.overview(compact)
+		self.assertEqual(13, len(overview))
+		selections = [item for item in overview if item['test_id'].startswith('selection.')]
+		self.assertEqual(['selection.small', 'selection.large'], [item['test_id'] for item in selections])
+		for item, selected in zip(selections, (64, 1000)):
+			self.assertEqual(130, item['headline']['median'])
+			self.assertEqual(5, item['headline']['count'])
+			self.assertEqual((110, 150), (item['headline']['minimum'], item['headline']['maximum']))
+			self.assertEqual('passed', item['status'])
+			self.assertEqual(selected, item['metrics']['selection.scattered.selected_count']['median'])
+			for pattern in report.SELECTION_PATTERNS:
+				self.assertEqual(100, item['metrics']['selection.' + pattern + '.readback_ms']['median'])
 		html = report.render_html(compact, {})
-		for label in ('Selection / 256 files', 'Selection / 50,000 files', 'Selection / 200,000 files', 'case-failures'):
+		for label in ('Selections / Small', 'Selections / Large'):
 			self.assertIn(label, html)
+		self.assertNotIn('Selections - ', html)
+		self.assertNotIn('selection.medium', [item['test_id'] for item in overview])
 		self.assertIn("name.endsWith('_count') ? 'count'", html)
+		self.assertIn("test.headline.count_label === 'case medians'", html)
+
+	def test_full_report_adds_medium_selection_and_requires_every_workload(self):
+		current = self.selection_record(full=True)
+		data = report.report_data(current, {})
+		self.assertEqual('full', data['suite_mode'])
+		self.assertEqual(19, data['expected_tests'])
+		self.assertEqual(18, len(data['tests']))
+		self.assertTrue(data['complete'])
+		medium = next(item for item in data['tests'] if item['test_id'] == 'selection.medium')
+		self.assertEqual(130, medium['headline']['median'])
+		self.assertEqual(5, medium['headline']['count'])
+		self.assertEqual(50000, medium['metrics']['selection.all.selected_count']['median'])
+		self.assertEqual(1000, medium['metrics']['selection.scattered.selected_count']['median'])
+		self.assertIn('Selections / Medium', report.render_html(current, {}))
+		current['results'].pop()
+		self.assertFalse(report.complete(current))
+		with TemporaryDirectory() as directory:
+			self.assertEqual({}, self.save(directory, current))
+
+	def test_selection_report_suppresses_missing_or_failed_cases(self):
+		for missing in (False, True):
+			with self.subTest(missing=missing):
+				current = self.selection_record()
+				result = current['results'][-1]
+				if missing:
+					result['samples'][0]['ui']['samples'].pop()
+				else:
+					current['status'] = result['status'] = 'failed'
+					result['failures'] = [dict(action_id='selection.scattered', status='timeout',
+						iteration=1, stage='painted', error='Timed out')]
+				compact = records.statistics_record(current)
+				self.assertEqual(report.overview(current), report.overview(compact))
+				item = next(item for item in report.overview(compact) if item['test_id'] == 'selection.large')
+				self.assertIsNone(item['headline']['median'])
+				if not missing:
+					self.assertEqual('failed', item['status'])
+					self.assertEqual(result['failures'], item['failures'])
+					self.assertIn('case-failures', report.render_html(compact, {}))
+
+	def test_selection_headline_does_not_substitute_legacy_paint_only_timings(self):
+		current = self.selection_record()
+		for result in current['results']:
+			if result['test_id'].startswith('selection.'):
+				for sample in result['samples'][0]['ui']['samples']:
+					del sample['responsive_ms']
+		for item in report.overview(current):
+			if item['test_id'].startswith('selection.'):
+				self.assertIsNone(item['headline']['median'])
+				self.assertIn('selection.all.paint_ms', item['metrics'])
+				self.assertIn('selection.all.readback_ms', item['metrics'])
 
 	def test_report_product_name_comes_from_settings(self):
 		with patch.object(report, 'get_build_settings', return_value={'app_name': 'RfmRenameProbe'}):
@@ -67,10 +138,14 @@ class PerformanceReportTest(TestCase):
 		self.assertIn('RfmRenameProbe / Performance', html)
 		self.assertNotIn('__APP_NAME__', html)
 
-	def test_report_labels_recursive_fuzzy_find(self):
+	def test_report_labels_use_consistent_capitalization_and_sizes(self):
 		html = report.render_html(self.record(), {})
 		self.assertIn("'recursive.tree':'Fuzzy Find (Recursive)'", html)
 		self.assertNotIn('Recursive Find', html)
+		for size in ('Small', 'Large', 'Medium'):
+			self.assertIn('Pane Loading / ' + size, html)
+			self.assertIn('Selections / ' + size, html)
+		self.assertNotIn('Pane loading / ', html)
 
 	def test_statistics_record_preserves_every_report_metric_without_samples(self):
 		current = self.refresh_record()
@@ -85,9 +160,9 @@ class PerformanceReportTest(TestCase):
 			self.assertEqual(len(raw['samples']), result['completed_repetitions'])
 			self.assertEqual(records.summarize(raw), result['summary'])
 
-	def refresh_record(self):
-		current = self.navigation_record()
-		for identity in report.REFRESH_TESTS:
+	def refresh_record(self, full=False):
+		current = self.navigation_record(full=full)
+		for identity in report.REFRESH_TESTS + (('refresh.medium',) if full else ()):
 			result = deepcopy(self.record()['results'][0])
 			result['test_id'] = identity
 			result['samples'] = [dict(ui=dict(samples=[dict(action_id='refresh.' + pattern,
@@ -123,18 +198,33 @@ class PerformanceReportTest(TestCase):
 			and row['metric'] == 'refresh.large.refresh.all.paint_ms')
 		self.assertEqual(50, detail['change_percent'])
 
-	def navigation_record(self):
+	def navigation_record(self, full=False):
 		current = self.record()
 		current['results'] = []
-		for identity in report.NAVIGATION_TESTS:
+		identities = report.NAVIGATION_TESTS + (('pane.load.medium', 'quickview.medium') if full else ())
+		for identity in identities:
 			result = deepcopy(self.record()['results'][0])
 			result['test_id'] = identity
 			result['samples'] = [dict(ui=dict(navigation=[dict(action_id='navigation.' + action,
 				input_to_paint_ms=10 if action != 'wheel-burst-down' else 20)
 				for action in report.NAVIGATION_ACTIONS for iteration in range(5)]))]
 			current['results'].append(result)
-		current['catalog']['tests'] = [dict(id=identity) for identity in report.NAVIGATION_TESTS]
+		current['catalog']['tests'] = [dict(id=identity) for identity in identities]
 		return current
+
+	def test_full_refresh_and_navigation_include_medium_and_reject_missing_cases(self):
+		current = self.refresh_record(full=True)
+		for identity, count, median in (('refresh.selection', 24, 70), ('navigation', 42, 80 / 7)):
+			item = next(item for item in report.overview(current) if item['test_id'] == identity)
+			self.assertEqual(count, item['headline']['count'])
+			self.assertAlmostEqual(median, item['headline']['median'])
+			self.assertIn('medium', item['fixture_id'])
+		for identity in ('refresh.medium', 'quickview.medium'):
+			result = next(result for result in current['results'] if result['test_id'] == identity)
+			result['status'] = 'failed'
+		for item in report.overview(current)[-2:]:
+			self.assertEqual('incomplete', item['status'])
+			self.assertIsNone(item['headline']['median'])
 
 	def record(self, version='1.0.0', milliseconds=10):
 		result = dict(test_id='pane.load.small', test_revision=1, fixture_id='small',
@@ -250,17 +340,21 @@ class PerformanceReportTest(TestCase):
 				self.save(directory, self.record())
 			self.assertEqual('{broken', index.read_text(encoding='utf-8'))
 
-	def test_measure_runs_full_suite_saves_report_and_opens_browser(self):
-		for use_parent_alias in (False, True):
-			with self.subTest(use_parent_alias=use_parent_alias), TemporaryDirectory() as directory:
+	def test_measure_modes_save_separate_history_and_open_report(self):
+		for full, use_parent_alias in ((False, False), (False, True), (True, False), (True, True)):
+			with self.subTest(full=full, use_parent_alias=use_parent_alias), TemporaryDirectory() as directory:
 				history = Path(directory)
+				if full:
+					self.save(history, self.selection_record())
+					regular_index = (history / 'versions.json').read_bytes()
 				if use_parent_alias:
 					(history / 'alias').mkdir()
 					history = history / 'alias' / '..'
-				current = self.record('Unreleased')
+				output = history / 'Full' if full else history
+				current = self.selection_record(full=full)
 				def run_suite(arguments, *, record_saved):
-					self.assertEqual(['--results', str(history / 'runs')], arguments)
-					path = records.save_record(history / 'runs', current)
+					self.assertEqual(['--results', str(output / 'runs')] + (['--full'] if full else []), arguments)
+					path = records.save_record(output / 'runs', current)
 					record_saved(current, path)
 					return 0
 				with patch.object(report, 'HISTORY', history), \
@@ -268,11 +362,13 @@ class PerformanceReportTest(TestCase):
 					patch.object(report, 'render_html', return_value='<html>report</html>'), \
 					patch.object(report.webbrowser, 'open', return_value=True) as browser, \
 					redirect_stdout(io.StringIO()):
-					self.assertEqual(0, report.main())
+					self.assertEqual(0, report.main(['--full'] if full else []))
 					run.assert_called_once()
-					browser.assert_called_once_with((history / 'index.html').resolve().as_uri())
-				self.assertEqual('<html>report</html>', (history / 'index.html').read_text())
-				self.assertEqual({'Unreleased'}, set(report.read_history(history)))
+					browser.assert_called_once_with((output / 'index.html').resolve().as_uri())
+				self.assertEqual('<html>report</html>', (output / 'index.html').read_text())
+				self.assertEqual({'1.0.0'}, set(report.read_history(output)))
+				if full:
+					self.assertEqual(regular_index, (history / 'versions.json').read_bytes())
 
 	def test_failed_suite_opens_failure_report_without_promoting_result(self):
 		with TemporaryDirectory() as directory:
@@ -287,7 +383,7 @@ class PerformanceReportTest(TestCase):
 				patch.object(report, 'render_html', return_value='<html>failed</html>'), \
 				patch.object(report.webbrowser, 'open', return_value=True) as browser, \
 				redirect_stdout(io.StringIO()):
-				self.assertEqual(1, report.main())
+				self.assertEqual(1, report.main([]))
 				browser.assert_called_once()
 			self.assertFalse((Path(directory) / 'versions.json').exists())
 
@@ -382,6 +478,17 @@ class BuildMeasureCommandTest(TestCase):
 			self.assertEqual(2, raised.exception.code)
 			run.assert_not_called()
 
+	def test_measure_full_forwards_flag_without_running_verification(self):
+		verification = Mock()
+		with patch.object(self.build, '_require_windows'), \
+			patch.object(self.build.subprocess, 'run', return_value=Mock(returncode=7)) as run, \
+			patch.dict(self.build.COMMANDS, test=verification):
+			self.assertEqual(7, self.build.main(['measure', '--full']))
+		verification.assert_not_called()
+		run.assert_called_once_with([
+			sys.executable, str(self.build.ROOT / 'src/performancetest/run.py'), 'measure', '--full'
+		], cwd=self.build.ROOT)
+
 	def test_measure_preserves_failure_exit_code(self):
 		with patch.object(self.build, '_require_windows'), \
 			patch.object(self.build.subprocess, 'run', return_value=Mock(returncode=7)):
@@ -395,10 +502,11 @@ class BuildMeasureCommandTest(TestCase):
 
 	def test_other_commands_reject_measurement_options(self):
 		verification = Mock()
-		with patch.dict(self.build.COMMANDS, test=verification), \
-			redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as raised:
-			self.build.main(['test', '--profile'])
-		self.assertEqual(2, raised.exception.code)
+		for option in ('--profile', '--full'):
+			with self.subTest(option=option), patch.dict(self.build.COMMANDS, test=verification), \
+				redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as raised:
+				self.build.main(['test', option])
+			self.assertEqual(2, raised.exception.code)
 		verification.assert_not_called()
 
 
@@ -426,37 +534,105 @@ class SyntheticFixtureTest(TestCase):
 
 
 class PerformanceRecordTest(TestCase):
-	def test_selection_timeout_preserves_progress_and_continues_cases(self):
+	def test_full_mode_adds_medium_without_default_fixture_io(self):
+		catalog = records.load_catalog()
+		self.assertEqual(13, len(catalog['tests']))
+		self.assertEqual(['pane.load.medium', 'refresh.medium', 'filter.medium',
+			'fuzzy.medium', 'quickview.medium', 'selection.medium'],
+			[test['id'] for test in catalog['full_tests']])
+		self.assertEqual(50000, catalog['fixtures']['flat-medium-v1']['files'])
+		for test in catalog['full_tests']:
+			reference = next(item for item in catalog['tests'] if item['id'] == test['id'].replace('.medium', '.large'))
+			self.assertEqual(dict(reference, id=test['id'], fixture='flat-medium-v1'), test)
+		for full in (False, True):
+			with self.subTest(full=full), TemporaryDirectory() as temporary:
+				prepared, published = [], []
+				def prepare(directory, identity, specification, images):
+					prepared.append(identity)
+					return dict(id=identity, sha256='fixture', directory=temporary)
+				with patch.object(suite, 'provenance', return_value={'commit': 'test', 'source_sha256': 'source'}), \
+					patch.object(suite, 'environment', return_value={}), \
+					patch.object(suite, 'source_hash', return_value='source'), \
+					patch.object(suite.fixtures, 'assets', return_value={}), \
+					patch.object(suite.fixtures, 'prepare', side_effect=prepare), \
+					patch.object(suite, 'invoke') as invoke, redirect_stdout(io.StringIO()):
+					self.assertEqual(0, suite.main(['--prepare-only', '--results', temporary] +
+						(['--full'] if full else []), record_saved=lambda record, path: published.append(record)))
+				invoke.assert_not_called()
+				self.assertEqual(['flat-small-v1', 'flat-large-v1', 'recursive-v1'] +
+					(['flat-medium-v1'] if full else []), prepared)
+				self.assertEqual(19 if full else 13, len(published[0]['catalog']['tests']))
+				self.assertEqual('full' if full else 'regular', published[0]['suite_mode'])
+				self.assertNotIn('full_tests', published[0]['catalog'])
+
+	def test_medium_cases_can_be_listed_explicitly(self):
+		with redirect_stdout(io.StringIO()) as output:
+			self.assertEqual(0, suite.main(['--test', '*.medium', '--list']))
+		self.assertEqual(6, len(output.getvalue().splitlines()))
+		self.assertTrue(all('.medium' in line for line in output.getvalue().splitlines()))
+
+	def test_medium_child_dispatch_does_not_require_parent_full_flag(self):
+		catalog = records.load_catalog()
+		for test in catalog['full_tests']:
+			with self.subTest(identity=test['id']), TemporaryDirectory() as directory, \
+				patch.object(suite, 'child', return_value=0) as child:
+				self.assertEqual(0, suite.main(['--child', test['id'], '--directory', directory]))
+				child.assert_called_once()
+				self.assertEqual(test, child.call_args.args[0])
+
+	def test_selection_batch_retains_completed_and_interrupted_cases(self):
 		from subprocess import CalledProcessError, TimeoutExpired
 		from fman_performancetest.selection import selection_cases
 		catalog = records.load_catalog()
 		test = next(test for test in catalog['tests'] if test['id'] == 'selection.small')
-		cases = selection_cases(test['counts'])
+		cases = selection_cases(test['selection_count'])
+		for timed_out in (False, True):
+			with self.subTest(timed_out=timed_out):
+				completed = dict(cases[0], status='passed', wall_ms=1, readback_ms=2, stage='verified')
+				partial = dict(cases[1], status='running', wall_ms=123, stage='mutated')
+				if not timed_out:
+					partial.update(readback_ms=34, stage='readback')
+				output = '\n'.join('SELECTION_PROGRESS ' + json.dumps(value) for value in (completed, partial))
+				error = TimeoutExpired('probe', 25, output=output.encode()) if timed_out else \
+					CalledProcessError(1, 'probe', output=output, stderr='Membership mismatch')
+				with patch.object(suite, 'invoke', side_effect=error) as invoke, redirect_stdout(io.StringIO()):
+					ui = suite.selection_run(test, 'fixture', records.CATALOG, catalog)
+				invoke.assert_called_once_with(test, 'fixture', records.CATALOG, timeout=25)
+				self.assertEqual(5, len(ui['samples']))
+				self.assertEqual('passed', ui['samples'][0]['status'])
+				self.assertEqual(4, len(ui['failures']))
+				self.assertEqual('mutated' if timed_out else 'readback', ui['failures'][0]['stage'])
+				self.assertEqual(['not-run'] * 3, [item['status'] for item in ui['failures'][1:]])
+				compact = records.statistics_record(dict(schema_version=2,
+					results=[dict(samples=[dict(ui=ui)], failures=ui['failures'])]))
+				result, = compact['results']
+				self.assertEqual(ui['failures'], result['failures'])
+				self.assertEqual(1, result['summary'][cases[0]['action_id'] + '.wall_ms']['median'])
+				self.assertEqual(123, result['summary'][cases[1]['action_id'] + '.wall_ms']['median'])
+				if timed_out:
+					self.assertNotIn(cases[1]['action_id'] + '.readback_ms', result['summary'])
+					self.assertEqual(1, result['summary'][cases[1]['action_id'] + '.timeout_count']['median'])
+				else:
+					self.assertEqual('Membership mismatch', ui['failures'][0]['error'])
+					self.assertEqual(34, result['summary'][cases[1]['action_id'] + '.readback_ms']['median'])
+
+	def test_selection_workloads_use_six_bounded_processes(self):
+		from fman_performancetest.selection import selection_cases
+		catalog = records.load_catalog()
+		tests = [test for test in catalog['tests'] if test['workload'] == 'selection']
 		calls = []
-		def invoke(test, directory, catalog_path, *, selection_case, timeout):
-			calls.append(selection_case['action_id'])
-			if len(calls) == 1:
-				progress = dict(selection_case, wall_ms=123, row_count=256, stage='mutated')
-				raise TimeoutExpired('probe', timeout, output=('SELECTION_PROGRESS ' + json.dumps(progress)).encode())
-			if len(calls) == 2:
-				progress = dict(selection_case, wall_ms=12, readback_ms=34, stage='readback')
-				raise CalledProcessError(1, 'probe', output='SELECTION_PROGRESS ' + json.dumps(progress), stderr='Membership mismatch')
-			return dict(errors=[], settings_isolated=True, samples=[dict(selection_case,
-				status='passed', wall_ms=1, readback_ms=2, row_count=256, selected_count=1)])
+		def invoke(test, directory, catalog_path, *, timeout):
+			calls.append((test['id'], timeout))
+			return dict(errors=[], settings_isolated=True, samples=[dict(case, status='passed')
+				for case in selection_cases(test['selection_count'])])
 		with patch.object(suite, 'invoke', side_effect=invoke), redirect_stdout(io.StringIO()):
-			ui = suite.selection_run(test, 'fixture', records.CATALOG, catalog)
-		self.assertEqual([case['action_id'] for case in cases], calls)
-		self.assertEqual(2, len(ui['failures']))
-		self.assertEqual('mutated', ui['failures'][0]['stage'])
-		self.assertEqual('readback', ui['failures'][1]['stage'])
-		self.assertEqual('Membership mismatch', ui['failures'][1]['error'])
-		compact = records.statistics_record(dict(schema_version=2, results=[dict(samples=[dict(ui=ui)], failures=ui['failures'])]))
-		result, = compact['results']
-		self.assertEqual(ui['failures'], result['failures'])
-		self.assertEqual(123, result['summary'][cases[0]['action_id'] + '.wall_ms']['median'])
-		self.assertNotIn(cases[0]['action_id'] + '.readback_ms', result['summary'])
-		self.assertEqual(1, result['summary'][cases[0]['action_id'] + '.timeout_count']['median'])
-		self.assertEqual(34, result['summary'][cases[1]['action_id'] + '.readback_ms']['median'])
+			for test in tests:
+				for iteration in range(catalog['protocol']['repetitions']):
+					result = suite.selection_run(test, 'fixture', records.CATALOG, catalog)
+					self.assertEqual(5, len(result['samples']))
+					self.assertEqual([], result['failures'])
+		self.assertEqual(6, len(calls))
+		self.assertEqual(150, sum(timeout for identity, timeout in calls))
 
 	def test_source_change_invalidates_reference_and_later_workloads_still_run(self):
 		for changed in (False, True):
@@ -474,25 +650,28 @@ class PerformanceRecordTest(TestCase):
 					patch.object(suite.fixtures, 'prepare', return_value=dict(id='fixture', sha256='hash', directory=temporary)), \
 					patch.object(suite, 'invoke', side_effect=invoke), redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
 					self.assertEqual(1, suite.main(['--test', 'pane.*', '--repeat', '1', '--results', temporary]))
-				self.assertEqual(['pane.load.small', 'pane.load.large'], calls)
+				self.assertEqual(['pane.load.small', 'pane.load.large', 'pane.load.medium'], calls)
 				record = json.loads(next(Path(temporary).glob('*.json')).read_text())
 				self.assertEqual('failed', record['status'])
 				self.assertEqual('passed', record['results'][1]['status'])
 				self.assertIn('source changed' if changed else 'Expected first workload failure', record['error'])
 
-	def test_selection_catalog_has_three_flat_sizes_and_dispatches_exact_case(self):
+	def test_selection_catalog_has_two_flat_sizes_and_dispatches_five_cases(self):
 		from fman_performancetest import pane_rendering_benchmark
 		from fman_performancetest.selection import selection_cases
 		catalog = records.load_catalog()
 		tests = [test for test in catalog['tests'] if test['workload'] == 'selection']
-		self.assertEqual([256, 50000, 200000], [catalog['fixtures'][test['fixture']]['files'] for test in tests])
-		for test in tests:
-			case = selection_cases(test['counts'])[0]
-			expected = dict(case, row_count=catalog['fixtures'][test['fixture']]['files'])
+		self.assertEqual(['selection.small', 'selection.large'], [test['id'] for test in tests])
+		self.assertEqual([256, 200000], [catalog['fixtures'][test['fixture']]['files'] for test in tests])
+		self.assertEqual([64, 1000], [test['selection_count'] for test in tests])
+		for test in tests + [test for test in catalog['full_tests'] if test['workload'] == 'selection']:
+			cases = selection_cases(test['selection_count'])
+			self.assertEqual(5, len(cases))
+			expected = [dict(case, row_count=catalog['fixtures'][test['fixture']]['files']) for case in cases]
 			with patch.object(pane_rendering_benchmark, 'child', return_value=0) as child:
-				self.assertEqual(0, suite.child(test, catalog, Path('fixture'), False, None, case['action_id']))
+				self.assertEqual(0, suite.child(test, catalog, Path('fixture'), False, None))
 				child.assert_called_once_with(Path('fixture'), test['id'], 'snapshot', True,
-					viewport=catalog['protocol']['viewport'], selection_case=expected)
+					viewport=catalog['protocol']['viewport'], selection_cases=expected)
 
 	def test_statistics_only_save_keeps_all_repetitions_and_partial_failure(self):
 		for fail_after in (None, 2):
@@ -547,7 +726,7 @@ class PerformanceRecordTest(TestCase):
 		from fman_performancetest import pane_rendering_benchmark
 		catalog = records.load_catalog()
 		self.assertEqual(list(pane_rendering_benchmark.REFRESH_SELECTIONS), catalog['protocol']['refresh_selections'])
-		for test in catalog['tests']:
+		for test in catalog['tests'] + catalog['full_tests']:
 			if test['workload'] != 'refresh':
 				continue
 			with patch.object(pane_rendering_benchmark, 'child', return_value=0) as child:
@@ -609,7 +788,7 @@ class PerformanceRecordTest(TestCase):
 	def test_catalog_has_unique_ids_and_keeps_comments_untouched(self):
 		before = records.CATALOG.read_bytes()
 		catalog = records.load_catalog()
-		self.assertEqual(14, len(catalog['tests']))
+		self.assertEqual(13, len(catalog['tests']))
 		self.assertEqual(before, records.CATALOG.read_bytes())
 		self.assertEqual(records.digest(catalog), records.digest(json.loads(json.dumps(catalog))))
 
@@ -619,11 +798,12 @@ class PerformanceRecordTest(TestCase):
 			path.write_text('schema_version: 1\nschema_version: 1\n', encoding='utf-8')
 			with self.assertRaises(ValueError):
 				records.load_catalog(path)
-			catalog = records.load_catalog()
-			catalog['tests'].append(catalog['tests'][0])
-			path.write_text(json.dumps(catalog), encoding='utf-8')
-			with self.assertRaises(ValueError):
-				records.load_catalog(path)
+			for section in ('tests', 'full_tests'):
+				catalog = records.load_catalog()
+				catalog[section].append(catalog['tests'][0])
+				path.write_text(json.dumps(catalog), encoding='utf-8')
+				with self.subTest(section=section), self.assertRaises(ValueError):
+					records.load_catalog(path)
 
 	def test_records_are_unique_and_never_overwrite(self):
 		catalog = records.load_catalog()
