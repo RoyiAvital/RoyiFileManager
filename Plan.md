@@ -2,7 +2,6 @@
 
 ## Pending
 
-- [Code Review 006: Bugs and Unneeded Edge Cases](Plan/CodeReview006.md)
 - [Code Review 099: Deferred Work and Release Gates](Plan/CodeReview099.md)
 - [Date Format: Locale or ISO](Plan/DateFormat.md)
 - [Everything Plug-In](Plan/EverythingPlugIn.md)
@@ -27,6 +26,7 @@
 - [Code Review 003: Low-Risk Safety and Performance](Done/CodeReview003.md)
 - [Code Review 004: Low-Risk Responsiveness Improvements](Done/CodeReview004.md)
 - [Code Review 005: fman Leftovers and Non-Windows Code](Done/CodeReview005.md)
+- [Code Review 006: Bugs and Unneeded Edge Cases](Done/CodeReview006.md)
 - [Concise README Features](Done/ConciseReadmeFeatures.md)
 - [Context Window Capitalization](Done/ContextWindowCapitalization.md)
 - [Correct Provenance Metadata](Done/CorrectProvenanceMetadata.md)

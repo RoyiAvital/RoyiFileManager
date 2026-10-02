@@ -499,6 +499,95 @@ class QuickViewTextIT(QtIT):
 	navigate = QuickViewIT.navigate
 	drain = QuickViewIT.drain
 
+	def test_find_modified_editing_keys_forward_to_source(self):
+		from fman.impl.quick_view import QuickViewSession
+		from fman.impl.quick_view_text import TextContent, convert_text
+		from PyQt5.QtGui import QTextCursor
+		from PyQt5.QtTest import QTest
+		from unittest.mock import patch
+		def check():
+			with patch('fman.load_json', return_value={}):
+				session = QuickViewSession(self.window, *self.panes)
+				session.timer.stop()
+			try:
+				content = TextContent('hello one hello two', 'sample.txt', 'utf-8', (), 19)
+				session.show_result(convert_text(content))
+				view = session.overlay.text_view
+				forwarded = []
+				def forward(source, event):
+					forwarded.append((source, event.key(), int(event.modifiers())))
+				cases = [(key, modifiers) for key in (Qt.Key_Return, Qt.Key_Enter)
+					for modifiers in (Qt.AltModifier, Qt.AltModifier | Qt.ShiftModifier,
+						Qt.ControlModifier, Qt.ControlModifier | Qt.ShiftModifier,
+						Qt.MetaModifier, Qt.MetaModifier | Qt.ShiftModifier)]
+				cases += [(key, modifiers) for key in (Qt.Key_Backspace, Qt.Key_Delete)
+					for modifiers in (Qt.AltModifier, Qt.MetaModifier)]
+				cases.append((Qt.Key_Enter, Qt.AltModifier | Qt.KeypadModifier))
+				with patch.object(self.controller, 'handle_shortcut', side_effect=forward):
+					for key, modifiers in cases:
+						with self.subTest(key=key, modifiers=int(modifiers)):
+							forwarded.clear()
+							view.browser.moveCursor(QTextCursor.Start)
+							view.find_bar.show()
+							view.find_input.setText('hello')
+							view.find_input.setFocus()
+							QTest.keyClick(view.find_input, key, modifiers)
+							self.assertEqual([(session.source, key, int(modifiers))], forwarded)
+							self.assertTrue(session.source.hasFocus())
+							self.assertEqual('hello', view.find_input.text())
+							self.assertFalse(view.browser.textCursor().hasSelection())
+			finally:
+				session.close()
+		self.run_in_app(check)
+
+	def test_find_supported_editing_keys_stay_local(self):
+		from fman.impl.quick_view import QuickViewSession
+		from fman.impl.quick_view_text import TextContent, convert_text
+		from PyQt5.QtGui import QTextCursor
+		from PyQt5.QtTest import QTest
+		from unittest.mock import patch
+		def check():
+			with patch('fman.load_json', return_value={}):
+				session = QuickViewSession(self.window, *self.panes)
+				session.timer.stop()
+			try:
+				content = TextContent('hello one hello two', 'sample.txt', 'utf-8', (), 19)
+				session.show_result(convert_text(content))
+				view = session.overlay.text_view
+				self.controller.handle_shortcut.reset_mock()
+				for key in (Qt.Key_Return, Qt.Key_Enter):
+					for modifiers in (Qt.NoModifier, Qt.ShiftModifier, Qt.KeypadModifier,
+						Qt.ShiftModifier | Qt.KeypadModifier):
+						with self.subTest(key=key, modifiers=int(modifiers)):
+							view.browser.moveCursor(QTextCursor.Start)
+							view.find_bar.show()
+							view.find_input.setText('hello')
+							view.find_input.setFocus()
+							for expected in (0, 10):
+								QTest.keyClick(view.find_input, key, modifiers)
+								self.assertEqual('hello', view.browser.textCursor().selectedText())
+								self.assertEqual(expected, view.browser.textCursor().selectionStart())
+								self.assertTrue(view.find_input.hasFocus())
+							QTest.keyClick(view.find_input, Qt.Key_F3, Qt.ShiftModifier)
+							self.assertEqual(0, view.browser.textCursor().selectionStart())
+				for key, modifiers, position, expected in (
+					(Qt.Key_Backspace, Qt.NoModifier, 11, 'hello worl'),
+					(Qt.Key_Backspace, Qt.ShiftModifier, 11, 'hello worl'),
+					(Qt.Key_Backspace, Qt.ControlModifier, 11, 'hello '),
+					(Qt.Key_Delete, Qt.NoModifier, 0, 'ello world'),
+					(Qt.Key_Delete, Qt.ControlModifier, 0, 'world'),
+				):
+					with self.subTest(key=key, modifiers=int(modifiers)):
+						view.find_input.setText('hello world')
+						view.find_input.setCursorPosition(position)
+						QTest.keyClick(view.find_input, key, modifiers)
+						self.assertEqual(expected, view.find_input.text())
+						self.assertTrue(view.find_input.hasFocus())
+				self.controller.handle_shortcut.assert_not_called()
+			finally:
+				session.close()
+		self.run_in_app(check)
+
 	def test_rendering_modes_local_keys_and_source_forwarding(self):
 		from fman.impl.quick_view import QuickViewSession
 		from fman.impl.quick_view_text import TextContent, convert_text
@@ -1504,6 +1593,91 @@ class FilterBarIT(QtIT):
 						open_file.assert_not_called()
 					else:
 						open_file.assert_called_once_with(as_url(target), 'editor')
+
+	def test_compare_directories_counts_real_filtered_selections(self):
+		from core.commands import CompareDirectories
+		from fman import DirectoryPane
+		from fman.url import as_url
+		from unittest.mock import Mock, patch
+		left_path, right_path = self.root / 'left', self.root / 'right'
+		for path, names in ((left_path, ('common.txt', 'left.txt', 'hidden.log')),
+			(right_path, ('common.txt', 'right.txt'))):
+			path.mkdir()
+			for name in names:
+				(path / name).write_bytes(b'')
+		for pane, path in zip(self.panes, (left_path, right_path)):
+			self.navigate(pane, path)
+		public_window = Mock()
+		panes = [DirectoryPane(public_window, pane, Mock()) for pane in self.panes]
+		public_window.get_panes.return_value = panes
+		self.set_query('.txt$', self.panes[0])
+		self.set_query('right.txt', self.panes[1])
+		panes[0].select([as_url(left_path / 'common.txt')])
+		with patch('core.commands.iterdir', side_effect=self.filesystem.iterdir), \
+			patch('core.commands.show_alert') as alert:
+			CompareDirectories(panes[1])()
+			self.assertEqual([as_url(left_path / 'left.txt')], panes[0].get_selected_files())
+			self.assertEqual([as_url(right_path / 'right.txt')], panes[1].get_selected_files())
+			alert.assert_called_once_with(
+				'Selected 1 visible file in the left pane not present on the right.<br/>'
+				'Selected 1 visible file in the right pane not present on the left.<br/>'
+				'The remaining differences are hidden, filtered, or otherwise not selectable.'
+			)
+			self.set_query('common.txt', self.panes[0])
+			self.set_query('common.txt', self.panes[1])
+			CompareDirectories(panes[0])()
+			self.assertEqual([], panes[0].get_selected_files())
+			self.assertEqual([], panes[1].get_selected_files())
+			self.assertIn('none of the differences can currently be selected', alert.call_args.args[0])
+			self.navigate(self.panes[1], left_path)
+			self.set_query('left.txt', self.panes[1])
+			CompareDirectories(panes[0])()
+			self.assertIn('same file <em>names</em>', alert.call_args.args[0])
+			self.assertEqual([], panes[0].get_selected_files())
+			self.assertEqual([], panes[1].get_selected_files())
+
+	def test_delete_continuation_suppresses_progress_popup(self):
+		from core.commands import _Delete
+		from fman import Task, submit_task, YES, NO
+		from PyQt5.QtCore import QThread, QTimer
+		from unittest.mock import patch
+		attempted, dialogs, observed = [], [], []
+		def fail():
+			attempted.append('first')
+			raise PermissionError(13, 'denied')
+		children = {
+			'file://C:/first': Task('Deleting first', size=1, fn=fail),
+			'file://C:/second': Task('Deleting second', size=1, fn=lambda: attempted.append('second')),
+		}
+		task = _Delete(list(children), lambda url: [children[url]])
+		self.run_in_app(lambda: setattr(self.window, '_progress_bar_palette', QApplication.instance().palette()))
+		original = self.window.create_progress_dialog
+		def create_dialog(*args):
+			dialog = original(*args)
+			dialogs.append(dialog)
+			return dialog
+		def answer(message_box):
+			dialog = dialogs[-1]
+			observed.append((
+				dialog.minimumDuration() == dialog._MAX_C_INT,
+				message_box.defaultButton() == message_box.button(YES),
+				QThread.currentThread() == QApplication.instance().thread(),
+			))
+			QTimer.singleShot(0, message_box.button(NO).click)
+		self.run_in_app(self.window.before_dialog.connect, answer)
+		try:
+			with patch('fman._get_ui', return_value=self.window), \
+				patch.object(self.window, 'create_progress_dialog', side_effect=create_dialog), \
+				patch('core.commands.show_alert', side_effect=AssertionError('Bypassed task alert')):
+				submit_task(task)
+			self.assertEqual(['first'], attempted)
+			self.assertEqual([(True, True, True)], observed)
+			self.assertEqual(dialogs[0]._MINIMUM_DURATION_MS, self.run_in_app(dialogs[0].minimumDuration))
+		finally:
+			self.run_in_app(self.window.before_dialog.disconnect, answer)
+			for dialog in dialogs:
+				self.run_in_app(dialog.cancel)
+				self.run_in_app(dialog.deleteLater)
 
 	def test_special_filenames_and_status_mode_changes(self):
 		from fman.impl.status_bar import DEFAULT_SETTINGS, DISABLED, ACTIVE_PANE, PER_PANE

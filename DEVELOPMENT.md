@@ -328,7 +328,8 @@ Version identifiers are `X.Y.Z` for clean matching release tags, or `Unreleased`
 the source version and commit are retained separately. Reruns replace the version's
 current result but preserve earlier runs. Failed runs never replace successful results.
 
-The report has thirteen overview rows, including Refresh / Selection and a Navigation
+The report has sixteen overview rows, including Selections Readback, separate QuickView Images
+and Text rows, Refresh / Selection and a Navigation
 aggregate of Page Up/Down, Home/End and wheel scrolling. Previous-version comparisons, charts
 and detailed measurements use compatible results only; the first run establishes
 a baseline. The original `src/performancetest/run.py suite` remains available for
@@ -337,7 +338,7 @@ developer diagnostics without updating this version history.
 The default suite uses three fresh processes per test, synthetic 256-file and
 200,000-file folders, and a 50,000-file recursive tree. It measures real pane
 loading, Filter Bar, Quicksearch Fuzzy Find, recursive Find (`Ctrl+Shift+F`) and
-QuickView image paints, responsiveness and memory. Page Up/Down, Home/End and
+QuickView image and TXT/Python/Markdown paints, responsiveness and memory. Page Up/Down, Home/End and
 mouse-wheel latency are measured in both normal and QuickView-enabled panes.
 Refresh / Selection averages 16 unchanged-refresh case medians: eight selection
 patterns in both folder sizes, from no marks through scattered and all-marked
@@ -345,15 +346,22 @@ selections. Reload-to-completed-paint timings check snapshot, marks, cursor and
 scroll preservation; per-case timings and process peak memory remain in the report.
 Selections / Small and Selections / Large each average five case
 medians: single file, all files, contiguous block, alternating and scattered rows.
-Each case includes mutation, completed paint, selected-file readback and the next
-Qt-thread response, so a readback stall cannot disappear behind fast painting.
+Each case measures selection dispatch through a posted Down key, verified cursor
+movement and completed paint (`input_ready_ms`, selection revision 5). Status is
+disabled. The Selections Readback row follows the Selections rows and shows the
+slowest of ten selected-file readback case
+medians measured after this endpoint, not added to selection latency. QuickView
+Images and Text rows are consecutive. Text averages three paint medians, with exact text, syntax-colour and rendered
+Markdown checks. Missing or failed cases suppress their aggregate. Catalog
+revision 10 uses new v2 flat fixtures for QuickView only; v1 data is retained.
+Older composite timings and changed harnesses are incompatible.
 The last three select 64 rows in the small folder and 1,000 in the large folder.
 All five patterns share a pane per repetition: six added processes, each limited
 to 25 seconds.
 
 `python build.py measure --full` adds medium (50,000-file) pane loading, refresh,
 Filter Bar, Fuzzy Find, QuickView, navigation and selection cases. The six extra
-workloads produce nineteen workloads and eighteen overview rows total; refresh
+workloads produce nineteen workloads and twenty-two overview rows total; refresh
 averages 24 case medians and navigation 42. Medium selections use the same five
 patterns, with 1,000 rows for each complex pattern. Full history and reports live
 separately under `UserSettings/Performance/Full`. Regular runs do not prepare or

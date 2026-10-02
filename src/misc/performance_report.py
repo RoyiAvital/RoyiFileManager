@@ -21,6 +21,7 @@ HISTORY = ROOT / 'UserSettings' / 'Performance'
 NAVIGATION_TESTS = ('pane.load.small', 'pane.load.large', 'quickview.small', 'quickview.large')
 NAVIGATION_ACTIONS = ('page-up', 'page-down', 'home', 'end', 'wheel-up', 'wheel-down', 'wheel-burst-down')
 REFRESH_TESTS = ('refresh.small', 'refresh.large')
+TEXT_CASES = ('switch.text', 'switch.python', 'switch.markdown')
 
 
 def atomic_write(path, text):
@@ -106,7 +107,8 @@ def report_data(current, versions):
 			prior = {test['test_id']: test for test in prior_tests}
 			for test in tests:
 				identity = test['test_id']
-				if identity not in ('navigation', 'refresh.selection') or identity not in prior:
+				if (identity not in ('navigation', 'refresh.selection', 'readback') and
+					not identity.startswith('quickview.text.')) or identity not in prior:
 					continue
 				before, after = prior[identity]['metrics'], test['metrics']
 				if before.keys() == after.keys():
@@ -133,13 +135,21 @@ def report_data(current, versions):
 def headline(identity, metrics):
 	if identity.startswith('pane.'):
 		metric, label = 'first_paint_ms', 'First populated paint'
+	elif identity.startswith('quickview.text.'):
+		expected = [case + '.input_to_paint_ms' for case in TEXT_CASES]
+		values = [metrics[name]['median'] for name in expected if name in metrics]
+		valid = len(values) == len(expected)
+		return dict(label='Mean of TXT, Python and Markdown paint medians', metric='text.paint.aggregate',
+			median=statistics.mean(values) if valid else None,
+			minimum=min(values) if valid else None, maximum=max(values) if valid else None,
+			count=len(values), count_label='case medians', p95=None)
 	elif identity.startswith('quickview.'):
 		metric, label = 'enable.png.input_to_paint_ms', 'First preview paint'
 	elif identity.startswith('selection.'):
-		expected = ['selection.' + pattern + '.responsive_ms' for pattern in SELECTION_PATTERNS]
+		expected = ['selection.' + pattern + '.input_ready_ms' for pattern in SELECTION_PATTERNS]
 		values = [metrics[name]['median'] for name in expected if name in metrics]
 		valid = len(values) == len(expected)
-		return dict(label='Mean of full selection interaction medians', metric='selection.responsive.aggregate',
+		return dict(label='Mean of selection input-ready medians', metric='selection.input_ready.aggregate',
 			median=statistics.mean(values) if valid else None,
 			minimum=min(values) if valid else None, maximum=max(values) if valid else None,
 			count=len(values), count_label='case medians', p95=None)
@@ -162,10 +172,38 @@ def overview(record):
 		failures=result.get('failures', [])) for result in record['results']]
 	refresh = [test for test in tests if test['test_id'] in refresh_tests]
 	tests = [test for test in tests if test['test_id'] not in refresh_tests]
+	text_tests = []
+	for test in tests:
+		if test['test_id'].startswith('quickview.'):
+			text_metrics = {name: value for name, value in test['metrics'].items()
+				if name.startswith(tuple(case + '.' for case in TEXT_CASES))}
+			text_tests.append(dict(test_id=test['test_id'].replace('quickview.', 'quickview.text.', 1),
+				status=test['status'], fixture_id=test['fixture_id'], metrics=text_metrics,
+				failures=test['failures']))
+			test['metrics'] = {name: value for name, value in test['metrics'].items() if name not in text_metrics}
+	tests.extend(text_tests)
 	for test in tests:
 		test['headline'] = headline(test['test_id'], test['metrics'])
-		if test['test_id'].startswith('selection.') and test['status'] != 'passed':
+		if test['test_id'].startswith(('selection.', 'quickview.')) and test['status'] != 'passed':
 			test['headline'].update(median=None, minimum=None, maximum=None)
+		if test['test_id'].startswith('quickview.text.') and test['headline']['median'] is None and test['status'] == 'passed':
+			test['status'] = 'incomplete'
+	selection_tests = tuple('selection.' + size for size in ('small', 'medium', 'large')
+		if 'selection.' + size in definitions)
+	if selection_tests:
+		metrics = {test['test_id'] + '.' + name: value for test in tests
+			if test['test_id'] in selection_tests and test['status'] == 'passed'
+			for name, value in test['metrics'].items() if '.readback' in name or name.endswith('.selected_count')}
+		expected = [identity + '.selection.' + pattern + '.readback_ms'
+			for identity in selection_tests for pattern in SELECTION_PATTERNS]
+		values = [metrics[name]['median'] for name in expected if name in metrics]
+		valid = len(values) == len(expected)
+		tests.append(dict(test_id='readback', status='passed' if valid else 'incomplete',
+			fixture_id='Selected files / five patterns per folder size', metrics=metrics,
+			headline=dict(label='Slowest selected-file readback median', metric='readback.aggregate',
+				median=max(values) if valid else None,
+				minimum=min(values) if valid else None, maximum=max(values) if valid else None,
+				count=len(values), count_label='case medians', p95=None)))
 	if definitions.intersection(refresh_tests):
 		metrics = {test['test_id'] + '.' + name: value for test in refresh
 			if test['status'] == 'passed' for name, value in test['metrics'].items()}
@@ -197,6 +235,13 @@ def overview(record):
 			median=statistics.mean(values) if valid else None,
 			minimum=min(values) if valid else None, maximum=max(values) if valid else None,
 			count=len(values), count_label='case medians', p95=None)))
+	for prefix, aggregate in (('quickview.', None), ('selection.', 'readback')):
+		positions = [index for index, test in enumerate(tests)
+			if test['test_id'].startswith(prefix) or test['test_id'] == aggregate]
+		if positions:
+			group = [tests[index] for index in positions]
+			tests = [test for index, test in enumerate(tests) if index not in positions]
+			tests[positions[0]:positions[0]] = group
 	return tests
 
 

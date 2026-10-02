@@ -379,7 +379,10 @@ class TextPreview(QWidget):
 		elif watched is not self.browser and (
 			(event.text() and event.text().isprintable() and modifiers in (
 				Qt.NoModifier, Qt.ShiftModifier, Qt.ControlModifier | Qt.AltModifier)) or
-			key in (Qt.Key_Backspace, Qt.Key_Delete, Qt.Key_Return, Qt.Key_Enter) or
+			(key in (Qt.Key_Return, Qt.Key_Enter) and
+				(modifiers & ~Qt.KeypadModifier) in (Qt.NoModifier, Qt.ShiftModifier)) or
+			(key in (Qt.Key_Backspace, Qt.Key_Delete) and modifiers in (
+				Qt.NoModifier, Qt.ShiftModifier, Qt.ControlModifier, Qt.ControlModifier | Qt.ShiftModifier)) or
 			(modifiers == Qt.ControlModifier and key in (Qt.Key_X, Qt.Key_V, Qt.Key_Z, Qt.Key_Y))
 		):
 			return False

@@ -15,6 +15,10 @@ from fman_performancetest.records import digest
 EPOCH_NS = 1704067200 * 1_000_000_000
 ASSETS = ('preview-small.png', 'preview-large.png', 'preview-small.jpg',
 	'preview-small.bmp', 'preview-invalid.png', 'preview-unsupported.txt')
+TEXT_ASSETS = {
+	'preview-sample.py': b'def summarize(values):\n    total = sum(values)\n    return total\n',
+	'preview-sample.md': b'# Preview Report\n\n**Status:** Ready\n\n- First item\n- Second item\n\n[Project](https://example.invalid/)\n',
+}
 
 
 def png(width, height):
@@ -45,10 +49,11 @@ def assets():
 
 
 def entries(specification, image_assets):
+	preview_assets = ASSETS + (tuple(TEXT_ASSETS) if specification['revision'] == 2 else ())
 	for index in range(specification['files']):
-		if index < len(ASSETS) and specification['kind'] == 'flat':
-			name = ASSETS[index]
-			yield name, image_assets[name]
+		if index < len(preview_assets) and specification['kind'] == 'flat':
+			name = preview_assets[index]
+			yield name, TEXT_ASSETS[name] if name in TEXT_ASSETS else image_assets[name]
 			continue
 		token = hashlib.sha256(('%d:%d' % (specification['seed'], index)).encode('ascii')).hexdigest()
 		stem = ('common_' + 'a' * 72, 'ab' * 42, 'annual report 2026 final',
@@ -116,14 +121,16 @@ def verify(directory, expected):
 def prepare(base, identity, specification, image_assets=None):
 	if not identity or Path(identity).name != identity or identity in ('.', '..'):
 		raise ValueError('Invalid fixture ID')
-	if specification['revision'] != 1 or specification['kind'] not in ('flat', 'recursive') or specification['files'] < 8:
+	if specification['revision'] not in (1, 2) or specification['kind'] not in ('flat', 'recursive') or specification['files'] < 8:
 		raise ValueError('Invalid fixture specification')
+	if specification['revision'] == 2 and specification['kind'] != 'flat':
+		raise ValueError('Text preview fixtures require flat folders')
 	image_assets = assets() if image_assets is None else image_assets
 	root = Path(base).resolve() / identity
 	directory, manifest = root / 'data', root / 'manifest.json'
 	expected = {name: dict(size=len(data), sha256=hashlib.sha256(data).hexdigest())
 		for name, data in entries(specification, image_assets)}
-	definition = dict(generator='sha256-names-rgb-bands-v1', specification=specification,
+	definition = dict(generator='sha256-names-rgb-bands-v%d' % specification['revision'], specification=specification,
 		mtime_ns=EPOCH_NS, creation_ns=EPOCH_NS, file_attributes=32, entries=expected)
 	fingerprint = digest(definition)
 	if root.exists():

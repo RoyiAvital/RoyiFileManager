@@ -47,10 +47,15 @@ in the result record. Repeating a version replaces its index entry, not its old 
 Corrupt history is reported, never silently reset. Earlier diagnostic runs under
 `target` are not imported as previous versions.
 
-The overview has thirteen rows: pane loading, Filter Bar, Fuzzy Find and QuickView in
+The overview has sixteen rows: pane loading, Filter Bar, Fuzzy Find, QuickView Images
+and QuickView Text in
 small/large folders, Fuzzy Find (Recursive), Refresh / Selection,
-Selections / Small, Selections / Large, and Navigation. Headlines are first populated
-paint, slowest query median, or first preview paint, respectively. Navigation is
+Selections / Small, Selections / Large, Selections Readback, and Navigation. Headlines are first populated
+paint, slowest query median, first PNG preview paint, or the mean of TXT/Python/Markdown
+paint medians, respectively. QuickView Images/Text rows are consecutive; Selections
+Readback immediately follows the Selections rows and shows the slowest of ten selected-file
+readback case medians: five patterns in each folder size. These derived rows reuse
+the thirteen workloads, without extra measurement processes. Navigation is
 the arithmetic mean of 28 case medians: seven actions across small/large panes with
 QuickView off/on, equally weighted. Refresh / Selection is the mean of 16 case
 medians: eight selection patterns across small/large folders. Each Selections row
@@ -58,8 +63,9 @@ is the mean of five full selection-interaction case medians for its folder size.
 or failed selection cases suppress that aggregate. Details
 retain every case so the aggregate cannot conceal individual regressions.
 
-Full reports have eighteen rows, including the additional medium pane, Filter
-Bar, Fuzzy Find, QuickView and Selections / Medium rows. Refresh remains
+Full reports have twenty-two rows, including the additional medium pane, Filter
+Bar, Fuzzy Find, QuickView Images, QuickView Text and Selections / Medium rows.
+Readback spans fifteen case medians. Refresh remains
 one aggregate, now across 24 case medians; Navigation averages 42. Both require
 all expected medium cases as well as small/large cases before showing an average.
 
@@ -90,6 +96,11 @@ punctuation. PNG pixels use integer bands; JPEG/BMP conversions use the recorded
 Qt encoder. Small images are 1280x960; large images are 4096x3072. Flat fixtures
 also contain corrupt images and a plain-text preview input. Filler files are empty,
 including those with image extensions; QuickView targets named preview assets.
+QuickView revision 3 uses separate `flat-small-v2`, `flat-large-v2` and optional
+`flat-medium-v2` fixtures with the same counts plus representative Python and
+Markdown content replacing two empty fillers. Plain TXT remains an explicit case.
+Existing v1 fixtures and manifests are never changed. Preparing v2 requires an
+additional folder per measured size; setup and verification are untimed.
 
 Creation/modification timestamps are fixed to 2024-01-01 UTC; file/directory
 attributes are fixed. Names, bytes, metadata and directory layout are verified
@@ -137,8 +148,11 @@ fixtures and results are local; nothing is uploaded.
   the later navigation hook. Navigation still timestamps immediately after the
   original paint handler returns; no queued acknowledgement is used.
 - QuickView includes its normal 100 ms debounce and first lazy renderer import.
-  Revision 2 verifies the existing text fixture as supported text, replacing
-  the obsolete unsupported-image expectation without changing fixture contents.
+  Revision 3 measures separate TXT, syntax-highlighted Python and rendered Markdown
+  switches. Exact content, Python keyword colours, and Markdown heading/list/link
+  formatting must match. Text headlines require all three; older records with only
+  TXT do not receive a fabricated text aggregate. Image and text timings have
+  separate report rows, using the same fresh-process workloads.
   Scenarios cover disabled navigation, PNG/JPEG/BMP/text switching, invalid images,
   fit/actual size/zoom/pan, 30 ms rapid navigation, close/reopen and cancellation
   before the debounce fires. Pixels, dimensions/format and target-pane state
@@ -193,12 +207,19 @@ plus the other medium workloads and fixture preparation/verification. Full mode
 takes longer and is not subject to the regular selection's added-runtime target;
 its actual duration has not been measured.
 
-Selection revision 4 adds `responsive_ms`: elapsed time from mutation dispatch
-through completed pane paint, selected-file readback and a subsequent Qt-thread
-callback confirming it can respond again. The headline averages the five case
-medians of this full interval, not just paint time and not their sum. Fixture
-preparation, initial selection reset and benchmark-only assertions are excluded.
-Status remains disabled; this is not a benchmark of enabled optional observers.
+Selection revision 5 records `input_ready_ms`: elapsed time from selection
+dispatch through a posted Down key, verified cursor movement and completed paint.
+The all-files case uses the public `select_all` API; the other cases use `select`
+with explicit URLs. The headline averages five case medians, not their sum.
+Queued selection observers are included. Regular measurements keep status disabled.
+The separate native regression enables status and waits for its real refresh timer
+and Qt-thread snapshot before posting the key; it does not wait for background
+size-calculation I/O. This is a verified next-input response, not physical-device
+latency, an arbitrary empty callback or a claim about every future observer.
+
+The cursor and scroll are checked before the probe, then restored outside timing.
+Standalone `get_selected_files` diagnostics and membership assertions run only
+after the endpoint. Fixture preparation and initial selection reset are excluded.
 
 Retained diagnostic metrics include mutation wall/CPU time, dispatch-to-completed pane paint,
 independent readback wall/CPU time, requested/initial/expected/selected counts and
@@ -207,9 +228,11 @@ interval even when no timer fires. Cursor, scroll and duplicate-free membership
 are checked after timing. No row-text fingerprint or loading-arrow probe runs in
 selection cases; initial pane loading itself is outside selection timing.
 
-Older selection records without `responsive_ms` retain their phase details but
-do not receive a fabricated full-interaction headline. A fast select-all paint
-does not imply fast enumeration of every selected URL; both are in the new total.
+Older records retain their phase details, including revision 4's composite
+`responsive_ms`, but receive no fabricated input-ready headline. Catalog revision
+9 and selection revision 5 prevent comparisons with the older definition. A fast
+next-input response does not imply fast enumeration of every selected URL; the
+independent readback metric exposes that cost without adding it to the headline.
 
 Completed stages are retained when a later stage times out. Failures retain case,
 repetition and last completed stage; missing durations are not zero samples.

@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-10-02
+
+The focus of this release is an optimization of selections and solving few edge cases bugs.
+
+This release speeds up retrieval of the selected file and metadata list. Readback now has a
+dedicated measurement, separate from selection responsiveness.
+
+| Test                            | Version: `0.9.0` | Version: `0.9.2` | Version: `0.10.1` | Version: `0.10.2` |
+|---------------------------------|------------------|------------------|-------------------|-------------------|
+| Pane Load - Small Folder        | 44.14 [ms]       | 42.37 [ms]       | 37.26 [ms]        | 33.54 [ms]        |
+| Pane Load - Large Folder        | 1030.26 [ms]     | 983.77 [ms]      | 998.90 [ms]       | 985.29 [ms]       |
+| Filter Bar - Small Folder       | 9.72 [ms]        | 10.08 [ms]       | 9.34 [ms]         | 9.05 [ms]         |
+| Filter Bar - Large Folder       | 332.28 [ms]      | 328.40 [ms]      | 329.17 [ms]       | 330.71 [ms]       |
+| Fuzzy Find - Small Folder       | 4.67 [ms]        | 4.82 [ms]        | 4.60 [ms]         | 4.66 [ms]         |
+| Fuzzy Find - Large Folder       | 350.86 [ms]      | 349.39 [ms]      | 425.89 [ms]       | 463.02 [ms]       |
+| Fuzzy Find (Recursive)          | 89.82 [ms]       | 89.72 [ms]       | 90.21 [ms]        | 90.15 [ms]        |
+| QuickView Images - Small Folder | 109.73 [ms]      | 111.81 [ms]      | 118.97 [ms]       | 121.36 [ms]       |
+| QuickView Images - Large Folder | 118.74 [ms]      | 115.70 [ms]      | 120.15 [ms]       | 120.92 [ms]       |
+| QuickView Text - Small Folder   | -                | -                | -                 | 128.44 [ms]       |
+| QuickView Text - Large Folder   | -                | -                | -                 | 128.44 [ms]       |
+| Selections - Small Folder       | -                | -                | 15.12 [ms]        | 15.73 [ms]        |
+| Selections - Large Folder       | -                | -                | 97.87 [ms]        | 86.39 [ms]        |
+| Selections Readback             | ~2481.61 [ms]    | ~2481.61 [ms]    | 2481.61 [ms]      | 67.65 [ms]        |
+| Navigation                      | 6.79 [ms]        | 6.80 [ms]        | 6.86 [ms]         | 7.40 [ms]         |
+| Refresh / Selection             | 482.95 [ms]      | 471.10 [ms]      | 739.78 [ms]       | 733.36 [ms]       |
+
+Versions `0.10.1` and earlier use the unoptimized readback implementation.
+`~` marks estimates based on the `0.10.1` baseline, not measured results;
+`-` marks unavailable results. Benchmark definitions and fixtures changed between
+runs, limiting direct comparisons.
+See [measurement details](Done/CodeReview006.md#expanded-regular-report-and-grouping-2026-10-02).
+
+### Changed
+
+- Reduced Qt overhead when retrieving selected file lists, preserving selection
+  membership and ordering without changing selection commands.
+  A same-environment, same-harness comparison reduced readback of 200,000 selected
+  files from **2,481.61 ms to 67.65 ms** (97.3% less time, about **36x** faster).
+  Both medians use three samples. See [readback results](Done/CodeReview006.md).
+
+- Simplified clipboard, Explorer and Recycle Bin command handling without changing
+  their existing behavior.
+
+### Fixed
+
+- QuickView's Find field now forwards modified Enter shortcuts such as Alt+Enter
+  (Properties) to the source pane, while preserving local Find and text editing.
+- Compare directories now reports selected visible differences, distinguishes
+  unselectable differences from matching names, and keeps exact-name comparison.
+- Packing multiple entries at a drive root suggests `C.zip` instead of `C:.zip`;
+  nameless roots use `archive.zip`, and trailing separators preserve folder names.
+- Delete continuation prompts now use the task dialog, preventing automatic
+  progress popups over the question and setting an explicit Yes default.
+
 ## [0.10.1] - 2026-10-01
 
 This version focuses on code cleanup, removing unused features inherited from

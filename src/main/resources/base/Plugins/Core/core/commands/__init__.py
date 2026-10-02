@@ -95,8 +95,7 @@ class MoveToTrash(DirectoryPaneCommand):
 			show_alert('No file is selected!')
 			return
 		description = _describe(urls, 'these %d files')
-		trash = 'Recycle Bin'
-		msg = "Do you really want to move %s to the %s?" % (description, trash)
+		msg = "Do you really want to move %s to the Recycle Bin?" % description
 		if show_alert(msg, YES | NO, YES) & YES:
 			submit_task(_Delete(urls, prepare_trash, prepare_delete))
 	def is_visible(self):
@@ -158,7 +157,7 @@ class _Delete(Task):
 					self.show_alert(message)
 				else:
 					message += ' Do you want to continue?'
-					choice = show_alert(message, YES | NO | YES_TO_ALL)
+					choice = self.show_alert(message, YES | NO | YES_TO_ALL, YES)
 					if choice & NO:
 						break
 					if choice & YES_TO_ALL:
@@ -217,8 +216,6 @@ def go_up(pane):
 	try:
 		pane.set_path(parent_dir, callback)
 	except FileNotFoundError:
-		# This for instance happens when the user pressed backspace when at
-		# file:/// on Unix.
 		pass
 
 class Open(DirectoryPaneCommand):
@@ -911,15 +908,13 @@ class OpenNativeFileManager(DirectoryPaneCommand):
 		url = self.pane.get_path()
 		scheme = splitscheme(url)[0]
 		if scheme != 'file://':
-			native_fm = 'Explorer'
-			show_alert("Cannot open %s in %s" % (native_fm, scheme))
+			show_alert("Cannot open Explorer in %s" % scheme)
 			return
 		open_native_file_manager(as_human_readable(url))
 
 class CopyPathsToClipboard(DirectoryPaneCommand):
 	def __call__(self):
 		to_copy = self.get_chosen_files() or [self.pane.get_path()]
-		files = '\n'.join(to_copy)
 		clipboard.clear()
 		clipboard.set_text('\n'.join(map(as_human_readable, to_copy)))
 		_report_clipboard_action('Copied', to_copy, ' to the clipboard', 'path')
@@ -1612,7 +1607,12 @@ class Pack(DirectoryPaneCommand):
 		if len(files) == 1:
 			dest_name = PurePath(basename(files[0])).stem + '.zip'
 		else:
-			dest_name = basename(self.pane.get_path()) + '.zip'
+			scheme, path = splitscheme(self.pane.get_path())
+			path = path.rstrip('/')
+			folder_name = basename(scheme + path)
+			if scheme == 'file://' and re.fullmatch('[A-Za-z]:', path):
+				folder_name = path[0]
+			dest_name = (folder_name or 'archive') + '.zip'
 		dest_dir = _get_opposite_pane(self.pane).get_path()
 		dest_url = join(dest_dir, dest_name)
 		suggested_dst, selection_start, selection_end = \
@@ -2073,20 +2073,28 @@ class CompareDirectories(DirectoryPaneCommand):
 		right.clear_selection()
 		left.select(join(left_url, name) for name in left_only)
 		right.select(join(right_url, name) for name in right_only)
-		res_left, res_right = len(left_only), len(right_only)
-		if res_left == res_right == 0:
+		res_left = len(left.get_selected_files())
+		res_right = len(right.get_selected_files())
+		if not left_only and not right_only:
 			message = 'The directories contain the same file <em>names</em>.' \
 			          '<br/>(Did not compare contents, Size or Modified.)'
+		elif res_left == res_right == 0:
+			message = 'The directories contain different file names, but none of ' \
+			          'the differences can currently be selected.'
 		else:
 			msg_parts = []
-			def report(count, l, r):
+			def report(count, side, opposite):
 				if count:
 					msg_parts.append(
-						'The %s pane contains %d file%s not present on the %s.'
-						% (l, count, '' if count == 1 else 's', r)
+						'Selected %d visible file%s in the %s pane not present on the %s.'
+						% (count, '' if count == 1 else 's', side, opposite)
 					)
 			report(res_left, 'left', 'right')
 			report(res_right, 'right', 'left')
+			if res_left < len(left_only) or res_right < len(right_only):
+				msg_parts.append(
+					'The remaining differences are hidden, filtered, or otherwise not selectable.'
+				)
 			message = '<br/>'.join(msg_parts)
 		show_alert(message)
 class none(DirectoryPaneCommand):

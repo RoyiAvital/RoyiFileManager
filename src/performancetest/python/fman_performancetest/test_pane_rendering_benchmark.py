@@ -38,7 +38,7 @@ from tempfile import TemporaryDirectory
 from fman_performancetest import fixtures, quickview
 with TemporaryDirectory() as temporary:
     fixture = fixtures.prepare(temporary, 'quickview-smoke',
-        dict(revision=1, kind='flat', files=256, seed=1729), fixtures.assets())
+		dict(revision=2, kind='flat', files=256, seed=1729), fixtures.assets())
     raise SystemExit(quickview.child(Path(fixture['directory']), (1280, 800), 1))
 '''
 		environment = dict(os.environ, QT_QPA_PLATFORM='windows', QT_SCALE_FACTOR='1',
@@ -53,8 +53,11 @@ with TemporaryDirectory() as temporary:
 		self.assertEqual([], payload['errors'])
 		self.assertTrue(payload['settings_isolated'])
 		samples = {sample['action_id']: sample for sample in payload['samples']}
-		self.assertTrue(samples['switch.text']['text_verified'])
-		self.assertGreater(samples['switch.text']['input_to_paint_ms'], 0)
+		for case, kind in (('switch.text', 'text'), ('switch.python', 'python'), ('switch.markdown', 'markdown')):
+			self.assertTrue(samples[case]['text_verified'])
+			self.assertTrue(samples[case]['format_verified'])
+			self.assertEqual(kind, samples[case]['text_format'])
+			self.assertGreater(samples[case]['input_to_paint_ms'], 0)
 		self.assertTrue(samples['restore.large-png']['pixels_verified'])
 		self.assertIn('invalid-image', samples)
 		self.assertNotIn('unsupported-file', samples)
@@ -66,27 +69,51 @@ from tempfile import TemporaryDirectory
 from time import perf_counter
 from fman_performancetest import selection
 from fman_performancetest.pane_rendering_benchmark import child
+from PyQt5.QtCore import QTimer
 import sys
 original_measure = selection.measure
 def blocked_measure(view, gui, pane, case):
 	original_select = pane.select
+	original_select_all = pane.select_all
 	original_readback = pane.get_selected_files
+	observations = dict(mutating=False, observer_ms=0)
+	def block_observer():
+		started = perf_counter()
+		until = started + 0.04
+		while perf_counter() < until:
+			pass
+		observations['observer_ms'] += (perf_counter() - started) * 1000
+	def selection_changed(*_):
+		if observations['mutating']:
+			QTimer.singleShot(0, block_observer)
+	def mutate(operation, *args):
+		observations['mutating'] = True
+		try:
+			return operation(*args)
+		finally:
+			observations['mutating'] = False
 	def select(urls):
 		until = perf_counter() + 0.04
 		while perf_counter() < until:
 			pass
-		return original_select(urls)
+		return mutate(original_select, urls)
 	def readback():
 		until = perf_counter() + 0.04
 		while perf_counter() < until:
 			pass
 		return original_readback()
 	pane.select = select
+	pane.select_all = lambda: mutate(original_select_all)
 	pane.get_selected_files = readback
+	gui(lambda: view.selectionModel().selectionChanged.connect(selection_changed))
 	try:
-		return original_measure(view, gui, pane, case)
+		result = original_measure(view, gui, pane, case)
+		result['observer_ms'] = observations['observer_ms']
+		return result
 	finally:
+		gui(lambda: view.selectionModel().selectionChanged.disconnect(selection_changed))
 		pane.select = original_select
+		pane.select_all = original_select_all
 		pane.get_selected_files = original_readback
 selection.measure = blocked_measure
 with TemporaryDirectory() as temporary:
@@ -115,15 +142,90 @@ with TemporaryDirectory() as temporary:
 				self.assertEqual(16, measurement['row_count'])
 				self.assertEqual(expected, measurement['selected_count'])
 				self.assertTrue(measurement['state_preserved'])
-				for field in ('wall_ms', 'cpu_ms', 'paint_ms', 'readback_ms', 'readback_cpu_ms', 'responsive_ms'):
+				self.assertTrue(measurement['followup_verified'])
+				self.assertEqual('disabled', measurement['status_mode'])
+				for field in ('wall_ms', 'cpu_ms', 'paint_ms', 'readback_ms', 'readback_cpu_ms', 'input_ready_ms'):
 					self.assertGreaterEqual(measurement[field], 0)
 				self.assertGreaterEqual(measurement['readback_ms'], 35)
-				self.assertGreaterEqual(measurement['responsive_ms'], measurement['paint_ms'] + measurement['readback_ms'])
+				self.assertGreaterEqual(measurement['input_ready_ms'], measurement['paint_ms'])
+				self.assertGreaterEqual(measurement['observer_ms'], 35)
+				self.assertGreaterEqual(measurement['input_ready_ms'], measurement['wall_ms'] + measurement['observer_ms'])
+				self.assertLessEqual(measurement['input_ready_ms'], measurement['readback_started_ms'])
+				self.assertNotIn('responsive_ms', measurement)
 				self.assertGreaterEqual(measurement['readback_heartbeat_gap_ms']['max'], 35)
 				for field in ('heartbeat_gap_ms', 'queue_dispatch_ms', 'readback_heartbeat_gap_ms', 'readback_queue_dispatch_ms'):
 					self.assertGreaterEqual(measurement[field]['max'], 0)
 				if pattern != 'all':
 					self.assertGreaterEqual(measurement['heartbeat_gap_ms']['max'], 35)
+
+	def test_native_selection_waits_for_status_refresh(self):
+		script = '''
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from time import perf_counter
+from PyQt5.QtCore import QEvent, QObject, Qt
+from fman_performancetest import selection
+from fman_performancetest.pane_rendering_benchmark import child
+
+original_measure = selection.measure
+def observed_measure(view, gui, pane, case):
+	from fman.impl.status_bar import DEFAULT_SETTINGS
+	observations = {}
+	original_snapshot = pane._widget.get_status_snapshot
+	def snapshot():
+		until = perf_counter() + 0.04
+		while perf_counter() < until:
+			pass
+		result = original_snapshot()
+		observations['snapshot'] = perf_counter()
+		return result
+	def selected(*_):
+		observations['selected'] = perf_counter()
+	class Observer(QObject):
+		def eventFilter(self, watched, event):
+			if event.type() == QEvent.KeyPress and event.key() == Qt.Key_Down:
+				observations['input'] = perf_counter()
+			return False
+	def install():
+		view.setFocus()
+		pane._widget.get_status_snapshot = snapshot
+		pane.window._widget.set_extended_status_bar(dict(DEFAULT_SETTINGS, mode='single'))
+		view.selectionModel().selectionChanged.connect(selected)
+		observer = Observer(view)
+		view.installEventFilter(observer)
+		return observer
+	observer = gui(install)
+	try:
+		result = original_measure(view, gui, pane, case)
+		assert observations['selected'] < observations['snapshot'] < observations['input'], observations
+		assert result['status_mode'] == 'single'
+		assert result['followup_verified'] and result['state_preserved']
+		assert result['input_ready_ms'] >= 150, result
+		assert result['readback_started_ms'] >= result['input_ready_ms'], result
+		return result
+	finally:
+		def cleanup():
+			pane.window._widget.set_extended_status_bar(DEFAULT_SETTINGS)
+			pane._widget.get_status_snapshot = original_snapshot
+			view.selectionModel().selectionChanged.disconnect(selected)
+			view.removeEventFilter(observer)
+			observer.deleteLater()
+		gui(cleanup)
+selection.measure = observed_measure
+with TemporaryDirectory() as temporary:
+	folder = Path(temporary)
+	for index in range(16):
+		(folder / ('entry%02d.txt' % index)).touch()
+	case = dict(selection.selection_cases(4)[1], row_count=16)
+	raise SystemExit(child(folder, 'status-selection-smoke', 'snapshot', True,
+		viewport=(1280, 800), selection_cases=[case]))
+'''.expandtabs(4)
+		environment = dict(os.environ, QT_QPA_PLATFORM='windows')
+		environment['PYTHONPATH'] = os.pathsep.join((str(SCRIPT.parents[1] /
+			'performancetest/python'), environment.get('PYTHONPATH', '')))
+		result = subprocess.run([sys.executable, '-X', 'faulthandler', '-c', script],
+			env=environment, capture_output=True, text=True, timeout=25)
+		self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
 	def test_selection_patterns_have_exact_repeatable_membership(self):
 		for row_count, count in ((256, 64), (200000, 1000)):

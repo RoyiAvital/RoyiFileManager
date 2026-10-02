@@ -61,6 +61,207 @@ class HiddenFileFilterTest(TestCase):
 			patch('core.commands.is_hidden', side_effect=AssertionError):
 			self.assertTrue(_hidden_file_filter('zip://archive/entry'))
 
+class CompareDirectoriesTest(TestCase):
+	def test_counts_only_selected_visible_differences(self):
+		message, left, right = self._compare(
+			['common', 'visible', 'hidden'], ['common', 'filtered'], ['visible'], []
+		)
+		self.assertEqual(
+			'Selected 1 visible file in the left pane not present on the right.<br/>'
+			'The remaining differences are hidden, filtered, or otherwise not selectable.', message
+		)
+		self.assertEqual({'file://C:/left/visible', 'file://C:/left/hidden'}, set(left.requested_selection))
+		self.assertEqual(['file://D:/right/filtered'], right.requested_selection)
+	def test_unselectable_differences_are_not_equality(self):
+		message, _, _ = self._compare(['hidden'], [], [], [])
+		self.assertEqual(
+			'The directories contain different file names, but none of the differences can currently be selected.',
+			message
+		)
+	def test_equal_names_ignore_visibility(self):
+		message, left, right = self._compare(['shared'], ['shared'], ['shared'], [])
+		self.assertEqual(
+			'The directories contain the same file <em>names</em>.'
+			'<br/>(Did not compare contents, Size or Modified.)', message
+		)
+		self.assertEqual([], left.requested_selection)
+		self.assertEqual([], right.requested_selection)
+	def test_hidden_opposite_match_is_not_a_difference(self):
+		message, left, right = self._compare(
+			['shared'], ['shared', 'right-only'], ['shared'], ['right-only']
+		)
+		self.assertEqual('Selected 1 visible file in the right pane not present on the left.', message)
+		self.assertEqual([], left.requested_selection)
+		self.assertEqual(['file://D:/right/right-only'], right.requested_selection)
+	def test_exact_case_and_unicode_names_across_providers(self):
+		left_names = ['Readme', 'Stra\u00dfe', '\u00e9']
+		right_names = ['README', 'STRASSE', 'e\u0301']
+		for right_path in ('file://D:/right', 'zip://C:/archive.zip'):
+			with self.subTest(right_path=right_path):
+				message, left, right = self._compare(
+					left_names, right_names, left_names, right_names, right_path
+				)
+				self.assertEqual(
+					'Selected 3 visible files in the left pane not present on the right.<br/>'
+					'Selected 3 visible files in the right pane not present on the left.', message
+				)
+				self.assertEqual({join('file://C:/left', name) for name in left_names}, set(left.requested_selection))
+				self.assertEqual({join(right_path, name) for name in right_names}, set(right.requested_selection))
+	def _compare(self, left_names, right_names, left_visible, right_visible, right_path='file://D:/right'):
+		from core.commands import CompareDirectories
+		left = self._pane('file://C:/left', left_visible)
+		right = self._pane(right_path, right_visible)
+		right.window.get_panes.return_value = [left, right]
+		with patch('core.commands.iterdir', side_effect=[iter(left_names), iter(right_names)]) as listing, \
+			patch('core.commands.show_alert') as alert:
+			CompareDirectories(right)()
+		self.assertEqual([call('file://C:/left'), call(right_path)], listing.call_args_list)
+		for pane in (left, right):
+			pane.clear_selection.assert_called_once_with()
+			pane.select.assert_called_once()
+			pane.get_selected_files.assert_called_once_with()
+		alert.assert_called_once()
+		return alert.call_args.args[0], left, right
+	def _pane(self, path, visible):
+		pane = Mock()
+		pane.get_path.return_value = path
+		selected = [join(path, 'previous-selection')]
+		visible_urls = {join(path, name) for name in visible}
+		pane.requested_selection = []
+		def select(urls):
+			requested = list(urls)
+			pane.requested_selection.extend(requested)
+			selected.extend(url for url in requested if url in visible_urls)
+		pane.select.side_effect = select
+		pane.clear_selection.side_effect = selected.clear
+		pane.get_selected_files.side_effect = lambda: list(selected)
+		return pane
+
+class PackTest(TestCase):
+	def test_multi_file_suggestions(self):
+		cases = (
+			(as_url('C:\\'), 'C.zip'),
+			('file://C:/', 'C.zip'),
+			('file://C:/reports', 'reports.zip'),
+			('file://C:/reports/', 'reports.zip'),
+			('file:////server/share', 'share.zip'),
+			('file:////server/share/', 'share.zip'),
+			('file:///', 'archive.zip'),
+			('drives://', 'archive.zip'),
+			('zip://C:/source.zip/folder', 'folder.zip'),
+		)
+		for path, expected in cases:
+			with self.subTest(path=path):
+				self._check_suggestion(path, ['file://C:/one', 'file://C:/two'], expected)
+	def test_single_file_suggestion_is_unchanged(self):
+		self._check_suggestion('file://C:', ['file://C:/report.txt'], 'report.zip')
+	def _check_suggestion(self, path, files, expected):
+		from core.commands import Pack
+		pane, opposite = Mock(), Mock()
+		pane.get_path.return_value = path
+		opposite.get_path.return_value = 'file://D:/output'
+		command = Pack(pane)
+		with patch.object(command, 'get_chosen_files', return_value=files), \
+			patch('core.commands._get_opposite_pane', return_value=opposite), \
+			patch('core.commands.show_prompt', return_value=('', False)) as prompt, \
+			patch('core.commands.mkdir') as make_directory, \
+			patch('core.commands.submit_task') as submit:
+			command()
+		self.assertEqual(as_human_readable(join('file://D:/output', expected)), prompt.call_args.args[1])
+		make_directory.assert_not_called()
+		submit.assert_not_called()
+
+class DeleteTaskTest(TestCase):
+	def test_continue_answers_use_task_alert(self):
+		from core.commands import _Delete
+		from fman import YES_TO_ALL
+		for answer, expected_runs, expected_alerts in ((NO, 1, 1), (YES, 3, 3), (YES_TO_ALL, 3, 1)):
+			with self.subTest(answer=answer):
+				prepare = Mock(side_effect=AssertionError('Unexpected filesystem access'))
+				task = _Delete(['file://C:/first', 'file://C:/second', 'file://C:/third'], prepare)
+				task._tasks = [Mock(), Mock(), Mock()]
+				for child in task._tasks:
+					child.get_title.return_value = 'Deleting a file'
+				with patch.object(task, '_gather_tasks'), patch.object(task, 'check_canceled'), \
+					patch.object(task, 'run', side_effect=PermissionError(13, 'denied')) as run, \
+					patch.object(task, 'show_alert', return_value=answer) as alert, \
+					patch('core.commands.show_alert', side_effect=AssertionError('Bypassed task alert')):
+					task()
+				self.assertEqual(expected_runs, run.call_count)
+				self.assertEqual(expected_alerts, alert.call_count)
+				alert.assert_any_call(
+					'Error deleting a file: denied. Do you want to continue?',
+					YES | NO | YES_TO_ALL, YES
+				)
+				if answer == YES:
+					self.assertEqual(call('Error deleting a file: denied.'), alert.call_args_list[-1])
+				prepare.assert_not_called()
+	def test_missing_file_does_not_prompt_or_stop(self):
+		from core.commands import _Delete
+		task = _Delete(['file://C:/first', 'file://C:/second'], Mock())
+		task._tasks = [Mock(), Mock()]
+		with patch.object(task, '_gather_tasks'), patch.object(task, 'check_canceled'), \
+			patch.object(task, 'run', side_effect=[FileNotFoundError(), None]) as run, \
+			patch.object(task, 'show_alert') as alert, patch('core.commands.show_alert') as global_alert:
+			task()
+		self.assertEqual(2, run.call_count)
+		alert.assert_not_called()
+		global_alert.assert_not_called()
+
+class CommandCleanupTest(TestCase):
+	def test_clipboard_text_and_messages(self):
+		from core.commands import CopyPathsToClipboard
+		pane = Mock()
+		pane.get_path.return_value = 'file://C:/folder'
+		for files in ([], ['file://C:/one'], ['file://C:/one', 'file://C:/two']):
+			with self.subTest(files=files):
+				command = CopyPathsToClipboard(pane)
+				with patch.object(command, 'get_chosen_files', return_value=files), \
+					patch('core.commands.clipboard.clear') as clear, \
+					patch('core.commands.clipboard.set_text') as set_text, \
+					patch('core.commands.show_status_message') as status:
+					command()
+				paths = [as_human_readable(url) for url in files or ['file://C:/folder']]
+				clear.assert_called_once_with()
+				set_text.assert_called_once_with('\n'.join(paths))
+				message = 'Copied ' + paths[0]
+				if len(paths) == 2:
+					message += ' and 1 other path'
+				status.assert_called_once_with(message + ' to the clipboard', timeout_secs=3)
+	def test_recycle_bin_message_is_unchanged(self):
+		from core.commands import MoveToTrash
+		with patch('core.commands.show_alert', return_value=NO) as alert, \
+			patch('core.commands.submit_task') as submit:
+			MoveToTrash(Mock())(urls=['file://C:/report.txt'])
+		alert.assert_called_once_with(
+			'Do you really want to move report.txt to the Recycle Bin?', YES | NO, YES
+		)
+		submit.assert_not_called()
+	def test_explorer_message_and_local_path_are_unchanged(self):
+		from core.commands import OpenNativeFileManager
+		pane = Mock()
+		for path in ('zip://C:/archive.zip', 'file://C:/folder'):
+			with self.subTest(path=path):
+				pane.get_path.return_value = path
+				with patch('core.commands.show_alert') as alert, \
+					patch('core.commands.open_native_file_manager') as launch:
+					OpenNativeFileManager(pane)()
+				if path.startswith('zip://'):
+					alert.assert_called_once_with('Cannot open Explorer in zip://')
+					launch.assert_not_called()
+				else:
+					alert.assert_not_called()
+					launch.assert_called_once_with(as_human_readable(path))
+	def test_go_up_keeps_missing_parent_handling(self):
+		from core.commands import go_up
+		pane = Mock()
+		pane.get_path.return_value = 'file://C:/folder'
+		pane.set_path.side_effect = FileNotFoundError()
+		go_up(pane)
+		self.assertEqual('file://C:', pane.set_path.call_args.args[0])
+		pane.place_cursor_at.assert_not_called()
+		pane.move_cursor_home.assert_not_called()
+
 class ExternalAppConfigurationTest(TestCase):
 	def test_edit_app_uses_windows_picker_and_keeps_associations(self):
 		from core import commands

@@ -107,12 +107,14 @@ TypeScript; binary MPEG-TS files are rejected by the content probe.
 | Ctrl+A / Ctrl+C | Select/copy displayed text |
 | Ctrl+F | Open local Find |
 | F3 / Shift+F3 | Next/previous literal match |
+| Enter / Shift+Enter in Find | Next literal match, including keypad Enter |
 | Escape | Close Find first, then return to the source pane |
 | Tab / Shift+Tab | Return to the source pane |
 
 These local keys take precedence over user bindings only while the preview or
-its Find field is focused. Other commands, including Ctrl+Q, go to the source
-pane once. External View/Find/Select All bindings remain unchanged in the file list.
+its Find field is focused. Other commands, including Ctrl+Q and Alt+Enter
+(Properties), go to the source pane once, including from Find.
+External View/Find/Select All bindings remain unchanged in the file list.
 Copy uses displayed text and normalized line endings, not original file bytes.
 Plain text, code and Markdown Source use four-space tab stops.
 
@@ -224,6 +226,13 @@ path support or change the Windows Registry.
 
 Avoid changing transfer sources or destinations concurrently. These checks do not
 provide a filesystem transaction or protection against hostile path replacement.
+
+## Pack Archives
+
+Select entries and run **Pack** to choose an archive destination. Multiple entries
+use the current folder name; a drive root such as `C:\` suggests `C.zip`, and a
+nameless root suggests `archive.zip`. A single entry uses its name without the
+extension. The suggested destination is in the opposite pane.
 
 ## Archive Transfers
 
@@ -350,7 +359,9 @@ paths are appended as separate arguments, without a shell or variable expansion.
 order, ignoring marks and cursors. Open child folders in both panes first to compare
 them. These commands have no default shortcuts; custom bindings can use
 `compare_files` and `compare_folders`. The existing **Compare directories** command
-is different: it only marks names missing from the opposite pane.
+is different: it compares exact names, including hidden and filtered entries,
+and marks selectable differences. Its counts describe selected visible entries;
+unselectable differences are reported separately, not mistaken for matching names.
 
 Only existing local filesystem paths, including accessible UNC shares and links,
 are accepted. Aliases of the same filesystem object are rejected. If a filesystem

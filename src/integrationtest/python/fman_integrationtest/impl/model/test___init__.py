@@ -21,6 +21,109 @@ class SortedFileSystemModelAT: # Instantiated in fman_integrationtest.test_qt
 	def test_location_after_init(self):
 		self.assertEqual('null://', self._model.get_location())
 		self.assertEqual((self._null_column,), self._model.get_columns())
+	def test_selected_file_readback_matches_qt_without_per_row_indexes(self):
+		from fman.impl.view import FileListView
+		from PyQt5.QtCore import QItemSelection, QItemSelectionModel
+		from unittest.mock import patch
+		self._set_location('stub://')
+		def check():
+			view = FileListView(None, lambda *args: None)
+			view.setModel(self._model)
+			try:
+				selection = view.selectionModel()
+				changes = []
+				selection.selectionChanged.connect(lambda *_: changes.append(True))
+				last = self._model.rowCount() - 1
+				column = self._model.columnCount() - 1
+				cases = ((), ((0, last),), ((6, 6), (1, 1), (4, 4)),
+					((2, 8), (5, 12)), tuple((row, row) for row in range(0, last, 2)))
+				for spans in cases:
+					with self.subTest(spans=spans):
+						selection.clearSelection()
+						for first, final in spans:
+							selection.select(QItemSelection(self._model.index(first, 0),
+								self._model.index(final, column)), QItemSelectionModel.Select)
+						expected = [self._model.url(index) for index in selection.selectedRows(0)]
+						before = view.currentIndex(), view.verticalScrollBar().value(), len(changes)
+						with patch.object(selection, 'selectedRows', side_effect=AssertionError('Per-row Qt enumeration')), \
+							patch.object(self._model, 'index', side_effect=AssertionError('Per-row proxy index')):
+							self.assertEqual(expected, view.get_selected_files())
+						self.assertEqual(before, (view.currentIndex(), view.verticalScrollBar().value(), len(changes)))
+			finally:
+				view.deleteLater()
+		self.run_in_app(check)
+	def test_selected_file_readback_preserves_partial_column_and_model_fallbacks(self):
+		from fman.impl.view import FileListView
+		from PyQt5.QtCore import QItemSelection, QItemSelectionModel
+		from unittest.mock import patch
+		self._set_location('stub://')
+		def check():
+			view = FileListView(None, lambda *args: None)
+			view.setModel(self._model)
+			try:
+				selection = view.selectionModel()
+				for first, last, left, right in ((6, 6, 0, 0), (1, 1, 0, 1), (4, 4, 1, 1)):
+					selection.select(QItemSelection(self._model.index(first, left),
+						self._model.index(last, right)), QItemSelectionModel.Select)
+				expected = [self._model.url(index) for index in selection.selectedRows(0)]
+				self.assertEqual([self._model.url(self._model.index(1, 0))], expected)
+				with patch.object(self._model, 'urls_for_rows', side_effect=AssertionError('Partial row fast path')):
+					self.assertEqual(expected, view.get_selected_files())
+				selection.select(self._model.index(6, 1), QItemSelectionModel.Select)
+				expected = [self._model.url(index) for index in selection.selectedRows(0)]
+				self.assertEqual(2, len(expected))
+				self.assertEqual(expected, view.get_selected_files())
+				view.clearSelection()
+				view.select(['stub://6', 'stub://1', 'stub://4'])
+				expected = [self._model.url(index) for index in selection.selectedRows(0)]
+				with patch.object(self._model, 'urls_for_rows', None):
+					self.assertEqual(expected, view.get_selected_files())
+				rows = [6, 1, 6]
+				self.assertEqual([self._model.url(self._model.index(row, 0)) for row in rows],
+					self._model.urls_for_rows(rows))
+				self.assertEqual([], self._model.urls_for_rows(iter(())))
+				for row in (-1, self._model.rowCount()):
+					with self.assertRaises(ValueError):
+						self._model.urls_for_rows([row])
+			finally:
+				view.deleteLater()
+		self.run_in_app(check)
+	def test_selected_file_readback_tracks_sort_filter_and_refresh(self):
+		from fman.impl.view import FileListView
+		from types import SimpleNamespace
+		self._set_location('stub://')
+		predicate = SimpleNamespace(snapshot_filter=lambda:
+			lambda listing, index: listing.names[index] != '1')
+		def create():
+			view = FileListView(None, lambda *args: None)
+			view.setModel(self._model)
+			view.select(['stub://6', 'stub://1', 'stub://4'])
+			return view
+		view = self.run_in_app(create)
+		def check(expected):
+			selected = [self._model.url(index) for index in view.selectionModel().selectedRows(0)]
+			self.assertEqual(expected, set(selected))
+			self.assertEqual(selected, view.get_selected_files())
+		try:
+			self.run_in_app(check, {'stub://6', 'stub://1', 'stub://4'})
+			self.run_in_app(self._model.sort, 1, Qt.DescendingOrder)
+			self._drain_initialization()
+			self.run_in_app(check, {'stub://6', 'stub://1', 'stub://4'})
+			self.run_in_app(self._model.add_filter, predicate)
+			self._drain_initialization()
+			self.run_in_app(check, {'stub://6', 'stub://4'})
+			self.run_in_app(self._model.remove_filter, predicate)
+			self._drain_initialization()
+			self.run_in_app(check, {'stub://6', 'stub://4'})
+			self._model.reload()
+			self._drain_initialization()
+			self.run_in_app(check, set())
+			self.run_in_app(view.select, ['stub://6', 'stub://4'])
+			self.run_in_app(check, {'stub://6', 'stub://4'})
+			self._set_location('stub://dir')
+			self.run_in_app(check, set())
+		finally:
+			self.run_in_app(view.deleteLater)
 	def test_archive_root_and_deep_implicit_folders_use_snapshot_model(self):
 		from core import Modified
 		from core.fs.zip import ZipFileSystem

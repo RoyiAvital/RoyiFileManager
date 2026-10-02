@@ -115,8 +115,23 @@ class FileListView(
 		else:
 			self.selectionModel().select(row, action | QISM.Rows)
 	def get_selected_files(self):
-		indexes = self.selectionModel().selectedRows(column=0)
-		return [self.model().url(index) for index in indexes]
+		model = self.model()
+		selection = self.selectionModel()
+		ranges = selection.selection()
+		if not ranges:
+			return []
+		urls_for_rows = getattr(model, 'urls_for_rows', None)
+		last_column = model.columnCount() - 1
+		if urls_for_rows is not None and all(
+			span.left() == 0 and span.right() == last_column for span in ranges
+		):
+			if len(ranges) == 1:
+				rows = range(ranges[0].top(), ranges[0].bottom() + 1)
+			else:
+				rows = dict.fromkeys(row for span in ranges
+					for row in range(span.top(), span.bottom() + 1))
+			return urls_for_rows(rows)
+		return [model.url(index) for index in selection.selectedRows(column=0)]
 	def get_file_under_cursor(self):
 		index = self.currentIndex()
 		if index.isValid():

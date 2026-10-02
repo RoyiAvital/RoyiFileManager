@@ -37,11 +37,14 @@ def measure(view, gui, pane, case):
 	from threading import Event
 	from time import perf_counter, process_time
 	from fman.impl.view import FileListView
-	from PyQt5.QtCore import QCoreApplication, QEvent, QObject, QTimer
+	from PyQt5.QtCore import QCoreApplication, QEvent, QObject, QTimer, Qt
+	from PyQt5.QtGui import QKeyEvent
 
 	measurement = dict(case, status='running')
 	active = {}
 	painted = Event()
+	input_ready = Event()
+	status_pending = []
 	original_paint = FileListView.paintEvent
 	event_type = QEvent.Type(QEvent.registerEventType())
 
@@ -54,21 +57,33 @@ def measure(view, gui, pane, case):
 		count = model.rowCount()
 		if count != case['row_count']:
 			raise ValueError('Selection fixture row count differs: %d != %d' % (count, case['row_count']))
+		if count < 4:
+			raise ValueError('Selection input probe requires at least four rows')
 		requested = count if case['requested_count'] is None else case['requested_count']
 		rows = selection_rows(case['pattern'], count, requested)
 		urls = tuple(model.url(model.index(row, 0)) for row in rows)
 		pane.clear_selection()
 		view.setCurrentIndex(model.index(count // 2, 0))
+		view.setFocus()
+		status_widget = None
 		if pane._widget._status_tracking:
-			raise RuntimeError('Selection benchmark requires status disabled')
+			status_widget = pane._widget._status_widget or pane.window._widget._single_pane_status
+			if status_widget is None or status_widget._pane is not pane._widget:
+				raise RuntimeError('Tracked selection has no bound status widget')
 		view.scrollTo(view.currentIndex(), view.PositionAtCenter)
 		view.viewport().repaint()
 		measurement.update(row_count=count, requested_count=requested,
-			initial_count=0, expected_count=len(rows))
+			initial_count=0, expected_count=len(rows),
+			status_mode=pane.window._widget._extended_status_mode if status_widget else 'disabled',
+			entry_point='select_all' if case['pattern'] == 'all' else 'select_urls')
 		return urls, set(urls), (
-			view.currentIndex().row(), view.verticalScrollBar().value())
+			view.currentIndex().row(), view.verticalScrollBar().value()), status_widget
 
 	class Probe(QObject):
+		def eventFilter(self, watched, event):
+			if watched is view and active.get('followup') and event.type() == QEvent.KeyPress and event.key() == Qt.Key_Down:
+				active['received'] = perf_counter()
+			return False
 		def event(self, event):
 			if event.type() == event_type:
 				if active:
@@ -91,10 +106,21 @@ def measure(view, gui, pane, case):
 		if widget is view and active.get('mutated') and not painted.is_set():
 			measurement['paint_ms'] = (perf_counter() - active['start']) * 1000
 			painted.set()
+		if widget is view and active.get('followup_changed') and not input_ready.is_set():
+			measurement['input_ready_ms'] = (perf_counter() - active['start']) * 1000
+			measurement['followup_verified'] = view.currentIndex().row() == before[0] + 1
+			input_ready.set()
 		return result
+
+	def moved(current, previous):
+		if active.get('received') and current.row() == before[0] + 1:
+			active['followup_changed'] = True
+			view.viewport().update()
 
 	def install():
 		probe = Probe(view)
+		view.installEventFilter(probe)
+		view.selectionModel().currentChanged.connect(moved)
 		timer = QTimer(probe)
 		timer.setInterval(10)
 		timer.timeout.connect(tick)
@@ -117,7 +143,22 @@ def measure(view, gui, pane, case):
 		timer.stop()
 		active.clear()
 
-	requested_urls, expected_urls, before = gui(prepare)
+	def status_ready():
+		status_widget._timer.timeout.disconnect(status_ready)
+		status_pending.clear()
+		QTimer.singleShot(0, followup)
+
+	def followup():
+		if status_widget is not None and status_widget._timer.isActive():
+			status_widget._timer.timeout.connect(status_ready)
+			status_pending.append(True)
+			return
+		measurement['state_preserved'] = (
+			view.currentIndex().row(), view.verticalScrollBar().value()) == before
+		active['followup'] = True
+		QCoreApplication.postEvent(view, QKeyEvent(QEvent.KeyPress, Qt.Key_Down, Qt.NoModifier))
+
+	requested_urls, expected_urls, before, status_widget = gui(prepare)
 	progress('prepared')
 	probe, timer = gui(install)
 	try:
@@ -138,20 +179,29 @@ def measure(view, gui, pane, case):
 		gui(mutate)
 		if not painted.wait(30):
 			raise TimeoutError('Selection completed paint')
-		gui(finish)
 		progress('painted')
+		gui(followup)
+		if not input_ready.wait(10):
+			raise TimeoutError('Selection follow-up input/paint')
+		gui(finish)
+		if not measurement['state_preserved'] or not measurement['followup_verified']:
+			raise RuntimeError('Selection state or follow-up cursor movement is incorrect')
+		progress('input-ready')
+		def restore():
+			view.setCurrentIndex(view.model().index(before[0], 0))
+			view.verticalScrollBar().setValue(before[1])
+			view.viewport().repaint()
+		gui(restore)
 		gui(begin)
 		def readback():
 			start, cpu = perf_counter(), process_time()
+			measurement['readback_started_ms'] = (start - dispatched) * 1000
 			selected = pane.get_selected_files()
 			measurement.update(readback_ms=(perf_counter() - start) * 1000,
 				readback_cpu_ms=(process_time() - cpu) * 1000, selected_count=len(selected))
 			return selected
 		selected = gui(readback)
-		def responsive():
-			finish('readback_')
-			measurement['responsive_ms'] = (perf_counter() - dispatched) * 1000
-		gui(responsive)
+		gui(lambda: finish('readback_'))
 		progress('readback')
 		if len(selected) != len(set(selected)) or set(selected) != expected_urls:
 			raise RuntimeError('Incorrect or duplicate selection readback')
@@ -166,5 +216,9 @@ def measure(view, gui, pane, case):
 			timer.stop()
 			active.clear()
 			FileListView.paintEvent = original_paint
+			view.selectionModel().currentChanged.disconnect(moved)
+			view.removeEventFilter(probe)
+			if status_pending:
+				status_widget._timer.timeout.disconnect(status_ready)
 			probe.deleteLater()
 		gui(uninstall)

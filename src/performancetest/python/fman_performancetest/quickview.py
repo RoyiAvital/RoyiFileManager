@@ -173,22 +173,43 @@ def child(directory, viewport, navigation_repetitions=5):
 				image_case('switch.bmp', 'preview-small.bmp', (1280, 960), 'bmp')
 				measure('invalid-image', lambda: select('preview-invalid.png'),
 					lambda: canvas().image is None and canvas().message.startswith('Unsupported image'), surface)
-				text_name = 'preview-unsupported.txt'
-				text_url = as_url(directory / text_name)
-				expected_text = (directory / text_name).read_text(encoding='utf-8')
-				def text_ready():
+				def text_view():
 					current = session()
-					preview = current.overlay.text_view if current is not None else None
-					return preview is not None and current._url == text_url and \
-						current.overlay.content.currentWidget() is preview and preview.browser.toPlainText() == expected_text
+					return current.overlay.text_view if current is not None else None
 				def text_surface():
-					current = session()
-					preview = current.overlay.text_view if current is not None else None
+					preview = text_view()
 					return preview.browser.viewport() if preview is not None else None
-				result = measure('switch.text', lambda: select(text_name), text_ready, text_surface)
-				if not gui(text_ready):
-					raise RuntimeError('Preview text does not match the synthetic fixture')
-				result['text_verified'] = True
+				def text_case(identity, name, kind):
+					expected = (directory / name).read_text(encoding='utf-8')
+					def text_ready():
+						preview = text_view()
+						if preview is None or session()._url != as_url(directory / name) or session().overlay.content.currentWidget() is not preview:
+							return False
+						actual = preview.browser.toPlainText()
+						if kind == 'markdown':
+							return preview.mode_buttons['rendered'].isChecked() and tuple(actual.splitlines()) == (
+								'Preview Report', 'Status: Ready', 'First item', 'Second item', 'Project')
+						return actual == expected if kind == 'text' else actual.rstrip('\n') == expected.rstrip('\n')
+					result = measure(identity, lambda: select(name), text_ready, text_surface)
+					def verify_text():
+						if not text_ready():
+							raise RuntimeError('Preview text does not match: ' + name)
+						document = text_view().browser.document()
+						if kind == 'python':
+							keyword, parameter = document.find('def'), document.find('values')
+							if keyword.isNull() or parameter.isNull() or keyword.charFormat().foreground() == parameter.charFormat().foreground():
+								raise RuntimeError('Python syntax colours are missing')
+						elif kind == 'markdown':
+							from PyQt5.QtGui import QFont
+							if document.find('Preview Report').charFormat().fontWeight() < QFont.Bold or \
+								document.find('First item').block().textList() is None or \
+								not document.find('Project').charFormat().isAnchor():
+								raise RuntimeError('Markdown heading, list or link formatting is missing')
+					gui(verify_text)
+					result.update(text_verified=True, format_verified=True, text_format=kind)
+				text_case('switch.text', 'preview-unsupported.txt', 'text')
+				text_case('switch.python', 'preview-sample.py', 'python')
+				text_case('switch.markdown', 'preview-sample.md', 'markdown')
 				image_case('restore.large-png', 'preview-large.png', (4096, 3072), 'png')
 				for identity, command, predicate, arguments in (
 					('actual-size', 'quick_view_actual_size', lambda: canvas().mode == 'actual_size', {}),

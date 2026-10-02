@@ -162,6 +162,10 @@ Ctrl+Home/End, Ctrl+A/C, Ctrl+F, F3/Shift+F3, Escape and Tab take precedence ove
 user bindings. They never invoke pane Find, external View or Select All. Other
 keys follow QuickView001's source-pane forwarding exactly once; no duplicate
 dispatch or recursion. A user binding remains active in the source pane.
+Find accepts plain/Shift Enter, including keypad Enter, for the next match.
+Backspace/Delete retain unmodified, Shift, Ctrl and Ctrl+Shift editing. Other
+modified editing keys forward to the source pane, including Alt+Enter Properties;
+the original event and modifiers reach the controller unchanged.
 
 Override document/browser resource loading to return an empty resource without
 calling base loaders. Block local, relative, UNC, HTTP and data resources; do not
@@ -503,6 +507,38 @@ package collection remain implementation checks, not completed design-probe resu
   canonical task moves to Done and its index entry to Completed. No new QuickView
   application changes or runtime tests were needed for this documentation closure.
 
+### 2026_10_02 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6.1 Sol
+- Effort: High
+- Context Window: 272K
+- Outcome: Changes requested for Find shortcut forwarding. The editing-key branch
+  accepts Return/Enter regardless of modifiers, so Alt+Enter in the Find input
+  performs Find instead of forwarding the shipped Explorer Properties command.
+  Native probes reproduce zero controller calls from Find versus one from the
+  browser for both Enter variants. Restrict local handling to supported editing
+  modifiers and add a focused regression. All 27 unit tests and 20 Qt tests per
+  offscreen/native-100%/native-150% run pass without skips. Native font behavior,
+  installed packaging hooks and editor diagnostics pass. No application code
+  changed; locked-environment and portable release checks remain unverified.
+
+### 2026_10_02 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Extra High
+- Context Window: 272K
+- Outcome: Addressed the Sol shortcut finding and checked the earlier nonblocking
+  suggestions. Limit Find's local editing modifiers, preserve ordinary/keypad
+  Enter and standard deletion, and forward unsupported combinations exactly once.
+  Existing UTF-8, Rendered-button, tab-width and extension regressions pass. Keep
+  the task in Done; locked-environment/portable checks remain release follow-ups.
+
 ## Implementer
 
 ### 2026_09_26 - GitHub Copilot
@@ -559,7 +595,77 @@ package collection remain implementation checks, not completed design-probe resu
   Final unit gate: 27 passed. QuickView Qt gate: 20 passed each offscreen and native
   at 100%/150%. No dependency, settings, packaging or public API changes.
 
+### 2026_10_02 - GitHub Copilot
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Extra High
+- Context Window: 272K
+- Outcome: Restricted local Find editing-key handling and added native Qt
+  forwarding/local-editing regressions. The reported Alt+Enter failure and other
+  unsupported modifiers reproduced before the fix, then passed. Final gates:
+  27 unit tests and 22 Qt tests in each of offscreen/native-100%/native-150%, no
+  skips. Updated Core usage and the changelog; prior review history is unchanged.
+
 ## Validation Results
+
+### Sol Implementation Review Follow-Up (2026-10-02)
+
+The user requested all reviewer feedback, including suggestions. Disposition:
+
+- **Modified Enter (new P2):** fixed the unqualified editing-key branch. Plain
+  and Shift Enter remain local, including keypad Enter; Ctrl/Alt/Meta combinations
+  forward with original modifiers exactly once. Alt/Meta Backspace/Delete use
+  the same forwarding rule; normal deletion and word deletion stay local.
+- **UTF-8 fallback suggestion:** the existing sparse-damage/ANSI regressions pass;
+  no new encoding heuristic or unrelated decoding change was needed.
+- **Rendered-button suggestion:** existing limit/reenabling tests pass unchanged.
+- **Tab-width suggestion:** existing four-space property and cursor-geometry
+  tests pass in all three Qt configurations.
+- **Extension documentation suggestion:** Core README retains the `.m`/`.ts`
+  explanation; text/binary TypeScript dispatch regressions pass.
+- **Font and installed hook observations:** the prior review recorded passing
+  evidence, not additional code requests. Locked-environment and portable checks
+  are still unrun release follow-ups; no packages or environments were installed.
+
+The new native forwarding regression failed before the production edit for all
+16 tested unsupported key/modifier combinations, including both Enter variants
+with Alt. After the fix, those cases and an additional Alt+keypad Enter case pass
+with source focus, one controller call and unchanged Find text/search selection.
+The positive regression covers plain/Shift/keypad Enter, repeated next-match
+navigation, Shift+F3 and normal character/word deletion without controller calls.
+No real Properties dialog or external command is launched by these tests.
+
+Final gates passed with no skips: 27 unit tests (0.501 s); 22 Qt tests offscreen
+(1.925 s), native 100% (2.925 s), and native 150% (3.047 s). The corrupt-PNG
+fixture's libpng diagnostic is expected. These gates include all previously
+implemented suggestion-related regressions as well as the new shortcut checks.
+Exact command, using the existing project interpreter:
+
+```powershell
+@'
+import build, os, subprocess, sys
+env = build._environment()
+env['QT_QPA_FONTDIR'] = os.path.join(os.environ['WINDIR'], 'Fonts')
+units = ['fman_unittest.test_quick_view', 'fman_unittest.test_quick_view_images', 'fman_unittest.test_quick_view_text']
+result = subprocess.run([sys.executable, '-B', '-X', 'faulthandler', '-m', 'unittest', *units], env=dict(env, QT_QPA_PLATFORM='offscreen'), timeout=120)
+if result.returncode:
+    raise SystemExit(result.returncode)
+targets = ['fman_integrationtest.test_qt.QuickViewIT', 'fman_integrationtest.test_qt.QuickViewImagesIT', 'fman_integrationtest.test_qt.QuickViewTextIT']
+for platform, scale in (('offscreen', '1'), ('windows', '1'), ('windows', '1.5')):
+    print(f'QuickView Qt gate: {platform}, scale {scale}', flush=True)
+    settings = dict(env, QT_QPA_PLATFORM=platform, QT_SCALE_FACTOR=scale, QT_AUTO_SCREEN_SCALE_FACTOR='0')
+    result = subprocess.run([sys.executable, '-B', '-X', 'faulthandler', '-m', 'unittest', *targets], env=settings, timeout=180)
+    if result.returncode:
+        raise SystemExit(result.returncode)
+'@ | python -B -
+```
+
+No full suite, benchmark, clean/freeze/package, dependency installation or lock
+edit was performed. The fix affects text QuickView released in 0.10.0, so its
+application behavior is recorded under the changelog's Unreleased fixes.
 
 ### Source Gates
 
@@ -692,6 +798,43 @@ the new closure record. The three incoming Stage 001 links were updated and
 checked. Editor diagnostics reported no errors. Scoped tracked whitespace checks
 and `git diff --no-index --check -- NUL Done/QuickView003.md` reported no
 diagnostics. No runtime tests were rerun for this documentation-only closure.
+
+### Implementation Review (2026-10-02)
+
+Reviewed the current text reader/converter/view, shared image loader, session and
+overlay, Core command service, packaging spec and focused unit/Qt regressions.
+Used the existing Python 3.14.7 interpreter with Qt 5.15.15, PyQt 5.15.11,
+Markdown 3.10.3, Pygments 2.21.0, PyInstaller 6.22.2 and hooks-contrib 2026.7.
+No packages, environments or application files changed.
+
+Exact focused regression commands:
+
+```powershell
+python -c "import build, os, subprocess, sys; env=build._environment(); env.update(QT_QPA_PLATFORM='offscreen', QT_QPA_FONTDIR=os.path.join(os.environ['WINDIR'],'Fonts')); sys.exit(subprocess.run([sys.executable,'-m','unittest','fman_unittest.test_quick_view','fman_unittest.test_quick_view_images','fman_unittest.test_quick_view_text','-q'],env=env,timeout=120).returncode)"
+python -c "import build, os, subprocess, sys; env=build._environment(); env.update(QT_QPA_FONTDIR=os.path.join(os.environ['WINDIR'],'Fonts')); targets=['fman_integrationtest.test_qt.QuickViewIT','fman_integrationtest.test_qt.QuickViewImagesIT','fman_integrationtest.test_qt.QuickViewTextIT']; settings=({'QT_QPA_PLATFORM':'offscreen'},{'QT_QPA_PLATFORM':'windows','QT_SCALE_FACTOR':'1','QT_AUTO_SCREEN_SCALE_FACTOR':'0'},{'QT_QPA_PLATFORM':'windows','QT_SCALE_FACTOR':'1.5','QT_AUTO_SCREEN_SCALE_FACTOR':'0'}); sys.exit(max(subprocess.run([sys.executable,'-m','unittest',*targets,'-q'],env=dict(env,**setting),timeout=180).returncode for setting in settings))"
+```
+
+- Unit: 27 passed, no skips. The corrupt-PNG libpng diagnostic is expected.
+- Qt: 20 passed in each configuration, no skips.
+- Native shortcut probe: create the real `TextPreview` with a source controller
+  spy, display `hello world`, open Find with Ctrl+F and enter `hello`. Send
+  `QTest.keyClick(view.find_input, key, Qt.AltModifier)` for both `Qt.Key_Return`
+  and `Qt.Key_Enter`. Each selects `hello` and leaves Find focused with zero
+  controller calls. Sending the same keys to the browser forwards exactly once.
+  [The unqualified editing-key branch](../src/main/python/fman/impl/quick_view_text.py)
+  conflicts with the forwarding contract and the shipped Alt+Enter Properties
+  binding. Existing regressions cover F8/Ctrl+Q forwarding, not modified Enter.
+- Native font probe: plain text, code and Markdown Source use Courier New with
+  equal W/i advances; Rendered Markdown uses the proportional UI font.
+- Executed installed Markdown/Pygments hooks: all three enabled extensions, all
+  mapped lexer implementation modules and Monokai are collected (20/326 hidden
+  imports). Pygments distribution contains AUTHORS/LICENSE. This is not a frozen
+  artifact smoke test.
+- Editor diagnostics: no errors in the three QuickView implementation modules.
+- Full suite, dependency changes, clean/freeze/package and benchmarks were not
+  run. Existing release follow-ups remain open. This review records one P2
+  finding without reopening or moving the completed task or changing production
+  code.
 
 ### Remaining Release Checks
 

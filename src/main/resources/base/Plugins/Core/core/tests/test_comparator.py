@@ -285,6 +285,8 @@ class ComparatorCommandTest(TestCase):
 		left.window.get_panes.return_value = [left, right]
 		left.get_path.return_value = 'file://C:/left'
 		right.get_path.return_value = 'file://C:/right'
+		left.get_selected_files.return_value = ['file://C:/left/left-only']
+		right.get_selected_files.return_value = []
 		with patch('core.commands.iterdir', side_effect=lambda url: ['common', 'left-only'] if url.endswith('left') else ['common']), patch('core.commands.show_alert'):
 			CompareDirectories(left)()
 			self.assertEqual(['file://C:/left/left-only'], list(left.select.call_args.args[0]))

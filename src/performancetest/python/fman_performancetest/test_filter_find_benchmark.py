@@ -43,6 +43,10 @@ class PerformanceReportTest(TestCase):
 		for test in current['catalog']['tests']:
 			result = deepcopy(self.record()['results'][0])
 			result.update(test_id=test['id'], fixture_id=test['fixture'])
+			if test['workload'] == 'quickview':
+				result['samples'] = [dict(ui=dict(samples=[dict(action_id=case, input_to_paint_ms=timing)
+					for case, timing in (('enable.png', 25), ('switch.text', 100),
+						('switch.python', 200), ('switch.markdown', 300))]))]
 			if test['workload'] == 'selection':
 				count = current['catalog']['fixtures'][test['fixture']]['files']
 				selected = test['selection_count']
@@ -50,7 +54,7 @@ class PerformanceReportTest(TestCase):
 					('alternating', selected), ('scattered', selected))
 				result['samples'] = [dict(ui=dict(samples=[dict(action_id='selection.' + pattern,
 					wall_ms=10, paint_ms=index * 10, readback_ms=100, row_count=count,
-					responsive_ms=index * 10 + 100,
+					input_ready_ms=index * 10 + 5,
 					selected_count=marked, heartbeat_gap_ms={'max': 12})
 					for index, (pattern, marked) in enumerate(patterns, 1)]))]
 			current['results'].append(result)
@@ -61,13 +65,13 @@ class PerformanceReportTest(TestCase):
 		compact = records.statistics_record(current)
 		self.assertEqual(report.overview(current), report.overview(compact))
 		overview = report.overview(compact)
-		self.assertEqual(13, len(overview))
+		self.assertEqual(16, len(overview))
 		selections = [item for item in overview if item['test_id'].startswith('selection.')]
 		self.assertEqual(['selection.small', 'selection.large'], [item['test_id'] for item in selections])
 		for item, selected in zip(selections, (64, 1000)):
-			self.assertEqual(130, item['headline']['median'])
+			self.assertEqual(35, item['headline']['median'])
 			self.assertEqual(5, item['headline']['count'])
-			self.assertEqual((110, 150), (item['headline']['minimum'], item['headline']['maximum']))
+			self.assertEqual((15, 55), (item['headline']['minimum'], item['headline']['maximum']))
 			self.assertEqual('passed', item['status'])
 			self.assertEqual(selected, item['metrics']['selection.scattered.selected_count']['median'])
 			for pattern in report.SELECTION_PATTERNS:
@@ -85,10 +89,10 @@ class PerformanceReportTest(TestCase):
 		data = report.report_data(current, {})
 		self.assertEqual('full', data['suite_mode'])
 		self.assertEqual(19, data['expected_tests'])
-		self.assertEqual(18, len(data['tests']))
+		self.assertEqual(22, len(data['tests']))
 		self.assertTrue(data['complete'])
 		medium = next(item for item in data['tests'] if item['test_id'] == 'selection.medium')
-		self.assertEqual(130, medium['headline']['median'])
+		self.assertEqual(35, medium['headline']['median'])
 		self.assertEqual(5, medium['headline']['count'])
 		self.assertEqual(50000, medium['metrics']['selection.all.selected_count']['median'])
 		self.assertEqual(1000, medium['metrics']['selection.scattered.selected_count']['median'])
@@ -97,6 +101,68 @@ class PerformanceReportTest(TestCase):
 		self.assertFalse(report.complete(current))
 		with TemporaryDirectory() as directory:
 			self.assertEqual({}, self.save(directory, current))
+
+	def test_readback_and_quickview_types_have_independent_headlines(self):
+		current = self.selection_record()
+		current['results'][-1]['samples'][0]['ui']['samples'][1]['readback_ms'] = 700
+		self.assertEqual(report.overview(current), report.overview(records.statistics_record(current)))
+		rows = {item['test_id']: item for item in report.overview(current)}
+		self.assertEqual(700, rows['readback']['headline']['median'])
+		self.assertEqual(10, rows['readback']['headline']['count'])
+		self.assertEqual(35, rows['selection.large']['headline']['median'])
+		self.assertEqual(25, rows['quickview.large']['headline']['median'])
+		self.assertEqual(200, rows['quickview.text.large']['headline']['median'])
+		self.assertEqual(3, rows['quickview.text.large']['headline']['count'])
+		self.assertNotIn('switch.text.input_to_paint_ms', rows['quickview.large']['metrics'])
+		self.assertNotIn('enable.png.input_to_paint_ms', rows['quickview.text.large']['metrics'])
+
+	def test_related_report_rows_are_consecutive(self):
+		for full in (False, True):
+			with self.subTest(full=full):
+				rows = [item['test_id'] for item in report.overview(self.selection_record(full=full))]
+				sizes = ('small', 'large', 'medium') if full else ('small', 'large')
+				quickview = ['quickview.' + size for size in sizes] + ['quickview.text.' + size for size in sizes]
+				selections = ['selection.' + size for size in sizes] + ['readback']
+				for group in (quickview, selections):
+					first = rows.index(group[0])
+					self.assertEqual(group, rows[first:first + len(group)])
+
+	def test_readback_and_text_rows_do_not_fabricate_missing_results(self):
+		for failure in ('missing-case', 'failed-workload', 'missing-workload'):
+			with self.subTest(failure=failure):
+				current = self.selection_record()
+				for result in list(current['results']):
+					if result['test_id'] in ('selection.large', 'quickview.large'):
+						if failure == 'missing-case':
+							result['samples'][0]['ui']['samples'].pop()
+						elif failure == 'failed-workload':
+							result['status'] = 'failed'
+						else:
+							current['results'].remove(result)
+				rows = {item['test_id']: item for item in report.overview(current)}
+				self.assertIsNone(rows['readback']['headline']['median'])
+				if failure == 'missing-workload':
+					self.assertNotIn('quickview.text.large', rows)
+				else:
+					self.assertIsNone(rows['quickview.text.large']['headline']['median'])
+		self.assertNotIn('readback', [item['test_id'] for item in report.overview(self.record())])
+
+	def test_derived_readback_and_text_comparisons_preserve_case_changes(self):
+		previous = self.selection_record()
+		current = deepcopy(previous)
+		current['application']['version_id'] = 'Unreleased'
+		for result in current['results']:
+			if result['test_id'] == 'selection.large':
+				result['samples'][0]['ui']['samples'][1]['readback_ms'] = 50
+			elif result['test_id'] == 'quickview.large':
+				result['samples'][0]['ui']['samples'][-1]['input_to_paint_ms'] = 150
+		data = report.report_data(current, {'1.0.0': previous})
+		self.assertTrue(data['previous'][0]['compatible'])
+		for identity, metric in (('readback', 'selection.large.selection.all.readback_ms'),
+			('quickview.text.large', 'switch.markdown.input_to_paint_ms')):
+			change = next(item for item in data['previous'][0]['changes']
+				if item['test_id'] == identity and item['metric'] == metric)
+			self.assertEqual(-50, change['change_percent'])
 
 	def test_selection_report_suppresses_missing_or_failed_cases(self):
 		for missing in (False, True):
@@ -123,12 +189,21 @@ class PerformanceReportTest(TestCase):
 		for result in current['results']:
 			if result['test_id'].startswith('selection.'):
 				for sample in result['samples'][0]['ui']['samples']:
-					del sample['responsive_ms']
+					del sample['input_ready_ms']
 		for item in report.overview(current):
 			if item['test_id'].startswith('selection.'):
 				self.assertIsNone(item['headline']['median'])
 				self.assertIn('selection.all.paint_ms', item['metrics'])
 				self.assertIn('selection.all.readback_ms', item['metrics'])
+		for result in current['results']:
+			if result['test_id'].startswith('selection.'):
+				for sample in result['samples'][0]['ui']['samples']:
+					sample['responsive_ms'] = sample['paint_ms'] + sample['readback_ms']
+		compact = records.statistics_record(current)
+		for item in report.overview(compact):
+			if item['test_id'].startswith('selection.'):
+				self.assertIsNone(item['headline']['median'])
+				self.assertIn('selection.all.responsive_ms', item['metrics'])
 
 	def test_report_product_name_comes_from_settings(self):
 		with patch.object(report, 'get_build_settings', return_value={'app_name': 'RfmRenameProbe'}):
@@ -145,6 +220,9 @@ class PerformanceReportTest(TestCase):
 		for size in ('Small', 'Large', 'Medium'):
 			self.assertIn('Pane Loading / ' + size, html)
 			self.assertIn('Selections / ' + size, html)
+			self.assertIn('QuickView Images / ' + size, html)
+			self.assertIn('QuickView Text / ' + size, html)
+		self.assertIn("'readback':'Selections Readback'", html)
 		self.assertNotIn('Pane loading / ', html)
 
 	def test_statistics_record_preserves_every_report_metric_without_samples(self):
@@ -511,6 +589,22 @@ class BuildMeasureCommandTest(TestCase):
 
 
 class SyntheticFixtureTest(TestCase):
+	def test_text_revision_adds_samples_without_changing_legacy_fixtures(self):
+		images = {name: ('test-' + name).encode('ascii') for name in synthetic.ASSETS}
+		legacy = dict(revision=1, kind='flat', files=8, seed=1729)
+		current = dict(legacy, revision=2)
+		with TemporaryDirectory() as temporary:
+			before = synthetic.prepare(temporary, 'legacy', legacy, images)
+			after = synthetic.prepare(temporary, 'text-v2', current, images)
+			self.assertNotEqual(before['sha256'], after['sha256'])
+			self.assertEqual(before, synthetic.prepare(temporary, 'legacy', legacy, images))
+			self.assertEqual(after, synthetic.prepare(temporary, 'text-v2', current, images))
+			for name, data in synthetic.TEXT_ASSETS.items():
+				self.assertFalse((Path(before['directory']) / name).exists())
+				self.assertEqual(data, (Path(after['directory']) / name).read_bytes())
+			with self.assertRaises(ValueError):
+				synthetic.prepare(temporary, 'legacy', current, images)
+
 	def test_reproducible_contents_metadata_and_tamper_detection(self):
 		images = {name: ('test-' + name).encode('ascii') for name in synthetic.ASSETS}
 		specification = dict(revision=1, kind='flat', files=8, seed=1729)
@@ -543,7 +637,7 @@ class PerformanceRecordTest(TestCase):
 		self.assertEqual(50000, catalog['fixtures']['flat-medium-v1']['files'])
 		for test in catalog['full_tests']:
 			reference = next(item for item in catalog['tests'] if item['id'] == test['id'].replace('.medium', '.large'))
-			self.assertEqual(dict(reference, id=test['id'], fixture='flat-medium-v1'), test)
+			self.assertEqual(dict(reference, id=test['id'], fixture=reference['fixture'].replace('large', 'medium')), test)
 		for full in (False, True):
 			with self.subTest(full=full), TemporaryDirectory() as temporary:
 				prepared, published = [], []
@@ -559,8 +653,8 @@ class PerformanceRecordTest(TestCase):
 					self.assertEqual(0, suite.main(['--prepare-only', '--results', temporary] +
 						(['--full'] if full else []), record_saved=lambda record, path: published.append(record)))
 				invoke.assert_not_called()
-				self.assertEqual(['flat-small-v1', 'flat-large-v1', 'recursive-v1'] +
-					(['flat-medium-v1'] if full else []), prepared)
+				self.assertEqual(['flat-small-v1', 'flat-large-v1', 'recursive-v1', 'flat-small-v2', 'flat-large-v2'] +
+					(['flat-medium-v1', 'flat-medium-v2'] if full else []), prepared)
 				self.assertEqual(19 if full else 13, len(published[0]['catalog']['tests']))
 				self.assertEqual('full' if full else 'regular', published[0]['suite_mode'])
 				self.assertNotIn('full_tests', published[0]['catalog'])

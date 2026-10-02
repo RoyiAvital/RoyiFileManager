@@ -318,6 +318,8 @@ class SortedFileSystemModel(QIdentityProxyModel):
 		self.sourceModel().remove_filter(filter_)
 	def url(self, index):
 		return self.sourceModel().url(self.mapToSource(index))
+	def urls_for_rows(self, rows):
+		return self.sourceModel().urls_for_rows(rows)
 	def find(self, url):
 		return self.mapFromSource(self.sourceModel().find(url))
 	def _on_file_removed(self, url):

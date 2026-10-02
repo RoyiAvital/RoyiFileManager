@@ -63,8 +63,10 @@ def load_catalog(path=CATALOG):
 		'middle-block', 'scattered', 'all-except-current', 'all']:
 		raise ValueError('Unsupported refresh selection protocol')
 	for fixture in catalog['fixtures'].values():
-		if fixture['revision'] != 1 or fixture['kind'] not in ('flat', 'recursive') or not positive(fixture['files']) or fixture['files'] < 8 or type(fixture['seed']) is not int:
+		if fixture['revision'] not in (1, 2) or fixture['kind'] not in ('flat', 'recursive') or not positive(fixture['files']) or fixture['files'] < 8 or type(fixture['seed']) is not int:
 			raise ValueError('Invalid fixture definition')
+		if fixture['revision'] == 2 and fixture['kind'] != 'flat':
+			raise ValueError('Text preview fixtures require flat folders')
 	identities = set()
 	for test in catalog['tests'] + catalog.get('full_tests', []):
 		identity = test['id']
@@ -133,7 +135,8 @@ def measurements(result):
 				add(navigation['action_id'] + '.' + name, navigation.get(name))
 		for phase in ui.get('samples', []):
 			identity = phase.get('query_id', phase.get('action_id'))
-			for name in ('paint_ms', 'input_to_paint_ms', 'responsive_ms', 'wall_ms', 'cpu_ms', 'qt_commit_ms',
+			for name in ('paint_ms', 'input_to_paint_ms', 'input_ready_ms', 'responsive_ms', 'wall_ms', 'cpu_ms', 'qt_commit_ms',
+				'readback_started_ms',
 				'readback_ms', 'readback_cpu_ms', 'row_count', 'requested_count', 'initial_count',
 				'expected_count', 'selected_count', 'timeout_count',
 				'working_set_before_mib', 'working_set_mib', 'peak_working_set_before_mib', 'peak_working_set_mib'):

@@ -456,6 +456,14 @@ class ListingModel(DragAndDrop):
 		if not index.isValid() or not 0 <= index.row() < len(self._visible):
 			raise ValueError('Invalid index')
 		return join(self._location, self._displayed.names[self._visible[index.row()]])
+	def urls_for_rows(self, rows):
+		location, listing, visible = self._location, self._displayed, self._visible
+		result = []
+		for row in rows:
+			if not 0 <= row < len(visible):
+				raise ValueError('Invalid row')
+			result.append(join(location, listing.names[visible[row]]))
+		return result
 	def find(self, url):
 		if self._names is None:
 			self._names = {self._displayed.names[entry]: row
