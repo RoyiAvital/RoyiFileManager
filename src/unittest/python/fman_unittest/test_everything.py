@@ -741,6 +741,35 @@ class EverythingBuildTest(TestCase):
 		import build
 		build._verify_everything_license(build.EVERYTHING_LICENSE)
 
+	def test_published_files_inherit_destination_permissions(self):
+		import build
+		import shutil
+		from uuid import uuid4
+		import win32security
+		binary = b'fixture portable executable'
+		# Temporary directories are owner-only on Windows; an ordinary folder is needed here.
+		root = Path(build.ROOT) / 'target' / ('everything-acl-' + uuid4().hex)
+		destination = root / 'bin'
+		destination.mkdir(parents=True)
+		def download(url, path, expected):
+			with ZipFile(path, 'w') as zipped:
+				zipped.writestr('everything.exe', binary)
+		def access(path):
+			descriptor = win32security.GetFileSecurity(str(path), win32security.DACL_SECURITY_INFORMATION)
+			return win32security.ConvertSecurityDescriptorToStringSecurityDescriptor(
+				descriptor, win32security.SDDL_REVISION_1, win32security.DACL_SECURITY_INFORMATION)
+		try:
+			with patch.object(build, 'EVERYTHING_BINARY_SHA256', hashlib.sha256(binary).hexdigest()), \
+					patch.object(build, '_download', side_effect=download):
+				build._ensure_everything(destination)
+			ordinary = destination / 'ordinary.exe'
+			ordinary.write_bytes(binary)
+			for path in (destination / 'Everything.exe', root / 'licenses' / 'Everything.txt'):
+				self.assertEqual(access(ordinary), access(path), path)
+			self.assertEqual({'Everything.exe', 'ordinary.exe'}, {path.name for path in destination.iterdir()})
+		finally:
+			shutil.rmtree(root)
+
 	def test_unverified_executable_is_never_published(self):
 		import build
 		with TemporaryDirectory() as temporary:

@@ -262,15 +262,18 @@ def _ensure_everything(destination=EVERYTHING_DIRECTORY):
 			_verify_sha256(staging / 'Everything.exe', EVERYTHING_BINARY_SHA256,
 				'The extracted Everything executable')
 		destination.mkdir(parents=True, exist_ok=True)
-		with TemporaryDirectory(prefix='.download-', dir=destination) as publishing:
-			for source, target, needed in (
-					(staging / 'Everything.exe', destination / 'Everything.exe', needs_binary),
-					(EVERYTHING_LICENSE, license_destination, needs_license)):
-				if needed:
-					temporary = Path(publishing) / target.name
+		for source, target, needed in (
+				(staging / 'Everything.exe', destination / 'Everything.exe', needs_binary),
+				(EVERYTHING_LICENSE, license_destination, needs_license)):
+			if needed:
+				target.parent.mkdir(parents=True, exist_ok=True)
+				# A sibling inherits the folder ACL; tempfile folders are owner-only on Windows.
+				temporary = target.with_name(target.name + '.download')
+				try:
 					shutil.copy2(source, temporary)
-					target.parent.mkdir(parents=True, exist_ok=True)
 					temporary.replace(target)
+				finally:
+					temporary.unlink(missing_ok=True)
 	_verify_everything(destination)
 
 
