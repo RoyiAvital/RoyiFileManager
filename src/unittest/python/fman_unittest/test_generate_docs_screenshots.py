@@ -195,6 +195,8 @@ Event().wait()
 		settings = Path('isolated/UserSettings')
 		for error in (None, OSError('Restricted launch failed')):
 			with self.subTest(error=error), \
+					TemporaryDirectory() as temporary_directory, \
+					patch.object(screenshots, 'SOURCE_LOG_DIR', Path(temporary_directory)), \
 					patch.object(screenshots, 'SOURCE_CAPTURES', ('fuzzy-find',)), \
 					patch.object(screenshots, '_prepare_settings', return_value=settings), \
 					patch.object(screenshots, '_seed_settings'), \
@@ -213,7 +215,7 @@ Event().wait()
 				command, environment, log, timeout = restricted.call_args.args
 				self.assertIn('fuzzy-find', command)
 				self.assertEqual({'test': 'value'}, environment)
-				self.assertEqual(settings / 'Local/capture.log', log)
+				self.assertEqual(Path(temporary_directory) / 'fuzzy-find.log', log)
 				self.assertEqual(args.timeout + 30, timeout)
 
 	def test_source_environment_enables_child_crash_diagnostics(self):
@@ -225,6 +227,71 @@ Event().wait()
 		self.assertEqual('isolated', environment['ROYIFILEMANAGER_USER_SETTINGS'])
 		self.assertEqual([str(path) for path in screenshots.SOURCE_PATHS] + ['existing'],
 			environment['PYTHONPATH'].split(os.pathsep))
+
+	def test_source_settings_are_created_by_child(self):
+		launch = screenshots._run_restricted
+		def launch_child(command, environment, log, timeout):
+			settings = Path(environment['ROYIFILEMANAGER_USER_SETTINGS'])
+			self.assertFalse(settings.parent.exists(),
+				'Parent created the capture settings tree before privilege reduction')
+			self.assertFalse(screenshots.WORK_DIR.exists(),
+				'Parent created the capture working directory before privilege reduction')
+			return launch(command, environment, log, timeout)
+		with TemporaryDirectory() as temporary_directory, \
+				patch.object(screenshots, 'WORK_DIR', Path(temporary_directory) / 'work'), \
+				patch.object(screenshots, 'SOURCE_LOG_DIR', Path(temporary_directory) / 'logs'), \
+				patch.object(screenshots, 'SOURCE_CAPTURES', ('context-menu',)), \
+				patch.object(screenshots, '_run_restricted', side_effect=launch_child), \
+				patch.object(screenshots.ctypes.windll.shell32, 'IsUserAnAdmin', return_value=1), \
+				patch.dict(os.environ, {'QT_QPA_PLATFORM': 'windows'}):
+			args = screenshots._parse_args(['--mode', 'source', '--timeout', '10',
+				'--output-dir', str(Path(temporary_directory) / 'output')])
+			outputs = screenshots._run_source(args)
+			self.assertEqual(1, len(outputs))
+			screenshots._validate_image(outputs[0], 1280, 800)
+			session = screenshots.WORK_DIR / 'source-context-menu/UserSettings/Local/Session.json'
+			self.assertEqual(2, len(json.loads(session.read_text(encoding='utf-8'))['panes']))
+
+	def test_source_child_reports_shutdown_save_errors(self):
+		script = '''
+import sys
+from unittest.mock import patch
+sys.path.insert(0, sys.argv[1])
+import generate_docs_screenshots as screenshots
+from fman.impl.application_context import get_application_context
+
+context = get_application_context()
+closed = []
+context.main_window.closed.connect(lambda: closed.append(True))
+args = screenshots._parse_args([
+    '--_source-child', '--_capture', sys.argv[3], '--output-dir', sys.argv[2]
+])
+with patch.object(context.session_manager._settings, 'flush',
+		side_effect=PermissionError('forced session save denial')), patch.object(
+		screenshots, '_save_pixmap', wraps=screenshots._save_pixmap) as saved:
+    try:
+        screenshots._capture_source_child(args)
+    except RuntimeError as error:
+        assert 'Session state could not be saved: forced session save denial' in str(error), str(error)
+    else:
+        raise AssertionError('Capture silently accepted a session save failure')
+	assert saved.call_count == len(screenshots._source_outputs(args.output_dir, args._capture)), \
+		'Capture saved an error dialog as a screenshot'
+assert closed == [True], 'Capture bypassed or repeated main-window cleanup'
+assert not context.main_window.isVisible()
+'''
+		with TemporaryDirectory() as temporary_directory, \
+				patch.object(screenshots, 'WORK_DIR', Path(temporary_directory)):
+			for capture in ('overview', 'context-menu'):
+				with self.subTest(capture=capture):
+					settings = screenshots._prepare_settings(capture)
+					environment = screenshots._source_environment(settings)
+					environment['QT_QPA_PLATFORM'] = 'windows'
+					result = subprocess.run([sys.executable, '-c', dedent(script.expandtabs(4)),
+						str(SCRIPT.parent), str(settings.parent / 'output'), capture],
+						cwd=ROOT, env=environment, capture_output=True, text=True, timeout=20)
+					self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+					self.assertIn('Session state could not be saved: forced session save denial', result.stderr)
 
 	def test_source_child_closes_main_window_on_success_and_failure(self):
 		script = '''
@@ -436,7 +503,7 @@ assert not context.main_window.isVisible(), 'Capture left its main window open'
 			self.assertEqual(2, run.call_count)
 			self.assertEqual([screenshots.sys.executable, '-c', 'import build; build._ensure_everything()'],
 				run.call_args_list[0].args[0])
-			seed.assert_called_once_with(Path('isolated'), 'everything-search')
+			seed.assert_not_called()
 			self.assertIn('everything-search', run.call_args_list[1].args[0])
 
 	def test_everything_example_validation_rejects_empty_and_wrong_results(self):

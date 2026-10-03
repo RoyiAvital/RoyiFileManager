@@ -238,14 +238,20 @@ dependency through the existing build helper. The instance stops on application 
 The Everything folder-manager capture shows only the configured root rows and
 asserts that opening the manager does not start the Everything service.
 Source mode uses the Qt smoke-test approach and captures widgets directly.
+The parent removes stale capture directories; each child creates its entire settings
+tree and seeds session and plug-in settings after privilege reduction so it can save
+them on shutdown. Parent-held logs are outside that tree.
 Each source child closes the main window normally so pane models shut down before
 Qt exits. Elevated hosts launch source children with a restricted, medium-integrity
 Windows token on the caller's actual window station and desktop; ordinary launches
 are unchanged. No interactive `WinSta0\\Default` desktop is assumed. Capture names
 identify the active child in CI, and a watchdog dumps Python thread stacks if
-startup or capture blocks past `--timeout`. Restricted-child output and fault traces are retained in its isolated
-`UserSettings/Local/capture.log` and printed when it exits. Launch failures, timeouts
-and nonzero exits fail generation. The shared build launcher uses a Windows job
+startup or capture blocks past `--timeout`. Restricted-child output and fault traces
+are retained in `UserSettings/Local/DocsScreenshots/<capture>.log` and printed when
+the child exits. Launch failures, timeouts
+and nonzero exits fail generation. Error alerts are logged, dismissed automatically,
+and fail generation even during shutdown; they are never captured as feature dialogs.
+The shared build launcher uses a Windows job
 to terminate descendants on timeout or completion, without a UAC prompt or Registry changes.
 For screenshots and `smoke-everything`, it grants the current user access in the
 restricted token's default ACL so its process and threads can initialize even when

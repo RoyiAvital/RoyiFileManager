@@ -62,6 +62,12 @@ def _require_windows():
 
 
 def _run_restricted(command, environment, log, timeout):
+	"""Run capture/smoke children without admin rights, as Everything requires.
+
+	Windows CI runners are elevated, so restrict the current user's token rather
+	than bypass Everything's checks. The child must create its own mutable files
+	and directories so updating or replacing them does not require admin rights.
+	"""
 	import msvcrt
 	import win32api
 	import win32con
@@ -90,6 +96,8 @@ def _run_restricted(command, environment, log, timeout):
 			resources.callback(token.Close)
 			win32security.SetTokenInformation(token, win32security.TokenIntegrityLevel,
 				(win32security.ConvertStringSidToSid('S-1-16-8192'), 0x20))
+			# Keep new process/thread objects accessible after disabling Administrators.
+			# This does not repair permissions on files created by the elevated parent.
 			default_dacl = win32security.GetTokenInformation(token, win32security.TokenDefaultDacl)
 			if default_dacl is not None:
 				user_sid, _ = win32security.GetTokenInformation(token, win32security.TokenUser)

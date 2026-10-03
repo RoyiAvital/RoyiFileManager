@@ -40,6 +40,7 @@ APP_NAME = BUILD_SETTINGS['app_name']
 DEFAULT_EXE = ROOT / 'target' / APP_NAME / (APP_NAME + '.exe')
 DEFAULT_OUTPUT_DIR = ROOT / 'docs' / 'assets'
 WORK_DIR = ROOT / 'target' / 'docs-screenshots'
+SOURCE_LOG_DIR = ROOT / 'UserSettings' / 'Local' / 'DocsScreenshots'
 SOURCE_CAPTURES = (
 	'overview', 'go-to', 'context-menu', 'filter-pane', 'quick-view', 'quick-view-text',
 	'fuzzy-find', 'everything-search', 'everything-folders',
@@ -163,20 +164,24 @@ def _application_version():
 	return BUILD_SETTINGS['version']
 
 
-def _prepare_settings(name):
+def _prepare_settings(name, *, initialize=True):
 	directory = WORK_DIR / name / 'UserSettings'
 	if directory.parent.exists():
 		shutil.rmtree(directory.parent)
-	local = directory / 'Local'
-	local.mkdir(parents=True)
-	(local / 'Session.json').write_text(
+	if initialize:
+		_initialize_session_settings(directory)
+	return directory
+
+
+def _initialize_session_settings(settings):
+	(settings / 'Local').mkdir(parents=True, exist_ok=True)
+	(settings / 'Local' / 'Session.json').write_text(
 		json.dumps({
 			'app_version': _application_version(),
 			'is_licensed': True,
 		}, indent=2) + '\n',
 		encoding='utf-8'
 	)
-	return directory
 
 
 def _file_url(path):
@@ -349,19 +354,24 @@ def _validate_everything_items(items, query_index):
 
 
 def _capture_source_child(args):
+	# Create the whole settings tree with the non-admin token required by Everything.
+	# Parent-created files or directories could require admin rights for later saves.
+	settings = Path(os.environ['ROYIFILEMANAGER_USER_SETTINGS'])
+	_initialize_session_settings(settings)
+	_seed_settings(settings, args._capture)
 	left_path, right_path = _source_capture_paths(args._capture)
 	sys.argv = [sys.argv[0], str(left_path), str(right_path)]
 
 	from fman.impl.application_context import get_application_context
 	from fman.url import as_url
 	from PyQt5.QtCore import QTimer, Qt
-	from PyQt5.QtWidgets import QApplication
+	from PyQt5.QtWidgets import QApplication, QMessageBox
 
 	context = get_application_context()
 	outputs = _source_outputs(args.output_dir, args._capture)
 	deadline = time.monotonic() + args.timeout
 	state = {
-		'settled': 0, 'started': False, 'captured': False,
+		'settled': 0, 'started': False, 'captured': False, 'closing': False,
 		'initial_rows': None,
 		'expected': (as_url(str(left_path)), as_url(str(right_path))),
 	}
@@ -369,6 +379,9 @@ def _capture_source_child(args):
 
 	def stop_capture():
 		timer.stop()
+		if state['closing']:
+			return
+		state['closing'] = True
 		dialog = QApplication.activeModalWidget()
 		if dialog is not None:
 			dialog.reject()
@@ -387,6 +400,14 @@ def _capture_source_child(args):
 		stop_capture()
 
 	def capture_dialog(dialog):
+		if isinstance(dialog, QMessageBox):
+			errors.append(dialog.text())
+			print(errors[-1], file=sys.stderr, flush=True)
+			QTimer.singleShot(0, dialog.reject)
+			QTimer.singleShot(0, stop_capture)
+			return
+		if args._capture not in DIALOG_CAPTURES or state['captured'] or errors:
+			return
 		if args._capture == 'everything-search':
 			state['dialog'] = dialog
 			return
@@ -411,8 +432,7 @@ def _capture_source_child(args):
 			else capture_overview_dialog
 		)
 
-	if args._capture in DIALOG_CAPTURES:
-		context.main_window.before_dialog.connect(capture_dialog)
+	context.main_window.before_dialog.connect(capture_dialog)
 
 	def check_ready():
 		if state['captured'] or errors:
@@ -808,8 +828,8 @@ def _run_source(args):
 	elevated = bool(ctypes.windll.shell32.IsUserAnAdmin())
 	outputs = []
 	for capture in SOURCE_CAPTURES:
-		settings = _prepare_settings('source-' + capture)
-		_seed_settings(settings, capture)
+		# Only clean stale state here; the child must create its writable settings tree.
+		settings = _prepare_settings('source-' + capture, initialize=False)
 		command = [
 			sys.executable, str(Path(__file__).resolve()), '--_source-child',
 			'--_capture', capture,
@@ -820,7 +840,8 @@ def _run_source(args):
 		print(f'Capturing source: {capture}', flush=True)
 		environment = _source_environment(settings)
 		if elevated:
-			_run_restricted(command, environment, settings / 'Local' / 'capture.log',
+			SOURCE_LOG_DIR.mkdir(parents=True, exist_ok=True)
+			_run_restricted(command, environment, SOURCE_LOG_DIR / (capture + '.log'),
 				args.timeout + 30)
 		else:
 			subprocess.run(command, cwd=ROOT, env=environment, check=True)
