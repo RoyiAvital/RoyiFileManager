@@ -210,6 +210,8 @@ def _seed_settings(settings, capture):
 
 def _source_environment(settings):
 	environment = os.environ.copy()
+	environment['PYTHONFAULTHANDLER'] = '1'
+	environment['PYTHONUNBUFFERED'] = '1'
 	environment['ROYIFILEMANAGER_USER_SETTINGS'] = str(settings)
 	paths = [str(path) for path in SOURCE_PATHS]
 	if environment.get('PYTHONPATH'):
@@ -362,16 +364,24 @@ def _capture_source_child(args):
 	}
 	errors = []
 
+	def stop_capture():
+		timer.stop()
+		dialog = QApplication.activeModalWidget()
+		if dialog is not None:
+			dialog.reject()
+		QTimer.singleShot(0, context.main_window.close)
+
 	def fail():
 		errors.append(traceback.format_exc())
-		context.app.exit(1)
+		print(errors[-1], file=sys.stderr, flush=True)
+		stop_capture()
 
 	def finish(pixmap, output, cleanup=None):
 		_save_pixmap(pixmap, output)
 		if cleanup is not None:
 			cleanup()
 		state['captured'] = True
-		QTimer.singleShot(100, context.app.quit)
+		stop_capture()
 
 	def capture_dialog(dialog):
 		if args._capture == 'everything-search':
@@ -383,7 +393,6 @@ def _capture_source_child(args):
 				finish(
 					_grab_window_with_dialog(context.main_window, dialog), output
 				)
-				dialog.reject()
 			except BaseException:
 				fail()
 		def capture_fuzzy_dialog():
@@ -391,7 +400,6 @@ def _capture_source_child(args):
 				if not dialog._curr_items:
 					raise RuntimeError('Recursive fuzzy search returned no image results')
 				finish(dialog.grab(), outputs[0])
-				dialog.reject()
 			except BaseException:
 				fail()
 		QTimer.singleShot(
@@ -404,6 +412,8 @@ def _capture_source_child(args):
 		context.main_window.before_dialog.connect(capture_dialog)
 
 	def check_ready():
+		if state['captured'] or errors:
+			return
 		try:
 			if time.monotonic() >= deadline:
 				raise TimeoutError(
@@ -803,6 +813,7 @@ def _run_source(args):
 			'--width', str(args.width), '--height', str(args.height),
 			'--timeout', str(args.timeout),
 		]
+		print(f'Capturing source: {capture}', flush=True)
 		subprocess.run(
 			command, cwd=ROOT, env=_source_environment(settings), check=True
 		)

@@ -2,7 +2,10 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import subprocess
+import sys
 from tempfile import TemporaryDirectory
+from textwrap import dedent
 from unittest import TestCase
 from unittest.mock import Mock, patch
 
@@ -18,6 +21,62 @@ SPEC.loader.exec_module(screenshots)
 
 
 class GenerateDocsScreenshotsTest(TestCase):
+	def test_source_environment_enables_child_crash_diagnostics(self):
+		with patch.dict(os.environ, {'PYTHONPATH': 'existing', 'PYTHONFAULTHANDLER': '0'}, clear=True):
+			environment = screenshots._source_environment(Path('isolated'))
+			self.assertEqual('0', os.environ['PYTHONFAULTHANDLER'])
+		self.assertEqual('1', environment['PYTHONFAULTHANDLER'])
+		self.assertEqual('1', environment['PYTHONUNBUFFERED'])
+		self.assertEqual('isolated', environment['ROYIFILEMANAGER_USER_SETTINGS'])
+		self.assertEqual([str(path) for path in screenshots.SOURCE_PATHS] + ['existing'],
+			environment['PYTHONPATH'].split(os.pathsep))
+
+	def test_source_child_closes_main_window_on_success_and_failure(self):
+		script = '''
+import sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+import generate_docs_screenshots as screenshots
+from fman.impl.application_context import get_application_context
+from search_file_fuzzy.matcher import Matcher
+
+sample, output = Path(sys.argv[2]), Path(sys.argv[3])
+empty = sys.argv[4] == 'empty'
+screenshots._source_capture_paths = lambda capture: (sample, sample)
+if empty:
+    Matcher.matches = lambda self, query: iter(())
+context = get_application_context()
+closed = []
+context.main_window.closed.connect(lambda: closed.append(True))
+args = screenshots._parse_args([
+    '--_source-child', '--_capture', 'fuzzy-find', '--output-dir', str(output)
+])
+try:
+    result = screenshots._capture_source_child(args)
+except RuntimeError as error:
+    assert empty and 'no image results' in str(error), str(error)
+else:
+    assert not empty and result == 0, result
+    screenshots._validate_image(screenshots._source_outputs(output, 'fuzzy-find')[0])
+assert closed == [True], 'Capture bypassed main-window cleanup'
+assert not context.main_window.isVisible(), 'Capture left its main window open'
+'''
+		with TemporaryDirectory() as temporary_directory, \
+				patch.object(screenshots, 'WORK_DIR', Path(temporary_directory)):
+			sample = Path(temporary_directory) / 'sample'
+			(sample / 'nested').mkdir(parents=True)
+			(sample / 'nested' / 'img_sample.txt').write_text('sample', encoding='utf-8')
+			for case in ('success', 'empty'):
+				with self.subTest(case=case):
+					settings = screenshots._prepare_settings(case)
+					environment = screenshots._source_environment(settings)
+					environment['QT_QPA_PLATFORM'] = 'windows'
+					result = subprocess.run([
+						sys.executable, '-c', dedent(script), str(SCRIPT.parent),
+						str(sample), str(settings.parent / 'output'), case,
+					], cwd=ROOT, env=environment, capture_output=True, text=True, timeout=45)
+					self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
 	def test_defaults_use_public_windows_paths(self):
 		with patch.dict(os.environ, {'WINDIR': 'C:\\Windows'}):
 			left, right = screenshots._public_paths()

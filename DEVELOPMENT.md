@@ -228,6 +228,9 @@ dependency through the existing build helper. The instance stops on application 
 The Everything folder-manager capture shows only the configured root rows and
 asserts that opening the manager does not start the Everything service.
 Source mode uses the Qt smoke-test approach and captures widgets directly.
+Each source child closes the main window normally so pane models shut down before
+Qt exits. Capture names, Python errors and native fault traces are flushed to the
+CI log; a nonzero child exit still fails screenshot generation.
 Packaged mode launches the frozen executable for a parity image.
 
 ```powershell
