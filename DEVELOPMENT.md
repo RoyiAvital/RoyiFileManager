@@ -240,8 +240,10 @@ asserts that opening the manager does not start the Everything service.
 Source mode uses the Qt smoke-test approach and captures widgets directly.
 Each source child closes the main window normally so pane models shut down before
 Qt exits. Elevated hosts launch source children with a restricted, medium-integrity
-Windows token; ordinary launches are unchanged. Capture names identify the active
-child in CI. Restricted-child output and fault traces are retained in its isolated
+Windows token on the caller's actual window station and desktop; ordinary launches
+are unchanged. No interactive `WinSta0\\Default` desktop is assumed. Capture names
+identify the active child in CI, and a watchdog dumps Python thread stacks if
+startup or capture blocks past `--timeout`. Restricted-child output and fault traces are retained in its isolated
 `UserSettings/Local/capture.log` and printed when it exits. Launch failures, timeouts
 and nonzero exits fail generation. The shared build launcher uses a Windows job
 to terminate descendants on timeout or completion, without a UAC prompt or Registry changes.

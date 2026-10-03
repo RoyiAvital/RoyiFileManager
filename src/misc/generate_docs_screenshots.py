@@ -18,6 +18,7 @@ Run from the repository root:
 import argparse
 import ctypes
 from ctypes import wintypes
+import faulthandler
 import json
 import os
 from pathlib import Path
@@ -937,7 +938,12 @@ def main(argv=None):
 	args = _parse_args(argv)
 	args.output_dir = args.output_dir.resolve()
 	if args._source_child:
-		return _capture_source_child(args)
+		faulthandler.dump_traceback_later(args.timeout)
+		try:
+			print(f'Starting source child: {args._capture}', flush=True)
+			return _capture_source_child(args)
+		finally:
+			faulthandler.cancel_dump_traceback_later()
 	outputs = []
 	if args.mode in ('source', 'all'):
 		outputs.extend(_run_source(args))

@@ -69,6 +69,7 @@ def _run_restricted(command, environment, log, timeout):
 	import win32job
 	import win32process
 	import win32security
+	import win32service
 
 	disable_max_privilege, lua_token = 0x1, 0x4
 	try:
@@ -95,7 +96,11 @@ def _run_restricted(command, environment, log, timeout):
 			limits['BasicLimitInformation']['LimitFlags'] |= win32job.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
 			win32job.SetInformationJobObject(job, win32job.JobObjectExtendedLimitInformation, limits)
 			startup = win32process.STARTUPINFO()
-			startup.lpDesktop = 'winsta0\\default'
+			station = win32service.GetUserObjectInformation(
+				win32service.GetProcessWindowStation(), win32con.UOI_NAME)
+			desktop = win32service.GetUserObjectInformation(
+				win32service.GetThreadDesktop(win32api.GetCurrentThreadId()), win32con.UOI_NAME)
+			startup.lpDesktop = station + '\\' + desktop
 			startup.dwFlags = win32con.STARTF_USESTDHANDLES
 			startup.hStdInput = msvcrt.get_osfhandle(input_stream.fileno())
 			startup.hStdOutput = startup.hStdError = msvcrt.get_osfhandle(output.fileno())
@@ -117,7 +122,9 @@ def _run_restricted(command, environment, log, timeout):
 			if win32event.WaitForSingleObject(process, int(timeout * 1000)) == win32event.WAIT_TIMEOUT:
 				win32job.TerminateJobObject(job, 1)
 				win32event.WaitForSingleObject(process, 5000)
-				raise subprocess.TimeoutExpired(command, timeout)
+				error = subprocess.TimeoutExpired(command, timeout)
+				error.add_note('Restricted child desktop: ' + startup.lpDesktop)
+				raise error
 			return_code = win32process.GetExitCodeProcess(process)
 			if return_code:
 				raise subprocess.CalledProcessError(return_code, command)

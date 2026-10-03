@@ -23,6 +23,63 @@ SPEC.loader.exec_module(screenshots)
 
 
 class GenerateDocsScreenshotsTest(TestCase):
+	def test_source_child_watchdog_is_canceled_on_success_and_error(self):
+		for error in (None, RuntimeError('Capture failed')):
+			with self.subTest(error=error), \
+					patch.object(screenshots.faulthandler, 'dump_traceback_later') as start, \
+					patch.object(screenshots.faulthandler, 'cancel_dump_traceback_later') as cancel, \
+					patch.object(screenshots, '_capture_source_child', return_value=0, side_effect=error), \
+					redirect_stdout(StringIO()) as output:
+				if error is None:
+					self.assertEqual(0, screenshots.main(['--_source-child', '--timeout', '5']))
+				else:
+					with self.assertRaisesRegex(RuntimeError, 'Capture failed'):
+						screenshots.main(['--_source-child', '--timeout', '5'])
+				start.assert_called_once_with(5)
+				cancel.assert_called_once_with()
+				self.assertIn('Starting source child: overview', output.getvalue())
+
+	def test_restricted_child_keeps_callers_desktop(self):
+		script = '''
+import os, sys
+from pathlib import Path
+from uuid import uuid4
+import build, win32api, win32con, win32service
+
+original = win32service.GetThreadDesktop(win32api.GetCurrentThreadId())
+name = 'RFM_Capture_' + uuid4().hex
+desktop = win32service.CreateDesktop(name, 0, win32con.GENERIC_ALL, None)
+child_script = """
+import sys, win32api, win32service
+from PyQt5.QtWidgets import QApplication, QWidget
+desktop = win32service.GetThreadDesktop(win32api.GetCurrentThreadId())
+name = win32service.GetUserObjectInformation(desktop, 2)
+assert name == sys.argv[1], 'Child moved to desktop: ' + name
+app = QApplication([])
+widget = QWidget()
+widget.resize(320, 240)
+widget.show()
+app.processEvents()
+assert not widget.grab().isNull()
+widget.close()
+print('PASS: private desktop Qt capture', flush=True)
+"""
+try:
+    desktop.SetThreadDesktop()
+    environment = {**os.environ, 'QT_QPA_PLATFORM': 'windows'}
+    build._run_restricted([sys.executable, '-c', child_script, name], environment,
+        Path(sys.argv[1]) / 'child.log', 15)
+finally:
+    original.SetThreadDesktop()
+    desktop.CloseDesktop()
+'''
+		with TemporaryDirectory() as temporary_directory:
+			result = subprocess.run([sys.executable, '-X', 'faulthandler', '-c',
+				dedent(script), temporary_directory], cwd=ROOT,
+				capture_output=True, text=True, timeout=30)
+			self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+			self.assertIn('PASS: private desktop Qt capture', result.stdout)
+
 	def test_restricted_child_token_output_and_exit_code(self):
 		script = '''
 import ctypes, os, sys, win32api, win32con, win32security

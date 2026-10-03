@@ -61,3 +61,4 @@ Each task should be pretty localized and low risk.
 - [The File Ninja](https://thefile.ninja) - They seems to implement my idea about structured answer for natural language to search.
 - [Strata](https://github.com/lgse/strata) - Linux only. 
 - [Fulgur](https://github.com/fulgur-app/Fulgur) - Great text editor. Once they have a [Portable Version](https://github.com/fulgur-app/Fulgur/issues/299) we should add a preset for it.
+- [Xverb](https://xverb.pages.dev) - Plug In based.
