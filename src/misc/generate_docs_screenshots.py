@@ -29,7 +29,9 @@ import traceback
 
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / 'src/main/python'))
+from build import _run_restricted
 from fbs_runtime.build_settings import get_build_settings
 
 BUILD_SETTINGS = get_build_settings()
@@ -802,6 +804,7 @@ def _run_source(args):
 	if 'everything-search' in SOURCE_CAPTURES:
 		subprocess.run([sys.executable, '-c', 'import build; build._ensure_everything()'],
 			cwd=ROOT, check=True)
+	elevated = bool(ctypes.windll.shell32.IsUserAnAdmin())
 	outputs = []
 	for capture in SOURCE_CAPTURES:
 		settings = _prepare_settings('source-' + capture)
@@ -814,9 +817,12 @@ def _run_source(args):
 			'--timeout', str(args.timeout),
 		]
 		print(f'Capturing source: {capture}', flush=True)
-		subprocess.run(
-			command, cwd=ROOT, env=_source_environment(settings), check=True
-		)
+		environment = _source_environment(settings)
+		if elevated:
+			_run_restricted(command, environment, settings / 'Local' / 'capture.log',
+				args.timeout + 30)
+		else:
+			subprocess.run(command, cwd=ROOT, env=environment, check=True)
 		outputs.extend(_source_outputs(args.output_dir, capture))
 	return tuple(outputs)
 

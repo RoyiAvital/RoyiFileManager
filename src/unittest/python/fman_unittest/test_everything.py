@@ -145,6 +145,19 @@ class EverythingIpcTest(TestCase):
 
 
 class EverythingInstanceTest(TestCase):
+	def test_ready_still_rejects_admin_and_appdata_storage(self):
+		with patch('everything_search.instance.Native') as native:
+			runtime = ProcessRuntime('unused', 'unused')
+			for admin, appdata in ((0, 0), (1, 0), (0, 1), (1, 1)):
+				with self.subTest(admin=admin, appdata=appdata):
+					values = {0: 1, 1: 4, 2: 1, 3: 1032, 401: 1, 403: admin, 404: appdata}
+					native.return_value.probe.side_effect = lambda window, command: values[command]
+					if admin or appdata:
+						with self.assertRaisesRegex(RuntimeError, 'without admin privileges or AppData'):
+							runtime._ready(42)
+					else:
+						self.assertTrue(runtime._ready(42))
+
 	def test_normalize_root_list_removes_aliases_and_covered_children(self):
 		paths = ('C:/Data/Child/', 'c:\\data\\child\\.', 'C:/Data/other/..',
 			'C:\\Database', 'Z:/Offline/../Offline/', 'z:\\OFFLINE')
@@ -738,6 +751,32 @@ class EverythingBuildTest(TestCase):
 			with patch.object(build, '_download', side_effect=download), self.assertRaises(SystemExit):
 				build._ensure_everything(destination)
 			self.assertFalse(destination.exists())
+
+	def test_packaged_smoke_uses_verified_bundle_without_provisioning(self):
+		import build
+		with TemporaryDirectory() as temporary, patch.object(build, 'ROOT', Path(temporary)), \
+				patch.object(build, 'DIST_DIR', Path(temporary) / 'frozen'), \
+				patch.object(build, '_require_windows'), \
+				patch.object(build, '_environment', return_value={'PYTHONPATH': 'source-imports'}), \
+				patch.object(build, '_verify_everything') as verify, \
+				patch.object(build, '_ensure_everything') as provision, \
+				patch.object(build, '_run_restricted') as run:
+			self.assertIsNone(build.main(['smoke-everything']))
+			plugin = build.DIST_DIR / '_internal/resources/Plugins/Everything'
+			verify.assert_called_once_with(plugin / 'bin')
+			provision.assert_not_called()
+			run.assert_called_once()
+			command, environment, log, timeout = run.call_args.args
+			self.assertEqual(['--exe', str(plugin / 'bin/Everything.exe')], command[-2:])
+			self.assertIn('fman_integrationtest.everything_smoke', command)
+			self.assertEqual(str(plugin) + build.os.pathsep + 'source-imports', environment['PYTHONPATH'])
+			self.assertEqual(build.ROOT / 'UserSettings/Local/EverythingSmoke.log', log)
+			self.assertEqual(180, timeout)
+			run.reset_mock()
+			verify.side_effect = SystemExit('Unverified bundled executable')
+			with self.assertRaisesRegex(SystemExit, 'Unverified'):
+				build.smoke_everything()
+			run.assert_not_called()
 
 	def test_build_entry_points_provision_and_package_only_verifies(self):
 		import build

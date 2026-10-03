@@ -122,6 +122,10 @@ jobs:
         shell: pwsh
         run: micromamba run -n $env:RELEASE_ENV python build.py freeze
 
+      - name: Smoke-test bundled Everything
+        shell: pwsh
+        run: micromamba run -n $env:RELEASE_ENV python build.py smoke-everything
+
       - name: Package
         id: package
         shell: pwsh

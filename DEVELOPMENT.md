@@ -38,6 +38,7 @@ Repository-wide contribution and task-lifecycle requirements are defined in
 python build.py doc
 python build.py test
 python build.py freeze
+python build.py smoke-everything
 python build.py package
 ```
 
@@ -54,7 +55,8 @@ the full GitHub Actions build also has a sixty-minute job limit.
 `run`, `test`, and `freeze` download the pinned x64 `7za.exe` from the official
 7-Zip distribution when it is not already present under the Core plug-in.
 They also verify/provision Everything 1.4.1.1032 x64 from the official portable
-ZIP and its separately downloaded license under `Plugins/Everything/bin`.
+ZIP under `Plugins/Everything/bin`, with the reviewed repository-owned license
+under `Plugins/Everything/licenses`.
 The archive, executable and license are SHA-256 pinned. No installer or SDK DLL
 is used. `publish`/`release` inherit this through `freeze`; `package` only verifies
 the frozen Everything files, and `clean`/`doc` do not download dependencies.
@@ -82,6 +84,14 @@ Using the same launcher, replace the child arguments with
 for Qt integration, or `-m fman_integrationtest.everything_smoke` for the isolated
 live portable-runtime check and 30 warm IPC timings. The latter uses temporary
 state under `UserSettings/Local` and never controls the unnamed instance.
+
+After freezing, `python build.py smoke-everything` verifies the bundled executable
+and license, then runs the same live check using the frozen Everything plug-in
+files and the development interpreter. It uses a restricted, medium-integrity
+Windows token even on an administrator CI runner; it never bypasses the plug-in's
+admin/AppData checks. Output is retained in `UserSettings/Local/EverythingSmoke.log`.
+The check is offline and does not rebuild or modify the frozen files. It does not
+replace a frozen application UI smoke test. Release CI requires it before packaging.
 
 Content search uses conda-forge's installed `bin/rg.exe` from the active Python
 prefix. PyInstaller bundles it with the notices under
@@ -132,7 +142,7 @@ only when a version tag is pushed:
 
 The workflow verifies that the tag matches `version`, that `## [Unreleased]`
 is the first changelog section and that a matching `## [X.Y.Z]` section exists.
-It runs `python build.py test`, `freeze` and `package`, then publishes a GitHub
+It runs `python build.py test`, `freeze`, `smoke-everything` and `package`, then publishes a GitHub
 release whose notes are that version's section and whose assets are the ZIP
 and its SHA-256. Draft entries under `Unreleased` are not included in the
 release notes. Tags with a suffix (`v1.0.0-rc.1`) are published as pre-releases.
@@ -229,8 +239,12 @@ The Everything folder-manager capture shows only the configured root rows and
 asserts that opening the manager does not start the Everything service.
 Source mode uses the Qt smoke-test approach and captures widgets directly.
 Each source child closes the main window normally so pane models shut down before
-Qt exits. Capture names, Python errors and native fault traces are flushed to the
-CI log; a nonzero child exit still fails screenshot generation.
+Qt exits. Elevated hosts launch source children with a restricted, medium-integrity
+Windows token; ordinary launches are unchanged. Capture names identify the active
+child in CI. Restricted-child output and fault traces are retained in its isolated
+`UserSettings/Local/capture.log` and printed when it exits. Launch failures, timeouts
+and nonzero exits fail generation. The shared build launcher uses a Windows job
+to terminate descendants on timeout or completion, without a UAC prompt or Registry changes.
 Packaged mode launches the frozen executable for a parity image.
 
 ```powershell

@@ -1,4 +1,5 @@
 import argparse
+from contextlib import ExitStack
 import hashlib
 import os
 from pathlib import Path
@@ -58,6 +59,71 @@ DOWNLOAD_RETRY_DELAYS = (1, 2, 4)
 def _require_windows():
 	if sys.platform != 'win32':
 		raise SystemExit('%s is supported on Windows only.' % APP_NAME)
+
+
+def _run_restricted(command, environment, log, timeout):
+	import msvcrt
+	import win32api
+	import win32con
+	import win32event
+	import win32job
+	import win32process
+	import win32security
+
+	disable_max_privilege, lua_token = 0x1, 0x4
+	try:
+		with ExitStack() as resources:
+			output = resources.enter_context(log.open('wb'))
+			input_stream = resources.enter_context(open(os.devnull, 'rb'))
+			current = win32security.OpenProcessToken(
+				win32api.GetCurrentProcess(), win32con.TOKEN_ALL_ACCESS
+			)
+			resources.callback(current.Close)
+			administrators = win32security.CreateWellKnownSid(
+				win32security.WinBuiltinAdministratorsSid
+			)
+			token = win32security.CreateRestrictedToken(
+				current, disable_max_privilege | lua_token,
+				[(administrators, 0)], None, None
+			)
+			resources.callback(token.Close)
+			win32security.SetTokenInformation(token, win32security.TokenIntegrityLevel,
+				(win32security.ConvertStringSidToSid('S-1-16-8192'), 0x20))
+			job = win32job.CreateJobObject(None, '')
+			resources.callback(job.Close)
+			limits = win32job.QueryInformationJobObject(job, win32job.JobObjectExtendedLimitInformation)
+			limits['BasicLimitInformation']['LimitFlags'] |= win32job.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+			win32job.SetInformationJobObject(job, win32job.JobObjectExtendedLimitInformation, limits)
+			startup = win32process.STARTUPINFO()
+			startup.lpDesktop = 'winsta0\\default'
+			startup.dwFlags = win32con.STARTF_USESTDHANDLES
+			startup.hStdInput = msvcrt.get_osfhandle(input_stream.fileno())
+			startup.hStdOutput = startup.hStdError = msvcrt.get_osfhandle(output.fileno())
+			for handle in (startup.hStdInput, startup.hStdOutput):
+				os.set_handle_inheritable(handle, True)
+			process, thread, _, _ = win32process.CreateProcessAsUser(
+				token, command[0], subprocess.list2cmdline(command), None, None, True,
+				win32con.CREATE_UNICODE_ENVIRONMENT | win32con.CREATE_NO_WINDOW | win32con.CREATE_SUSPENDED,
+				{**environment, 'PYTHONIOENCODING': 'utf-8'}, str(ROOT), startup
+			)
+			resources.callback(process.Close)
+			resources.callback(thread.Close)
+			try:
+				win32job.AssignProcessToJobObject(job, process)
+			except BaseException:
+				win32api.TerminateProcess(process, 1)
+				raise
+			win32process.ResumeThread(thread)
+			if win32event.WaitForSingleObject(process, int(timeout * 1000)) == win32event.WAIT_TIMEOUT:
+				win32job.TerminateJobObject(job, 1)
+				win32event.WaitForSingleObject(process, 5000)
+				raise subprocess.TimeoutExpired(command, timeout)
+			return_code = win32process.GetExitCodeProcess(process)
+			if return_code:
+				raise subprocess.CalledProcessError(return_code, command)
+	finally:
+		if log.is_file():
+			print(log.read_text(encoding='utf-8', errors='replace'), end='', flush=True)
 
 
 def _sha256(path):
@@ -360,6 +426,20 @@ def freeze():
 	_copy_dependency_manifests()
 
 
+def smoke_everything():
+	_require_windows()
+	plugin = DIST_DIR / '_internal/resources/Plugins/Everything'
+	_verify_everything(plugin / 'bin')
+	environment = _environment()
+	environment['PYTHONPATH'] = str(plugin) + os.pathsep + environment['PYTHONPATH']
+	local = ROOT / 'UserSettings' / 'Local'
+	local.mkdir(parents=True, exist_ok=True)
+	_run_restricted([
+		sys.executable, '-X', 'faulthandler', '-u', '-m',
+		'fman_integrationtest.everything_smoke', '--exe', str(plugin / 'bin/Everything.exe'),
+	], environment, local / 'EverythingSmoke.log', 180)
+
+
 def package():
 	_require_windows()
 	if not DIST_DIR.is_dir():
@@ -393,6 +473,7 @@ COMMANDS = {
 	'publish': publish,
 	'release': publish,
 	'run': run,
+	'smoke-everything': smoke_everything,
 	'test': test
 }
 

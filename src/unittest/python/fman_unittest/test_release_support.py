@@ -84,6 +84,18 @@ class ReleaseNotesTest(TestCase):
 
 
 class ReleaseProductNameTest(TestCase):
+	def test_everything_runtime_gate_runs_between_freeze_and_package(self):
+		import yaml
+		workflow = yaml.safe_load((ROOT / '.github/workflows/release.yml').read_text(encoding='utf-8'))
+		steps = workflow['jobs']['build']['steps']
+		names = [step['name'] for step in steps]
+		smoke = names.index('Smoke-test bundled Everything')
+		self.assertLess(names.index('Freeze'), smoke)
+		self.assertLess(smoke, names.index('Package'))
+		self.assertEqual('micromamba run -n $env:RELEASE_ENV python build.py smoke-everything',
+			steps[smoke]['run'])
+		self.assertNotIn('continue-on-error', steps[smoke])
+
 	def test_name_flows_from_validated_settings_to_publish_job(self):
 		import yaml
 		workflow = yaml.safe_load((ROOT / '.github/workflows/release.yml').read_text(encoding='utf-8'))

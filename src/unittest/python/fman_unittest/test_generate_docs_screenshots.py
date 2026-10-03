@@ -1,4 +1,6 @@
 import importlib.util
+from contextlib import redirect_stdout
+from io import StringIO
 import json
 import os
 from pathlib import Path
@@ -21,6 +23,95 @@ SPEC.loader.exec_module(screenshots)
 
 
 class GenerateDocsScreenshotsTest(TestCase):
+	def test_restricted_child_token_output_and_exit_code(self):
+		script = '''
+import ctypes, os, sys, win32api, win32con, win32security
+assert not ctypes.windll.shell32.IsUserAnAdmin(), 'Child still has admin privileges'
+token = win32security.OpenProcessToken(win32api.GetCurrentProcess(), win32con.TOKEN_QUERY)
+assert not win32security.GetTokenInformation(token, win32security.TokenElevation)
+try:
+    integrity, attributes = win32security.GetTokenInformation(token, win32security.TokenIntegrityLevel)
+    assert integrity.GetSubAuthority(integrity.GetSubAuthorityCount() - 1) == 8192
+finally:
+    token.Close()
+print(os.environ['CAPTURE_TEST_VALUE'])
+print(sys.argv[2], file=sys.stderr)
+raise SystemExit(int(sys.argv[1]))
+'''
+		with TemporaryDirectory() as temporary_directory:
+			log = Path(temporary_directory) / 'capture.log'
+			value = 'value with spaces and "quotes"'
+			environment = {**os.environ, 'CAPTURE_TEST_VALUE': value}
+			for return_code in (0, 7):
+				with self.subTest(return_code=return_code), redirect_stdout(StringIO()) as output:
+					command = [sys.executable, '-c', dedent(script), str(return_code), value]
+					if return_code:
+						with self.assertRaises(subprocess.CalledProcessError) as raised:
+							screenshots._run_restricted(command, environment, log, 15)
+						self.assertEqual(return_code, raised.exception.returncode)
+					else:
+						screenshots._run_restricted(command, environment, log, 15)
+					self.assertEqual([value, value], output.getvalue().splitlines())
+					self.assertEqual(output.getvalue(), log.read_text(encoding='utf-8'))
+
+	def test_restricted_child_timeout_preserves_log_and_stops_descendants(self):
+		import pywintypes
+		import win32api
+		import win32con
+		import win32event
+		script = '''
+import subprocess, sys
+from threading import Event
+child = subprocess.Popen([sys.executable, '-c', 'from threading import Event; Event().wait()'])
+print(child.pid, flush=True)
+Event().wait()
+'''
+		with TemporaryDirectory() as temporary_directory, redirect_stdout(StringIO()) as output:
+			log = Path(temporary_directory) / 'capture.log'
+			command = [sys.executable, '-u', '-c', dedent(script)]
+			with self.assertRaises(subprocess.TimeoutExpired):
+				screenshots._run_restricted(command, os.environ.copy(), log, 2)
+			self.assertEqual(log.read_text(encoding='utf-8'), output.getvalue())
+			child_pid = int(output.getvalue().strip())
+			try:
+				child = win32api.OpenProcess(win32con.SYNCHRONIZE | win32con.PROCESS_TERMINATE,
+					False, child_pid)
+			except pywintypes.error as error:
+				self.assertEqual(87, error.winerror)
+			else:
+				try:
+					if win32event.WaitForSingleObject(child, 5000) != win32event.WAIT_OBJECT_0:
+						win32api.TerminateProcess(child, 1)
+						self.fail('Restricted child left a descendant running')
+				finally:
+					child.Close()
+
+	def test_elevated_capture_uses_restricted_child_without_fallback(self):
+		args = screenshots._parse_args(['--mode', 'source'])
+		settings = Path('isolated/UserSettings')
+		for error in (None, OSError('Restricted launch failed')):
+			with self.subTest(error=error), \
+					patch.object(screenshots, 'SOURCE_CAPTURES', ('fuzzy-find',)), \
+					patch.object(screenshots, '_prepare_settings', return_value=settings), \
+					patch.object(screenshots, '_seed_settings'), \
+					patch.object(screenshots, '_source_environment', return_value={'test': 'value'}), \
+					patch.object(screenshots.ctypes.windll.shell32, 'IsUserAnAdmin', return_value=1), \
+					patch.object(screenshots, '_run_restricted', side_effect=error) as restricted, \
+					patch.object(screenshots.subprocess, 'run') as run:
+				if error is None:
+					self.assertEqual(screenshots._source_outputs(args.output_dir, 'fuzzy-find'),
+						screenshots._run_source(args))
+				else:
+					with self.assertRaisesRegex(OSError, 'Restricted launch failed'):
+						screenshots._run_source(args)
+				run.assert_not_called()
+				restricted.assert_called_once()
+				command, environment, log, timeout = restricted.call_args.args
+				self.assertIn('fuzzy-find', command)
+				self.assertEqual({'test': 'value'}, environment)
+				self.assertEqual(settings / 'Local/capture.log', log)
+				self.assertEqual(args.timeout + 30, timeout)
+
 	def test_source_environment_enables_child_crash_diagnostics(self):
 		with patch.dict(os.environ, {'PYTHONPATH': 'existing', 'PYTHONFAULTHANDLER': '0'}, clear=True):
 			environment = screenshots._source_environment(Path('isolated'))
@@ -232,8 +323,11 @@ assert not context.main_window.isVisible(), 'Capture left its main window open'
 				patch.object(screenshots, '_prepare_settings', return_value=Path('isolated')), \
 				patch.object(screenshots, '_seed_settings') as seed, \
 				patch.object(screenshots, '_source_environment', return_value={}), \
+				patch.object(screenshots.ctypes.windll.shell32, 'IsUserAnAdmin', return_value=0), \
+				patch.object(screenshots, '_run_restricted') as restricted, \
 				patch.object(screenshots.subprocess, 'run') as run:
 			outputs = screenshots._run_source(args)
+			restricted.assert_not_called()
 			self.assertEqual(2, len(outputs))
 			self.assertEqual(2, run.call_count)
 			self.assertEqual([screenshots.sys.executable, '-c', 'import build; build._ensure_everything()'],
