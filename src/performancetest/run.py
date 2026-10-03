@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[2]
 WORKLOADS = {
 	'measure': (str(ROOT / 'src/misc/performance_report.py'),),
 	'suite': ('-m', 'fman_performancetest.suite'),
+	'historical': ('-m', 'fman_performancetest.historical'),
 	'search': ('-m', 'fman_performancetest.filter_find'),
 	'pane': ('-m', 'fman_performancetest.pane_rendering_benchmark'),
 	'legacy-search': ('-m', 'unittest', 'fman_performancetest.legacy.SearchPerformanceTest'),

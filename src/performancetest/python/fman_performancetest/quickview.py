@@ -19,7 +19,7 @@ def _install_paint_dispatch():
 	FileListView.paintEvent = dispatch_paint
 
 
-def child(directory, viewport, navigation_repetitions=5):
+def child(directory, viewport, navigation_repetitions=5, *, include_text=True):
 	with TemporaryDirectory(prefix='quickview-performance-') as temporary:
 		settings = Path(temporary) / 'UserSettings'
 		os.environ['ROYIFILEMANAGER_USER_SETTINGS'] = str(settings)
@@ -207,9 +207,10 @@ def child(directory, viewport, navigation_repetitions=5):
 								raise RuntimeError('Markdown heading, list or link formatting is missing')
 					gui(verify_text)
 					result.update(text_verified=True, format_verified=True, text_format=kind)
-				text_case('switch.text', 'preview-unsupported.txt', 'text')
-				text_case('switch.python', 'preview-sample.py', 'python')
-				text_case('switch.markdown', 'preview-sample.md', 'markdown')
+				if include_text:
+					text_case('switch.text', 'preview-unsupported.txt', 'text')
+					text_case('switch.python', 'preview-sample.py', 'python')
+					text_case('switch.markdown', 'preview-sample.md', 'markdown')
 				image_case('restore.large-png', 'preview-large.png', (4096, 3072), 'png')
 				for identity, command, predicate, arguments in (
 					('actual-size', 'quick_view_actual_size', lambda: canvas().mode == 'actual_size', {}),

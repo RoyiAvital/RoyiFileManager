@@ -412,6 +412,37 @@ separately under `UserSettings/Performance/Full`. Regular runs do not prepare or
 scan the medium fixture. Full runs take longer; no runtime has been measured yet.
 See the [protocol and result format](src/performancetest/README.md).
 
+### Historical Performance Retesting
+
+Retest `0.9.0`, `0.9.1`, `0.9.2`, `0.9.3`, `0.10.0`, `0.10.1`, `0.10.2` and
+current `HEAD` with one current harness and the existing Python environment:
+
+```powershell
+python src/performancetest/run.py historical --list
+python src/performancetest/run.py historical --output UserSettings/Performance/Retest20261003 --repeat 3
+```
+
+Application sources must be committed; benchmark/documentation changes may be
+uncommitted. The driver exports source without changing the checkout, verifies
+shared fixtures, isolates application imports/settings, and alternates version
+order per repetition. It runs all thirteen regular workloads, including current
+selection/readback checks on old releases. Pre-`0.10.0` versions skip only the
+unavailable QuickView text cases. Application dependencies are not reinstalled.
+
+The output directory retains source exports, fixtures, per-repetition JSON,
+immutable run records and a version index. It does not update the normal version
+history or overwrite previous results. Use a new output directory for a new run;
+reusing a directory resumes only missing repetitions, after validating source,
+harness, configuration and fixture fingerprints. Failed samples remain recorded.
+For a compatibility smoke test, use a separate output directory with
+`--test fuzzy.small --test quickview.small --test selection.small --repeat 1`.
+
+The [2026-10-03 retest and regression analysis](CHANGELOG.md#performance-retest-2026-10-03)
+also retains nine paired fuzzy UI measurements and a matcher implementation
+comparison in its output directory. Native benchmarks require an interactive
+desktop; do not interact with their windows. Do not run correctness tests or
+other CPU-intensive work concurrently with measurements.
+
 ### Everything Search Backend Probe
 
 [everything_probe.py](src/misc/everything_probe.py) evaluates

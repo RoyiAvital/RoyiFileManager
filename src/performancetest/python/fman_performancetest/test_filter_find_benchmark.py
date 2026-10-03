@@ -31,6 +31,63 @@ finally:
 	sys.path.pop(0)
 
 
+class HistoricalBenchmarkTest(TestCase):
+	def test_version_order_and_text_availability(self):
+		from fman_performancetest.historical import VERSIONS, has_text_preview, version_order
+		self.assertEqual(8, len(VERSIONS))
+		self.assertEqual(tuple(reversed(version_order(0))), version_order(1))
+		self.assertFalse(has_text_preview('0.9.3'))
+		self.assertTrue(has_text_preview('0.10.0'))
+		self.assertTrue(has_text_preview('Unreleased'))
+
+	def test_child_environment_excludes_current_application(self):
+		import os
+		from fman_performancetest.historical import child_environment
+		with TemporaryDirectory() as temporary:
+			source = Path(temporary).resolve()
+			(source / 'src/main/resources/base/Plugins/Core').mkdir(parents=True)
+			with patch.dict(os.environ, PYTHONPATH='unrelated-current-application'):
+				environment = child_environment(source)
+			paths = environment['PYTHONPATH'].split(os.pathsep)
+			self.assertEqual(str(source / 'src/main/python'), paths[1])
+			self.assertEqual(str(source / 'src/main/resources/base/Plugins/Core'), paths[2])
+			self.assertNotIn('unrelated-current-application', paths)
+			self.assertEqual('1', environment['PYTHONDONTWRITEBYTECODE'])
+
+	def test_record_writes_are_exclusive(self):
+		from fman_performancetest.historical import write_json
+		with TemporaryDirectory() as temporary:
+			path = Path(temporary) / 'result.json'
+			write_json(path, {'status': 'passed'})
+			with self.assertRaises(FileExistsError):
+				write_json(path, {'status': 'failed'})
+			self.assertEqual({'status': 'passed'}, json.loads(path.read_text()))
+
+	def test_digest_detects_source_changes(self):
+		from fman_performancetest.historical import source_digest
+		with TemporaryDirectory() as temporary:
+			root = Path(temporary)
+			path = root / 'application.py'
+			path.write_text('before')
+			before = source_digest(root)
+			path.write_text('after')
+			self.assertNotEqual(before, source_digest(root))
+
+	def test_sample_rejects_missing_selection_cases(self):
+		from fman_performancetest.historical import sample
+		with patch('fman_performancetest.historical.invoke', return_value=dict(errors=[], settings_isolated=True, samples=[])):
+			with self.assertRaisesRegex(ValueError, 'Selection correctness'):
+				sample(None, '0.9.0', dict(workload='selection', selection_count=64), None, None)
+
+	def test_sample_rejects_search_count_mismatch(self):
+		from fman_performancetest.historical import sample
+		ui = dict(errors=[], settings_isolated=True, samples=[dict(query_id='query', rows=2)])
+		algorithm = dict(truncated=False, queries=[dict(query_id='query', returned=1)])
+		with patch('fman_performancetest.historical.invoke', side_effect=[ui, algorithm]):
+			with self.assertRaisesRegex(ValueError, 'result counts differ'):
+				sample(None, '0.9.0', dict(workload='fuzzy'), None, None)
+
+
 class PerformanceReportTest(TestCase):
 	def selection_record(self, full=False):
 		current = self.record()

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.3] - 2026-10-03
+
+This release brings the Files Checksum feature to generate and validate checksum files.
+
 ### Added
 
 - Bundled ChecksumFiles plug-in with Generate checksum file and Verify
@@ -22,6 +26,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Optional `get_background_menu` callback in `fman.ui.show_table` for table-wide
   actions, including empty or fully filtered results. Existing row-menu callbacks
   are unchanged.
+
+### Performance Retest - 2026-10-03
+
+Fresh measurements of every release from `0.9.0` through `0.10.2` and current
+application source `cb51127d46b9`. All eight versions used one harness, interpreter,
+environment and shared fixtures, with alternating version order and three fresh
+processes per workload. All 312 native repetitions and 120 companion search
+algorithm measurements passed. These results do not replace earlier tables.
+
+All timings are in milliseconds. Small folders contain 256 files, large folders
+200,000 files, and recursive search uses 50,000 files. Each individual case uses
+the **median of its three repetitions**, not the minimum or maximum repetition.
+The row summaries follow the regular sixteen-row report:
+
+- **Pane Load and QuickView Images:** the case median.
+- **Filter Bar and Fuzzy Find:** the largest (slowest) query median.
+- **QuickView Text, Selections, Navigation and Refresh / Selection:** the mean
+  of their case medians. Refresh / Selection averages 16 case medians.
+- **Selections Readback:** the largest (slowest) of ten case medians.
+
+Values use two decimal places; `-` means text preview was unavailable in that
+release. All other values, including historical readback, are measured.
+
+| Test                            |   0.9.0 |   0.9.1 |   0.9.2 |   0.9.3 |  0.10.0 |  0.10.1 |  0.10.2 | Unreleased |
+|---------------------------------|--------:|--------:|--------:|--------:|--------:|--------:|--------:|-----------:|
+| Pane Load - Small Folder        |   42.23 |   42.78 |   44.66 |   35.20 |   37.20 |   39.10 |   33.25 |      33.93 |
+| Pane Load - Large Folder        | 1001.54 | 1014.82 |  978.07 |  964.31 |  956.75 |  971.12 |  975.83 |     958.23 |
+| Filter Bar - Small Folder       |    8.96 |    9.21 |    8.70 |    8.69 |    8.84 |    9.28 |    8.80 |       8.79 |
+| Filter Bar - Large Folder       |  332.17 |  331.48 |  333.62 |  331.28 |  335.02 |  332.78 |  332.76 |     338.27 |
+| Fuzzy Find - Small Folder       |    4.57 |    4.52 |    4.51 |    4.55 |    4.53 |    4.51 |    4.51 |       7.17 |
+| Fuzzy Find - Large Folder       |  408.47 |  379.09 |  389.25 |  407.95 |  416.37 |  421.48 |  439.31 |     441.02 |
+| Fuzzy Find (Recursive)          |   91.68 |   91.09 |   91.12 |   91.05 |   91.06 |   91.78 |   91.39 |      91.91 |
+| QuickView Images - Small Folder |  122.09 |  120.89 |  120.60 |  122.61 |  120.78 |  121.67 |  121.21 |     122.04 |
+| QuickView Images - Large Folder |  123.29 |  128.92 |  125.64 |  121.14 |  123.83 |  136.21 |  131.20 |     135.86 |
+| QuickView Text - Small Folder   |       - |       - |       - |       - |  132.81 |  132.11 |  133.05 |     133.03 |
+| QuickView Text - Large Folder   |       - |       - |       - |       - |  132.65 |  131.57 |  131.73 |     129.47 |
+| Selections - Small Folder       |   15.67 |   15.64 |   15.40 |   15.24 |   15.38 |   15.56 |   15.55 |      15.35 |
+| Selections - Large Folder       |   88.18 |   88.37 |   88.94 |   87.85 |   87.42 |   87.53 |   87.51 |      88.36 |
+| Selections Readback             | 1994.44 | 1987.26 | 1967.05 | 1974.51 | 1946.02 | 1980.19 |   72.84 |      73.78 |
+| Navigation                      |    7.17 |    7.20 |    7.17 |    7.36 |    7.15 |    7.14 |    7.06 |       7.17 |
+| Refresh / Selection             |  581.97 |  581.73 |  582.82 |  592.84 |  594.40 |  578.61 |  573.50 |     585.17 |
+
+Measured on the same development PC with Windows 11 build 26300, Python 3.14.7,
+Qt 5.15.15 / PyQt 5.15.11, Balanced power policy, warm filesystem caches and a
+1280 x 800 viewport at 1x DPI. Each historical version uses its original
+application sources but the currently installed dependencies. QuickView uses
+the same v2 fixtures for all releases; only unavailable text cases are omitted.
+Local source exports, raw repetitions and immutable records are retained under
+`UserSettings/Performance/Retest20261003/`. Harness fingerprint:
+`ff0f8831ec3030fac471a10f4db86f2520a711ca5307ffe3d492cd57e4b4983a`.
+See [reproduction instructions](DEVELOPMENT.md#historical-performance-retesting).
+
+#### Regression Analysis
+
+- **Refresh / Selection:** the previous approximately 56% increase from `0.9.2`
+  to `0.10.2` did not recur: 582.82 versus 573.50 ms in this run. The Windows bulk
+  scanner is byte-identical across all eight versions; projection, update and
+  Qt commit functions have identical syntax trees. The `0.9.2` natural-sort
+  correction predates the apparent increase. The `0.10.1` unknown-identity check
+  optimization does not add work to the unchanged-listing fast path, and the
+  `0.10.2` readback optimization is outside the refresh timing endpoint.
+- **Fuzzy Find:** the full-run medians still differ, so a separate nine-pair,
+  alternating, fresh-process `0.9.2`/`0.10.2` UI comparison was run. The slowest
+  query measured **355.09 versus 356.48 ms**, a **0.4%** difference; observed
+  ranges overlap (351.88-361.03 and 354.59-361.53 ms). All seven queries returned
+  equal row counts. These supplementary results are not substituted into the
+  full-run table.
+- The only substantive matcher rewrite in this range is `0.9.3` (`3f122db`):
+  reuse identical name/path normalization and stream ranked candidates into
+  the bounded result heap. Scoring and subsequence functions are unchanged.
+  A separate nine-pair in-memory comparison measured the difficult no-match
+  query at **369.83 versus 370.18 ms** (0.09%); the other two tested queries were
+  slightly faster. Ordered results and highlights matched for all seven catalog
+  queries over 200,000 entries. No later matcher change explains the large gap.
+- **Conclusion:** the earlier large increases are not reproduced as stable
+  code-caused regressions. Run conditions substantially affect these timings;
+  the specific environmental cause is not established. Three-sample overview
+  differences alone are not regression verdicts. Existing duplicate name/path
+  scoring remains an optimization opportunity, not an explanation for a newly
+  introduced slowdown. No application optimization was applied during this retest.
 
 ## [0.10.2] - 2026-10-02
 
