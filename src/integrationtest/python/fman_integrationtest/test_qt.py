@@ -3361,6 +3361,513 @@ class UnpackArchiveIT(QtIT):
 					return model
 				self.run_in_app(close)
 
+class EverythingIT(QtIT):
+	def test_native_picker_syntax_metadata_accept_and_cancel(self):
+		from everything_search.instance import Settings, State
+		from everything_search.ipc import Hit, Results, QueryTimeout
+		from fman.impl.quicksearch import Quicksearch
+		from fman.impl.theme import Theme
+		from fman.url import as_url
+		from pathlib import Path
+		from PyQt5.QtCore import QThread, QTimer
+		from PyQt5.QtTest import QTest
+		from unittest.mock import Mock, patch
+		import everything_search as commands
+		app = QApplication.instance()
+		pane = Mock()
+		service = Mock(closed=False)
+		service.manager.snapshot.return_value = State(1, 'ready', (42, 1, 'exe'))
+		hit = Hit('C:\\Data\\sample.txt', False, 6, 0, tuple(range(8, 14)))
+
+		def query(instance, identity, text, *args):
+			self.assertEqual(app.thread(), QThread.currentThread())
+			if text == 'busy':
+				raise QueryTimeout()
+			return Results(12345 if text == 'many' else 1, (hit,))
+
+		service.client.query.side_effect = query
+		def show(provider):
+			self.assertEqual(app.thread(), QThread.currentThread())
+			theme = Theme(Mock(), [])
+			theme.load(str(Path(__file__).parents[3] / 'main/resources/base/Plugins/Core/Theme.css'))
+			dialog = Quicksearch(None, app, theme.get_quicksearch_item_css(), provider)
+			errors = []
+			def inspect():
+				try:
+					dialog._query.setText('many')
+					self.assertEqual('Showing 1 of 12,345', dialog._curr_items[-1].title)
+					self.assertEqual(as_url(hit.path), dialog._curr_items[0].value)
+					dialog._query.setText('busy')
+					self.assertEqual('', dialog._curr_items[0].value)
+					dialog._query.setText(accepted_query)
+					item = dialog._curr_items[0]
+					self.assertEqual(list(hit.highlight), item.highlight)
+					self.assertTrue(item.description.strip())
+					self.assertFalse(dialog.grab().isNull())
+					QTest.keyClick(dialog._query, Qt.Key_Escape if cancel else Qt.Key_Return)
+					self.assertFalse(dialog.isVisible())
+				except BaseException as error:
+					errors.append(error)
+					dialog.reject()
+			QTimer.singleShot(0, inspect)
+			try:
+				result = dialog.exec()
+				if errors:
+					raise errors[0]
+				return result
+			finally:
+				dialog.deleteLater()
+		with patch.object(commands, '_read_settings', return_value=({}, Settings(folders=('C:\\Data',)))), \
+				patch.object(commands, '_get_service', return_value=service), \
+				patch.object(commands, 'show_quicksearch', side_effect=lambda provider: self.run_in_app(show, provider)):
+			for accepted_query in ('*.txt dm:today', 'many'):
+				for cancel in (False, True):
+					pane.reset_mock()
+					commands.SearchFileByEverything(pane)()
+					if cancel:
+						pane.run_command.assert_not_called()
+					else:
+						pane.run_command.assert_called_once_with('open_directory', {'url': as_url(hit.path)})
+					self.assertEqual(accepted_query, service.client.query.call_args.args[2])
+
+	def test_folder_persistence_delivery_and_unload_thread_affinity(self):
+		from everything_search.instance import Manager
+		from fman.impl.ui import UiOwner
+		from pathlib import Path
+		from PyQt5.QtCore import QThread
+		from tempfile import TemporaryDirectory
+		from threading import get_ident
+		from unittest.mock import Mock, patch
+		import json
+		import everything_search as commands
+		app = QApplication.instance()
+		ready = Event()
+		applied = []
+		runtime = Mock()
+		def apply(settings, canceled):
+			self.assertNotEqual(app.thread(), QThread.currentThread())
+			applied.append((settings.folders, get_ident()))
+			return (42, 1, 'exe') if settings.folders else None
+		runtime.apply.side_effect = apply
+		def notification(text, **kwargs):
+			self.assertEqual(app.thread(), QThread.currentThread())
+			if text in ('Everything database is ready.', 'Everything database is stopped.'):
+				ready.set()
+		with TemporaryDirectory() as temporary:
+			settings_path = Path(temporary) / 'Everything.json'
+			settings_path.write_text(json.dumps({'folders': ['Z:\\Offline']}), encoding='utf-8')
+			favorites = {'favorites': [
+				{'name': 'Child', 'url': 'file://D:/Favorite/Child'},
+				{'name': 'Parent', 'url': 'file://D:/Favorite/'},
+				{'name': 'Duplicate', 'url': 'file://d:/FAVORITE'},
+			]}
+			def load(name, **kwargs):
+				self.assertEqual(app.thread(), QThread.currentThread())
+				if name == 'Favorites.json':
+					return favorites
+				return json.loads(settings_path.read_text(encoding='utf-8'))
+			def save(name, value):
+				self.assertEqual(app.thread(), QThread.currentThread())
+				settings_path.write_text(json.dumps(value), encoding='utf-8')
+			owner = UiOwner()
+			service = commands.EverythingService(Mock(), owner)
+			self.run_in_app(service.start)
+			owner.attach(service.dispose)
+			with patch.object(commands, 'Manager', side_effect=lambda directory, executable, notify, **kwargs:
+					Manager(directory, executable, notify, Mock(return_value=runtime), **kwargs)), \
+					patch.object(commands, 'load_json', side_effect=load), \
+					patch.object(commands, 'save_json', side_effect=save), \
+					patch.object(commands, '_default_folder', return_value=''), \
+					patch.object(commands, '_validate_new_folder', side_effect=lambda path, allow_unavailable=False:
+						commands.normalize_folder(path) if allow_unavailable else 'C:\\Added'), \
+					patch.object(commands, 'show_prompt', return_value=('C:\\Added', True)), \
+					patch.object(commands, 'show_status_message', side_effect=notification), \
+					patch.object(commands, 'show_alert', return_value=commands.YES) as alert:
+				try:
+					commands.AddFolderToEverythingDatabase(Mock())()
+					self.assertTrue(ready.wait(3))
+					self.assertEqual(app.thread(), self.run_in_app(service.notifications.thread))
+					ready.clear()
+					commands.AddFavoritesToEverythingDatabase(Mock())()
+					self.assertTrue(ready.wait(3))
+					commands.AddFavoritesToEverythingDatabase(Mock())()
+					self.assertEqual(2, len(applied))
+					self.assertEqual(3, len(favorites['favorites']))
+					for root in ('Z:\\Offline', 'C:\\Added', 'D:\\Favorite'):
+						ready.clear()
+						pane = Mock()
+						pane.get_path.return_value = commands.FOLDERS_ROOT
+						commands.RemoveEverythingFolders(pane)(urls=[commands.FOLDERS_ROOT + commands._folder_key(root)])
+						self.assertTrue(ready.wait(3))
+					self.assertEqual([], json.loads(settings_path.read_text(encoding='utf-8'))['folders'])
+					self.assertEqual([('Z:\\Offline', 'C:\\Added'),
+						('Z:\\Offline', 'C:\\Added', 'D:\\Favorite'),
+						('C:\\Added', 'D:\\Favorite'), ('D:\\Favorite',), ()],
+						[roots for roots, thread in applied])
+					self.assertEqual(1, len({thread for roots, thread in applied}))
+					self.assertEqual(3, alert.call_count)
+				finally:
+					self.run_in_app(owner.invalidate)
+					service._cleanup_thread.join(3)
+				self.assertTrue(service.closed)
+				self.assertFalse(service.manager._thread.is_alive())
+				runtime.close.assert_called_once_with(True)
+
+	def test_empty_search_has_no_native_or_cleanup_worker(self):
+		from everything_search.instance import Settings
+		from fman.impl.ui import UiOwner
+		from unittest.mock import Mock, patch
+		import everything_search as commands
+		with patch.object(commands, '_service'), patch.object(commands, 'Thread') as cleanup, \
+				patch('everything_search.ipc.Thread') as ipc, patch('everything_search.instance.Thread') as manager:
+			service = commands.EverythingService(Mock(), UiOwner())
+			self.run_in_app(service.start)
+			try:
+				service.ensure(Settings())
+			finally:
+				self.run_in_app(service.dispose)
+			for worker in (cleanup, ipc, manager):
+				worker.assert_not_called()
+
+	def test_ipc_preparation_and_shutdown_waits_stay_off_qt(self):
+		from everything_search.instance import Manager, Settings
+		from fman.impl.ui import UiOwner
+		from PyQt5.QtCore import QThread
+		from unittest.mock import Mock, patch
+		import everything_search as commands
+		ready, stopping, release = Event(), Event(), Event()
+		runtime = Mock()
+		runtime.apply.return_value = (42, 1, 'exe')
+		client = Mock()
+		def prepare():
+			self.assertNotEqual(QApplication.instance().thread(), QThread.currentThread())
+		def stop(exit_process):
+			self.assertNotEqual(QApplication.instance().thread(), QThread.currentThread())
+			stopping.set()
+			release.wait(3)
+		client.start.side_effect = prepare
+		runtime.close.side_effect = stop
+		owner = UiOwner()
+		service = commands.EverythingService(Mock(), owner)
+		with patch.object(commands, '_service'), patch.object(commands, 'IpcClient', return_value=client), \
+				patch.object(commands, 'Manager', side_effect=lambda directory, executable, notify, **kwargs:
+					Manager(directory, executable, lambda state: ready.set(), Mock(return_value=runtime), **kwargs)):
+			self.run_in_app(service.start)
+			owner.attach(service.dispose)
+			try:
+				service.ensure(Settings(folders=('C:\\Data',)))
+				self.assertTrue(ready.wait(2))
+				self.run_in_app(owner.invalidate)
+				self.assertTrue(stopping.wait(2))
+				self.assertTrue(service._cleanup_thread.is_alive())
+				self.assertFalse(service._cleanup_thread.daemon)
+				self.assertFalse(release.is_set())
+				self.assertEqual('Qt responsive', self.run_in_app(lambda: 'Qt responsive'))
+				client.start.assert_called_once()
+				self.assertTrue(service.closed)
+			finally:
+				release.set()
+				self.run_in_app(service.dispose)
+				if service._cleanup_thread is not None:
+					service._cleanup_thread.join(4)
+			self.assertFalse(service.manager._thread.is_alive())
+			self.assertFalse(service._cleanup_thread.is_alive())
+			runtime.close.assert_called_once_with(True)
+
+	def test_root_mutations_reject_disposal_during_validation_or_confirmation(self):
+		from fman.impl.ui import UiOwner
+		from unittest.mock import Mock, patch
+		import everything_search as commands
+		for operation in ('drop', 'prompt', 'favorites', 'remove', 'replace_parent'):
+			with self.subTest(operation=operation), patch.object(commands, '_service'):
+				owner = UiOwner()
+				service = commands.EverythingService(Mock(), owner)
+				self.run_in_app(service.start)
+				owner.attach(service.dispose)
+				pane = Mock()
+				pane.get_path.return_value = commands.FOLDERS_ROOT
+				provider = commands.EverythingFolders()
+				def invalidate(*args, **kwargs):
+					self.run_in_app(owner.invalidate)
+					return 'C:\\Data'
+				def confirm(*args):
+					invalidate()
+					return commands.YES
+				data = {'folders': ['C:\\Data\\Child']}
+				with patch.object(commands, 'load_json', return_value=data), \
+						patch.object(commands, 'save_json') as save, \
+						patch.object(commands, '_get_service') as activate, \
+						patch.object(provider, 'notify_file_changed') as notify, \
+						patch.object(commands, '_default_folder', return_value=''), \
+						patch.object(commands, 'show_prompt', return_value=('C:\\Data', True)), \
+						patch.object(commands, '_favorite_snapshot', return_value=(('file://C:/Data',), 0)), \
+						patch.object(commands, '_validate_new_folder', side_effect=invalidate if operation in
+							('drop', 'prompt', 'favorites') else lambda *args: 'C:\\Data'), \
+						patch.object(commands, 'show_alert', side_effect=confirm) as alert, \
+						patch.object(commands, 'show_status_message') as status, \
+						patch.object(commands, 'submit_task', side_effect=lambda task: task()):
+					if operation == 'drop':
+						commands.AddEverythingFolders(pane)(files=['file://C:/Data'], dest_dir=commands.FOLDERS_ROOT)
+					elif operation == 'favorites':
+						commands.AddFavoritesToEverythingDatabase(pane)()
+					elif operation == 'remove':
+						commands.RemoveEverythingFolders(pane)(urls=[commands.FOLDERS_ROOT + commands._folder_key(data['folders'][0])])
+					else:
+						commands.AddFolderToEverythingDatabase(pane)()
+					self.assertFalse(owner.active)
+					self.assertTrue(service.closed)
+					for effect in (save, activate, notify, status):
+						effect.assert_not_called()
+					self.assertEqual(int(operation in ('remove', 'replace_parent')), alert.call_count)
+
+	def test_plugin_loader_commands_binding_and_unused_lifecycle(self):
+		from fman import PLATFORM, Window
+		from fman.impl.plugins.command_registry import ApplicationCommandRegistry, PaneCommandRegistry
+		from fman.impl.plugins.config import Config
+		from fman.impl.plugins.context_menu import ContextMenuProvider
+		from fman.impl.plugins.key_bindings import KeyBindings
+		from fman.impl.plugins.mother_fs import MotherFileSystem
+		from fman.impl.plugins.plugin import ExternalPlugin
+		from fman_integrationtest.impl.plugins import StubCommandCallback, StubFontDatabase, StubTheme
+		from fman_unittest.impl.plugins import StubErrorHandler
+		from pathlib import Path
+		from unittest.mock import Mock
+		def check():
+			errors = StubErrorHandler()
+			callback = StubCommandCallback()
+			pane_registry = PaneCommandRegistry(errors, callback)
+			window = Window(None, pane_registry)
+			application_registry = ApplicationCommandRegistry(window, errors, callback)
+			bindings = KeyBindings()
+			path = Path(__file__).parents[3] / 'main/resources/base/Plugins/Everything'
+			plugin = ExternalPlugin(str(path), Config(PLATFORM), StubTheme(), StubFontDatabase(),
+				ContextMenuProvider(pane_registry, application_registry, bindings), errors,
+				application_registry, pane_registry, bindings, MotherFileSystem(None), window)
+			self.assertTrue(plugin.load(), errors.error_messages)
+			import everything_search
+			service = everything_search._service
+			try:
+				visible = {'search_file_by_everything', 'add_folder_to_everything_database',
+					'add_favorites_to_everything_database', 'manage_everything_folders'}
+				hidden = {'remove_everything_folders', 'open_everything_folder',
+					'copy_everything_folder_paths', 'add_everything_folders', 'everything_folder_operation_unsupported'}
+				self.assertEqual(visible | hidden, pane_registry.get_commands())
+				self.assertEqual(visible, {name for name in pane_registry.get_commands()
+					if pane_registry.is_command_visible(name, Mock())})
+				self.assertEqual(('Search file by Everything',),
+					pane_registry.get_command_aliases('search_file_by_everything'))
+				self.assertEqual(('Add folder to Everything database',),
+					pane_registry.get_command_aliases('add_folder_to_everything_database'))
+				self.assertEqual(('Add favorite folders to Everything database',),
+					pane_registry.get_command_aliases('add_favorites_to_everything_database'))
+				self.assertEqual(('Manage Everything database folders',),
+					pane_registry.get_command_aliases('manage_everything_folders'))
+				self.assertIn({'keys': ['Ctrl+E'], 'command': 'search_file_by_everything'},
+					bindings.get_sanitized_bindings())
+				self.assertIsNone(service.manager)
+				self.assertIsNone(service.client)
+				self.assertIsNone(service.notifications)
+			finally:
+				plugin.unload()
+			self.assertTrue(service.closed)
+			self.assertFalse(service.owner.active)
+			self.assertFalse(errors.error_messages, errors.error_messages)
+		self.run_in_app(check)
+
+
+class EverythingFoldersIT(QtIT):
+	def setUp(self):
+		from core import Name, Size, Modified
+		from core.commands import Open, OpenDirectory, OpenListener, MoveToTrash, DeletePermanently, \
+			Copy, Move, Rename, CopyPathsToClipboard, DragAndDropListener
+		from core.fs.local import LocalFileSystem
+		from fman import DirectoryPane
+		from fman.impl.controller import Controller
+		from fman.impl.plugins import PluginSupport
+		from fman.impl.plugins.builtin import NullFileSystem, NullColumn
+		from fman.impl.plugins.command_registry import ApplicationCommandRegistry, PaneCommandRegistry
+		from fman.impl.plugins.config import Config
+		from fman.impl.plugins.key_bindings import KeyBindings
+		from fman.impl.plugins.mother_fs import MotherFileSystem
+		from fman.impl.plugins.plugin import ExternalPlugin, FileSystemWrapper
+		from fman.impl.widgets import MainWindow
+		from search_file_fuzzy import SearchFilesInCurrentFolder
+		from pathlib import Path
+		from PyQt5.QtGui import QIcon
+		from PyQt5.QtCore import QThread
+		from tempfile import TemporaryDirectory
+		from unittest.mock import Mock, patch
+		import json
+		import sys
+		previous = {name: module for name, module in sys.modules.items()
+			if name == 'everything_search' or name.startswith('everything_search.')}
+		self.addCleanup(sys.modules.update, previous)
+		temporary = TemporaryDirectory()
+		self.addCleanup(temporary.cleanup)
+		self.root = Path(temporary.name).resolve()
+		for name in ('Alpha', 'Beta', 'Gamma'):
+			(self.root / name).mkdir()
+		(self.root / 'sample.txt').write_text('untouched', encoding='utf-8')
+		self.saved = {'folders': [str(self.root / 'Alpha'), str(self.root / 'Beta'), 'Z:\\Offline']}
+		self.errors = Mock()
+		self.finished = Event()
+		callbacks = Mock()
+		callbacks.after_command.side_effect = lambda *args: self.finished.set()
+		self.filesystem = MotherFileSystem(Mock(get_icon=Mock(return_value=QIcon())))
+		for backend in (LocalFileSystem(), NullFileSystem()):
+			self.filesystem.add_child(backend.scheme, FileSystemWrapper(backend, self.filesystem, self.errors))
+		for column in (Name(), Size(), Modified(), NullColumn()):
+			self.filesystem.register_column(column.get_qualified_name(), column)
+		applications, commands = self.run_in_app(lambda: (
+			ApplicationCommandRegistry(Mock(), self.errors, callbacks), PaneCommandRegistry(self.errors, callbacks)))
+		bindings = KeyBindings()
+		for name, command in (('open', Open), ('open_directory', OpenDirectory), ('move_to_trash', MoveToTrash),
+				('delete_permanently', DeletePermanently), ('copy', Copy), ('move', Move), ('rename', Rename),
+				('copy_paths_to_clipboard', CopyPathsToClipboard), ('search_files_in_current_folder', SearchFilesInCurrentFolder)):
+			commands.register_command(name, command)
+			bindings.register_command(name)
+		plugins = Path(__file__).parents[3] / 'main/resources/base/Plugins'
+		with (plugins / 'Core/Key Bindings.json').open(encoding='utf-8') as stream:
+			self.assertEqual([], bindings.load([entry for entry in json.load(stream)
+				if entry['command'] in commands.get_commands()]))
+		config, context = Config('Windows'), Mock()
+		plugin = ExternalPlugin(str(plugins / 'Everything'), config, Mock(), Mock(), context,
+			self.errors, applications, commands, bindings, self.filesystem, Mock())
+		self.support = PluginSupport(lambda path: plugin, applications, bindings, context, config)
+		self.plugin_path = str(plugins / 'Everything')
+		self.assertTrue(self.support.load_plugin(self.plugin_path))
+		self.module = sys.modules['everything_search']
+		def load(*args, **kwargs):
+			self.assertEqual(QApplication.instance().thread(), QThread.currentThread())
+			return dict(self.saved, folders=list(self.saved['folders']))
+		def save(name, value):
+			self.assertEqual(QApplication.instance().thread(), QThread.currentThread())
+			self.saved = value
+		for target, options in (
+			('everything_search.load_json', {'side_effect': load}),
+			('everything_search.save_json', {'side_effect': save}),
+			('everything_search._get_service', {}),
+			('everything_search.show_alert', {'return_value': self.module.NO}),
+			('everything_search.show_status_message', {}),
+			('everything_search.submit_task', {'side_effect': lambda task: task()}),
+			('fman.fs._get_mother_fs', {'return_value': self.filesystem}),
+		):
+			patcher = patch(target, **options)
+			patcher.start()
+			self.addCleanup(patcher.stop)
+		self.controller = Controller(self.support, Mock(), Mock(), Mock())
+		def create():
+			self.window = MainWindow(QApplication.instance(), Mock(), Mock(), self.filesystem, 'null://')
+			self.window.set_controller(self.controller)
+			self.panes = [self.window.add_pane() for index in range(2)]
+			public_window = Mock()
+			self.public_panes = [DirectoryPane(public_window, widget, commands) for widget in self.panes]
+			public_window.get_panes.return_value = self.public_panes
+			for widget, pane in zip(self.panes, self.public_panes):
+				pane._add_listener(DragAndDropListener(pane))
+				pane._add_listener(OpenListener(pane))
+				self.controller.register_pane(widget, pane)
+			self.window.resize(960, 600)
+			self.window.show()
+		self.run_in_app(create)
+		self.addCleanup(self.close_window)
+		self.addCleanup(self.unload_plugin)
+		for pane in self.panes:
+			FilterBarIT.navigate(self, pane, self.root)
+
+	drain = FilterBarIT.drain
+	close_window = FilterBarIT.close_window
+	set_query = FilterBarIT.set_query
+
+	def unload_plugin(self):
+		self.support.unload_plugin(self.plugin_path)
+		for pane in self.panes:
+			self.drain(pane)
+		self.errors.report.assert_not_called()
+
+	def manage(self, index=0):
+		self.public_panes[index].run_command('manage_everything_folders')
+		self.drain(self.panes[index])
+		self.assertEqual(self.module.FOLDERS_ROOT, self.public_panes[index].get_path())
+		self.errors.report.assert_not_called()
+
+	def row_url(self, path):
+		return self.module.FOLDERS_ROOT + self.module._folder_key(str(path))
+
+	def press(self, index, key):
+		from PyQt5.QtCore import QEvent
+		from PyQt5.QtGui import QKeyEvent
+		self.finished.clear()
+		self.assertTrue(self.run_in_app(self.controller.handle_shortcut, self.panes[index],
+			QKeyEvent(QEvent.KeyPress, key, Qt.NoModifier)))
+		self.assertTrue(self.finished.wait(5), 'Manager action did not finish')
+		for pane in self.panes:
+			self.drain(pane)
+		self.errors.report.assert_not_called()
+
+	def test_filter_fuzzy_sort_bulk_remove_and_cross_pane_selection(self):
+		from unittest.mock import patch
+		self.manage(0)
+		self.manage(1)
+		self.module._get_service.assert_not_called()
+		self.assertEqual(['core.Name', 'everything_search.IndexedFolderPath'], list(self.public_panes[0].get_columns()))
+		self.set_query('off')
+		self.assertEqual(1, self.run_in_app(self.panes[0]._model.rowCount))
+		self.set_query('')
+		self.public_panes[0].set_sort_column('everything_search.IndexedFolderPath')
+		self.drain(self.panes[0])
+		with patch('search_file_fuzzy.load_json', return_value={}), \
+				patch('search_file_fuzzy.show_status_message'), patch('search_file_fuzzy.clear_status_message'), \
+				patch('search_file_fuzzy.show_quicksearch', return_value=None) as picker:
+			self.public_panes[0].run_command('search_files_in_current_folder', {'query': 'Alpha'})
+			self.assertEqual([self.row_url(self.root / 'Alpha')],
+				[item.value for item in picker.call_args.args[0]('Alpha')])
+		beta = self.row_url(self.root / 'Beta')
+		self.public_panes[0].toggle_selection(beta)
+		for path in (self.root / 'Alpha', 'Z:\\Offline'):
+			self.public_panes[1].toggle_selection(self.row_url(path))
+		self.press(1, Qt.Key_F8)
+		self.module.save_json.assert_not_called()
+		self.assertEqual(self.module.NO, self.module.show_alert.call_args.args[2])
+		self.module.show_alert.return_value = self.module.YES
+		self.press(1, Qt.Key_F8)
+		self.assertEqual([str(self.root / 'Beta')], self.saved['folders'])
+		self.module.save_json.assert_called_once()
+		self.module._get_service.assert_called_once()
+		for pane in self.panes:
+			self.assertEqual(1, self.run_in_app(pane._model.rowCount))
+		self.assertEqual([beta], self.public_panes[0].get_selected_files())
+		self.assertTrue((self.root / 'Alpha').is_dir())
+		with patch.object(self.module.clipboard, 'clear'), patch.object(self.module.clipboard, 'set_text') as copy:
+			self.press(0, Qt.Key_F11)
+			copy.assert_called_once_with(str(self.root / 'Beta'))
+
+	def test_f5_drop_navigation_and_refusal_do_not_mutate_target_files(self):
+		from core.commands import DragAndDropListener
+		from fman.url import as_url
+		self.manage(0)
+		self.public_panes[1].place_cursor_at(as_url(self.root / 'Gamma'))
+		self.press(1, Qt.Key_F6)
+		self.module.save_json.assert_not_called()
+		self.press(1, Qt.Key_F5)
+		self.module.save_json.assert_called_once()
+		self.assertIn(str(self.root / 'Gamma'), self.saved['folders'])
+		self.assertEqual(4, self.run_in_app(self.panes[0]._model.rowCount))
+		DragAndDropListener(self.public_panes[0]).on_files_dropped(
+			[as_url(self.root / 'Gamma'), as_url(self.root / 'sample.txt')],
+			self.row_url(self.root / 'Beta'), False)
+		self.drain(self.panes[0])
+		self.module.save_json.assert_called_once()
+		for command in ('copy', 'move', 'rename'):
+			self.public_panes[0].run_command(command)
+		self.module.save_json.assert_called_once()
+		self.public_panes[0].place_cursor_at(self.row_url(self.root / 'Alpha'))
+		self.press(0, Qt.Key_Return)
+		self.assertEqual(as_url(self.root / 'Alpha'), self.public_panes[0].get_path())
+		self.assertEqual('untouched', (self.root / 'sample.txt').read_text(encoding='utf-8'))
+		self.assertEqual({'Alpha', 'Beta', 'Gamma', 'sample.txt'}, {path.name for path in self.root.iterdir()})
+
+
 class SearchFileSyntaxIT(QtIT):
 	def test_native_picker_queries_highlights_accept_and_cancel(self):
 		from fman.impl.quicksearch import Quicksearch, QuicksearchItemRenderer

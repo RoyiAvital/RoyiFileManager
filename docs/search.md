@@ -34,6 +34,22 @@ Results use fuzzy matching. Try `rpt pdf` to find `annual report.pdf`.
 | `!tmp` | Exclude exact text |
 | `report pdf` | Match both terms |
 
+## Search Indexed Folders with Everything
+
+Press ++ctrl+e++. First add roots with **Add folder to Everything database** or
+**Add favorite folders to Everything database** in Command Center.
+
+The search covers the shared index, not the current pane. Use Everything syntax:
+
+```text
+ext:jpg;png size:>100kb !img0
+path:Fonts\ <consola|segoe> ext:ttf !*b.ttf
+```
+
+These combine extension alternatives, size comparisons, exclusions, path matching
+and grouped OR conditions. They are not fuzzy queries and do not search contents.
+See [worked examples with screenshots](tools.md#everything-search).
+
 ## Find with `fd`
 
 Press ++shift+f7++.

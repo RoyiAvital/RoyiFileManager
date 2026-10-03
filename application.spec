@@ -23,7 +23,9 @@ datas = [
 	('src/main/resources/base', 'resources'),
 	('src/build/settings/base.json', 'resources/build-settings'),
 	('src/main/resources/windows', 'resources'),
-	('src/main/icons/Icon.ico', 'resources')
+	('src/main/icons/Icon.ico', 'resources'),
+	('src/main/resources/base/Plugins/Everything/bin/Everything.exe', 'resources/Plugins/Everything/bin'),
+	('src/main/resources/base/Plugins/Everything/licenses/Everything.txt', 'resources/Plugins/Everything/licenses')
 ] + winpty_datas + send2trash_datas + copy_metadata('Pygments') + [
 	(str(path), checksum_native_destination) for path in checksum_native_files
 	if path.suffix != '.pyd'
@@ -36,7 +38,7 @@ binaries = winpty_binaries + send2trash_binaries + [
 	if path.suffix == '.pyd'
 ]
 hidden_imports = [
-	'adodbapi', 'ctypes.wintypes', 'win32com.shell.shell',
+	'adodbapi', 'ctypes.wintypes', 'uuid', 'win32com.shell.shell',
 	'win32com.shell.shellcon', 'win32gui', 'win32wnet', 'win32process',
 	'fman.ui', 'fman.impl.ui.quicklist', 'fman.impl.ui.panel',
 	'fman.impl.ui.session', 'fman.impl.ui.output', 'fman.impl.navigation',

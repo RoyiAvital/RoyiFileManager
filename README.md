@@ -45,6 +45,7 @@ Significant additions compared with `fman`:
 - **Fuzzy Find Files**: Open the Quicksearch dialog with <kbd>Ctrl</kbd>+<kbd>F</kbd> or search recursively with <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>. Supports [`fzf`](https://github.com/junegunn/fzf) style exact terms, anchors, negation, `AND` / `OR` and match highlights, separately from the substring/glob Filter Bar. Using **Toggle find result metadata** adds metadata to results. See [Usage, Syntax and Performance](src/main/resources/base/Plugins/SearchFileFuzzy/README.md).
 - **Search Files**: Press <kbd>Alt</kbd>+<kbd>F7</kbd> for [`ripgrep`](https://github.com/burntsushi/ripgrep) based filename and content search in Glob, Literal or RegEx mode. Leave content empty to list files by name. See [Search Files Usage](src/main/resources/base/Plugins/SearchFiles/README.md).
 - **Find Files with `fd`**: Press <kbd>Shift</kbd>+<kbd>F7</kbd> for [`fd`](https://github.com/sharkdp/fd) based filename search with date, size, type and traversal filters. See [Find Files Usage](src/main/resources/base/Plugins/FindFiles/README.md).
+- **Search Files with Everything**: Built in [_Everything_](https://www.voidtools.com) search engine for an instant file and content search based on pre built database. Add indexed folders with **Add folder to Everything database**, then press <kbd>Ctrl</kbd>+<kbd>E</kbd> to search them with [Everything syntax](https://www.voidtools.com/support/everything/search_syntax), highlights and metadata. Use **Manage Everything database folders** for a fully featured bookmarks manager. See [Everything Usage](src/main/resources/base/Plugins/Everything/README.md).
 - **Pane Filter / Files Filter**: Type to filter file names with globs, anchors and negation with [`fzf`](https://github.com/junegunn/fzf) inspired syntax. See [Pane Filter Usage](src/main/resources/base/Plugins/Core/README.md#pane-filter).
 - **Hidden Files**: Windows panes reuse entry attributes to reduce repeated visibility checks. Press <kbd>Ctrl</kbd>+<kbd>R</kbd> after external hidden-attribute changes. See [Hidden Files](src/main/resources/base/Plugins/Core/README.md#hidden-files).
 - **QuickView Layer**: Press <kbd>Ctrl</kbd>+<kbd>Q</kbd> to preview the cursor file over the other pane: images, plain text, Markdown and highlighted source code. See [QuickView Usage](src/main/resources/base/Plugins/Core/README.md#quickview).
@@ -66,7 +67,7 @@ Significant additions compared with `fman`:
 
 > [!TIP]
 > Open an issue for new feature requests.  
-> Any feedback is highly appreciated.
+> Feedback is highly appreciated.
 
 ## Performance
 

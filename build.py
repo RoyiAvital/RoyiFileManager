@@ -41,6 +41,16 @@ SEVEN_ZIP_EXTRACTOR_SHA256 = \
 	'ad4c82fadcbdf93c03b4fc440f300509c7d60c5c2f4d183e35d9d70d6957037d'
 SEVEN_ZIP_BINARY_SHA256 = \
 	'edbee35370e14030e4c785cf88200f42dc651c1eb4217c1e3963c38a12f099b0'
+EVERYTHING_VERSION = '1.4.1.1032'
+EVERYTHING_DIRECTORY = ROOT / 'src/main/resources/base/Plugins/Everything/bin'
+EVERYTHING_ARCHIVE_URL = f'https://www.voidtools.com/Everything-{EVERYTHING_VERSION}.x64.zip'
+EVERYTHING_LICENSE = EVERYTHING_DIRECTORY.parent / 'licenses/Everything.txt'
+EVERYTHING_ARCHIVE_SHA256 = \
+	'698df475ec44e638f66f1b6a32d28fea613cec78d3b6310e6abe53431eeb940c'
+EVERYTHING_BINARY_SHA256 = \
+	'f191f756996a14a11e5445fa7103d302efd510cf2fbf920e6c0c8ed51d512e36'
+EVERYTHING_LICENSE_SHA256 = \
+	'252a9d0a811b6c648202d3660493d859fb0a30a3d520a4d3dbadfec72b6a3910'
 DOWNLOAD_SETTLE_SECONDS = 0.25
 DOWNLOAD_RETRY_DELAYS = (1, 2, 4)
 
@@ -127,6 +137,57 @@ def _ensure_7za(destination=SEVEN_ZIP_PATH):
 		temporary_destination.replace(destination)
 
 
+def _license_sha256(path):
+	try:
+		return hashlib.sha256(path.read_bytes().replace(b'\r\n', b'\n')).hexdigest()
+	except OSError:
+		return None
+
+
+def _verify_everything_license(path):
+	if _license_sha256(path) != EVERYTHING_LICENSE_SHA256:
+		raise SystemExit('Everything redistribution license failed SHA-256 verification.')
+
+
+def _verify_everything(directory):
+	directory = Path(directory)
+	_verify_sha256(directory / 'Everything.exe', EVERYTHING_BINARY_SHA256,
+		f'Everything {EVERYTHING_VERSION} portable executable')
+	_verify_everything_license(directory.parent / 'licenses/Everything.txt')
+
+
+def _ensure_everything(destination=EVERYTHING_DIRECTORY):
+	destination = Path(destination)
+	_verify_everything_license(EVERYTHING_LICENSE)
+	license_destination = destination.parent / 'licenses/Everything.txt'
+	needs_binary = _sha256(destination / 'Everything.exe') != EVERYTHING_BINARY_SHA256
+	needs_license = _license_sha256(license_destination) != EVERYTHING_LICENSE_SHA256
+	if not needs_binary and not needs_license:
+		return
+	with TemporaryDirectory() as temporary_directory:
+		staging = Path(temporary_directory)
+		if needs_binary:
+			print(f'Downloading verified Everything {EVERYTHING_VERSION} x64 portable runtime...')
+			archive = staging / 'Everything.zip'
+			_download(EVERYTHING_ARCHIVE_URL, archive, EVERYTHING_ARCHIVE_SHA256)
+			with ZipFile(archive) as zipped, zipped.open('everything.exe') as source, \
+					(staging / 'Everything.exe').open('wb') as output:
+				shutil.copyfileobj(source, output)
+			_verify_sha256(staging / 'Everything.exe', EVERYTHING_BINARY_SHA256,
+				'The extracted Everything executable')
+		destination.mkdir(parents=True, exist_ok=True)
+		with TemporaryDirectory(prefix='.download-', dir=destination) as publishing:
+			for source, target, needed in (
+					(staging / 'Everything.exe', destination / 'Everything.exe', needs_binary),
+					(EVERYTHING_LICENSE, license_destination, needs_license)):
+				if needed:
+					temporary = Path(publishing) / target.name
+					shutil.copy2(source, temporary)
+					target.parent.mkdir(parents=True, exist_ok=True)
+					temporary.replace(target)
+	_verify_everything(destination)
+
+
 def _environment():
 	environment = os.environ.copy()
 	native_bin = Path(sys.prefix) / 'Library' / 'bin'
@@ -152,7 +213,9 @@ def _environment():
 		ROOT / 'src' / 'main' / 'resources' / 'base' / 'Plugins' /
 		'FindFiles',
 		ROOT / 'src' / 'main' / 'resources' / 'base' / 'Plugins' /
-		'ProcessPane'
+		'ProcessPane',
+		ROOT / 'src' / 'main' / 'resources' / 'base' / 'Plugins' /
+		'Everything'
 	]
 	existing = environment.get('PYTHONPATH')
 	if existing:
@@ -164,6 +227,7 @@ def _environment():
 def run():
 	_require_windows()
 	_ensure_7za()
+	_ensure_everything()
 	main_script = ROOT / 'src' / 'main' / 'python' / 'fman' / 'main.py'
 	subprocess.run(
 		[sys.executable, str(main_script)], check=True, env=_environment()
@@ -173,6 +237,7 @@ def run():
 def test():
 	_require_windows()
 	_ensure_7za()
+	_ensure_everything()
 	environment = _environment()
 	environment.setdefault('QT_QPA_PLATFORM', 'offscreen')
 	windows_fonts = Path(environment.get('WINDIR', r'C:\Windows')) / 'Fonts'
@@ -279,6 +344,7 @@ def _remove_previous_freeze():
 def freeze():
 	_require_windows()
 	_ensure_7za()
+	_ensure_everything()
 	_ensure_conda_lock()
 	_remove_previous_freeze()
 	subprocess.run(
@@ -298,6 +364,7 @@ def package():
 	_require_windows()
 	if not DIST_DIR.is_dir():
 		raise SystemExit('Run `python build.py freeze` first.')
+	_verify_everything(DIST_DIR / '_internal/resources/Plugins/Everything/bin')
 	_copy_dependency_manifests()
 	version = BUILD_SETTINGS['version']
 	archive = TARGET_DIR / f'{APP_NAME}-{version}-windows-x86_64.zip'

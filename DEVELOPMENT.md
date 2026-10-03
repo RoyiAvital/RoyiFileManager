@@ -53,11 +53,35 @@ the full GitHub Actions build also has a sixty-minute job limit.
 
 `run`, `test`, and `freeze` download the pinned x64 `7za.exe` from the official
 7-Zip distribution when it is not already present under the Core plug-in.
-These commands therefore require internet access on their first run.
+They also verify/provision Everything 1.4.1.1032 x64 from the official portable
+ZIP and its separately downloaded license under `Plugins/Everything/bin`.
+The archive, executable and license are SHA-256 pinned. No installer or SDK DLL
+is used. `publish`/`release` inherit this through `freeze`; `package` only verifies
+the frozen Everything files, and `clean`/`doc` do not download dependencies.
+These commands therefore require internet access on their first run; verified
+cached files can be reused offline.
 Transient HTTP download failures are retried three times, after 1, 2, and 4
 seconds. SHA-256 checks remain mandatory; permanent HTTP errors and hash
 mismatches fail the build. A persistent server outage still requires a later
 retry of the failed workflow.
+
+Focused Everything checks use `build._environment()` for the child process:
+
+```powershell
+@'
+import build, subprocess, sys
+sys.exit(subprocess.run([
+   sys.executable, '-m', 'unittest',
+   'fman_unittest.test_everything'
+], env=build._environment()).returncode)
+'@ | python -
+```
+
+Using the same launcher, replace the child arguments with
+`-m fman_integrationtest.qt_runner fman_integrationtest.test_qt.EverythingIT`
+for Qt integration, or `-m fman_integrationtest.everything_smoke` for the isolated
+live portable-runtime check and 30 warm IPC timings. The latter uses temporary
+state under `UserSettings/Local` and never controls the unnamed instance.
 
 Content search uses conda-forge's installed `bin/rg.exe` from the active Python
 prefix. PyInstaller bundles it with the notices under
@@ -183,7 +207,7 @@ Exact executed configurations and remaining gates are recorded in the
 [generate_docs_screenshots.py](src/misc/generate_docs_screenshots.py) creates
 repeatable documentation screenshots using only public locations under `C:\`
 and `C:\Windows`. Source mode captures the main window, Command Center,
-Find a Location, pane filtering, image and Python QuickView, recursive fuzzy find, Search Files,
+Find a Location, pane filtering, image and Python QuickView, recursive fuzzy find, Everything, Search Files,
 Find Files, Favorites, directory sizes, File Hash, Checksum Files, the process pane and the
 Pack prompt. Command Center and Find a Location include the full application.
 Favorites and directory sizes use seeded settings in their isolated `UserSettings`;
@@ -195,6 +219,14 @@ Checksum Files generates and verifies three sample files in the isolated work
 directory. Two results-window captures show the empty-background and file-row
 menus, highlighting Show all results and Show only mismatches respectively.
 Both actions are exercised; only relative sample paths appear in these images.
+Everything captures two live queries against only `C:\Windows\Web` and
+`C:\Windows\Fonts`, using isolated settings and a private named instance.
+The queries combine extension lists, size comparisons, path filtering, grouped OR
+and exclusions; result predicates, metadata, highlights and query fit are checked
+before capture. Source mode verifies/provisions the pinned portable Everything
+dependency through the existing build helper. The instance stops on application exit.
+The Everything folder-manager capture shows only the configured root rows and
+asserts that opening the manager does not start the Everything service.
 Source mode uses the Qt smoke-test approach and captures widgets directly.
 Packaged mode launches the frozen executable for a parity image.
 

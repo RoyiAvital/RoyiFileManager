@@ -39,7 +39,7 @@ DEFAULT_OUTPUT_DIR = ROOT / 'docs' / 'assets'
 WORK_DIR = ROOT / 'target' / 'docs-screenshots'
 SOURCE_CAPTURES = (
 	'overview', 'go-to', 'context-menu', 'filter-pane', 'quick-view', 'quick-view-text',
-	'fuzzy-find',
+	'fuzzy-find', 'everything-search', 'everything-folders',
 	'search-files', 'find-files', 'favorites', 'directory-size', 'file-hash',
 	'checksum-files', 'process-pane', 'pack-archive'
 )
@@ -68,12 +68,17 @@ RIGHT_PANE_CAPTURES = (
 	'context-menu', 'filter-pane', 'search-files', 'find-files', 'file-hash',
 	'process-pane', 'pack-archive'
 )
-DIALOG_CAPTURES = ('overview', 'go-to', 'fuzzy-find', 'pack-archive')
+DIALOG_CAPTURES = ('overview', 'go-to', 'fuzzy-find', 'everything-search', 'pack-archive')
+EVERYTHING_QUERIES = (
+	'ext:jpg;png size:>100kb !img0',
+	'path:Fonts\\ <consola|segoe> ext:ttf !*b.ttf',
+)
 SOURCE_PATHS = (
 	ROOT / 'src' / 'main' / 'python',
 	ROOT / 'src' / 'main' / 'resources' / 'base' / 'Plugins' / 'Core',
 	ROOT / 'src' / 'main' / 'resources' / 'base' / 'Plugins' /
 	'SearchFileFuzzy',
+	ROOT / 'src' / 'main' / 'resources' / 'base' / 'Plugins' / 'Everything',
 	ROOT / 'src' / 'main' / 'resources' / 'base' / 'Plugins' / 'Favorites',
 	ROOT / 'src' / 'main' / 'resources' / 'base' / 'Plugins' /
 	'CalculateFileHash',
@@ -188,6 +193,11 @@ def _seed_settings(settings, capture):
 		]}}
 	elif capture == 'directory-size':
 		documents = {'DirectorySize (Windows).json': {'enabled': True}}
+	elif capture in ('everything-search', 'everything-folders'):
+		documents = {'Everything (Windows).json': {
+			'folders': [str(windows / 'Web'), str(windows / 'Fonts')],
+			'instance': f'RoyiFileManagerDocs_{os.getpid()}',
+		}}
 	else:
 		return
 	directory = settings / 'Plugins' / 'User' / 'Settings'
@@ -262,6 +272,8 @@ def _source_capture_paths(capture):
 		return folder, windows
 	if capture == 'fuzzy-find':
 		return windows / 'Web', windows
+	if capture in ('everything-search', 'everything-folders'):
+		return windows / 'Web', windows / 'Fonts'
 	if capture == 'directory-size':
 		web = windows / 'Web'
 		wallpaper = web / 'Wallpaper'
@@ -281,6 +293,11 @@ def _source_outputs(output_dir, capture):
 		'quick-view': ('royifilemanager-quickview.png',),
 		'quick-view-text': ('royifilemanager-quickview-python.png',),
 		'fuzzy-find': ('royifilemanager-fuzzy-find-recursive.png',),
+		'everything-search': (
+			'royifilemanager-everything-images.png',
+			'royifilemanager-everything-fonts.png',
+		),
+		'everything-folders': ('royifilemanager-everything-folders.png',),
 		'search-files': (
 			'royifilemanager-search-files.png',
 			'royifilemanager-search-files-panel.png',
@@ -300,6 +317,30 @@ def _source_outputs(output_dir, capture):
 		'pack-archive': ('royifilemanager-pack-archive.png',),
 	}
 	return tuple(output_dir / name for name in names[capture])
+
+
+def _validate_everything_items(items, query_index):
+	from fman.url import as_human_readable
+	_, windows = _public_paths()
+	results = [item for item in items if item.value]
+	if not results:
+		raise RuntimeError('Everything example returned no files')
+	for item in results:
+		path = Path(as_human_readable(item.value))
+		name = path.name.casefold()
+		if query_index == 0:
+			matches = path.is_relative_to(windows / 'Web') and \
+				path.suffix.casefold() in ('.jpg', '.png') and \
+				path.stat().st_size > 100 * 1024 and 'img0' not in name
+		else:
+			matches = path.is_relative_to(windows / 'Fonts') and \
+				path.suffix.casefold() == '.ttf' and \
+				any(term in name for term in ('consola', 'segoe')) and \
+				not name.endswith('b.ttf')
+		if not matches or not item.description.strip():
+			raise RuntimeError(f'Unexpected Everything example result: {item.title}')
+	if query_index == 1 and not any(item.highlight for item in results):
+		raise RuntimeError('Everything font results have no match highlights')
 
 
 def _capture_source_child(args):
@@ -333,6 +374,9 @@ def _capture_source_child(args):
 		QTimer.singleShot(100, context.app.quit)
 
 	def capture_dialog(dialog):
+		if args._capture == 'everything-search':
+			state['dialog'] = dialog
+			return
 		def capture_overview_dialog():
 			try:
 				output = outputs[1] if args._capture == 'overview' else outputs[0]
@@ -495,6 +539,58 @@ def _capture_source_child(args):
 				state['started'] = True
 				pane.focus()
 				pane.run_command('search_files_recursively', {'query': 'img'})
+			elif args._capture == 'everything-search':
+				import everything_search
+				if state['captured']:
+					return
+				if not state['started']:
+					state['started'] = True
+					pane.focus()
+					pane.run_command('search_file_by_everything')
+					return
+				dialog = state.get('dialog')
+				if dialog is None or not dialog.isVisible():
+					return
+				service = everything_search._service
+				status = service.manager.snapshot()
+				if status.status == 'error':
+					raise RuntimeError(status.error)
+				if status.status != 'ready':
+					return
+				query_index = state.get('query_index', 0)
+				query = EVERYTHING_QUERIES[query_index]
+				if dialog._query.text() != query:
+					dialog._query.setText(query)
+					state['settled'] = 0
+					return
+				if not any(item.value for item in dialog._curr_items):
+					dialog._update_items(query)
+					state['settled'] = 0
+					return
+				_validate_everything_items(dialog._curr_items, query_index)
+				if dialog._query.fontMetrics().horizontalAdvance(query) > dialog._query.width() - 12:
+					raise RuntimeError('Everything example query does not fit the capture')
+				pixmap = _grab_window_with_dialog(context.main_window, dialog)
+				if query_index == len(EVERYTHING_QUERIES) - 1:
+					finish(pixmap, outputs[query_index], dialog.reject)
+				else:
+					_save_pixmap(pixmap, outputs[query_index])
+					state['query_index'] = query_index + 1
+			elif args._capture == 'everything-folders':
+				import everything_search
+				if not state['started']:
+					state['started'] = True
+					state['settled'] = 0
+					state['expected'] = (everything_search.FOLDERS_ROOT, state['expected'][1])
+					pane.focus()
+					pane.run_command('manage_everything_folders')
+					return
+				listing = pane.get_listing()
+				if set(listing.display_names) != {'Web', 'Fonts'} or len(listing.names) != 2:
+					raise RuntimeError('Everything manager must contain only the two configured folder rows')
+				if everything_search._service.manager is not None:
+					raise RuntimeError('Opening the folder manager started Everything')
+				finish(context.main_window.grab(), outputs[0])
 			elif args._capture == 'favorites':
 				from favorites.ui import FavoritesController
 				if not state['started']:
@@ -693,6 +789,9 @@ def _capture_source_child(args):
 
 
 def _run_source(args):
+	if 'everything-search' in SOURCE_CAPTURES:
+		subprocess.run([sys.executable, '-c', 'import build; build._ensure_everything()'],
+			cwd=ROOT, check=True)
 	outputs = []
 	for capture in SOURCE_CAPTURES:
 		settings = _prepare_settings('source-' + capture)

@@ -110,6 +110,7 @@ class BuildNamingTest(TestCase):
 				build['DIST_DIR'].mkdir(parents=True)
 				with patch.dict(build['freeze'].__globals__, {
 					'_require_windows': Mock(), '_ensure_7za': Mock(),
+					'_ensure_everything': Mock(),
 					'_ensure_conda_lock': Mock(), '_remove_previous_freeze': Mock(),
 					'_copy_dependency_manifests': Mock()
 				}), patch('subprocess.run') as execute:
@@ -133,7 +134,8 @@ class BuildNamingTest(TestCase):
 			distribution.mkdir(parents=True)
 			(distribution / 'RfmRenameProbe.exe').write_bytes(b'fixture')
 			with patch.dict(build['package'].__globals__, {
-				'_require_windows': Mock(), '_copy_dependency_manifests': Mock()
+				'_require_windows': Mock(), '_copy_dependency_manifests': Mock(),
+				'_verify_everything': Mock()
 			}), patch('builtins.print') as output:
 				build['package']()
 			archive = root / 'target/RfmRenameProbe-9.8.7-windows-x86_64.zip'

@@ -55,6 +55,9 @@ class GenerateDocsScreenshotsTest(TestCase):
 			'royifilemanager-quickview.png',
 			'royifilemanager-quickview-python.png',
 			'royifilemanager-fuzzy-find-recursive.png',
+			'royifilemanager-everything-images.png',
+			'royifilemanager-everything-fonts.png',
+			'royifilemanager-everything-folders.png',
 			'royifilemanager-search-files.png',
 			'royifilemanager-search-files-panel.png',
 			'royifilemanager-find-files-fd.png',
@@ -143,6 +146,64 @@ class GenerateDocsScreenshotsTest(TestCase):
 				settings / 'Plugins' / 'User' / 'Settings' / 'DirectorySize (Windows).json'
 			).read_text(encoding='utf-8'))
 		self.assertEqual({'enabled': True}, document)
+
+	def test_everything_capture_uses_only_public_roots_and_a_private_instance(self):
+		with TemporaryDirectory() as temporary_directory, \
+				patch.object(screenshots, '_public_paths', return_value=(
+					Path('C:\\'), Path('C:\\Windows')
+				)), patch.object(screenshots.os, 'getpid', return_value=12345):
+			settings = Path(temporary_directory)
+			screenshots._seed_settings(settings, 'everything-search')
+			document = json.loads((settings / 'Plugins/User/Settings/Everything (Windows).json')
+				.read_text(encoding='utf-8'))
+			self.assertEqual({'folders': ['C:\\Windows\\Web', 'C:\\Windows\\Fonts'],
+				'instance': 'RoyiFileManagerDocs_12345'}, document)
+			self.assertEqual((Path('C:\\Windows\\Web'), Path('C:\\Windows\\Fonts')),
+				screenshots._source_capture_paths('everything-search'))
+			screenshots._seed_settings(settings, 'everything-folders')
+			self.assertEqual(document, json.loads((settings / 'Plugins/User/Settings/Everything (Windows).json')
+				.read_text(encoding='utf-8')))
+			self.assertEqual((Path('C:\\Windows\\Web'), Path('C:\\Windows\\Fonts')),
+				screenshots._source_capture_paths('everything-folders'))
+		self.assertIn(ROOT / 'src/main/resources/base/Plugins/Everything', screenshots.SOURCE_PATHS)
+
+	def test_everything_capture_checks_dependency_before_launch(self):
+		args = screenshots._parse_args(['--mode', 'source'])
+		with patch.object(screenshots, 'SOURCE_CAPTURES', ('everything-search',)), \
+				patch.object(screenshots, '_prepare_settings', return_value=Path('isolated')), \
+				patch.object(screenshots, '_seed_settings') as seed, \
+				patch.object(screenshots, '_source_environment', return_value={}), \
+				patch.object(screenshots.subprocess, 'run') as run:
+			outputs = screenshots._run_source(args)
+			self.assertEqual(2, len(outputs))
+			self.assertEqual(2, run.call_count)
+			self.assertEqual([screenshots.sys.executable, '-c', 'import build; build._ensure_everything()'],
+				run.call_args_list[0].args[0])
+			seed.assert_called_once_with(Path('isolated'), 'everything-search')
+			self.assertIn('everything-search', run.call_args_list[1].args[0])
+
+	def test_everything_example_validation_rejects_empty_and_wrong_results(self):
+		from fman import QuicksearchItem
+		from fman.url import as_url
+		with TemporaryDirectory() as temporary_directory, \
+				patch.object(screenshots, '_public_paths', return_value=(Path('C:\\'), Path(temporary_directory))):
+			windows = Path(temporary_directory)
+			image = windows / 'Web' / 'img19.jpg'
+			image.parent.mkdir()
+			image.write_bytes(b'X' * (100 * 1024 + 1))
+			item = QuicksearchItem(as_url(image), title=str(image), description='2026-10-03, 101 KB')
+			screenshots._validate_everything_items([item], 0)
+			with self.assertRaises(RuntimeError):
+				screenshots._validate_everything_items([], 0)
+			with self.assertRaises(RuntimeError):
+				screenshots._validate_everything_items([item], 1)
+			font = windows / 'Fonts' / 'segoeui.ttf'
+			item = QuicksearchItem(as_url(font), title=str(font), description='2026-10-03, 1 MB', highlight=[(0, 5)])
+			screenshots._validate_everything_items([item], 1)
+			bold = font.with_name('segoeuib.ttf')
+			with self.assertRaises(RuntimeError):
+				screenshots._validate_everything_items([
+					QuicksearchItem(as_url(bold), title=str(bold), description='1 MB', highlight=[(0, 5)])], 1)
 
 	def test_other_captures_use_default_settings(self):
 		with TemporaryDirectory() as temporary_directory, \

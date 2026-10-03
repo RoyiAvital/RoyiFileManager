@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-03
+
+This release integrates the [Everything search engine](https://www.voidtools.com) for fast indexed file search.  
+Together with fuzzy matching, filename search and content search, it gives the application a flexible suite of tools for finding files.
+
+### Added
+
+- Everything Search: Ctrl+E searches explicitly indexed local folders with
+  Everything syntax, match highlights, modification dates and sizes. Manage
+  Everything database folders opens shared roots in a pane with Name/Path columns,
+  filtering, sorting, safe bulk removal and F5/drop additions. It replaces the
+  old Remove folder command, retains offline roots and confirms parent replacement.
+  Add favorite folders remains a command and imports local favorite folders in one batch without
+  changing Favorites. Every folder-list update normalizes paths and removes
+  duplicates and covered children. An isolated portable instance starts lazily,
+  serializes folder updates and stops when no roots remain. Opening the manager
+  does not start Everything or probe its roots. Runtime state stays under UserSettings;
+  the user's unnamed Everything instance is untouched.
+- Source run, test and freeze commands automatically provision hash-verified
+  Everything 1.4.1.1032 x64 portable files. A reviewed redistribution license is
+  included in the repository instead of fetched from a mutable URL. Frozen packages include
+  both and the plug-in's Python dependencies; packaging verifies the portable
+  files without downloading an installer or SDK DLL.
+
 ## [0.10.3] - 2026-10-03
 
 This release brings the Files Checksum feature to generate and validate checksum files.

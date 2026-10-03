@@ -18,6 +18,7 @@ See the [keyboard shortcuts](shortcuts.md).
 - Filter the current pane while typing.
 - Find names with fuzzy matching.
 - Include subfolders with recursive fuzzy find.
+- Search indexed folders with [Everything syntax](tools.md#everything-search).
 - Search names and file contents with `ripgrep`.
 - Find by name, date, size or type with `fd`.
 

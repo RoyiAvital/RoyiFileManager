@@ -8,7 +8,7 @@
   focused tests for the boundary and preserved behavior. Preserve the upstream
   fman 1.7.5 plug-in API.
 - [x] Generate a plan to replace legacy `tinycss 0.4` usage with `tinycss2`.
-- [ ] Reevaluate RapidFuzz as a future replacement for the pure-Python fuzzy matcher.
+- [ ] Reevaluate RapidFuzz as a future replacement for the pure Python fuzzy matcher.
   The benchmark in `src/misc/benchmark_fuzzy_search.py` measured RapidFuzz
   `QRatio` at approximately 8.5 ms per query over 75,000 paths, compared with
   approximately 19-103 ms for the Python subsequence matcher. Avoid the slower
@@ -52,3 +52,12 @@ Each task should be pretty localized and low risk.
   loop, replace `if not any(identity):` with `if identity == unknown:`, defining
   `unknown = bytes(16)` once before the loop. Measured about 2.7 ms per 200,000
   entries. Couples the check to 16-byte identities; update it if that size changes.
+
+
+## Competition
+ 
+- [RAT Commander](https://github.com/dividebysandwich/rat-commander) - Great viewing options.
+- [GPUI FileManager](https://github.com/XPOL555/GPUIFileManager) -  Based on GPUI (Like Zed) inspired by FilePilot with emphasize on memory.
+- [The File Ninja](https://thefile.ninja) - They seems to implement my idea about structured answer for natural language to search.
+- [Strata](https://github.com/lgse/strata) - Linux only. 
+- [Fulgur](https://github.com/fulgur-app/Fulgur) - Great text editor. Once they have a [Portable Version](https://github.com/fulgur-app/Fulgur/issues/299) we should add a preset for it.

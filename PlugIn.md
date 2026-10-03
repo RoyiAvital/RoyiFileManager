@@ -43,6 +43,12 @@ API compatibility or feature-negotiation guarantee. Consult
 - Do not import `fman.impl`, access private host fields such as `_widget` or
   `_theme`, or depend on another bundled plug-in's internals as though they were
   host APIs. A plug-in may organize its own implementation into private modules.
+- Bundled-host exception: Everything uses `PluginService`, `format_size` and
+  `run_in_main_thread` from `fman.impl`, plus the bundled Favorites parser.
+  These are reviewed, version-coupled dependencies, not public plug-in APIs.
+  They require matching host releases and loader/lifecycle tests; independently
+  distributed plug-ins must not rely on this exception. See the
+  [Everything design](Done/EverythingPlugIn.md#design).
 - Use explicit imports. Imported implementation dependencies visible in a module
   are not additional public exports. Pane/window objects are supplied by the
   host; their constructors are not plug-in construction APIs.

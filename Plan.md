@@ -4,7 +4,6 @@
 
 - [Code Review 099: Deferred Work and Release Gates](Plan/CodeReview099.md)
 - [Date Format: Locale or ISO](Plan/DateFormat.md)
-- [Everything Plug-In](Plan/EverythingPlugIn.md)
 - [Favorites 003: Favorites as a Pane Location](Plan/Favorites003.md)
 - [File System and Pane Architecture 002: Responsiveness and Memory](Plan/FSPaneArch002.md)
 - [Filter Files 002: Multiple Terms (AND)](Plan/FilterFiles002.md)
@@ -32,6 +31,7 @@
 - [Context Window Capitalization](Done/ContextWindowCapitalization.md)
 - [Correct Provenance Metadata](Done/CorrectProvenanceMetadata.md)
 - [Directory Size](Done/DirectorySize.md)
+- [Everything Plug-In](Done/EverythingPlugIn.md)
 - [Favorites 001](Done/Favorites001.md)
 - [Favorites 002: Favorites Manager](Done/Favorites002.md)
 - [File and Folder Comparators](Done/FileAndFolderComparators.md)

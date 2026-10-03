@@ -62,6 +62,7 @@ Open the Command Center with ++ctrl+shift+p++ to see every command.
 | --- | --- |
 | ++ctrl+f++ | Find files in current folder |
 | ++ctrl+shift+f++ | Find files recursively |
+| ++ctrl+e++ | Search indexed folders with Everything |
 | ++shift+f7++ | Find files with `fd` |
 | ++alt+f7++ | Search files |
 

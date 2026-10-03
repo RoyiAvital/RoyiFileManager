@@ -50,6 +50,102 @@ Press ++ctrl+shift+f++ to include subfolders.
 - Use `'text` for exact text, `^src` for a prefix, `.py$` for a suffix or `!tmp` to exclude.
 - Press ++enter++ to open the containing folder and select the file.
 
+## Everything Search
+
+Press ++ctrl+e++ to search your indexed folders, independently of either pane.
+Everything searches names and paths, not file contents, and uses its own syntax
+rather than fuzzy matching.
+
+1. Open Command Center with ++ctrl+shift+p++ and run **Add folder to Everything database**.
+  Or run **Add favorite folders to Everything database** to import local favorites in one batch.
+2. Wait for **Everything database is ready**, then press ++ctrl+e++ and enter a query.
+3. Press ++enter++ to enter a folder or select a file in its containing folder.
+   Press ++esc++ to cancel.
+
+Folder updates normalize paths, remove duplicates and omit children already
+covered by a parent. Replacing indexed children with a parent asks for confirmation.
+Favorites import is one-time, preserves unavailable local paths and does not
+change Favorites; unsupported entries are skipped and reported.
+
+### Folder Manager
+
+Run **Manage Everything database folders** from Command Center. It opens
+`everything-folders://` in the active pane with **Name** and **Path** columns.
+Opening the manager does not start Everything or check target availability.
+
+<figure class="product-shot" markdown>
+  ![Everything folder manager showing Name and Path columns beside a normal file pane](assets/royifilemanager-everything-folders.png)
+  <figcaption>Manage indexed roots using the existing pane selection, filtering and sorting controls.</figcaption>
+</figure>
+
+| Action | Behavior |
+| --- | --- |
+| Type / ++ctrl+f++ | Filter the list / fuzzy-find folder names |
+| Click a column header | Sort by Name or Path |
+| ++enter++ / double-click | Open the real folder; unavailable roots stay listed |
+| ++f11++ | Copy the selected roots' real paths |
+| ++f8++ / ++delete++ / ++shift+delete++ | Remove selected roots after confirmation, never their files |
+| ++f5++ from the other pane | Add selected local folders to the index without copying files |
+| Drop folders onto the manager | Add them to the index, including drops onto an existing row |
+| ++ctrl+r++ | Reload the configured root list |
+
+Each batch is normalized and saved once. Open manager panes refresh together,
+preserving surviving selections. Removing the last root stops the managed process.
+Rename, move, archive and file-creation operations are refused for index entries.
+
+**Add folder to Everything database** and **Add favorite folders to Everything database**
+remain Command Center commands. Favorites import has no special row in the manager.
+The old **Remove folder from Everything database** command has been removed;
+use the manager's selection and Delete actions instead.
+
+The following captures use a real, isolated Everything index containing only
+`C:\Windows\Web` and `C:\Windows\Fonts`. File names, sizes and dates vary by Windows installation.
+
+### Example: Large Images
+
+```text
+ext:jpg;png size:>100kb !img0
+```
+
+- `ext:jpg;png` accepts either JPEG or PNG extensions.
+- `size:>100kb` requires a file larger than 100 KiB.
+- `!img0` excludes names containing `img0`.
+- Spaces combine these conditions with AND.
+
+<figure class="product-shot" markdown>
+  ![Everything search showing JPEG and PNG files larger than 100 KiB, excluding img0](assets/royifilemanager-everything-images.png)
+  <figcaption>Extension alternatives, a size comparison and an exclusion in one query.</figcaption>
+</figure>
+
+### Example: Font Alternatives
+
+```text
+path:Fonts\ <consola|segoe> ext:ttf !*b.ttf
+```
+
+- `path:Fonts\` requires `Fonts\` in the full path.
+- `<consola|segoe>` groups an OR: the name contains either `consola` or `segoe`.
+- `ext:ttf` keeps TrueType files.
+- `!*b.ttf` excludes names ending in `b.ttf`. This tests the filename, not the font's weight.
+
+<figure class="product-shot" markdown>
+  ![Everything search showing grouped Consolas or Segoe font matches with path and extension filters](assets/royifilemanager-everything-fonts.png)
+  <figcaption>Grouped alternatives combine with path filtering and a wildcard exclusion.</figcaption>
+</figure>
+
+Results include match highlights, modification date and size. The default limit
+is 100; a count row after the results indicates truncation. If the index is starting or busy, wait
+and edit or retry the query; unchanged text does not refresh automatically.
+If Everything exits or its process identity changes, reopen search to retry.
+The retry will not take over a foreign instance.
+
+Everything starts lazily. Its index and runtime state stay under
+`UserSettings/Local/Everything`; configured roots are saved in User Settings.
+It does not install a service or control your unnamed Everything instance.
+
+See [Everything settings and portability](https://github.com/RoyiAvital/RoyiFileManager/blob/main/src/main/resources/base/Plugins/Everything/README.md)
+and the [official Everything syntax reference](https://www.voidtools.com/support/everything/searching/).
+
 ## Search Files
 
 Press ++alt+f7++.

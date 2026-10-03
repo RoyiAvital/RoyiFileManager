@@ -255,7 +255,7 @@ mode on the existing commands, extended by [Find Files 001](../Done/FindFiles001
 and are unbound in every bundled `Key Bindings*.json`. `Alt+F` was rejected
 because `Alt+Shift` is Windows' input-language toggle. `Ctrl+E`, originally
 planned here, is reserved for the search backed by the real Everything process
-([Everything Plug-In](EverythingPlugIn.md)); this dialog only borrows the syntax.
+([Everything Plug-In](../Done/EverythingPlugIn.md)); this dialog only borrows the syntax.
 
 Because the two dialogs look identical, the Everything dialog shows its mode:
 an empty query yields one leading hint row identifying `Everything syntax` and
@@ -673,6 +673,6 @@ Records before 2026_09_17 belong to the combined document
 - Context Window: 1M
 - Outcome: Rebound the two `_everything` commands from `Ctrl+E` / `Ctrl+Shift+E`
   to `Ctrl+Alt+F` / `Ctrl+Alt+Shift+F`, accepted by the user, so `Ctrl+E` goes to
-  the Everything-backed [Everything Plug-In](EverythingPlugIn.md). Table, Decision
+  the Everything-backed [Everything Plug-In](../Done/EverythingPlugIn.md). Table, Decision
   rationale, Tests, Implementation Steps and Acceptance Criteria updated; no
   other change.
