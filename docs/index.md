@@ -29,7 +29,7 @@ Minimal interface. Fast navigation. Powerful search. Commands are always close.
 - **Favorites** - Organize frequently used locations with ++ctrl+b++.
 - **Text Editor and Viewer** - Connect external programs to ++f4++ and ++f3++ with predefined presets for [CudaText](https://github.com/Alexey-T/CudaText), [EmEditor](https://www.emeditor.com), [Notepad++](https://github.com/notepad-plus-plus/notepad-plus-plus) and [Notepad 4](https://github.com/zufuliu/notepad4).
 - **File and Folder Comparators** - Configure external comparison tools with predefined presets for [Meld](https://meldmerge.org), [Beyond Compare](https://www.scootersoftware.com), [WinMerge](https://github.com/winmerge/winmerge) and [SmartSynchronize](https://www.syntevo.com/smartsynchronize).
-- **Archive Handling** - Utilizing `7Zip` library for a feature reach and safe experience with archives.
+- **Archive Handling** - Utilizing `7Zip` library for a feature reach and _safe_ experience with archives.
 
 [Learn the basics](basics.md) or [explore every feature](features.md).
 
