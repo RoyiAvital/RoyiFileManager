@@ -50,21 +50,21 @@ class NameTest(ColumnTest, TestCase):
 	column_class = Name
 
 	def test_numeric_boundaries_unicode_and_arbitrary_lengths(self):
-		from core import _natural_name_key
+		from fman.impl.util.natural import natural_key
 		names = ['file' + digits for digits in ('0', '2', '10', '999999', '1000000', '9' * 99, '1' + '0' * 99, '9' * 5000)]
-		self.assertEqual(names, sorted(reversed(names), key=_natural_name_key))
-		self.assertEqual(_natural_name_key('file2'), _natural_name_key('file\u0660\u0662'))
-		self.assertEqual(_natural_name_key('FILE000'), _natural_name_key('file\u0660'))
+		self.assertEqual(names, sorted(reversed(names), key=natural_key))
+		self.assertEqual(natural_key('file2'), natural_key('file\u0660\u0662'))
+		self.assertEqual(natural_key('FILE000'), natural_key('file\u0660'))
 		listing = Listing.create('test://', names)
 		for ascending in (False, True):
 			keys = self._column.keys(listing, ascending)
 			self.assertEqual(names, sorted(names, key=dict(zip(names, keys)).__getitem__))
 			self.assertEqual((ascending,) * len(names), tuple(key[0] for key in keys))
 	def test_mixed_text_punctuation_and_numeric_ties(self):
-		from core import _natural_name_key
+		from fman.impl.util.natural import natural_key
 		names = ['a', 'a!', 'a-2', 'a.2', 'a0', 'a2', 'a02', 'a2!', 'a2a', 'a10', 'a_', 'ab']
-		self.assertEqual(names, sorted(names, key=_natural_name_key))
-		self.assertEqual(list(reversed(names)), sorted(reversed(names), key=_natural_name_key, reverse=True))
+		self.assertEqual(names, sorted(names, key=natural_key))
+		self.assertEqual(list(reversed(names)), sorted(reversed(names), key=natural_key, reverse=True))
 	def test_less(self):
 		self.assert_is_less('a', 'b')
 	def test_less_numbers(self):

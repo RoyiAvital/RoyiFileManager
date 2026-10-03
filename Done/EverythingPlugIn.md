@@ -1,7 +1,7 @@
 # Everything Plug In
 
 Machine wide file search backed by a bundled, application managed instance of
-[voidtools Everything](https://www.voidtools.com/), queried over its `WM_COPYDATA`
+[voidtools Everything](https://www.voidtools.com), queried over its `WM_COPYDATA`
 IPC channel and presented in the standard Quicksearch dialog. Status: Implemented;
 focused unit, native Qt and live portable-runtime checks passed on 2026_10_03.
 

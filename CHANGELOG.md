@@ -2,10 +2,69 @@
 
 Notable implemented changes to the application are documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+### Added
+
+- Search Files **Extended** mode (tooltip "Extended metadata mode"): Size and
+  Date Modified columns read once per returned file after ripgrep, plus a
+  substring/quoted-phrase AND filter over File Path and Snippet. The toggle
+  persists as `extended`; off mode is unchanged.
+- Typed Table columns via the new `fman.ui.TableColumn` export: text, file/folder
+  name, file/folder/entry path, date and numeric kinds with natural,
+  chronological and numeric sorting. Date and numeric cells take raw values;
+  the host formats them (ISO 8601 dates, `12,345 B` sizes). Missing values sort
+  last.
+- Table header icons: a sort arrow on the sorted column and a filter funnel on
+  filterable columns. The funnel, Alt+Down or **Filter This Column...** opens a
+  menu with date/number operators, byte units, Clear Filter, Clear All Filters
+  and sort commands.
+- `show_table(truncated=...)`: truncated tables show a `truncated` note beside
+  the row count.
+- Find Files results sort and filter Size and Modified by value.
+
+### Changed
+
+- **Breaking plug-in API:** `show_table` takes `columns` (a sequence of
+  `TableColumn`) instead of `num_columns`, `columns_header` and the
+  `file_path_column` / `folder_path_column` / `entry_path_column` indices;
+  navigation follows the column kind. `text_filter` (`'fuzzy'`, `'substring'`,
+  `None` or a compile callable) replaces `fuzzy`. To migrate, build one
+  `TableColumn(label, kind)` per column and pass raw numbers/epoch nanoseconds
+  in Date/Numeric cells.
+- **Breaking plug-in API:** `show_table` is now a static, blocking call:
+  `show_table(*, columns, rows, pane=None, title='', summary='', modal=True,
+  text_filter='fuzzy', base_path=None, truncated=None)` returns when the window
+  closes. `TableRow(cells, highlights=())` has no ID or value. Removed `owner`,
+  `panel`, `get_rows` (pass `rows`), `TableHandle`/refresh, `TableAction`,
+  `get_menu`, `get_background_menu`, `get_details`, `on_activate`, `on_closed`,
+  `get_count_text`, `resolve_path` and `close_on_navigate`. Modal tables close
+  after a successful Go To; with `modal=False` Go To keeps the table open and
+  focuses the pane. `text_filter` is the only caller interaction. To migrate,
+  pass the rows directly and show new results with a new call.
+- `show_table(accept='Label')` makes a table a filtering step: **Label (N)** /
+  **Cancel** buttons and Ctrl+Enter return the input positions of the visible
+  rows (or `None` when cancelled).
+- Table cells containing tabs, such as indented Search Files snippets, no longer
+  render as an ellipsis.
+- Verify checksum file shows every retained result in a non-modal table (problems
+  only when the display limit is exceeded); the Show all results / Show only
+  mismatches menus are gone.
+- Find Files and Search Files show the search root and run summary above the
+  results.
+- Table cell menus always offer the column's Copy action and filter commands.
+- Find Files shows Modified as ISO 8601 with the UTC offset.
+- Natural name sorting moved to a host helper shared by Core and the Table.
+
+### Documentation
+
+- PlugIn.md documents the new `show_table` signature, column kinds, the filter
+  menu, `text_filter` and truncation status. The Search Files README documents
+  Extended mode. Checksum, Find Files and Search Files docs describe the static
+  results; the checksum screenshot shows the results table.
 
 ## [0.11.0] - 2026-10-03
 

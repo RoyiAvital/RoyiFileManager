@@ -1,5 +1,9 @@
 copy.svg: Lucide Copy, https://lucide.dev/icons/copy
 Source: https://github.com/lucide-icons/lucide/blob/main/icons/copy.svg
+filter.svg: Lucide Funnel, https://lucide.dev/icons/funnel
+sort-ascending.svg: Lucide Arrow Up Narrow Wide, https://lucide.dev/icons/arrow-up-narrow-wide
+sort-descending.svg: Lucide Arrow Down Wide Narrow, https://lucide.dev/icons/arrow-down-wide-narrow
+The host tints these icons with the current palette; only SVG whitespace differs.
 
 ISC License
 

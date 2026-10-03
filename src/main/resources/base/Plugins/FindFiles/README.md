@@ -37,12 +37,14 @@ the current search and reject stale results. Search starts only on request.
 matches. Enter a positive number to limit the search. Search limits and table
 capacity are separate: the table retains at most 10,000 rows
 and 16 MiB text/payload; excess paths are counted without querying their metadata.
-For an uncapped 20,000-match run the footer reads:
+For an uncapped 20,000-match run the summary above the results and the Panel
+status read:
 
 `Showing 10,000 / 20,000 entries (Maximum table size reached)`
 
 Counts use **entries** for every Type, including files, folders and links.
-Filtering changes the numerator, not the run's denominator. Reaching an enabled
+The summary keeps the run's totals; the table footer counts visible rows as
+you filter. Reaching an enabled
 search limit, stopping, or encountering traversal errors marks the total incomplete.
 Any fd traversal warning, even one inaccessible folder with a successful exit,
 marks the result **Incomplete** because matches may be missing. Successfully
@@ -51,10 +53,13 @@ Uncapped searches continue traversing after the table fills. Stop stays enabled
 and red, matching Search Files; it cancels an active search and does nothing while
 idle. Cancellation reports **Stopped** even if terminating fd cuts off a record.
 
-Results show Path, Size and Modified. Directory sizes stay blank; unavailable
-metadata does not remove matches. Enter/double-click a Path or use **Go To** to
-highlight a file or enter a folder. **Copy Path** copies its absolute path.
-Closing results unlocks the form. Empty searches report their count in the status bar.
+Results show Path, Size and Modified (ISO 8601, local time). Directory sizes and
+unavailable metadata stay blank; they never remove matches. Size and Modified sort
+by value and filter from their header funnel or Alt+Down. Enter/double-click a Path
+or use **Go To** to highlight a file or enter a folder. **Copy Path** copies its
+absolute path. Results are modal: a successful Go To closes them and focuses the
+pane; Escape closes them and returns to the Panel.
+Empty searches report their count in the Panel status.
 
 Only mode, case, type, toggles and size units persist in `FindFiles.json`.
 Patterns, bounds and Max Results are session-only. Section dividers separate

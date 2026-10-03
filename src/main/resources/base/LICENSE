@@ -15,7 +15,7 @@ URL: https://www.qt.io
 Version: 5.9.2
 
 Used under the terms of the GNU Lesser General Public License version 3.
-A copy of the license is available at http://www.gnu.org/.
+A copy of the license is available at http://www.gnu.org.
 
 Send2Trash (Linux & Windows versions of fman only)
 ==================================================
@@ -81,7 +81,7 @@ URL: https://www.google.com/fonts/specimen/Open+Sans
 
                                  Apache License
                            Version 2.0, January 2004
-                        http://www.apache.org/licenses/
+                        http://www.apache.org/licenses
 
    TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
 
@@ -288,16 +288,16 @@ Version: 1.6
 
 7-Zip (Windows version of fman only)
 ====================================
-URL: http://www.7-zip.org/
+URL: http://www.7-zip.org
 Version: 16.04
 
 Used under the terms of the GNU Lesser General Public License version 2.1.
-A copy of the license is available at http://www.gnu.org/.
+A copy of the license is available at http://www.gnu.org.
 
 p7zip (Linux and Mac versions of fman)
 ======================================
-URL: http://p7zip.sourceforge.net/
+URL: http://p7zip.sourceforge.net
 Version: 16.02
 
 Used under the terms of the GNU Lesser General Public License version 2.0.
-A copy of the license is available at http://www.gnu.org/.
+A copy of the license is available at http://www.gnu.org.

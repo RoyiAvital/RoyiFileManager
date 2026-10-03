@@ -342,7 +342,7 @@ content providers and any online service are excluded from this task.
 - **Keep two-line hints beside single-line results.** Rejected: uniform row
   sizing can clip content. Match hint line count to the selected metadata view.
 - **Controls row inside Quicksearch** (checkbox/choice descriptors passed to
-  a `show_quicksearch_extended` host API). Rejected: [UIElements](UIElements.md)
+  a `show_quicksearch_extended` host API). Rejected: [UIElements](../UIElements.md)
   keeps the modal picker free of controls, and the goal is reachable without
   host changes.
 - **Panel + Table** like Search Files. Rejected: two surfaces for a

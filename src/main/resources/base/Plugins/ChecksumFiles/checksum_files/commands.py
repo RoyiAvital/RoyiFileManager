@@ -6,14 +6,15 @@ import os
 
 from fman import DirectoryPaneCommand, NO, YES, QuicksearchItem, Task, load_json, show_alert, show_prompt, show_quicksearch, show_status_message, submit_task
 from fman.fs import notify_file_added, notify_file_changed
-from fman.ui import TableAction, TableRow, UiController, settings_resource, show_table
+from fman.ui import TableColumn, TableRow, UiController, settings_resource, show_table
 from fman.url import as_human_readable, as_url
 
 from . import engine
 
 
+COLUMNS = (TableColumn('Relative Path', 'file_path'), TableColumn('Status'), TableColumn('Expected'),
+           TableColumn('Actual'), TableColumn('Details'))
 _busy = WeakKeyDictionary()
-_tables = WeakKeyDictionary()
 _lock = Lock()
 
 
@@ -118,75 +119,12 @@ class _ChecksumTask(Task):
         self.completed = True
 
 
-class ResultsTable:
-    def __init__(self, results, owner, pane, manifest):
-        self.owner = owner
-        self.pane = pane
-        self.manifest = manifest
-        self.handle = None
-        self.closed = False
-        self.summary = results.summary
-        retained = results.all_rows if results.all_rows is not None else results.problems
-        self.targets = {row.line: row.target for row in retained if row.target is not None}
-        self.details = {row.line: (row.path, row.details) for row in retained if row.details}
-        prepared = {row.line: TableRow(str(row.line), row.cells, row.line) for row in retained}
-        self.problems = tuple(prepared[row.line] for row in results.problems)
-        self.all_rows = None if results.all_rows is None else tuple(prepared[row.line] for row in results.all_rows)
-        self.rows = self.problems
-
-    def show(self):
-        if not self.owner.attach(self.release):
-            raise engine.Canceled()
-        try:
-            self.handle = show_table(
-                owner=self.owner, pane=self.pane, modal=False,
-                title='Verify checksum file: ' + engine.display_text(os.path.basename(self.manifest)),
-                get_rows=lambda: self.rows, num_columns=5,
-                columns_header=('Relative Path', 'Status', 'Expected', 'Actual', 'Details'),
-                file_path_column=0, base_path=os.path.dirname(self.manifest),
-                resolve_path=lambda row, column: self.targets.get(row.value),
-                get_details=self.get_details,
-                get_menu=self.menu, summary=self.summary,
-                get_background_menu=lambda: self.menu(None, -1),
-                get_count_text=lambda visible, total: '%s results loaded' % total,
-                on_closed=self.release)
-        except Exception:
-            self.release()
-            raise
-        return self.handle
-
-    def get_details(self, row, column):
-        return '\n'.join(engine.display_text(value) for value in self.details.get(row.value, ()))
-
-    def menu(self, row, column):
-        if self.all_rows is None:
-            return ()
-        return (TableAction('all', 'Show all results', lambda row, column: self.switch(True)),
-                TableAction('problems', 'Show only mismatches', lambda row, column: self.switch(False)))
-
-    def switch(self, all_results):
-        if self.closed or not self.owner.active or self.handle is None or not self.handle.is_open:
-            return
-        if all_results and self.all_rows is None:
-            return
-        previous = self.rows
-        self.rows = self.all_rows if all_results else self.problems
-        try:
-            self.handle.refresh()
-        except Exception:
-            self.rows = previous
-            raise
-
-    def release(self):
-        self.owner.detach(self.release)
-        if self.pane is not None and _tables.get(self.pane) is self:
-            del _tables[self.pane]
-        self.pane = None
-        self.closed = True
-        self.rows = self.problems = ()
-        self.all_rows = None
-        self.targets.clear()
-        self.details.clear()
+def show_results(results, pane, manifest):
+    retained = results.all_rows if results.all_rows is not None else results.problems
+    show_table(columns=COLUMNS, rows=tuple(TableRow(row.cells) for row in retained), pane=pane, modal=False,
+               title='Verify checksum file: ' + engine.display_text(os.path.basename(manifest)),
+               summary=results.summary, base_path=os.path.dirname(manifest),
+               truncated=len(retained) < results.total)
 
 
 class GenerateChecksumFile(DirectoryPaneCommand):
@@ -245,6 +183,7 @@ class VerifyChecksum(DirectoryPaneCommand):
 
     def __call__(self):
         run = None
+        results = manifest = None
         try:
             with _running(self.pane) as run:
                 root, selected, settings, highlighted = _capture(run, False)
@@ -265,14 +204,10 @@ class VerifyChecksum(DirectoryPaneCommand):
                                      lambda check, progress: engine.verify(manifest, settings, check, progress))
                 submit_task(task)
                 run.check()
-                if task.result is not None:
-                    table = ResultsTable(task.result, run.owner, self.pane, manifest)
-                    run.check()
-                    previous = _tables.get(self.pane)
-                    if previous is not None and previous.handle is not None:
-                        previous.handle.close()
-                    table.show()
-                    _tables[self.pane] = table
+                results = task.result
+            # Shown after the pane lock is released: the modeless table stays open while the user works.
+            if results is not None:
+                show_results(results, self.pane, manifest)
         except engine.Canceled:
             pass
         except (OSError, ValueError, RuntimeError) as error:

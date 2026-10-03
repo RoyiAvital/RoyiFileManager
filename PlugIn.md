@@ -593,8 +593,8 @@ Import from `fman.ui`. The complete explicit export list is:
 ListItem, QuickList, Panel, IconButton, TextButton, DropDown, JsonSettings,
 UiController, UiOwner, Resource, settings_resource, matchers,
 ToolWindow, PaneToolWindow, NavigationHandle, navigate, OutputTextBox
-TableRow, TableAction, TextField, Toggle, Choice, Select, DateField, IntegerField, Separator, Label, Action,
-TableHandle, PanelHandle, show_table, show_panel
+TableRow, TableColumn, TextField, Toggle, Choice, Select, DateField, IntegerField, Separator, Label, Action,
+PanelHandle, show_table, show_panel
 ```
 
 This is an additive **provisional** API, not upstream fman 1.7.5. Public names
@@ -604,86 +604,140 @@ New Table/Panel consumers can use the plain services below without importing Qt.
 
 ### Qt-Free Table and Panel
 
-Expose a `UiController` subclass in the plug-in's root package as an owner carrier.
-Do not implement/call `build` or `show` when using these services; obtain its
-loader-owned lifetime with `require_owner()`.
+Panels need an owner: expose a `UiController` subclass in the plug-in's root
+package as an owner carrier. Do not implement/call `build` or `show` when using
+these services; obtain its loader-owned lifetime with `require_owner()`. Tables
+are static snapshots and need no owner.
 
 ```python
-from fman.ui import UiController, TableRow, show_table
+from fman.ui import TableColumn, TableRow, show_table
 
-class ResultsUI(UiController):
-  pass
+COLUMNS = (TableColumn('File Path', 'file_path'), TableColumn('Size', 'numeric', unit='bytes'),
+  TableColumn('Snippet'))
 
-def display_results(pane, rows):
-  return show_table(
-    owner=ResultsUI.require_owner(), pane=pane, get_rows=lambda: rows,
-    num_columns=2, columns_header=('File Path', 'Snippet'),
-    file_path_column=0, title='Results'
-  )
+def display_results(pane, hits):
+  rows = [TableRow((hit.path, hit.size, hit.snippet)) for hit in hits]
+  show_table(columns=COLUMNS, rows=rows, pane=pane, title='Results')
 ```
 
 ```python
-show_table(*, owner, get_rows, num_columns, columns_header, pane=None,
-  panel=None, title='', fuzzy=True, file_path_column=None,
-  folder_path_column=None, resolve_path=None, base_path=None, modal=True,
-  close_on_navigate=None, summary='', get_details=None, on_activate=None,
-  get_menu=None, on_closed=None, entry_path_column=None, get_count_text=None,
-  get_background_menu=None)
+show_table(*, columns, rows, pane=None, title='', summary='', modal=True,
+  text_filter='fuzzy', base_path=None, truncated=None, accept=None) -> tuple[int, ...] | None
 
 show_panel(*, owner, pane, rows, on_change=None, on_action=None, on_closed=None)
 ```
 
-`TableRow(id, cells, value=None, highlights=())` is frozen. IDs are unique strings;
-cells contain exactly `num_columns` strings. Optional highlights contain one
-tuple of `(start, end)` character spans per column. Payloads contain immutable
-plain data only, not widgets or mutable containers. The complete provider snapshot
-is validated before replacement: at most 10,000 rows, 16 MiB text/payload and
-128 spans per cell. An exception preserves the prior snapshot.
+`show_table` shows a static snapshot and **blocks until the window closes**.
+From a command worker thread it blocks that worker; on the Qt thread it runs a
+nested event loop. Rows cannot be replaced while the table is open; call it
+again for new results.
 
-Path roles are distinct zero-based column indices; `None` disables each role.
-Only designated cells get built-in activation and Copy Path/Go To menus. The
-default resolver uses full cell text, absolute native paths, or relative paths
-against a fixed base captured from the supplied local pane. Supply `base_path`
-explicitly when the pane may have moved. No filesystem/CWD/environment expansion
-occurs during resolution. `resolve_path(row, column)` may instead return an
-authoritative absolute native string or `None`. Without a pane, Copy works but
-Go To is disabled; no active pane is silently selected.
+`columns` is a sequence of 1-64 `TableColumn` descriptors; it defines headers,
+navigation, sorting, filtering and formatting (see below).
 
-`file_path_column` and `folder_path_column` require files and folders respectively
-when navigating. `entry_path_column` accepts either; it must be distinct from
-the other path roles. `get_count_text(visible, retained)` optionally formats the
-footer after each filter projection. It runs on Qt, must be fast, and may capture
-a separately computed total; it does not change Table storage limits. Omit it
-for the existing `visible / retained rows` text.
+`TableRow(cells, highlights=())` is frozen. `cells` holds one value per column:
+a string for text, name and path kinds; an `int`/`float`/`None` for Numeric;
+integer UTC epoch nanoseconds or `None` for Date. Optional highlights contain
+one tuple of `(start, end)` character spans per column (text-like columns only).
+`rows` is any iterable, validated once: at most 10,000 rows, 16 MiB text and
+128 spans per cell.
 
-`on_activate(row, column)` handles ordinary cells only. `get_details(row, column)`
-returns passive text. `get_menu(row, column)` returns at most 32
-`TableAction(id, label, callback)` records; callbacks receive `(row, column)`.
-Labels are limited to 128 characters; `copy_path` and `go_to` IDs are reserved.
-Callbacks are serialized on Qt and must be fast, nonblocking plain Python.
-Stale menus/navigation completions and unloaded-owner callbacks are rejected.
+`summary` is a single elided line above the table. `title` is the window title.
 
-`get_background_menu()` optionally returns the same `TableAction` records for
-right-clicks outside result rows, including an empty or fully filtered table.
-Keyboard context menus use it when there is no current cell. Its action callbacks
-receive `(None, -1)`; no path resolver, Copy Path, Go To or row-menu callback is
-invoked for the background. The same limits, Qt-thread and stale-action rules
-apply. Omit it to preserve the existing no-background-menu behavior.
+Name and path kinds navigate. Cell text is resolved lexically: absolute native
+paths, or paths relative to `base_path` (default: the supplied local pane's
+folder, captured once). No filesystem/CWD/environment expansion occurs during
+resolution. File kinds require files, folder kinds require folders and
+`entry_path` accepts either; the check happens at Go To. Without a pane, Copy
+works but Go To is disabled; no active pane is silently selected.
 
-`TableHandle` provides `refresh()`, idempotent `close()`, `is_open`,
-`current_cell` (row and logical column, or `None`) and read/write `filter_text`.
-After close, the last filter remains readable, payloads are released and mutations
-raise `RuntimeError`. Calls marshal to Qt but never wait for dialog dismissal.
-Modal results block the invoking window only; inactive/blocked windows defer
-presentation without polling. `modal=False` supports interactive previews;
-Tab/Shift+Tab bridge the associated Panel. Successful Go To closes modal results
-by default, retains modeless results, and obeys `close_on_navigate` overrides.
-There are no buttons in Table content, including the filter.
+Enter, double-click or **Go To** navigates the pane. With `modal=True` (the
+default) the table blocks its main window and closes after a successful Go To;
+focus returns to the pane. With `modal=False` the main window stays usable and
+Go To keeps the table open while focusing the pane. The table closes with its
+pane or main window.
+
+The only caller interaction is `text_filter`. The table has no caller menus,
+callbacks, details or refresh. Its built-in cell menu offers the column's Copy
+action, Go To for name/path kinds, **Filter This Column...** and **Clear All
+Filters**.
+
+`accept` turns the table into a filtering step. A label such as `'Rename'` adds
+**Rename (N)** and **Cancel** buttons; Ctrl+Enter also accepts. Accepting returns
+the positions in `rows` of every row that passes the text and column filters, in
+input order (not display order). Cancel, Escape, closing or a modal Go To return
+`None`. The button is disabled while filtering runs, on a filter error and when
+no row is visible. Without `accept` the call always returns `None`.
+
+```python
+kept = show_table(columns=COLUMNS, rows=rows, pane=pane, accept='Rename')
+if kept is not None:
+  rename([plans[index] for index in kept])
+```
 
 Table and QuickList use the shared fuzzy matcher: prefer a contiguous match
 when available, otherwise use an in-order subsequence. Highlight positions map
 back to the original text after casefolding. F1 Shortcuts has its own substring
 filter and is not a fuzzy-matcher consumer.
+
+#### Columns and Filters
+
+```python
+TableColumn(label, kind='text', sortable=True, filterable=True, searchable=None,
+  unit=None, date_display='timestamp', format=None, missing='Unknown')
+```
+
+| Kind | Cell | Filter | Sort | Cell menu |
+| --- | --- | --- | --- | --- |
+| `text` | `str` | Fuzzy / Contains | Case-insensitive | Copy Text |
+| `file_name`, `folder_name` | `str` | Fuzzy / Contains | Natural | Copy Name, Go To |
+| `file_path`, `folder_path`, `entry_path` | `str` | Fuzzy / Contains | Natural | Copy Path, Go To |
+| `date` | ns or `None` | On, Before, After, Between, Missing | Chronological | Copy Date |
+| `numeric` | number or `None` | `=`, `<`, `<=`, `>`, `>=`, Between, Missing | Numeric | Copy Value |
+
+- Copy Path copies the resolved absolute path; other kinds copy the displayed text.
+- Dates display as ISO `YYYY-MM-DDTHH:MM:SS±HH:MM` (or `YYYY-MM-DD` with
+  `date_display='date'`) in the system zone, captured once per Table.
+- Numeric values are signed 64-bit integers or finite floats. `unit='bytes'`
+  requires nonnegative integers, displays `12,345 B` and adds a B/KiB/MiB/GiB
+  filter unit. `format(value) -> str` overrides numeric display.
+- `None` displays `missing`. Missing values fail comparisons, match the Missing
+  filter and sort last both ways.
+- `searchable` defaults to text-like columns only. Each Date/Numeric column adds
+  8 bytes per row to the 16 MiB budget.
+
+Header layout, left to right: label, sort arrow (sorted column only), filter
+funnel (filterable columns). The funnel is dim when idle and uses the theme
+Highlight color when active. Clicking the label sorts; clicking the funnel opens
+the filter menu only.
+
+```text
+| File Path        ▽ | Size        ↓ ▼ | Date Modified  ▽ | Snippet         ▽ |
+```
+
+Alt+Down (or **Filter This Column...** in the cell menu) opens the current
+column's menu: operator, value(s), unit, inline error, **Apply Filter**,
+**Clear Filter**, **Clear All Filters**, **Sort Ascending/Descending** and
+**Original Order**. Enter applies a valid filter. Clear All Filters also clears
+the text query and keeps sorting. Filters and sort are session-only.
+
+A row is visible when it passes the text query **and** every column filter.
+`text_filter` selects the query box:
+
+| Value | Behavior |
+| --- | --- |
+| `'fuzzy'` | Fuzzy subsequence with ranking and highlights (default) |
+| `'substring'` | Case-insensitive contiguous match |
+| `None` | No query box |
+| `compile(query) -> predicate(cells)` | Caller matching, compiled once per edit |
+
+`cells` is the tuple of searchable display strings. The predicate must be pure,
+fast and return a strict `bool`. Compile errors, exceptions and non-bool results
+show `Filter error: ...` and an empty view until the query changes. Empty text
+never calls the hook.
+
+`truncated` (`True`, `False` or `None`) reports whether the producer omitted
+rows. `True` appends `· truncated` to the row count, even for zero matches.
 
 Panel `rows` is a tuple of tuples of frozen descriptors, at most 16 by 16:
 `TextField(id, label, value='', tooltip='', max_width=None)`,
@@ -753,8 +807,7 @@ owns a separate status label; a fast `get_text()` supplies immutable progress at
 most five times a second. Terminal text or clear/disposal stops its timer.
 `close()`, `is_open`, and the read-only `cancelled.is_set()` token manage lifetime.
 One dock belongs to each main window; replacement closes the previous session.
-Closing a Panel closes its associated Table; closing only Table retains Panel.
-`panel=` supplies the target pane for Table and requires matching ownership.
+Tables and Panels are independent: closing one does not close the other.
 
 No new widget, signal, Qt enum or arbitrary layout bridge is exposed by these
 services. Existing widget-based consumers remain supported.

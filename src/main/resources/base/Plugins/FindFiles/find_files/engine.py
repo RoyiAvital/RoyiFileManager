@@ -216,7 +216,7 @@ class Hit:
 	path: str
 	relative_path: str
 	size: int | None = None
-	modified: str = ''
+	modified_ns: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -376,9 +376,9 @@ class Runner:
 					info = os.stat(hit.path, follow_symlinks=self.options.follow_symlinks)
 				except FileNotFoundError:
 					info = os.stat(hit.path, follow_symlinks=False)
-				modified = datetime.fromtimestamp(info.st_mtime).strftime('%Y-%m-%d %H:%M')
-				self.collector.rows[index] = replace(hit, size=None if stat.S_ISDIR(info.st_mode) else info.st_size, modified=modified)
-			except (OSError, ValueError, OverflowError):
+				self.collector.rows[index] = replace(hit, size=None if stat.S_ISDIR(info.st_mode) else info.st_size,
+					modified_ns=info.st_mtime_ns)
+			except OSError:
 				pass
 			self.publish('Reading metadata')
 

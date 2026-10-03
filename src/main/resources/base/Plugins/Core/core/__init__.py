@@ -9,26 +9,8 @@ from core.quick_view import QuickViewService, ToggleQuickView, QuickViewFit, \
 from datetime import datetime
 from fman.fs import Column
 from fman.impl.status_bar import format_size
+from fman.impl.util.natural import natural_key
 from PyQt5.QtCore import QLocale, QDateTime
-from unicodedata import decimal
-
-import re
-
-_DIGITS = re.compile(r'(\d+)')
-
-def _natural_name_key(name):
-	parts = _DIGITS.split(name.lower())
-	for index in range(1, len(parts), 2):
-		digits = parts[index]
-		if not digits.isascii():
-			digits = ''.join(str(decimal(character)) for character in digits)
-		digits = digits.lstrip('0') or '0'
-		if len(digits) <= 6:
-			parts[index] = '0' + digits.zfill(6)
-		else:
-			length = str(len(digits))
-			parts[index] = '1' + '1' * len(length) + '0' + length + digits
-	return ''.join(parts)
 
 # Define here so get_default_columns(...) can reference it as core.Name:
 class Name(Column):
@@ -39,7 +21,7 @@ class Name(Column):
 	def keys(self, listing, ascending):
 		result = []
 		for name, is_dir in zip_columns(listing.display_names, listing.is_dir):
-			result.append((is_dir ^ ascending, _natural_name_key(name)))
+			result.append((is_dir ^ ascending, natural_key(name)))
 		return tuple(result)
 
 # Define here so get_default_columns(...) can reference it as core.Size:

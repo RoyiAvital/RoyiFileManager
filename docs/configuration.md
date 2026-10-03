@@ -72,6 +72,7 @@ Use `SearchFiles.json`.
 | `name_mode` | `glob` | Filename matching: `literal`, `glob` or `regex`. |
 | `content_mode` | `literal` | Content matching: `literal`, `glob` or `regex`. |
 | `recursive` | `true` | Include subfolders. |
+| `extended` | `false` | Add Size and Date Modified columns (Extended mode). |
 | `encoding` | `auto` | Use `auto` or `windows-1252`. |
 | `max_rows` | 10,000 | Maximum result rows retained. |
 | `max_text_bytes` | 16 MiB | Maximum retained result text and payload. |

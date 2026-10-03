@@ -1,13 +1,14 @@
 # Search Files 003: Extended Mode
 
-Status: Design only; review before implementation.
+Status: Implemented 2026_10_03.
 
 ## Task
 
 Add **Extended** mode to Search Files. Its exact tooltip is
-**Everything inspired mode**. Ripgrep searches first; only in Extended mode,
+**Extended metadata mode** (renamed 2026_10_03 from "Everything inspired mode":
+the filter no longer uses Everything syntax). Ripgrep searches first; only in Extended mode,
 collect Size and Date Modified for returned files. Filter the captured results
-with ordinary substring text and Everything-inspired `size:` / `dm:` conditions.
+with ordinary substring text plus typed Size / Date Modified column filters.
 
 Follow-up to [Search Files 002](../Done/SearchFiles002.md).
 
@@ -19,7 +20,7 @@ Follow-up to [Search Files 002](../Done/SearchFiles002.md).
 - Extended results add Size and Date Modified columns. Preserve one row per
   matching line, or per file for filename-only searches.
 - Plain text uses case-insensitive contiguous substring matching, not fuzzy
-  subsequences. Only `size:` and `dm:` have special function meaning.
+  subsequences. Size and date conditions use Table column filters.
 - Off mode retains the current two-column fuzzy Table without extra metadata
   collection. Preserve search eligibility, limits, navigation and focus.
 - Exclude other Everything functions/aliases, result wildcard/regex matching,
@@ -34,7 +35,7 @@ The proposed Table hooks are additive; no public API break is currently needed.
 ### Panel And Persistence
 
 Place the toggle beside Recursive using an appropriate existing icon. Label and
-accessible name: **Extended**. Tooltip: **Everything inspired mode**. Add a strict
+accessible name: **Extended**. Tooltip: **Extended metadata mode**. Add a strict
 boolean `extended` setting/Options field, default false, and use SearchSession's
 existing coalesced settings writer. Missing/invalid values use the default.
 
@@ -64,81 +65,43 @@ A file can change between ripgrep and stat. Only an explicit rerun refreshes it.
 
 ### Results Table
 
-[Table.project](../src/main/python/fman/impl/ui/table.py) currently fuzzy-matches
-cells and sorts strings. Add two optional hooks through
-[show_table](../src/main/python/fman/impl/ui/facade.py):
+Revised for [UI Elements 001](UIElements001.md): the earlier `size:` / `dm:`
+clauses and raw-row `compile_filter` / `get_sort_key` hooks are superseded.
+Size and Date Modified filtering and sorting use typed Table columns.
 
-- `compile_filter(query)` returns a pure row predicate, replacing fuzzy matching
-  for Extended results. Empty query accepts all. Keep the filter box visible.
-- `get_sort_key(row, column)` returns integers for metadata, casefolded strings
-  for text, or None. Unknown sorts last in both directions. Preserve stable
-  ordering and the existing ascending/descending/unsorted cycle.
+Columns: `TableColumn('File Path', 'file_path')`,
+`TableColumn('Size', 'numeric', unit='bytes')`, `TableColumn('Date Modified', 'date')`,
+`TableColumn('Snippet')` (API revised 2026_10_03; see
+[UI Elements 001](UIElements001.md#api-revision-2026_10_03)).
+The File Path kind provides navigation; snippet spans move to column 3. Cells are
+`(relative_path, st_size, st_mtime_ns, snippet)` with `None` for missing values.
+Size shows grouped bytes (`12,345 B`) or `Unknown`; the host formats dates as
+ISO 8601 with offset.
+Header funnels and Alt+Down open the Table's size/date filter menus. Counts show
+visible / captured rows; `truncated` is True for Limited/Stopped, False for
+Complete and None otherwise.
 
-Callbacks run on Qt and must be bounded and I/O-free. Reuse approximately 6 ms
-projection slices, checking deadlines even for rejected rows. Metadata-only
-queries must not bypass predicates through an empty-text fast path. Preserve
-source hit highlights and selection by row ID; no fuzzy ranking in Extended mode.
-Retain captured order until sorting. Document hooks in [PlugIn.md](../PlugIn.md).
-
-Invalid/partial reserved clauses clear the projection and selection, retain source
-rows, and show a concise inline error in the counts area. No modal typing errors.
-Handle malformed callback results/exceptions. Invalidate queued projections and
-actions on edits/refresh/close; disable row actions while invalid or pending.
-
-Columns: **File Path**, **Size**, **Date Modified**, **Snippet**. Keep navigation
-at column 0; remap snippet spans to column 3. Display grouped exact bytes with
-` B`, local `YYYY-MM-DD HH:MM:SS`, or `Unknown`. Compare raw numbers, never cells.
-Constrain metadata widths, stretch Snippet, allow horizontal scrolling at minimum
-window size. Counts show visible / captured rows, not filesystem-wide totals.
+Revised 2026_10_03 for the static Table
+([API Revision 2](UIElements001.md#api-revision-2-static-table-2026_10_03)):
+results open with a blocking modal `show_table(rows=...)` showing the captured
+root and run summary; rows have no IDs and there is no per-row details text.
 
 ### Query Contract
 
-Reference: [Everything Search Functions](https://www.voidtools.com/support/everything/search_functions/).
-This is a defined subset, not full Everything compatibility.
+The filter box uses [query.py](../src/main/resources/base/Plugins/SearchFiles/search_files/query.py)
+through `show_table(text_filter=compile_text_filter)`. It sees only File Path and Snippet.
 
 | Query | Meaning |
 | --- | --- |
 | `report` | Substring in File Path or Snippet, case-insensitive |
-| `annual report` | Both substrings must match; they may match different text columns |
+| `annual report` | Both substrings must match; they may match different columns |
 | `"annual report"` | One contiguous phrase |
-| `report size:>1mb dm:>=2026-01-01` | Text AND size AND modified-date conditions |
-| `size:1kb` | 1,024 through 2,047 bytes, following Everything's unit granularity |
-| `size:=1kb` | Exactly 1,024 bytes |
-| `size:1mb..10mb` | Inclusive exact-byte range, 1,048,576 through 10,485,760 |
-| `size:0` | Exactly zero bytes |
-| `dm:2026-09-17`, `dm:2026-09`, `dm:2026` | Within that local day/month/year |
-| `dm:2026-01-01..2026-06-30` | Includes the entire first and last days |
-| `dm:today`, `dm:yesterday` | Corresponding local calendar day |
-| `"size:large"` | Literal text, not a size clause |
+| `"say ""hi"""` | Phrase containing `say "hi"` |
 
-- Whitespace outside double quotes separates ANDed terms. Quotes form literal
-  phrases; doubled quotes inside a phrase represent a quote. Backslashes remain
-  literal. Reject unterminated quotes; do not use shell/argv parsing.
-- Only unquoted tokens starting with `size:` or `dm:` are functions, ignoring
-  case. Malformed reserved clauses are errors, never literal/fuzzy fallback.
-  Other prefixes such as `error:` are plain text. `*`, `?`, `!`, `|` and grouping
-  characters have no special matching meaning in plain text.
-- Text searches File Path/Snippet, not formatted metadata: an intentional
-  Table-specific difference from Everything's default filename-only matching.
-  Metadata filters act on all file rows; snippet terms can select individual lines.
-- Initial sizes: nonnegative integers, bytes by default, or B/KB/MB/GB/TB using
-  powers of 1024. Support bare unit-granularity values, exact `=`/`==`, `<`, `<=`,
-  `>`, `>=`, inclusive `a..b`. Comparisons/range endpoints use exact converted
-  bytes; no unit inheritance. Reject missing/reversed bounds and signed-64-bit
-  overflow. Decimals, extra suffixes and constants are deferred.
-- Initial dates: YYYY, YYYY-MM, YYYY-MM-DD, today/yesterday; bare periods, `<`,
-  `<=`, `>`, `>=`, inclusive `a..b`. Expand periods to `[start, next_start)`.
-  Bare means within; `>=` compares to start; `>` accepts from next_start onward;
-  `<` is before start; `<=` before next_start. Ranges include both endpoint periods.
-  Reject invalid/reversed/unrepresentable boundaries. Time-of-day, locale dates,
-  durations, explicit equality operators and other constants are deferred.
-- Convert local calendar boundaries to epoch ns once per compilation using OS
-  historical timezone/DST rules, not a fixed current offset. Advance by calendar
-  days, not 86,400 seconds. Freeze today/yesterday when results open; no timer.
-  Inject clock/boundary conversion for deterministic tests.
-- Cap queries at 4096 characters/32 terms; use linear standard-library parsing.
-  Unknown metadata fails conditions on that property but remains available for
-  text-only/empty queries. Clearing the query restores captured rows.
+- Whitespace outside double quotes separates ANDed terms. Backslashes and other
+  characters are literal. Unterminated quotes are errors shown inline.
+- Caps: 4,096 characters, 32 terms. Linear standard-library parsing.
+- Clearing the query restores captured rows; column filters still apply.
 
 ### Failures, Cancellation And Limits
 
@@ -229,9 +192,9 @@ Reuse existing test modules. No full suite, clean or freeze unless asked.
 
 ## Acceptance Criteria
 
-- Panel label is **Extended**; tooltip is exactly **Everything inspired mode**.
+- Panel label is **Extended**; tooltip is exactly **Extended metadata mode**.
 - Only Extended collects extra metadata, after ripgrep, once per returned path.
-- Plain/quoted substring text and only `size:`/`dm:` functions combine with AND.
+- Plain/quoted substring text combines with typed Size/Date column filters (AND).
 - Filtering/sorting is in-memory, uses raw metadata, preserves limits/status and
   never refills results. Unknown/invalid input has the defined behavior.
 - Off mode adds no feature-specific I/O/background work. Cancellation, persistence,
@@ -251,3 +214,57 @@ Reuse existing test modules. No full suite, clean or freeze unless asked.
   projection. Final user wording is Extended / Everything inspired mode.
   Metadata is mode-only; plain text uses substrings plus size:/dm: conditions.
   No compatibility layer or full Everything grammar. Awaiting design review.
+
+### 2026_10_03 - Maintainer and Documenter Claude Opus 5.5
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Claude Opus 5.5
+- Effort: High
+- Context Window: 872K
+- Outcome: Aligned with UI Elements 001. `size:` / `dm:` clauses and raw-row
+  hooks replaced by typed Table columns; the text hook keeps substring/phrase AND.
+
+## Implementer
+
+### 2026_10_03 - Maintainer and Documenter Claude Opus 5.5
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: Claude Opus 5.5
+- Effort: High
+- Context Window: 872K
+- Outcome: Extended toggle (custom `table-columns.svg`), persisted `extended`
+  setting, `Options.extended`, 128-byte per-row budget in both admission paths,
+  one `os.stat(follow_symlinks=False)` per distinct returned path after ripgrep
+  with per-stat cancellation, `Result.metadata` / `metadata_missing`, four typed
+  columns, [query.py](../src/main/resources/base/Plugins/SearchFiles/search_files/query.py)
+  text hook and `truncated` mapping. Off mode unchanged.
+
+### 2026_10_03 - Maintainer and Documenter Claude Opus 5.5 (Static Table)
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: Claude Opus 5.5
+- Effort: High
+- Context Window: 872K
+- Outcome: Migrated to the blocking static Table: `result_row()` builds rows,
+  `completed()` captures the root before re-enabling the form, then shows
+  results modally. Validation is recorded in
+  [UI Elements 001](UIElements001.md#api-revision-2-validation).
+
+## Validation Results
+
+Commands and shared results are recorded in
+[UI Elements 001](UIElements001.md#validation-results). Specific to this task:
+
+- `fman_unittest.test_search_files`: new `ExtendedModeTest` covers the query
+  parser and caps, settings/Options validation, budget, one stat per path,
+  failure count, Stop during metadata and typed-row schema fit.
+- `SearchFilesIT.test_extended_mode_typed_results_and_text_query`: real ripgrep
+  search, toggle tooltip/icon, persistence, columns, raw values, phrase query,
+  error text and size sort. Existing layout/lock tests updated for the toggle.
+- Not run: slow-share/blocked-stat test, denied-file manual check.

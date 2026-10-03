@@ -141,7 +141,7 @@ MD5 also uses native `hashlib`, adding no dependency. Report unavailable MD5
 constructors in restricted runtimes rather than substituting another algorithm.
 
 Pin a tested BLAKE3 release/artifact hash and bundle its runtime dependencies
-and licenses privately. [Upstream wheels](https://pypi.org/project/blake3/) exist,
+and licenses privately. [Upstream wheels](https://pypi.org/project/blake3) exist,
 but Windows architecture/CPU, Python ABI and frozen-host imports must be proved.
 No system Python, runtime pip, compiler or host-environment changes are required
 of users. Missing/incompatible backends give actionable errors, never silent

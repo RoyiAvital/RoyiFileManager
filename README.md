@@ -11,7 +11,7 @@ The _File Manager_ focuses on:
  - High performance to generate **reactive** experience.
  - **Commands** through _Command Center_.
  - **Keyboard** oriented workflow.
- - Advanced search tools with **known syntax** (`fzf` / `fd` / `ripgrep`).
+ - Advanced search tools with **known syntax** (`fzf` / `fd` / `ripgrep` / `Everything`).
  - Easy **integration** of 3rd party tools (Text Editor, File Comparison, Grep Tool, File Find Tool, etc...).
  - Developed and verified on **Windows OS**.
 
@@ -43,7 +43,7 @@ Significant additions compared with `fman`:
 - **Data Safety**: Additional safeguards protect data integrity during file copies and moves, archive operations and work with file system links.
 - **Performance**: Newly written file system abstraction with an order of magnitude faster performance to deliver **reactive experience**. The system utilizes bulk NTFS/ReFS listing for a snapshot model, virtual rows and background filter/find projections. See [measured gains and remaining limits](CHANGELOG.md#performance-compared-with-081).
 - **Fuzzy Find Files**: Open the Quicksearch dialog with <kbd>Ctrl</kbd>+<kbd>F</kbd> or search recursively with <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>. Supports [`fzf`](https://github.com/junegunn/fzf) style exact terms, anchors, negation, `AND` / `OR` and match highlights, separately from the substring/glob Filter Bar. Using **Toggle find result metadata** adds metadata to results. See [Usage, Syntax and Performance](src/main/resources/base/Plugins/SearchFileFuzzy/README.md).
-- **Search Files**: Press <kbd>Alt</kbd>+<kbd>F7</kbd> for [`ripgrep`](https://github.com/burntsushi/ripgrep) based filename and content search in Glob, Literal or RegEx mode. Leave content empty to list files by name. See [Search Files Usage](src/main/resources/base/Plugins/SearchFiles/README.md).
+- **Search Files**: Press <kbd>Alt</kbd>+<kbd>F7</kbd> for [`ripgrep`](https://github.com/burntsushi/ripgrep) based filename and content search in Glob, Literal or RegEx mode. Leave content empty to list files by name. **Extended** mode adds Size and Date Modified columns with header filters. See [Search Files Usage](src/main/resources/base/Plugins/SearchFiles/README.md).
 - **Find Files with `fd`**: Press <kbd>Shift</kbd>+<kbd>F7</kbd> for [`fd`](https://github.com/sharkdp/fd) based filename search with date, size, type and traversal filters. See [Find Files Usage](src/main/resources/base/Plugins/FindFiles/README.md).
 - **Search Files with Everything**: Built in [_Everything_](https://www.voidtools.com) search engine for an instant file and content search based on pre built database. Add indexed folders with **Add folder to Everything database**, then press <kbd>Ctrl</kbd>+<kbd>E</kbd> to search them with [Everything syntax](https://www.voidtools.com/support/everything/search_syntax), highlights and metadata. Use **Manage Everything database folders** for a fully featured bookmarks manager. See [Everything Usage](src/main/resources/base/Plugins/Everything/README.md).
 - **Pane Filter / Files Filter**: Type to filter file names with globs, anchors and negation with [`fzf`](https://github.com/junegunn/fzf) inspired syntax. See [Pane Filter Usage](src/main/resources/base/Plugins/Core/README.md#pane-filter).
@@ -56,7 +56,7 @@ Significant additions compared with `fman`:
 - **Process Pane**: Run **Show the OS' processes** for a flat Name/PID list of the system running processes. Press <kbd>F8</kbd> to force terminate it. See [Process Pane Usage](src/main/resources/base/Plugins/ProcessPane/README.md).
 - **Extended Status Bar**: Press <kbd>Ctrl</kbd>+<kbd>S</kbd> to cycle through disabled, active-pane and per-pane file statistics.
 - **Sync Panes**: Select **Sync pane location** in Command Center to sync the inactive pane to the active pane's path.
-- **Checksum Files**: Generate checksum files for selected files or folders, including subfolders and verify file integrity against existing checksum files. Compatible with [Total Commander](https://www.ghisler.com/) and [Double Commander](https://github.com/doublecmd/doublecmd). See [algorithms and TC/DC compatibility status](src/main/resources/base/Plugins/ChecksumFiles/README.md).
+- **Checksum Files**: Generate checksum files for selected files or folders, including subfolders and verify file integrity against existing checksum files. Compatible with [Total Commander](https://www.ghisler.com) and [Double Commander](https://github.com/doublecmd/doublecmd). See [algorithms and TC/DC compatibility status](src/main/resources/base/Plugins/ChecksumFiles/README.md).
 - **File Hash**: Press <kbd>Ctrl</kbd>+<kbd>H</kbd> for centered checksum output; use Calculate File Hash By to pick an algorithm in QuickSearch, then view the result. See [File Hash Calculation Usage](src/main/resources/base/Plugins/CalculateFileHash/README.md).
 - **Directory Size**: Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd> to toggle progressive directory size calculation in both panes, or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Enter</kbd> for a one time total of selected directories. See [Directory Size Usage](src/main/resources/base/Plugins/Core/README.md#directory-sizes).
 - **New File**: Press <kbd>Ctrl</kbd>+<kbd>N</kbd> to create an empty file without opening an editor.

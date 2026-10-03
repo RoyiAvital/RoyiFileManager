@@ -11,9 +11,10 @@ full test suite and explicitly waived the remaining checks for task closure.
 Frozen packaging and outstanding manual checks remain unverified, not passed.
 The completion record below supersedes historical Pending/gate statements.
 
-This follows [Favorites 001](../Done/Favorites001.md) and consumes the proposed
-[UI Elements](../Plan/UIElements.md) toolkit. It supersedes that plan's Favorites
-Move Up/Move Down pilot: this manager uses Recent/Name/Path sorting, not manual order.
+This follows [Favorites 001](../Done/Favorites001.md) and consumes the shared
+[UI Elements](../UIElements.md). It supersedes the removed toolkit plan's
+Favorites Move Up/Move Down pilot: this manager uses Recent/Name/Path sorting,
+not manual order.
 
 Favorites is also the reference plug-in for exported UI components. An external
 plug-in must be able to recreate its QuickList, configuration panel, prompts,
@@ -47,7 +48,7 @@ pixels per button. Content-derived minimum widths prevent clipped labels; icon
 controls stay compact. Older names are compatibility aliases only. This changes
 layout sizing without new timers, settings, I/O or file-pane model work.
 
-Follow the revised three-component contract in [UI Elements](../Plan/UIElements.md).
+Use the shared components catalogued in [UI Elements](../UIElements.md).
 QuickList is a reusable view, not a window, and supports file-pane selection
 keys including Space and Insert. Favorites uses a frameless QuickList host and a
 separate themed Panel docked across both file panes, directly above the main
@@ -352,7 +353,7 @@ dispatch, owner validation, window construction, reuse, query seeding and focus.
 The controller's `build(window, pane)` composes public widgets; its optional
 PaneToolWindow subclass contains Favorites reaction methods, not construction or
 thread dispatch. Public services and exact signatures are documented in
-[UI Elements](../Plan/UIElements.md#plug-in-api). No private host access is permitted.
+[fman.ui](../src/main/python/fman/ui.py). No private host access is permitted.
 
 - [Shared primitives](../src/main/python/fman/impl/ui/__init__.py) provide immutable
   ListItem records, Unicode offset mapping, loader-invalidated UiOwner sessions,
@@ -1330,7 +1331,7 @@ need them to reach parity):
       `fman.impl`, `from core`, `._widget`, `._theme` and fails on any match.
       This is the mechanical form of the acceptance criterion and stops
       regressions once the imports are gone.
-- [x] Mirror this list into [UIElements.md](../Plan/UIElements.md) as the concrete
+- [x] Mirror this list into the toolkit plan (since removed) as the concrete
       Phase A export surface (it supersedes the generic "descriptors only"
       wording there, since the user has chosen to export widget components).
 
@@ -1448,8 +1449,8 @@ For the split-layout decision, retain the user's floating QuickList and bottom
 dock. A reusable Qt/native smoke checks partial-offscreen placement and activation
 and stacking recovery, including Tab/Shift+Tab and selection preservation. Native
 source smoke passed; 117 combined focused tests passed. Exact commands and
-remaining manual procedures are recorded in
-[Qt boundary validation](../Plan/UIElements.md#qt-boundary-review-validation).
+remaining manual procedures were recorded in Qt boundary validation in the
+removed toolkit history.
 The split-layout checkbox stays open for physical Alt+Tab and a second monitor
 (unavailable here). Full build suite and frozen gates remain unrun.
 
@@ -1457,7 +1458,7 @@ The split-layout checkbox stays open for physical Alt+Tab and a second monitor
 
 The shared component now transfers filter focus on navigation keys and toggles
 row selection on right-click. Favorites inherits this without adapter changes.
-[QuickList Input Revision](../Plan/UIElements.md#quicklist-input-revision) records exact
+QuickList Input Revision in the removed toolkit history recorded exact
 commands: 64 offscreen Qt tests and 9 native QuickList tests passed, including
 optional-filter regressions and existing Favorites workflows. Packaging/full-suite
 gates remain unrun.
@@ -1478,8 +1479,8 @@ gates remain unrun.
 The shared component is named Panel; Favorites uses Panel and set_panel directly.
 Old exported names remain aliases for compatibility. Adaptive sizing is provided
 by the shared TextButton/Panel layout, not Favorites-specific resize handlers.
-Exact commands and outcomes are in
-[Adaptive Panel Naming and Sizing](../Plan/UIElements.md#adaptive-panel-naming-and-sizing):
+Exact commands and outcomes were in Adaptive Panel Naming and Sizing in the
+removed toolkit history:
 111 focused tests passed; native compact/medium/wide sizing passed at
 100/150/200% DPI, including close, reopen, saved sort and button-label fit.
 Frozen packaging and the full build test suite remain unrun.
@@ -1509,8 +1510,8 @@ Frozen packaging and the full build test suite remain unrun.
 
 ### Main-Window Dock Revision
 
-Exact commands and outcomes are recorded in
-[Docking Validation](../Plan/UIElements.md#docking-validation). The 27-test dock/manager/theme
+Exact commands and outcomes were recorded in Docking Validation in the removed
+toolkit history. The 27-test dock/manager/theme
 check and final 132-test focused cross-module run passed. Native source smokes
 passed at 100/150/200% DPI, verifying status-bar adjacency, full width, pane-height
 restoration, actual close-icon clicks and reopening with saved sort. Tab and
@@ -1544,8 +1545,8 @@ transient host, Shift-toggle semantics and separate UI settings. Ctrl+B focuses
 the manager; Escape closes it. Confirmation now compares QDialogButtonBox enums
 directly. BottomPanel already had base styling; a public CSS hook now exposes it.
 
-Exact commands and outcomes are in
-[Public API Validation](../Plan/UIElements.md#public-api-validation): 192 focused tests
+Exact commands and outcomes were in Public API Validation in the removed
+toolkit history: 192 focused tests
 passed; native source smokes passed at 100/150/200% DPI. Frozen build/smoke and the
 complete build test suite were not run and remain unchecked delivery gates.
 
@@ -1660,8 +1661,8 @@ Required fixes (user decision 2026_09_13: address in this task, not deferred):
 
 ### Three-Component Revision
 
-The [UI Elements component validation](../Plan/UIElements.md#three-component-validation)
-records exact commands and results for this revision. The focused set passed
+The UI Elements component validation in the removed toolkit history
+recorded exact commands and results for this revision. The focused set passed
 125 tests under offscreen Qt; the final component/manager rerun passed 27 tests.
 Native source smoke passed at 100/150/200% DPI, including real Space selection,
 frameless hosting, sort saved on disk and restored on reopen, folder navigation,

@@ -123,9 +123,7 @@ class SearchEngineTest(TestCase):
 
 	def test_name_only_budget_fits_table_payload(self):
 		from fman.impl.ui.table_data import TableSchema
-		from fman.ui import TableRow
-		from fman.url import as_url
-		from search_files import Location
+		from search_files import COLUMNS, result_row
 		from search_files.engine import Limited
 		collector = Collector(Options('C:\\root', '', '*'))
 		with self.assertRaises(Limited):
@@ -133,11 +131,9 @@ class SearchEngineTest(TestCase):
 				collector.accept_path(str(Path('C:\\root', *(['\u754c' * 180] * 3), 'report%04d.txt' % index)))
 		self.assertGreater(len(collector.rows), 0)
 		self.assertLess(len(collector.rows), 10000)
-		rows = tuple(TableRow('123456789:%d' % index, (hit.relative_path, hit.snippet),
-			Location(as_url(hit.path), hit.path, hit.line, hit.column, hit.spans), ((), hit.spans))
-			for index, hit in enumerate(collector.rows))
-		schema = TableSchema(2, ('File Path', 'Snippet'), file_path_column=0, base_path='C:\\root')
-		self.assertEqual(rows, schema.snapshot(lambda: rows))
+		rows = tuple(result_row(hit) for hit in collector.rows)
+		schema = TableSchema(COLUMNS, base_path='C:\\root')
+		self.assertEqual(rows, schema.snapshot(rows))
 		with self.assertRaises(ValueError):
 			Collector(Options('C:\\root', '', '*')).accept_path('C:\\outside\\file.txt')
 
@@ -413,3 +409,94 @@ class SearchEngineTest(TestCase):
 		with patch('search_files.engine.resolve_engine') as resolve:
 			self.assertEqual('Stopped', runner.run().status)
 		resolve.assert_not_called()
+
+
+class ExtendedModeTest(TestCase):
+	def test_query_terms_phrases_and_errors(self):
+		from search_files.query import compile_text_filter, parse_terms
+		self.assertEqual(('report', 'final draft', 'say "hi"'), parse_terms('  Report "Final Draft" "say ""hi""" '))
+		self.assertEqual((), parse_terms('   ""  '))
+		match = compile_text_filter('report "final draft"')
+		self.assertTrue(match(('docs\\Report.txt', 'the FINAL draft is here')))
+		self.assertFalse(match(('docs\\Report.txt', 'final, draft')))
+		self.assertTrue(compile_text_filter('')(('anything',)))
+		for query, message in (('"open', 'quoted'), ('x ' * 33, '32 terms'), ('x' * 4097, '4,096')):
+			with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
+				compile_text_filter(query)
+
+	def test_extended_settings_and_options(self):
+		from search_files import DEFAULTS, settings_snapshot
+		self.assertIs(False, DEFAULTS['extended'])
+		self.assertIs(True, settings_snapshot({'extended': True})['extended'])
+		self.assertIs(False, settings_snapshot({'extended': 1})['extended'])
+		self.assertTrue(Options('C:\\root', 'x', extended=True).extended)
+		with self.assertRaises(ValueError):
+			Options('C:\\root', 'x', extended=1)
+
+	def test_extended_budget_reserves_typed_slots(self):
+		from search_files.engine import EXTENDED_ROW_BYTES
+		plain, extended = Collector(Options('C:\\root', '', '*')), Collector(Options('C:\\root', '', '*', extended=True))
+		plain.accept_path('C:\\root\\a.txt')
+		extended.accept_path('C:\\root\\a.txt')
+		self.assertEqual(plain.text_bytes + EXTENDED_ROW_BYTES, extended.text_bytes)
+
+	def test_metadata_reads_each_returned_file_once(self):
+		from search_files import engine
+		with TemporaryDirectory() as root:
+			Path(root, 'a.txt').write_text('needle\nneedle\n', encoding='utf-8')
+			Path(root, 'b.txt').write_text('needle\n', encoding='utf-8')
+			calls = []
+			original = engine.file_metadata
+			def counted(path):
+				calls.append(path)
+				return original(path)
+			with patch('search_files.engine.file_metadata', side_effect=counted):
+				result = Runner(Options(root, 'needle', '*.txt', extended=True)).run()
+			self.assertEqual('Complete', result.status, result.reason)
+			self.assertEqual(3, len(result.rows))
+			self.assertEqual(2, len(calls))
+			self.assertEqual(len(calls), len(set(calls)))
+			metadata = dict(result.metadata)
+			info = Path(root, 'a.txt').stat()
+			self.assertEqual((info.st_size, info.st_mtime_ns), metadata[str(Path(root, 'a.txt'))])
+			self.assertEqual(0, result.metadata_missing)
+			self.assertEqual((), Runner(Options(root, 'needle', '*.txt')).run().metadata)
+
+	def test_metadata_failure_and_stop(self):
+		with TemporaryDirectory() as root:
+			for name in ('a.txt', 'b.txt'):
+				Path(root, name).write_text('needle', encoding='utf-8')
+			with patch('search_files.engine.file_metadata', return_value=None):
+				result = Runner(Options(root, 'needle', '*.txt', extended=True)).run()
+			self.assertEqual('Complete', result.status)
+			self.assertEqual(2, result.metadata_missing)
+			runner = Runner(Options(root, 'needle', '*.txt', extended=True))
+			def stop_after_first(path):
+				runner.stop()
+				return (1, 2)
+			with patch('search_files.engine.file_metadata', side_effect=stop_after_first):
+				result = runner.run()
+			self.assertEqual('Stopped', result.status)
+			self.assertIn('Metadata reading stopped', result.reason)
+			self.assertEqual(2, len(result.rows))
+			self.assertEqual(1, len(result.metadata))
+
+	def test_file_metadata_rejects_folders_and_missing_paths(self):
+		from search_files.engine import file_metadata
+		with TemporaryDirectory() as root:
+			self.assertIsNone(file_metadata(root))
+			self.assertIsNone(file_metadata(str(Path(root, 'missing.txt'))))
+
+	def test_extended_rows_fit_typed_table_schema(self):
+		from fman.impl.ui.table_data import TableSchema
+		from fman.impl.ui.table_dates import LocalDates
+		from search_files import EXTENDED_COLUMNS, result_row
+		from search_files.engine import Hit
+		hit = Hit('C:\\root\\a.txt', 'a.txt', 1, 1, 0, 'needle', ((0, 6),))
+		rows = (result_row(hit, (1234, 0), True), result_row(hit, None, True))
+		schema = TableSchema(EXTENDED_COLUMNS, base_path='C:\\root', dates=LocalDates(lambda seconds: 0))
+		snapshot = schema.snapshot(rows)
+		self.assertEqual(('a.txt', '1,234 B', '1970-01-01T00:00:00Z', 'needle'), snapshot[0].cells)
+		self.assertEqual(('Unknown', 'Unknown'), snapshot[1].cells[1:3])
+		self.assertEqual(('a.txt', 1234, 0, 'needle'), snapshot[0].values)
+		self.assertEqual({0: 'file'}, schema.roles)

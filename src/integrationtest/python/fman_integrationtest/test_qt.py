@@ -44,6 +44,18 @@ class QtIT(TestCase):
 				model._committed_revision == model._revision and model._displayed is not None):
 				return
 		self.fail('Snapshot model did not settle')
+	def wait_table(self, timeout=5):
+		"""Return the newest open Table window; show_table blocks its caller until it closes."""
+		from fman.impl.ui.facade import TableWindow
+		from time import monotonic, sleep
+		deadline = monotonic() + timeout
+		while monotonic() < deadline:
+			windows = self.run_in_app(lambda: [widget for widget in QApplication.topLevelWidgets()
+				if isinstance(widget, TableWindow) and widget.alive.is_set() and widget.isVisible()])
+			if windows:
+				return windows[-1]
+			sleep(.02)
+		self.fail('No Table window opened')
 
 class QtHarnessIT(QtIT):
 	def test_completion_after_event_loop_exits(self):
@@ -4701,23 +4713,34 @@ class FindFilesIT(QtIT):
 		self.errors.report.assert_not_called()
 
 	def search(self, **values):
+		"""Start a search; return its open Table window, or None when it finished without one."""
+		from fman.impl.ui.facade import TableWindow
 		from find_files.engine import resolve_engine
 		from pathlib import Path
+		from time import monotonic, sleep
 		if not Path(resolve_engine()).is_file():
 			self.skipTest('Installed fd.exe is unavailable')
-		finished = Event()
+		self.finished = finished = Event()
 		completed = self.session.completed
 		def observed(*args):
 			try:
 				completed(*args)
 			finally:
+				self.session.completed = completed
 				finished.set()
 		self.session.completed = observed
 		self.session.panel.update(values=values)
 		self.run_in_app(self.session.action, 'search', self.session.panel.snapshot())
-		self.assertTrue(finished.wait(10))
-		self.session.completed = completed
-		self.run_in_app(QApplication.processEvents)
+		deadline = monotonic() + 10
+		while monotonic() < deadline:
+			windows = self.run_in_app(lambda: [widget for widget in QApplication.topLevelWidgets()
+				if isinstance(widget, TableWindow) and widget.alive.is_set() and widget.isVisible()])
+			if windows:
+				return windows[-1]
+			if finished.is_set():
+				return None
+			sleep(.02)
+		self.fail('Search neither finished nor showed results')
 
 	def test_date_entry_is_independent_of_current_month(self):
 		from PyQt5.QtCore import QDate
@@ -4980,69 +5003,40 @@ class FindFilesIT(QtIT):
 		from fman.url import as_url
 		from PyQt5.QtTest import QTest
 		from unittest.mock import patch
-		self.search(type='all', max_results=None)
+		window = self.search(type='all', max_results=None)
 		def check():
-			window = self.host.table_window
-			self.assertTrue(window.isVisible())
+			self.assertEqual(Qt.WindowModal, window.windowModality())
 			self.assertEqual('Find files', window.windowTitle())
-			self.assertEqual('Showing 3 / 3 entries', window.table.counts.text())
-			self.assertFalse(self.host.controls['pattern'][1].isEnabled())
-			self.session.table.filter_text = 'report'
+			self.assertIn('Showing 3 / 3 entries', window.summary.content)
+			self.assertEqual('3 / 3 rows', window.table.counts.text())
+			self.assertEqual(('Path', 'Size', 'Modified'), window.schema.headers)
+			window.table.query.setText('report')
 			QApplication.processEvents()
-			self.assertEqual('Showing 1 / 3 entries', window.table.counts.text())
+			self.assertEqual('1 / 3 rows', window.table.counts.text())
 			window.open_menu(*window.table.current_cell, window.rect().center())
 			next(action for action in window.menu.actions() if action.text() == 'Copy Path').trigger()
 			self.assertEqual(str(self.root / 'report.txt'), QApplication.clipboard().text())
-			return window
-		window = self.run_in_app(check)
+		self.run_in_app(check)
 		closed = Event()
 		self.run_in_app(window.disposed.connect, closed.set)
 		with patch('fman.fs._get_mother_fs', return_value=self.filesystem):
 			self.run_in_app(QTest.keyClick, window.table.view, Qt.Key_Return)
 			self.assertTrue(closed.wait(5))
+			self.assertTrue(self.finished.wait(5))
 			self.assertEqual(as_url(self.root / 'report.txt'), self.pane.get_file_under_cursor())
-			self.search(type='d', max_results=None)
-			window = self.run_in_app(lambda: self.host.table_window)
-			self.assertEqual('Showing 1 / 1 entries', self.run_in_app(window.table.counts.text))
+			window = self.search(type='d', max_results=None)
+			self.assertEqual('1 / 1 rows', self.run_in_app(window.table.counts.text))
 			closed.clear()
 			self.run_in_app(window.disposed.connect, closed.set)
 			self.run_in_app(QTest.keyClick, window.table.view, Qt.Key_Return)
 			self.assertTrue(closed.wait(5))
+			self.assertTrue(self.finished.wait(5))
 			self.assertEqual(as_url(self.root / 'folder'), self.pane.get_path())
 			def check_focus():
 				QApplication.processEvents()
 				focused = QApplication.focusWidget()
 				self.assertTrue(focused is self.pane._widget or self.pane._widget.isAncestorOf(focused))
 			self.run_in_app(check_focus)
-
-	def test_inactive_results_keep_form_locked(self):
-		from PyQt5.QtWidgets import QWidget
-		def other_window():
-			other = QWidget()
-			other.show()
-			other.activateWindow()
-			QApplication.processEvents()
-			return other
-		other = self.run_in_app(other_window)
-		try:
-			self.search(max_results=None)
-			def check():
-				window = self.host.table_window
-				self.assertTrue(window.pending)
-				self.assertFalse(window.isVisible())
-				self.assertFalse(self.host.controls['search'][1].isEnabled())
-				self.assertFalse(self.host.controls['pattern'][1].isEnabled())
-				self.main.activateWindow()
-				for turn in range(3):
-					QApplication.processEvents()
-				self.assertTrue(window.isVisible())
-				self.assertFalse(window.pending)
-				self.session.table.close()
-				self.assertTrue(self.host.controls['search'][1].isEnabled())
-			self.run_in_app(check)
-		finally:
-			self.run_in_app(other.close)
-			self.run_in_app(other.deleteLater)
 
 	def test_cancel_root_change_and_unload_reject_stale_results(self):
 		from find_files.engine import Result
@@ -5061,7 +5055,8 @@ class FindFilesIT(QtIT):
 				self.assertEqual(2, runner.return_value.stop.call_count)
 				self.assertTrue(self.host.controls['stop'][1].isEnabled())
 				self.session.completed(generation, Result((), 0, True, False, 'Complete', ''))
-				self.assertIsNone(self.host.table_window)
+				self.assertEqual([], [widget for widget in QApplication.topLevelWidgets()
+					if type(widget).__name__ == 'TableWindow' and widget.alive.is_set()])
 				self.session.action('search', self.session.panel.snapshot())
 				self.owner.invalidate()
 				self.assertFalse(self.session.panel.is_open)
@@ -5141,14 +5136,12 @@ class SearchFilesIT(QtIT):
 							finished.clear()
 							session.panel.update(values={'name': pattern, 'name_mode': mode, 'content': ''})
 							self.run_in_app(session.action, 'search', session.panel.snapshot())
-							self.assertTrue(finished.wait(5))
+							window = self.wait_table()
 							closed = Event()
 							def activate():
-								host = _hosts[session.panel._key()]
-								window = host.table_window
-								self.assertIsNotNone(window)
 								QApplication.processEvents()
 								self.assertTrue(window.isVisible())
+								self.assertEqual(Qt.WindowModal, window.windowModality())
 								self.assertEqual('Search files', window.windowTitle())
 								self.assertEqual(('report.txt', ''), window.table.current_cell[0].cells)
 								self.assertIn('Complete: 1 files', window.summary.content)
@@ -5166,6 +5159,7 @@ class SearchFilesIT(QtIT):
 									next(item for item in window.menu.actions() if item.text() == 'Go To').trigger()
 							self.run_in_app(activate)
 							self.assertTrue(closed.wait(5), 'Results did not close after ' + action)
+							self.assertTrue(finished.wait(5))
 							def verify():
 								QApplication.processEvents()
 								host = _hosts[session.panel._key()]
@@ -5193,10 +5187,10 @@ class SearchFilesIT(QtIT):
 			from fman import DirectoryPane, Window
 			from fman.ui import UiOwner
 			from fman.url import as_url
-			from fman.impl.ui.facade import _hosts
+			from fman.impl.ui.facade import TableWindow, _hosts
 			from fman.impl.widgets import MainWindow
 			from search_files import DEFAULTS, SearchSession
-			from PyQt5.QtCore import QPoint, pyqtSignal
+			from PyQt5.QtCore import QPoint, QTimer, pyqtSignal
 			from PyQt5.QtGui import QPalette
 			from PyQt5.QtWidgets import QWidget
 			from pathlib import Path
@@ -5263,13 +5257,13 @@ class SearchFilesIT(QtIT):
 							for record, wrapper, label in host.form.fields:
 								self.assertGreaterEqual(label.width(), label.fontMetrics().horizontalAdvance(label.text()))
 							modes = [host.controls[name][1] for name in ('name_mode', 'content_mode')]
-							buttons = [host.controls[name][1] for name in ('recursive', 'search', 'stop')]
+							buttons = [host.controls[name][1] for name in ('recursive', 'extended', 'search', 'stop')]
 							control_left = modes[0].mapTo(host.form, QPoint()).x()
 							self.assertEqual(control_left, modes[1].mapTo(host.form, QPoint()).x())
 							self.assertEqual(control_left, buttons[0].mapTo(host.form, QPoint()).x())
 							for row in [mode.group.buttons() for mode in modes] + [buttons]:
 								self.assertTrue(all(button.width() == button.height() == 28 for button in row))
-								self.assertEqual([control_left + 31 * column for column in range(3)],
+								self.assertEqual([control_left + 31 * column for column in range(len(row))],
 									[button.mapTo(host.form, QPoint()).x() for button in row])
 							centers = [button.mapTo(host.form, button.rect().center()).y() for button in buttons]
 							self.assertLessEqual(max(centers) - min(centers), 1)
@@ -5299,12 +5293,16 @@ class SearchFilesIT(QtIT):
 							self.assertEqual('C:\\next', session.root)
 							hit = SimpleNamespace(relative_path='file.cmd', snippet='cuda', path='C:\\next\\file.cmd', line=1, column=1, spans=())
 							result = SimpleNamespace(rows=(hit,), status='Complete', reason='', validated=True,
-								progress=SimpleNamespace(files=1, elapsed=0))
+								progress=SimpleNamespace(files=1, elapsed=0), metadata=(), metadata_missing=0)
+							seen = []
+							def inspect():
+								window = next(widget for widget in QApplication.topLevelWidgets()
+									if isinstance(widget, TableWindow) and widget.alive.is_set())
+								seen.append((window.schema.base, window.pane, stop.isEnabled()))
+								window.close()
+							QTimer.singleShot(0, inspect)
 							session.completed(session.generation, result)
-							self.assertTrue(stop.isEnabled())
-							self.assertEqual('C:\\next', host.table_window.schema.base)
-							self.assertIs(panes[index], host.table_window.pane)
-							session.table.close()
+							self.assertEqual([('C:\\next', panes[index], True)], seen)
 						self.assertEqual('C:\\later', session.root)
 						widgets[index].location = 'zip://archive'
 						widgets[index].location_changed.emit(widgets[index])
@@ -5321,83 +5319,10 @@ class SearchFilesIT(QtIT):
 				main.deleteLater()
 		self.run_in_app(check)
 
-	def test_inactive_window_keeps_form_locked_until_results_close(self):
-		from fman import DirectoryPane, Window
-		from fman.ui import UiOwner
-		from fman.impl.ui.facade import _hosts
-		from fman.impl.widgets import MainWindow
-		from search_files import DEFAULTS, SearchSession
-		from PyQt5.QtWidgets import QWidget
-		from pathlib import Path
-		from tempfile import TemporaryDirectory
-		from unittest.mock import Mock
-		plugin_root = Path(__file__).parents[3] / 'main/resources/base/Plugins/SearchFiles'
-		for present in (False, True):
-			with self.subTest(present=present), TemporaryDirectory() as root:
-				Path(root, 'report.txt').write_text('needle', encoding='utf-8')
-				owner = UiOwner(resource_root=str(plugin_root))
-				def prepare():
-					main = MainWindow(Mock(), Mock(), Mock(), Mock(), 'null://')
-					pane = DirectoryPane(Window(main, Mock()), QWidget(main), Mock())
-					from fman.url import as_url
-					pane.get_path = lambda: as_url(root)
-					pane.on_path_changed = Mock(return_value=lambda: None)
-					main.show()
-					session = SearchSession(owner, pane, root, dict(DEFAULTS))
-					other = QWidget()
-					other.show()
-					other.activateWindow()
-					QApplication.processEvents()
-					self.assertIs(other, QApplication.activeWindow())
-					return main, other, session
-				main, other, session = self.run_in_app(prepare)
-				finished = Event()
-				completed = session.completed
-				def observed(*args):
-					try:
-						completed(*args)
-					finally:
-						finished.set()
-				session.completed = observed
-				try:
-					session.panel.update(values={'content': 'needle'})
-					self.run_in_app(session.action, 'search', session.panel.snapshot())
-					self.assertTrue(finished.wait(10))
-					def check():
-						host = _hosts[session.panel._key()]
-						window = host.table_window
-						self.assertTrue(window.pending)
-						self.assertFalse(window.isVisible())
-						self.assertIsNone(session.runner)
-						for name in ('name', 'content', 'name_mode', 'content_mode', 'recursive', 'search'):
-							self.assertFalse(host.controls[name][1].isEnabled(), name)
-						self.assertTrue(host.controls['stop'][1].isEnabled())
-						generation = session.generation
-						session.action('search', session.panel.snapshot())
-						self.assertEqual(generation, session.generation)
-						if present:
-							main.activateWindow()
-							for turn in range(3):
-								QApplication.processEvents()
-							self.assertTrue(window.isVisible())
-							self.assertFalse(window.pending)
-							self.assertFalse(host.controls['search'][1].isEnabled())
-						window.close()
-						self.assertTrue(session.panel.is_open)
-						self.assertTrue(host.controls['search'][1].isEnabled())
-						self.assertIsNone(session.table)
-					self.run_in_app(check)
-				finally:
-					owner.invalidate()
-					self.run_in_app(other.close)
-					self.run_in_app(other.deleteLater)
-					self.run_in_app(main.close)
-					self.run_in_app(main.deleteLater)
-
 	def test_real_search_panel_table_and_close(self):
 		from fman import DirectoryPane, Window
 		from fman.ui import UiOwner
-		from fman.impl.ui.facade import _hosts
+		from fman.impl.ui.facade import TableWindow, _hosts
 		from fman.impl.widgets import MainWindow
 		from search_files import DEFAULTS, SearchSession
 		from PyQt5.QtWidgets import QWidget
@@ -5429,6 +5354,8 @@ class SearchFilesIT(QtIT):
 				finally:
 					finished.set()
 			session.completed = observed
+			open_tables = lambda: self.run_in_app(lambda: [widget for widget in QApplication.topLevelWidgets()
+				if isinstance(widget, TableWindow) and widget.alive.is_set()])
 			try:
 				def start():
 					host = _hosts[session.panel._key()]
@@ -5436,43 +5363,36 @@ class SearchFilesIT(QtIT):
 					self.assertFalse(host.activity_timer.isActive())
 					for control, name in host.icon_controls:
 						self.assertFalse(control.icon().isNull(), name)
-					self.assertIsNone(host.table_window)
 					session.panel.update(values={'name': 'report', 'name_mode': 'literal', 'content': '*needle*', 'content_mode': 'glob'})
 					session.action('search', session.panel.snapshot())
 					self.assertTrue(host.activity_timer.isActive())
 					self.assertFalse(host.controls['search'][1].isEnabled())
 				self.run_in_app(start)
+				window = self.wait_table()
+				def check_content():
+					self.assertEqual(Qt.WindowModal, window.windowModality())
+					self.assertEqual(('report.txt', 'needle here'), window.table.current_cell[0].cells)
+					self.assertIsNone(session.runner)
+					self.assertFalse(finished.is_set())
+					window.close()
+				self.run_in_app(check_content)
 				self.assertTrue(finished.wait(10))
-				self.assertIsNotNone(session.table)
-				self.assertTrue(session.table.is_open)
-				self.assertEqual(('report.txt', 'needle here'), session.table.current_cell[0].cells)
-				self.assertEqual(2, session.table.current_cell[0].value.line)
-				self.assertIsNone(session.runner)
-				previous = session.table
+				self.assertTrue(self.run_in_app(lambda: _hosts[session.panel._key()].controls['search'][1].isEnabled()))
 				finished.clear()
 				session.panel.update(values={'content': '(', 'content_mode': 'regex'})
 				self.run_in_app(session.action, 'search', session.panel.snapshot())
-				self.assertIs(previous, session.table)
-				self.assertTrue(previous.is_open)
-				self.assertFalse(finished.is_set())
-				session.table.close()
-				self.assertTrue(session.panel.is_open)
-				self.run_in_app(session.action, 'search', session.panel.snapshot())
 				self.assertTrue(finished.wait(10))
-				self.assertIsNone(session.table)
+				self.assertEqual([], open_tables())
 				session.panel.update(values={'name': '*.txt', 'name_mode': 'glob', 'content': ''})
 				finished.clear()
 				self.run_in_app(session.action, 'search', session.panel.snapshot())
-				self.assertTrue(finished.wait(10))
-				self.assertTrue(session.table.is_open)
-				self.assertEqual(('report.txt', ''), session.table.current_cell[0].cells)
-				self.assertEqual(0, session.table.current_cell[0].value.line)
+				window = self.wait_table()
 				def check_names():
-					host = _hosts[session.panel._key()]
-					self.assertIn('Complete: 1 files', host.table_window.summary.content)
-					self.assertEqual(str(Path(root, 'report.txt')), host.table_window.details.content)
+					self.assertEqual(('report.txt', ''), window.table.current_cell[0].cells)
+					self.assertIn('Complete: 1 files', window.summary.content)
+					window.close()
 				self.run_in_app(check_names)
-				session.table.close()
+				self.assertTrue(finished.wait(10))
 				session.panel.update(values={'content': 'needle', 'content_mode': 'literal'})
 				finished.clear()
 				def cancel():
@@ -5480,8 +5400,81 @@ class SearchFilesIT(QtIT):
 					session.panel.close()
 				self.run_in_app(cancel)
 				self.assertTrue(finished.wait(10))
-				self.assertIsNone(session.table)
+				self.assertEqual([], open_tables())
 				self.assertTrue(session.panel.cancelled.is_set())
+			finally:
+				owner.invalidate()
+				self.run_in_app(main.close)
+				self.run_in_app(main.deleteLater)
+
+	def test_extended_mode_typed_results_and_text_query(self):
+		from fman import DirectoryPane, Window
+		from fman.ui import UiOwner
+		from fman.impl.ui.facade import _hosts
+		from fman.impl.widgets import MainWindow
+		from search_files import DEFAULTS, SearchSession
+		from PyQt5.QtWidgets import QWidget
+		from pathlib import Path
+		from tempfile import TemporaryDirectory
+		from unittest.mock import Mock, patch
+		plugin_root = Path(__file__).parents[3] / 'main/resources/base/Plugins/SearchFiles'
+		owner = UiOwner(resource_root=str(plugin_root))
+		with TemporaryDirectory() as root:
+			Path(root, 'report.txt').write_text('final draft needle\nother needle\n', encoding='utf-8')
+			Path(root, 'notes.txt').write_text('needle', encoding='utf-8')
+			def prepare():
+				main = MainWindow(Mock(), Mock(), Mock(), Mock(), 'null://')
+				pane = DirectoryPane(Window(main, Mock()), QWidget(main), Mock())
+				from fman.url import as_url
+				pane.get_path = lambda: as_url(root)
+				pane.on_path_changed = Mock(return_value=lambda: None)
+				main.show()
+				session = SearchSession(owner, pane, root, dict(DEFAULTS))
+				host = _hosts[session.panel._key()]
+				toggle = host.controls['extended'][1]
+				self.assertTrue(toggle.toolTip().startswith('Extended metadata mode'))
+				self.assertFalse(toggle.icon().isNull())
+				self.assertFalse(toggle.isChecked())
+				return main, session
+			main, session = self.run_in_app(prepare)
+			finished = Event()
+			completed = session.completed
+			def observed(*args):
+				try:
+					completed(*args)
+				finally:
+					finished.set()
+			session.completed = observed
+			try:
+				with patch('search_files.Thread'):
+					session.panel.update(values={'content': 'needle', 'name': '*.txt', 'extended': True})
+					self.run_in_app(session.changed, session.panel.snapshot())
+				self.assertIs(True, session.settings['extended'])
+				self.run_in_app(session.action, 'search', session.panel.snapshot())
+				window = self.wait_table(10)
+				def check():
+					table = window.table
+					self.assertEqual(('File Path', 'Size', 'Date Modified', 'Snippet'), window.schema.headers)
+					self.assertEqual((0, 3), window.schema.searchable)
+					self.assertIs(False, table.truncated)
+					self.assertEqual(3, table.model.rowCount())
+					info = Path(root, 'report.txt').stat()
+					row = next(row for row in table.model.rows if row.cells[0] == 'report.txt')
+					self.assertEqual(('report.txt', info.st_size, info.st_mtime_ns, row.cells[3]), row.values)
+					self.assertEqual('{:,} B'.format(info.st_size), row.cells[1])
+					self.assertRegex(row.cells[2], r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(Z|[+-]\d{2}:\d{2})$')
+					table.query.setText('report "FINAL draft"')
+					QApplication.processEvents()
+					self.assertEqual(1, table.model.rowCount())
+					table.query.setText('"open')
+					QApplication.processEvents()
+					self.assertTrue(table.counts.text().startswith('Filter error: '))
+					table.query.clear()
+					table.set_sort(1, True)
+					self.assertEqual('report.txt', table.model.rows[0].cells[0])
+					window.close()
+				self.run_in_app(check)
+				self.assertTrue(finished.wait(10))
 			finally:
 				owner.invalidate()
 				self.run_in_app(main.close)
@@ -5489,20 +5482,36 @@ class SearchFilesIT(QtIT):
 
 
 class ChecksumFilesIT(QtIT):
-	def test_standalone_results_views_navigation_and_close(self):
+	def show_results(self, results, pane, inspect):
+		"""Run the blocking results table on Qt, inspecting and closing it from a timer."""
+		from checksum_files import commands
+		from fman.impl.ui.facade import TableWindow
+		from PyQt5.QtCore import QTimer
+		seen = []
+		def visit():
+			window = next(widget for widget in QApplication.topLevelWidgets()
+				if isinstance(widget, TableWindow) and widget.alive.is_set())
+			try:
+				inspect(window)
+				seen.append(window)
+			finally:
+				window.close()
+		QTimer.singleShot(0, visit)
+		commands.show_results(results, pane, 'C:\\checks\\checks.sha256')
+		self.assertEqual(1, len(seen))
+
+	def test_standalone_modeless_results(self):
 		def check():
 			from fman import DirectoryPane, Window
-			from fman.ui import UiOwner
-			from fman.impl.ui.facade import _hosts
 			from fman.impl.widgets import MainWindow
+			from PyQt5.QtCore import QPoint
 			from PyQt5.QtWidgets import QLineEdit
-			from checksum_files import commands, engine
-			from unittest.mock import Mock, patch
+			from checksum_files import engine
+			from unittest.mock import Mock
 			main = MainWindow(Mock(), Mock(), Mock(), Mock(), 'null://')
 			widget = QLineEdit(main)
 			main._central_layout.addWidget(widget)
 			pane = DirectoryPane(Window(main, Mock()), widget, Mock())
-			owner = UiOwner()
 			main.show()
 			main.activateWindow()
 			QApplication.processEvents()
@@ -5511,38 +5520,33 @@ class ChecksumFilesIT(QtIT):
 				results.add(engine.ResultRow(1, 'matched.txt', 'Matched', target='C:\\checks\\matched.txt'))
 				results.add(engine.ResultRow(2, 'bad\x00name', 'Invalid record', details='bad\x00record'))
 				results.complete = True
-				table = commands.ResultsTable(results.freeze(), owner, pane, 'C:\\checks\\checks.sha256')
-				handle = table.show()
-				commands._tables[pane] = table
-				host = next(host for host in _hosts.values() if host.owner is owner)
-				self.assertEqual(Qt.NonModal, host.windowModality())
-				self.assertIsNone(main._panel_dock)
-				self.assertEqual(('2',), tuple(row.id for row in table.rows))
-				self.assertEqual(results.summary, host.summary.content)
-				self.assertEqual('1 results loaded', host.table.counts.text())
-				self.assertIsNone(host.schema.resolver(table.rows[0], 0))
-				with patch('builtins.open', side_effect=AssertionError('Table action performed I/O')):
-					table.menu(table.rows[0], 0)[0].callback(table.rows[0], 0)
-				self.assertEqual(('1', '2'), tuple(row.id for row in table.rows))
-				self.assertEqual('2 results loaded', host.table.counts.text())
-				self.assertEqual('C:\\checks\\matched.txt', host.schema.resolver(table.rows[0], 0))
-				self.assertNotIn('\x00', table.get_details(table.rows[1], 0))
-				table.switch(False)
-				self.assertEqual(1, len(table.rows))
-				handle.close()
-				self.assertTrue(table.closed)
-				self.assertEqual({}, table.targets)
-				self.assertNotIn(pane, commands._tables)
-				table.switch(True)
-				self.assertEqual((), table.rows)
+				results = results.freeze()
+				def inspect(window):
+					self.assertEqual(Qt.NonModal, window.windowModality())
+					self.assertIsNone(QApplication.activeModalWidget())
+					self.assertIsNone(main._panel_dock)
+					self.assertEqual(results.summary, window.summary.content)
+					self.assertEqual('2 / 2 rows', window.table.counts.text())
+					self.assertEqual(('Relative Path', 'Status', 'Expected', 'Actual', 'Details'), window.schema.headers)
+					rows = window.table.model.rows
+					self.assertEqual('matched.txt', rows[0].cells[0])
+					self.assertTrue(all('\x00' not in cell for row in rows for cell in row.cells))
+					self.assertEqual('C:\\checks\\matched.txt', window.schema.target(rows[0], 0))
+					window.table.view.setCurrentIndex(window.table.model.index(0, 0))
+					window.open_menu(rows[0], 0, QPoint(10, 10))
+					self.assertEqual(['Copy Path', 'Go To', 'Filter This Column...', 'Clear All Filters'],
+						[action.text() for action in window.menu.actions() if not action.isSeparator()])
+					window.close_menu()
+					window.open_menu(None, -1, QPoint(10, 10))
+					self.assertIsNone(window.menu)
+				self.show_results(results, pane, inspect)
 			finally:
-				owner.invalidate()
 				main.close()
 				main.deleteLater()
 		self.run_in_app(check)
 
 	def test_empty_truncated_and_maximum_snapshots(self):
-		from checksum_files import commands, engine
+		from checksum_files import engine
 		prepared = []
 		for count in (0, 9999, 10000):
 			results = engine.Results()
@@ -5552,12 +5556,7 @@ class ChecksumFilesIT(QtIT):
 			prepared.append(results.freeze())
 		def check():
 			from fman import DirectoryPane, Window
-			from fman.ui import UiOwner
-			from fman.impl.ui.facade import _hosts
 			from fman.impl.widgets import MainWindow
-			from PyQt5.QtCore import QPoint
-			from PyQt5.QtGui import QContextMenuEvent
-			from PyQt5.QtTest import QTest
 			from PyQt5.QtWidgets import QLineEdit
 			from time import perf_counter
 			from unittest.mock import Mock
@@ -5565,59 +5564,36 @@ class ChecksumFilesIT(QtIT):
 			widget = QLineEdit(main)
 			main._central_layout.addWidget(widget)
 			pane = DirectoryPane(Window(main, Mock()), widget, Mock())
-			owner = UiOwner()
 			main.show()
 			try:
 				for results in prepared:
-					table = commands.ResultsTable(results, owner, pane, 'C:\\checks\\checks.sha256')
-					handle = table.show()
-					self.assertEqual((), table.rows)
-					host = next(host for host in _hosts.values() if host.owner is owner)
-					host.show()
-					QApplication.processEvents()
-					self.assertEqual(results.summary, host.summary.content)
-					self.assertEqual('', host.details.content)
-					self.assertEqual('0 results loaded', host.table.counts.text())
-					view = host.table.view
-					position = QPoint(10, 10)
-					QApplication.sendEvent(view.viewport(), QContextMenuEvent(QContextMenuEvent.Mouse, position, view.viewport().mapToGlobal(position)))
-					if results.total == 9999:
-						self.assertEqual(['Show all results', 'Show only mismatches'], [action.text() for action in host.menu.actions()])
-						host.menu.setActiveAction(host.menu.actions()[0])
-						started = perf_counter()
-						QTest.keyClick(host.menu, Qt.Key_Return)
-						elapsed = perf_counter() - started
-						self.assertEqual(9999, len(table.rows))
-						self.assertEqual('9999 results loaded', host.table.counts.text())
-						print('Checksum Table 9,999-row refresh: %.3f s' % elapsed)
-						host.set_filter('no-such-checksum-file')
-						deadline = perf_counter() + 3
-						while host.table.model.rowCount() and perf_counter() < deadline:
-							QApplication.processEvents()
-						self.assertIsNone(host.table.current_cell)
-						QApplication.sendEvent(view.viewport(), QContextMenuEvent(QContextMenuEvent.Keyboard, position))
-						host.menu.setActiveAction(host.menu.actions()[1])
-						QTest.keyClick(host.menu, Qt.Key_Return)
-						self.assertEqual((), table.rows)
-					elif results.total == 10000:
-						self.assertIsNone(host.menu)
-						self.assertIn('Show all unavailable', table.summary)
-					else:
-						self.assertEqual(2, len(host.menu.actions()))
-						host.menu.setActiveAction(host.menu.actions()[0])
-						QTest.keyClick(host.menu, Qt.Key_Return)
-						self.assertEqual((), table.rows)
-					QApplication.processEvents()
-					image = host.grab().toImage()
-					self.assertFalse(image.isNull())
-					self.assertGreater(image.width(), 400)
-					self.assertGreater(len({image.pixelColor(horizontal, vertical).rgba() for horizontal in range(0, image.width(), 30) for vertical in range(0, image.height(), 30)}), 1)
-					handle.close()
+					expected = 0 if results.all_rows is None else len(results.all_rows)
+					def inspect(window):
+						QApplication.processEvents()
+						self.assertEqual(results.summary, window.summary.content)
+						self.assertEqual(expected, window.table.model.rowCount())
+						truncated = ' \u00b7 truncated' if expected < results.total else ''
+						self.assertEqual('%d / %d rows%s' % (expected, expected, truncated), window.table.counts.text())
+						if results.total == 10000:
+							self.assertIn('Showing problems only', results.summary)
+						if expected:
+							started = perf_counter()
+							window.table.query.setText('no-such-checksum-file')
+							deadline = perf_counter() + 3
+							while window.table.model.rowCount() and perf_counter() < deadline:
+								QApplication.processEvents()
+							print('Checksum Table %s-row filter: %.3f s' % (format(expected, ','), perf_counter() - started))
+							self.assertIsNone(window.table.current_cell)
+						image = window.grab().toImage()
+						self.assertFalse(image.isNull())
+						self.assertGreater(image.width(), 400)
+						self.assertGreater(len({image.pixelColor(horizontal, vertical).rgba() for horizontal in range(0, image.width(), 30) for vertical in range(0, image.height(), 30)}), 1)
+					self.show_results(results, pane, inspect)
 			finally:
-				owner.invalidate()
 				main.close()
 				main.deleteLater()
 		self.run_in_app(check)
+
 
 class TableIT(QtIT):
 	def test_panel_escape_returns_focus_to_last_active_pane(self):
@@ -5662,75 +5638,6 @@ class TableIT(QtIT):
 						main.deleteLater()
 		self.run_in_app(check)
 
-	def test_close_callback_order_and_live_focus_targets(self):
-		def check():
-			from fman import DirectoryPane, Window
-			from fman.ui import Action, TableRow, TextField, UiOwner, show_panel, show_table
-			from fman.impl.ui.facade import _hosts
-			from fman.impl.widgets import MainWindow
-			from PyQt5 import sip
-			from PyQt5.QtWidgets import QLineEdit
-			from unittest.mock import Mock, patch
-			for modal in (False, True):
-				for action in ('ordinary', 'navigate', 'close_panel', 'replace_panel', 'replace_table', 'invalidate', 'delete_pane', 'close_main'):
-					with self.subTest(modal=modal, action=action):
-						main = MainWindow(Mock(), Mock(), Mock(), Mock(), 'null://')
-						pane_widget = QLineEdit(main)
-						main._central_layout.addWidget(pane_widget)
-						pane = DirectoryPane(Window(main, Mock()), pane_widget, Mock())
-						owner = UiOwner()
-						main.show()
-						main.activateWindow()
-						QApplication.processEvents()
-						try:
-							panel = show_panel(owner=owner, pane=pane, rows=((TextField('name', 'Name'), Action('stop', 'Stop')),))
-							host = _hosts[panel._key()]
-							panel.update(enabled={'name': False})
-							completed = []
-							def callback():
-								completed.append(True)
-								panel.update(enabled={'name': True})
-								if action == 'close_panel':
-									panel.close()
-								elif action == 'replace_panel':
-									show_panel(owner=owner, pane=pane, rows=((TextField('new', 'Replacement'),),))
-								elif action == 'replace_table':
-									show_table(owner=owner, panel=panel, get_rows=lambda: (TableRow('new', ('Replacement',)),),
-										num_columns=1, columns_header=('New',), modal=modal)
-								elif action == 'invalidate':
-									owner.invalidate()
-								elif action == 'delete_pane':
-									sip.delete(pane_widget)
-								elif action == 'close_main':
-									main.close()
-							handle = show_table(owner=owner, panel=panel, get_rows=lambda: (TableRow('one', ('File',)),),
-								num_columns=1, columns_header=('Name',), modal=modal, on_closed=callback)
-							window = host.table_window
-							window.navigated = action != 'ordinary'
-							original_focus = host.focus_panel
-							def focus_panel():
-								self.assertEqual([True], completed)
-								self.assertTrue(host.controls['name'][1].isEnabled())
-								original_focus()
-							with patch.object(host, 'focus_panel', side_effect=focus_panel) as focus:
-								handle.close()
-								self.assertEqual([True], completed)
-								self.assertEqual(int(action == 'ordinary'), focus.call_count)
-								for turn in range(3):
-									QApplication.processEvents()
-								if action in ('ordinary', 'navigate'):
-									self.assertIs(pane_widget if action == 'navigate' else host.controls['name'][1], QApplication.focusWidget())
-								elif action == 'replace_table':
-									self.assertTrue(host.table_window.isVisible())
-									self.assertTrue(host.table_window.isAncestorOf(QApplication.focusWidget()))
-								elif action == 'replace_panel':
-									self.assertTrue(main._panel_dock.isAncestorOf(QApplication.focusWidget()))
-						finally:
-							owner.invalidate()
-							main.close()
-							main.deleteLater()
-		self.run_in_app(check)
-
 	def test_choice_exclusivity_callbacks_and_atomic_updates(self):
 		def check():
 			from fman import DirectoryPane, Window
@@ -5770,118 +5677,285 @@ class TableIT(QtIT):
 				main.deleteLater()
 		self.run_in_app(check)
 
-	def test_custom_menu_stale_action_and_atomic_refresh(self):
+	def test_show_table_blocks_caller_until_closed(self):
+		from fman.ui import TableColumn, TableRow, show_table
+		from PyQt5.QtCore import QTimer
+		from PyQt5.QtWidgets import QWidget
+		from threading import Thread
+		from unittest.mock import patch
+		main = self.run_in_app(QWidget)
+		self.run_in_app(main.show)
+		columns, rows = (TableColumn('Name'),), (TableRow(('one',)),)
+		try:
+			with patch('fman._get_ui', return_value=main):
+				for modal in (True, False):
+					with self.subTest(modal=modal, caller='worker'):
+						returned = Event()
+						worker = Thread(target=lambda: (show_table(columns=columns, rows=rows, modal=modal), returned.set()))
+						worker.start()
+						window = self.wait_table()
+						self.assertEqual(Qt.WindowModal if modal else Qt.NonModal, self.run_in_app(window.windowModality))
+						self.assertFalse(returned.wait(.2))
+						self.run_in_app(window.close)
+						self.assertTrue(returned.wait(5))
+						worker.join(5)
+				with self.subTest(caller='qt'):
+					def nested():
+						seen = []
+						def close():
+							from fman.impl.ui.facade import TableWindow
+							window = next(widget for widget in QApplication.topLevelWidgets()
+								if isinstance(widget, TableWindow) and widget.alive.is_set())
+							seen.append(window.table.model.rowCount())
+							QTest.keyClick(window.table.view, Qt.Key_Escape)
+						QTimer.singleShot(0, close)
+						self.assertIsNone(show_table(columns=columns, rows=rows))
+						return seen
+					from PyQt5.QtTest import QTest
+					self.assertEqual([1], self.run_in_app(nested))
+				for invalid in (dict(text_filter='exact'), dict(text_filter=1), dict(truncated=1), dict(columns=()),
+						dict(columns=('Name',)), dict(modal=1), dict(rows=lambda: rows), dict(rows=(('one',),)), dict(owner=None)):
+					with self.subTest(invalid=invalid), self.assertRaises((TypeError, ValueError)):
+						show_table(**dict(dict(columns=columns, rows=rows), **invalid))
+		finally:
+			self.run_in_app(main.close)
+			self.run_in_app(main.deleteLater)
+
+	def test_accept_returns_visible_input_positions(self):
+		from fman.ui import TableColumn, TableRow, show_table
+		from fman.impl.ui.facade import TableWindow
+		from PyQt5.QtCore import QTimer
+		from PyQt5.QtTest import QTest
+		from PyQt5.QtWidgets import QWidget
+		from unittest.mock import patch
+		main = self.run_in_app(QWidget)
+		self.run_in_app(main.show)
+		columns = (TableColumn('Name', 'file_name'), TableColumn('Size', 'numeric', unit='bytes'))
+		shared = TableRow(('beta.txt', 5))
+		rows = (TableRow(('gamma.jpg', 30)), shared, TableRow(('alpha.jpg', 10)), shared, TableRow(('delta.png', None)))
+		def run(interact, **options):
+			def nested():
+				def act():
+					window = next(widget for widget in QApplication.topLevelWidgets()
+						if isinstance(widget, TableWindow) and widget.alive.is_set())
+					interact(window)
+				QTimer.singleShot(0, act)
+				return show_table(columns=columns, rows=rows, base_path='C:\\root', **options)
+			return self.run_in_app(nested)
+		def settle(window):
+			for turn in range(20):
+				QApplication.processEvents()
+				if window.table.settled:
+					return
+		def text_and_sort(window):
+			button = window.findChild(QWidget, 'table-accept')
+			self.assertEqual('Rename (5)', button.text())
+			self.assertTrue(button.isEnabled())
+			window.table.set_sort(0, True)
+			window.table.query.setText('jpg')
+			settle(window)
+			self.assertEqual('Rename (2)', button.text())
+			QTest.keyClick(window.table.query, Qt.Key_Return, Qt.ControlModifier)
+		def column_filter(window):
+			from fman.impl.ui.table_filters import compile_filter
+			window.table.set_column_filter(1, compile_filter(columns[1], 1, '<=', '5', '', 'B', None))
+			settle(window)
+			window.table.view.setFocus()
+			QTest.keyClick(window.table.view, Qt.Key_Enter, Qt.ControlModifier)
+		def nothing_visible(window):
+			window.table.query.setText('no such row')
+			settle(window)
+			button = window.findChild(QWidget, 'table-accept')
+			self.assertFalse(button.isEnabled())
+			window.accept_rows()
+			self.assertTrue(window.alive.is_set())
+			QTest.keyClick(window.table.view, Qt.Key_Escape)
+		def cancel(window):
+			next(button for button in window.findChildren(QWidget) if getattr(button, 'text', lambda: '')() == 'Cancel').click()
+		try:
+			with patch('fman._get_ui', return_value=main):
+				# Input order, not the descending display sort; both copies of a shared row.
+				self.assertEqual((0, 2), run(text_and_sort, accept='Rename'))
+				self.assertEqual((1, 3), run(column_filter, accept='Rename', modal=False))
+				self.assertIsNone(run(nothing_visible, accept='Rename'))
+				self.assertIsNone(run(cancel, accept='Rename'))
+				self.assertIsNone(run(lambda window: self.assertIsNone(window.findChild(QWidget, 'table-accept')) or window.close()))
+				for invalid in ('', '   ', 1, 'x' * 65):
+					with self.subTest(accept=invalid), self.assertRaises((TypeError, ValueError)):
+						show_table(columns=columns, rows=rows, accept=invalid)
+		finally:
+			self.run_in_app(main.close)
+			self.run_in_app(main.deleteLater)
+
+	def test_typed_columns_header_icons_filter_menu_and_sort(self):
 		def check():
-			from fman.ui import TableAction, TableRow, UiOwner, show_table
-			from fman.impl.ui.facade import _hosts
-			from PyQt5.QtCore import QPoint, QThread
+			import gc
+			from fman.ui import TableColumn, TableRow
+			from fman.impl.ui.facade import open_table
+			from PyQt5.QtCore import QPoint
+			from PyQt5.QtTest import QTest
 			from PyQt5.QtWidgets import QWidget
 			from unittest.mock import patch
-			main, owner, calls = QWidget(), UiOwner(), []
-			rows = [TableRow('one', ('One', 'Two', 'Three'))]
-			main.show()
-			main.activateWindow()
-			QApplication.processEvents()
-			try:
-				with patch('fman._get_ui', return_value=main):
-					handle = show_table(owner=owner, get_rows=lambda: rows, num_columns=3,
-						columns_header=('A', 'B', 'C'), modal=False,
-						get_menu=lambda row, column: (TableAction('inspect', 'Inspect',
-							lambda row, column: calls.append((row.id, column, QThread.currentThread()))),))
-				window = next(host for host in _hosts.values() if host.owner is owner)
-				window.open_menu(*handle.current_cell, QPoint(10, 10))
-				action = window.menu.actions()[0]
-				action.trigger()
-				self.assertEqual([('one', 0, QApplication.instance().thread())], calls)
-				window.table.view.setCurrentIndex(window.table.model.index(0, 1))
-				window.table.view.setCurrentIndex(window.table.model.index(0, 0))
-				action.trigger()
-				self.assertEqual(1, len(calls))
-				rows[:] = [TableRow('one', ('Replacement', 'Two', 'Three'))]
-				handle.refresh()
-				action.trigger()
-				self.assertEqual(1, len(calls))
-				rows.append(rows[0])
-				with self.assertRaises(ValueError):
-					handle.refresh()
-				self.assertEqual('Replacement', handle.current_cell[0].cells[0])
-			finally:
-				owner.invalidate()
-				main.close()
-				main.deleteLater()
-		self.run_in_app(check)
-
-	def test_background_menu_is_opt_in_and_rejects_stale_actions(self):
-		def check():
-			from fman.ui import TableAction, TableRow, UiOwner, show_table
-			from fman.impl.ui.facade import _hosts
-			from PyQt5.QtCore import QPoint, QThread
-			from PyQt5.QtGui import QContextMenuEvent
-			from PyQt5.QtWidgets import QWidget
-			from unittest.mock import Mock, patch
+			columns = (TableColumn('Path', 'file_path'), TableColumn('Size', 'numeric', unit='bytes'),
+				TableColumn('Modified', 'date'), TableColumn('Note', filterable=False))
+			rows = (TableRow(('file10.txt', 2048, 0, 'a')),
+				TableRow(('file2.txt', None, None, 'b')),
+				TableRow(('file1.txt', 10, 86400 * 10 ** 9, 'c')))
 			main = QWidget()
 			main.show()
 			main.activateWindow()
 			QApplication.processEvents()
 			try:
-				for enabled in (False, True):
-					owner, calls = UiOwner(), []
-					rows = [TableRow('one', ('C:\\checks\\one.txt',))]
-					row_menu, resolver = Mock(return_value=()), Mock(return_value=None)
-					background = lambda: (TableAction('all', 'Show all results',
-						lambda row, column: calls.append((row, column, QThread.currentThread()))),)
-					try:
-						with patch('fman._get_ui', return_value=main):
-							handle = show_table(owner=owner, get_rows=lambda: rows, num_columns=1,
-								columns_header=('Path',), modal=False, file_path_column=0,
-								resolve_path=resolver, get_menu=row_menu,
-								get_background_menu=background if enabled else None)
-						window = next(host for host in _hosts.values() if host.owner is owner)
-						window.show()
-						QApplication.processEvents()
-						view = window.table.view
-						position = view.viewport().rect().bottomRight() - QPoint(4, 4)
-						self.assertFalse(view.indexAt(position).isValid())
-						QApplication.sendEvent(view.viewport(), QContextMenuEvent(QContextMenuEvent.Mouse, position, view.viewport().mapToGlobal(position)))
-						row_menu.assert_not_called()
-						resolver.assert_not_called()
-						if not enabled:
-							self.assertIsNone(window.menu)
-							continue
-						self.assertEqual(['Show all results'], [action.text() for action in window.menu.actions()])
-						action = window.menu.actions()[0]
-						action.trigger()
-						self.assertEqual([(None, -1, QApplication.instance().thread())], calls)
-						handle.refresh()
-						action.trigger()
-						self.assertEqual(1, len(calls))
-						rows.clear()
-						handle.refresh()
-						QApplication.sendEvent(view.viewport(), QContextMenuEvent(QContextMenuEvent.Keyboard, QPoint()))
-						action = window.menu.actions()[0]
-						window.set_filter('missing')
-						action.trigger()
-						self.assertEqual(1, len(calls))
-						QApplication.sendEvent(view.viewport(), QContextMenuEvent(QContextMenuEvent.Keyboard, QPoint()))
-						action = window.menu.actions()[0]
-						owner.invalidate()
-						action.trigger()
-						self.assertEqual(1, len(calls))
-						QApplication.processEvents()
-						self.assertIsNone(window.get_background_menu)
-					finally:
-						owner.invalidate()
+				with patch('fman._get_ui', return_value=main):
+					window = open_table(columns=columns, rows=rows, base_path='C:\\root', modal=False)
+				QApplication.processEvents()
+				table = window.table
+				header = table.view.horizontalHeader()
+				model = table.model
+				order = lambda: ''.join(model.rows[index].cells[3] for index in range(model.rowCount()))
+				self.assertIsNone(header.icon_rects(3)[1])
+				self.assertEqual(frozenset({1}), model.right_aligned)
+				filter_rect = header.icon_rects(1)[1]
+				QTest.mouseClick(header.viewport(), Qt.LeftButton, pos=filter_rect.center())
+				QApplication.processEvents()
+				self.assertIsNone(table.sort_column)
+				menu = table.filter_menu
+				self.assertIsNotNone(menu)
+				self.assertEqual('table-filter-menu', menu.objectName())
+				editor = menu.actions()[0].defaultWidget()
+				labels = [action.text() for action in menu.actions()]
+				for label in ('Apply Filter', 'Clear Filter', 'Clear All Filters', 'Sort Ascending', 'Sort Descending', 'Original Order'):
+					self.assertIn(label, labels)
+				apply = next(action for action in menu.actions() if action.text() == 'Apply Filter')
+				self.assertFalse(apply.icon().isNull())
+				self.assertFalse(apply.isEnabled())
+				editor.operator.setCurrentIndex(editor.operator.findData('>='))
+				editor.first.setText('1')
+				editor.unit.setCurrentIndex(editor.unit.findData('KiB'))
+				self.assertTrue(apply.isEnabled())
+				apply.trigger()
+				menu.close()
+				# Closed menus await deferred deletion; collecting their closure cycles must not crash.
+				gc.collect()
+				QApplication.processEvents()
+				self.assertEqual('a', order())
+				self.assertIn('1 column filter', table.counts.text())
+				self.assertEqual('Filtered: Size ≥ 1 KiB', table.header_tooltip(1, True))
+				table.set_column_filter(1, None)
+				self.assertEqual('abc', order())
+				label_point = QPoint(header.sectionViewportPosition(1) + 10, header.height() // 2)
+				QTest.mouseClick(header.viewport(), Qt.LeftButton, pos=label_point)
+				self.assertEqual((1, False), (table.sort_column, table.sort_descending))
+				self.assertEqual('cab', order())
+				self.assertIsNotNone(header.icon_rects(1)[0])
+				QTest.mouseClick(header.viewport(), Qt.LeftButton, pos=label_point)
+				self.assertEqual('acb', order())
+				table.set_sort(2, True)
+				self.assertEqual('cab', order())
+				table.set_sort(0)
+				self.assertEqual('cba', order())
+				table.set_sort(None)
+				self.assertEqual('abc', order())
+				table.view.setCurrentIndex(model.index(0, 2))
+				table.view.setFocus()
+				QApplication.processEvents()
+				QTest.keyClick(table.view, Qt.Key_Down, Qt.AltModifier)
+				QApplication.processEvents()
+				self.assertIsNotNone(table.filter_menu)
+				editor = table.filter_menu.actions()[0].defaultWidget()
+				self.assertEqual('Filter Modified', editor.findChild(QWidget, 'table-filter-title').text())
+				# The popup is sized once; Between must fit without squeezing the operator or fields.
+				width = editor.sizeHint().width()
+				editor.operator.setCurrentIndex(editor.operator.findData('between'))
+				QApplication.processEvents()
+				self.assertEqual(width, editor.sizeHint().width())
+				self.assertGreaterEqual(editor.operator.width(), editor.operator.sizeHint().width())
+				self.assertGreaterEqual(editor.second.width(), editor.second.minimumWidth())
+				self.assertLessEqual(editor.second.geometry().right(), editor.width())
+				editor.operator.setCurrentIndex(editor.operator.findData('missing'))
+				editor.submitted.emit()
+				QApplication.processEvents()
+				self.assertEqual('b', order())
+				table.view.setCurrentIndex(model.index(0, 1))
+				window.open_menu(model.rows[0], 1, QPoint(10, 10))
+				labels = [action.text() for action in window.menu.actions() if not action.isSeparator()]
+				self.assertEqual(['Copy Value', 'Filter This Column...', 'Clear All Filters'], labels)
+				window.menu.actions()[-1].trigger()
+				self.assertEqual('abc', order())
+				window.close_menu()
+				table.view.setCurrentIndex(model.index(0, 0))
+				window.open_menu(model.rows[0], 0, QPoint(10, 10))
+				labels = [action.text() for action in window.menu.actions() if not action.isSeparator()]
+				self.assertEqual(['Copy Path', 'Go To', 'Filter This Column...', 'Clear All Filters'], labels)
+				window.close_menu()
+				gc.collect()
+				QApplication.processEvents()
+				window.close()
 			finally:
 				main.close()
 				main.deleteLater()
 		self.run_in_app(check)
 
-	def test_real_navigation_adapter_modal_and_modeless(self):
-		from fman.ui import TableRow, UiOwner, show_table
+	def test_text_filter_hook_and_truncation_note(self):
+		def check():
+			from fman.ui import TableColumn, TableRow
+			from fman.impl.ui.facade import open_table
+			from PyQt5.QtWidgets import QWidget
+			from unittest.mock import patch
+			columns = (TableColumn('Path', 'file_path'), TableColumn('Size', 'numeric'), TableColumn('Note'))
+			rows = (TableRow(('alpha.txt', 1, 'Final draft')), TableRow(('beta.txt', 2, 'other')))
+			compiled, received = [], []
+			def compile_text_filter(query):
+				compiled.append(query)
+				if query == 'bad':
+					raise ValueError('Bad query.')
+				def predicate(cells):
+					received.append(cells)
+					return 1 if query == 'int' else query in cells[1].casefold()
+				return predicate
+			main = QWidget()
+			try:
+				with patch('fman._get_ui', return_value=main):
+					window = open_table(columns=columns, rows=rows, base_path='C:\\root', modal=False,
+						text_filter=compile_text_filter, truncated=True)
+				table = window.table
+				self.assertEqual('2 / 2 rows \u00b7 truncated', table.counts.text())
+				table.query.setText('draft')
+				QApplication.processEvents()
+				self.assertEqual(1, table.model.rowCount())
+				self.assertEqual(['draft'], compiled)
+				self.assertEqual(('alpha.txt', 'Final draft'), received[0])
+				table.project()
+				self.assertEqual(['draft'], compiled)
+				for query, message in (('bad', 'Filter error: Bad query.'), ('int', 'Filter error: The text filter must return True or False.')):
+					table.query.setText(query)
+					QApplication.processEvents()
+					self.assertEqual(message, table.counts.text())
+					self.assertEqual(0, table.model.rowCount())
+				window.close()
+				for text_filter, visible in ((None, False), ('substring', True)):
+					with patch('fman._get_ui', return_value=main):
+						window = open_table(columns=columns, rows=rows, modal=False, text_filter=text_filter)
+					table = window.table
+					self.assertEqual(visible, not table.query.isHidden())
+					self.assertEqual('2 / 2 rows', table.counts.text())
+					if visible:
+						table.query.setText('ina')
+						self.assertEqual(1, table.model.rowCount())
+						table.query.setText('fnl')
+						self.assertEqual(0, table.model.rowCount())
+					window.close()
+			finally:
+				main.close()
+				main.deleteLater()
+		self.run_in_app(check)
+
+	def test_real_navigation_modal_closes_and_modeless_stays(self):
+		from fman.ui import TableColumn, TableRow
 		from fman.impl.navigation import current_request
-		from fman.impl.ui.facade import _hosts
+		from fman.impl.ui.facade import open_table
 		from fman.url import as_url
-		from PyQt5.QtWidgets import QWidget
+		from PyQt5.QtWidgets import QLineEdit, QWidget
 		from pathlib import Path
 		from tempfile import TemporaryDirectory
 		from unittest.mock import Mock
@@ -5889,7 +5963,7 @@ class TableIT(QtIT):
 			with self.subTest(modal=modal), TemporaryDirectory() as root:
 				path = Path(root, 'file.txt')
 				path.write_text('content', encoding='utf-8')
-				owner, finished, calls = UiOwner(), Event(), []
+				finished, calls = Event(), []
 				def dispatch(command, args):
 					calls.append((command, args))
 					request = current_request()
@@ -5898,35 +5972,36 @@ class TableIT(QtIT):
 					request.finish('success')
 				def prepare():
 					main = QWidget()
+					main._panel_dock = None
 					pane = Mock()
 					pane.window._widget = main
+					pane._widget = QLineEdit(main)
 					pane.on_closed.return_value = lambda: None
 					pane.run_command.side_effect = dispatch
 					main.show()
 					main.activateWindow()
 					QApplication.processEvents()
-					handle = show_table(owner=owner, pane=pane, get_rows=lambda: (
-						TableRow('one', ('file.txt', root, 'Plain')),), num_columns=3,
-						columns_header=('File', 'Folder', 'Text'), file_path_column=0,
-						folder_path_column=1, base_path=root, modal=modal)
-					window = next(host for host in _hosts.values() if host.owner is owner)
+					window = open_table(columns=(TableColumn('File', 'file_path'), TableColumn('Folder', 'folder_path'), TableColumn('Text')),
+						rows=(TableRow(('file.txt', root, 'Plain')),), pane=pane, base_path=root, modal=modal)
 					window.disposed.connect(finished.set)
 					window.busy_changed.connect(lambda busy: None if busy else finished.set())
 					column = 0 if modal else 1
 					window.table.view.setCurrentIndex(window.table.model.index(0, column))
 					window.activate_cell(*window.table.current_cell)
 					self.assertTrue(window.busy)
-					return main, handle, window
-				main, handle, window = self.run_in_app(prepare)
+					return main, pane, window
+				main, pane, window = self.run_in_app(prepare)
 				try:
 					self.assertTrue(finished.wait(3))
-					self.run_in_app(lambda: None)
+					self.run_in_app(QApplication.processEvents)
 					self.assertEqual([('open_directory', {'url': as_url(str(path) if modal else root)})], calls)
-					self.assertEqual(not modal, handle.is_open)
-					if handle.is_open:
+					self.assertEqual(not modal, self.run_in_app(window.alive.is_set))
+					if not modal:
 						self.assertFalse(self.run_in_app(lambda: window.busy))
+						self.assertTrue(self.run_in_app(window.isVisible))
+						self.assertIs(pane._widget, self.run_in_app(QApplication.focusWidget))
+						self.run_in_app(window.close)
 				finally:
-					owner.invalidate()
 					self.run_in_app(main.close)
 					self.run_in_app(main.deleteLater)
 
@@ -5934,7 +6009,7 @@ class TableIT(QtIT):
 		def check():
 			from pathlib import Path
 			from fman.impl.ui.table import Table
-			from fman.impl.ui.table_data import TableRow, TableSchema
+			from fman.impl.ui.table_data import TableColumn, TableRow, TableSchema
 			from PyQt5.QtGui import QColor, QPalette, QStandardItem, QStandardItemModel
 			from PyQt5.QtWidgets import QTableView
 			styles = Path(__file__).parents[3] / 'main/resources/base/styles.qss'
@@ -5951,7 +6026,7 @@ class TableIT(QtIT):
 				pane.show()
 				QApplication.processEvents()
 				before = pane.grab().toImage()
-				table = Table(TableSchema(2, ('One', 'Two')), (TableRow('row', ('Path', 'Text')),))
+				table = Table(TableSchema((TableColumn('One'), TableColumn('Two'))), (TableRow(('Path', 'Text')),))
 				table.setStyleSheet(styles.read_text(encoding='utf-8'))
 				self.assertEqual(before, pane.grab().toImage())
 				table.dispose()
@@ -5960,57 +6035,9 @@ class TableIT(QtIT):
 				pane.deleteLater()
 		self.run_in_app(check)
 
-	def test_deferred_table_menu_and_owner_unload(self):
-		def check():
-			from fman.ui import TableRow, UiOwner, show_table
-			from fman.impl.ui.facade import _hosts
-			from PyQt5.QtCore import QPoint
-			from PyQt5.QtWidgets import QDialog, QWidget
-			from unittest.mock import Mock, patch
-			main = QWidget()
-			main.show()
-			main.activateWindow()
-			QApplication.processEvents()
-			blocker = QDialog(main)
-			blocker.setWindowModality(Qt.WindowModal)
-			blocker.open()
-			owner, details, closed = UiOwner(), Mock(return_value='Details'), Mock()
-			try:
-				with patch('fman._get_ui', return_value=main):
-					handle = show_table(owner=owner, get_rows=lambda: (TableRow('one', ('C:\\folder\\file.txt', 'Plain')),),
-						num_columns=2, columns_header=('Path', 'Text'), file_path_column=0,
-						get_details=details, on_closed=closed)
-				window = next(host for host in _hosts.values() if host.owner is owner)
-				self.assertTrue(window.pending)
-				self.assertFalse(window.isVisible())
-				blocker.close()
-				main.activateWindow()
-				for turn in range(3):
-					QApplication.processEvents()
-				self.assertTrue(window.isVisible())
-				self.assertFalse(window.pending)
-				row, column = handle.current_cell
-				window.open_menu(row, column, QPoint(10, 10))
-				self.assertEqual(['Copy Path', 'Go To'], [action.text() for action in window.menu.actions()])
-				self.assertFalse(window.menu.actions()[1].isEnabled())
-				window.menu.actions()[0].trigger()
-				self.assertEqual('C:\\folder\\file.txt', QApplication.clipboard().text())
-				window.close_menu()
-				before = details.call_count
-				owner.invalidate()
-				QApplication.processEvents()
-				self.assertFalse(handle.is_open)
-				self.assertEqual(before, details.call_count)
-				closed.assert_not_called()
-			finally:
-				owner.invalidate()
-				main.close()
-				main.deleteLater()
-		self.run_in_app(check)
-
-	def test_facade_panel_modeless_refresh_and_disposal(self):
+	def test_facade_panel_values_status_and_disposal(self):
 		from fman import DirectoryPane, Window
-		from fman.ui import Action, TableRow, TextField, UiOwner, show_panel, show_table
+		from fman.ui import Action, TextField, UiOwner, show_panel
 		from fman.impl.widgets import MainWindow
 		from PyQt5.QtWidgets import QWidget
 		from unittest.mock import Mock
@@ -6024,7 +6051,6 @@ class TableIT(QtIT):
 		main, pane = self.run_in_app(prepare)
 		owner = UiOwner()
 		changes = []
-		rows = [TableRow('source', ('old.txt', 'new.txt'))]
 		try:
 			panel = show_panel(owner=owner, pane=pane,
 				rows=((TextField('pattern', 'Name'), Action('apply', 'Apply')),),
@@ -6032,18 +6058,6 @@ class TableIT(QtIT):
 			panel.update(values={'pattern': 'replacement'})
 			self.assertEqual('replacement', panel.snapshot()['pattern'])
 			self.assertEqual([], changes)
-			table = show_table(owner=owner, panel=panel, get_rows=lambda: tuple(rows),
-				num_columns=2, columns_header=('Current', 'Proposed'), modal=False)
-			self.assertTrue(table.is_open)
-			self.assertFalse(isinstance(table, QWidget))
-			rows[:] = [TableRow('source', ('old.txt', 'other.txt'))]
-			table.refresh()
-			self.assertEqual('other.txt', table.current_cell[0].cells[1])
-			table.close()
-			self.assertTrue(panel.is_open)
-			self.assertFalse(table.is_open)
-			with self.assertRaises(RuntimeError):
-				table.refresh()
 			panel.set_activity_status('Searching')
 			self.assertIsNotNone(self.run_in_app(lambda: main.findChild(QWidget, 'plugin-activity-status')))
 			panel.close()
@@ -6054,13 +6068,12 @@ class TableIT(QtIT):
 			self.run_in_app(main.close)
 			self.run_in_app(main.deleteLater)
 
-	def test_modeless_panel_focus_and_status_error_cleanup(self):
+	def test_panel_status_error_cleanup(self):
 		def check():
 			from fman import DirectoryPane, Window
-			from fman.ui import Action, TableRow, TextField, Toggle, UiOwner, show_panel, show_table
+			from fman.ui import Action, TextField, Toggle, UiOwner, show_panel
 			from fman.impl.ui.facade import _hosts
 			from fman.impl.widgets import MainWindow
-			from PyQt5.QtTest import QTest
 			from PyQt5.QtWidgets import QWidget
 			from pathlib import Path
 			from unittest.mock import Mock
@@ -6073,26 +6086,13 @@ class TableIT(QtIT):
 			QApplication.processEvents()
 			try:
 				panel = show_panel(owner=owner, pane=pane, rows=((TextField('name', 'Name'), Action('apply', 'Apply')),))
-				table = show_table(owner=owner, panel=panel, modal=False, get_rows=lambda: (TableRow('one', ('Original', 'Proposed')),),
-					num_columns=2, columns_header=('Original', 'Proposed'))
 				host = _hosts[panel._key()]
-				window = host.table_window
-				window.activateWindow()
-				window.table.view.setFocus()
-				QApplication.processEvents()
-				QTest.keyClick(window.table.view, Qt.Key_Tab)
-				QApplication.processEvents()
-				self.assertTrue(main._panel_dock.isAncestorOf(QApplication.focusWidget()))
-				host.focus_from_panel()
-				QApplication.processEvents()
-				self.assertIs(window.table.query, QApplication.focusWidget())
 				def broken():
 					raise ValueError('status failed')
 				panel.set_activity_status(get_text=broken)
 				self.assertFalse(host.activity_timer.isActive())
 				self.assertEqual('status failed', host.status.content)
 				panel.close()
-				self.assertFalse(table.is_open)
 				with self.assertRaises(ValueError):
 					show_panel(owner=owner, pane=pane, rows=((Toggle('bad', '../outside.svg', 'Bad'),),))
 				self.assertFalse(any(item.owner is owner for item in _hosts.values()))
@@ -6102,12 +6102,45 @@ class TableIT(QtIT):
 				main.deleteLater()
 		self.run_in_app(check)
 
-	def test_fuzzy_sort_refresh_and_current_cell(self):
+	def test_modal_close_returns_focus_to_panel(self):
+		def check():
+			from fman import DirectoryPane, Window
+			from fman.ui import TableColumn, TableRow, TextField, UiOwner, show_panel
+			from fman.impl.ui.facade import _hosts, open_table
+			from fman.impl.widgets import MainWindow
+			from PyQt5.QtTest import QTest
+			from PyQt5.QtWidgets import QWidget
+			from unittest.mock import Mock
+			main = MainWindow(Mock(), Mock(), Mock(), Mock(), 'null://')
+			pane = DirectoryPane(Window(main, Mock()), QWidget(main), Mock())
+			owner = UiOwner()
+			main.show()
+			main.activateWindow()
+			QApplication.processEvents()
+			try:
+				panel = show_panel(owner=owner, pane=pane, rows=((TextField('name', 'Name'),),))
+				field = _hosts[panel._key()].controls['name'][1]
+				window = open_table(columns=(TableColumn('Name'),), rows=(TableRow(('one',)),), pane=pane)
+				QApplication.processEvents()
+				self.assertIs(window, QApplication.activeModalWidget())
+				QTest.keyClick(window.table.view, Qt.Key_Escape)
+				for turn in range(3):
+					QApplication.processEvents()
+				self.assertFalse(window.alive.is_set())
+				self.assertIs(field, QApplication.focusWidget())
+				self.assertTrue(panel.is_open)
+			finally:
+				owner.invalidate()
+				main.close()
+				main.deleteLater()
+		self.run_in_app(check)
+
+	def test_fuzzy_sort_and_current_cell(self):
 		def check():
 			from fman.impl.ui.table import Table
-			from fman.impl.ui.table_data import TableRow, TableSchema
-			rows = (TableRow('first', ('zebra', 'blue')), TableRow('second', ('alpha', 'green')))
-			table = Table(TableSchema(2, ('Name', 'Color')), rows)
+			from fman.impl.ui.table_data import TableColumn, TableRow, TableSchema
+			rows = (TableRow(('zebra', 'blue')), TableRow(('alpha', 'green')))
+			table = Table(TableSchema((TableColumn('Name'), TableColumn('Color'))), rows)
 			try:
 				self.assertEqual((rows[0], 0), table.current_cell)
 				table.view.setCurrentIndex(table.model.index(1, 1))
@@ -6119,32 +6152,33 @@ class TableIT(QtIT):
 				table.query.setText('no matching value')
 				QApplication.processEvents()
 				self.assertIsNone(table.current_cell)
-				table.query.clear()
-				table.replace((TableRow('second', ('alpha', 'proposed')),))
-				self.assertEqual('second', table.current_cell[0].id)
-				self.assertEqual('proposed', table.model.rows[0].cells[1])
-				for filename in ('CudaText.cmd', 'Cud\u00e1Text.cmd'):
-					table.replace((TableRow('script', (filename, 'text')),))
-					table.query.setText('cmd')
-					QApplication.processEvents()
-					self.assertEqual((9, 10, 11), tuple(table.model.index(0, 0).data(Qt.UserRole + 1)))
 			finally:
 				table.dispose()
 				table.deleteLater()
+			for filename in ('CudaText.cmd', 'Cud\u00e1Text.cmd'):
+				table = Table(TableSchema((TableColumn('Name'), TableColumn('Text'))), (TableRow((filename, 'text')),))
+				try:
+					table.query.setText('cmd')
+					QApplication.processEvents()
+					self.assertEqual((9, 10, 11), tuple(table.model.index(0, 0).data(Qt.UserRole + 1)))
+				finally:
+					table.dispose()
+					table.deleteLater()
 		self.run_in_app(check)
 
 	def test_buttonless_cell_specific_activation(self):
 		def check():
 			from fman.impl.ui.table import Table
-			from fman.impl.ui.table_data import TableRow, TableSchema
+			from fman.impl.ui.table_data import TableColumn, TableRow, TableSchema
 			from PyQt5.QtTest import QTest
 			from PyQt5.QtWidgets import QAbstractButton
-			table = Table(TableSchema(2, ('Path', 'Text')), (TableRow('row', ('C:\\file', 'text')),))
+			row = TableRow(('C:\\file', 'text'))
+			table = Table(TableSchema((TableColumn('Path'), TableColumn('Text'))), (row,))
 			table.resize(500, 240)
 			table.show()
 			QApplication.processEvents()
 			calls = []
-			table.view.cell_activated.connect(lambda row, column: calls.append((row.id, column)))
+			table.view.cell_activated.connect(lambda activated, column: calls.append((activated, column)))
 			try:
 				self.assertFalse(any(button.isVisible() for button in table.findChildren(QAbstractButton)))
 				index = table.model.index(0, 1)
@@ -6153,7 +6187,7 @@ class TableIT(QtIT):
 				self.assertEqual([], calls)
 				self.assertEqual(1, table.current_cell[1])
 				QTest.mouseDClick(table.view.viewport(), Qt.LeftButton, pos=position)
-				self.assertEqual([('row', 1)], calls)
+				self.assertEqual([(row, 1)], calls)
 				QTest.keyClick(table.query, Qt.Key_Return, Qt.ControlModifier)
 				self.assertEqual(1, len(calls))
 			finally:

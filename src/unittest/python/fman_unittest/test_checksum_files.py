@@ -205,7 +205,7 @@ class ChecksumEngineTest(TestCase):
         results.add(engine.ResultRow(2, 'second', 'Matched'))
         results.complete = True
         self.assertIn('All matched', results.summary)
-        self.assertIn('Show all unavailable', results.summary)
+        self.assertIn('Showing problems only', results.summary)
         self.assertNotIn('truncated', results.summary)
         results.add(engine.ResultRow(3, 'third', 'Missing'))
         self.assertNotIn('truncated', results.summary)
@@ -544,7 +544,6 @@ class ChecksumCommandTest(TestCase):
         self.pane.get_path.return_value = 'file://C:/checks'
         self.pane.get_selected_files.return_value = []
         self.pane.get_file_under_cursor.return_value = None
-        self.addCleanup(commands._tables.pop, self.pane, None)
         self.settings = patch.object(commands, 'load_json', return_value={})
         self.settings.start()
         self.addCleanup(self.settings.stop)
@@ -606,14 +605,15 @@ class ChecksumCommandTest(TestCase):
         self.pane.get_file_under_cursor.reset_mock()
         self.pane.get_selected_files.return_value = ['file://C:/checks/marked.md5']
         result = result if result is not None else engine.Results().freeze()
-        with patch.object(engine, 'discover', return_value=manifests, side_effect=after_capture), patch.object(engine, 'verify', return_value=result) as verify, patch.object(self.commands, 'submit_task', side_effect=lambda task: task()), patch.object(self.commands, '_choose') as choose, patch.object(self.commands, 'ResultsTable') as table, patch.object(self.commands, 'show_alert') as alert:
+        with patch.object(engine, 'discover', return_value=manifests, side_effect=after_capture), patch.object(engine, 'verify', return_value=result) as verify, patch.object(self.commands, 'submit_task', side_effect=lambda task: task()), patch.object(self.commands, '_choose') as choose, patch.object(self.commands, 'show_results') as table, patch.object(self.commands, 'show_alert') as alert:
             self.commands.VerifyChecksum(self.pane)()
         alert.assert_not_called()
         choose.assert_not_called()
         verify.assert_called_once()
         self.assertEqual(expected, verify.call_args.args[0])
         self.assertIs(result, table.call_args.args[0])
-        self.assertEqual(expected, table.call_args.args[3])
+        self.assertEqual(expected, table.call_args.args[2])
+        self.assertNotIn(self.pane, self.commands._busy)
         self.pane.get_selected_files.assert_not_called()
         self.pane.get_file_under_cursor.assert_called_once_with()
 
@@ -674,29 +674,21 @@ class ChecksumCommandTest(TestCase):
                 run.check()
         self.assertNotIn(self.pane, self.commands._busy)
 
-    def test_table_prepares_views_and_blocks_stale_actions(self):
+    def test_results_table_shows_all_retained_rows_modeless(self):
         results = engine.Results()
         results.add(engine.ResultRow(1, 'first', 'Matched', target='C:\\checks\\first'))
+        results.add(engine.ResultRow(2, 'second', 'Mismatch', target='C:\\checks\\second'))
         results.complete = True
-        table = self.commands.ResultsTable(results.freeze(), self.owner, self.pane, 'C:\\checks\\checks.sha256')
-        table.handle = Mock(is_open=True)
-        self.assertEqual((), table.rows)
-        self.assertIn('All matched', table.summary)
-        self.assertNotIn('Summary', table.summary)
-        with patch.object(self.commands, 'TableAction', wraps=self.commands.TableAction) as action:
-            menu = table.menu(None, -1)
-        self.assertEqual(['Show all results', 'Show only mismatches'],
-                         [call.args[1] for call in action.call_args_list])
-        with patch('builtins.open', side_effect=AssertionError('UI performed I/O')):
-            menu[0].callback(None, 0)
-        self.assertEqual(('1',), tuple(row.id for row in table.rows))
-        with patch('builtins.open', side_effect=AssertionError('UI performed I/O')):
-            menu[1].callback(None, 0)
-        self.assertEqual((), table.rows)
-        table.release()
-        table.switch(True)
-        self.assertEqual((), table.rows)
-        self.assertEqual({}, table.targets)
+        frozen = results.freeze()
+        with patch.object(self.commands, 'show_table') as show, patch('builtins.open', side_effect=AssertionError('UI performed I/O')):
+            self.commands.show_results(frozen, self.pane, 'C:\\checks\\checks.sha256')
+        options = show.call_args.kwargs
+        self.assertEqual(['first', 'second'], [row.cells[0] for row in options['rows']])
+        self.assertIs(False, options['modal'])
+        self.assertIs(self.pane, options['pane'])
+        self.assertEqual('C:\\checks', options['base_path'])
+        self.assertEqual(self.commands.VerifyChecksum.aliases[0] + ': checks.sha256', options['title'])
+        self.assertEqual(frozen.summary, options['summary'])
 
     def test_publication_notifies_even_if_owner_closes_after_commit(self):
         def submit(task):
@@ -707,15 +699,3 @@ class ChecksumCommandTest(TestCase):
             self.commands.GenerateChecksumFile(self.pane)()
         notify.assert_called_once_with('file://C:/checks/CheckSum.sha256')
         status.assert_not_called()
-
-    def test_failed_table_creation_releases_retained_data(self):
-        results = engine.Results()
-        results.add(engine.ResultRow(1, 'first', 'Mismatch', target='C:\\checks\\first'))
-        table = self.commands.ResultsTable(results.freeze(), self.owner, self.pane, 'C:\\checks\\checks.sha256')
-        with patch.object(self.commands, 'show_table', side_effect=RuntimeError('Pane closed')) as show:
-            with self.assertRaises(RuntimeError):
-                table.show()
-        self.assertEqual(self.commands.VerifyChecksum.aliases[0] + ': checks.sha256', show.call_args.kwargs['title'])
-        self.assertTrue(table.closed)
-        self.assertEqual({}, table.targets)
-        self.assertEqual(set(), self.owner._sessions)

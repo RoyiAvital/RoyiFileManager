@@ -249,7 +249,7 @@ operators (the README says so).
   ranking cannot be mixed with `regex:`/`dm:` filter terms cleanly, and
   users of `Ctrl+F` expect fuzzy behaviour like every other picker. It gets
   its own dialog in Find Files 003.
-- **Controls row inside Quicksearch**: rejected; [UIElements](../Plan/UIElements.md)
+- **Controls row inside Quicksearch**: rejected; [UIElements](../UIElements.md)
   keeps the modal picker free of controls.
 - **Panel + Table** like Search Files: two surfaces for a
   one-keystroke picker. Rejected.

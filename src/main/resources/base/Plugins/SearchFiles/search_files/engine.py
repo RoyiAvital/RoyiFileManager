@@ -17,6 +17,7 @@ CHUNK_BYTES = 65536
 RECORD_BYTES = 1024 * 1024
 STDERR_BYTES = 65536
 COMMAND_UNITS = 24000
+EXTENDED_ROW_BYTES = 128
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +35,7 @@ class Options:
 	max_file_bytes: int = 50 * 1024 * 1024
 	name_mode: str | None = None
 	content_mode: str | None = None
+	extended: bool = False
 
 	def __post_init__(self):
 		for name in ('root', 'content', 'name'):
@@ -48,7 +50,7 @@ class Options:
 			raise ValueError('File Name Pattern must be a single line.')
 		if not os.path.isabs(self.root):
 			raise ValueError('Search requires an absolute local directory.')
-		for name in ('name_regex', 'content_regex', 'recursive'):
+		for name in ('name_regex', 'content_regex', 'recursive', 'extended'):
 			if type(getattr(self, name)) is not bool:
 				raise ValueError('%s must be boolean.' % name)
 		for name, legacy, default in (('name_mode', self.name_regex, 'glob'), ('content_mode', self.content_regex, 'literal')):
@@ -97,6 +99,18 @@ class Result:
 	reason: str
 	progress: Progress
 	validated: bool = False
+	metadata: tuple = ()
+	metadata_missing: int = 0
+
+
+def file_metadata(path):
+	try:
+		info = os.stat(path, follow_symlinks=False)
+	except OSError:
+		return None
+	if not stat.S_ISREG(info.st_mode) or getattr(info, 'st_file_attributes', 0) & getattr(stat, 'FILE_ATTRIBUTE_REPARSE_POINT', 1024):
+		return None
+	return info.st_size, info.st_mtime_ns
 
 
 class Cancelled(Exception):
@@ -252,6 +266,8 @@ class Collector:
 			raise ValueError('Search result is outside the captured root.')
 		relative = os.path.relpath(path, root)
 		size = 72 + sum(len(value.encode('utf-8')) for value in (path, as_url(path), relative))
+		if self.options.extended:
+			size += EXTENDED_ROW_BYTES
 		if self.row_count >= self.options.max_rows or self.text_bytes + size > self.options.max_text_bytes:
 			raise Limited('Result row/text limit reached.')
 		self.rows.append(Hit(path, relative, 0, 0, 0, '', ()))
@@ -277,6 +293,8 @@ class Collector:
 				raise ValueError('Match without file begin record.')
 			hit = make_hit(self.options.root, data)
 			size = 72 + sum(len(value.encode('utf-8')) for value in (hit.path, hit.path, hit.relative_path, hit.snippet))
+			if self.options.extended:
+				size += EXTENDED_ROW_BYTES
 			if self.row_count >= self.options.max_rows or self.text_bytes + size > self.options.max_text_bytes:
 				raise Limited('Result row/text limit reached.')
 			self.row_count += 1
@@ -609,5 +627,17 @@ class Runner:
 			self.collector.pending.clear()
 			self.publish(status)
 		rows = tuple(self.collector.rows)
+		metadata = {}
+		if self.options.extended and rows and status in ('Complete', 'Limited', 'Incomplete'):
+			try:
+				self.publish('Reading metadata')
+				for path in dict.fromkeys(hit.path for hit in rows):
+					self.check()
+					metadata[path] = file_metadata(path)
+			except Cancelled:
+				status = 'Stopped'
+				reason = ' '.join(filter(None, ('Metadata reading stopped; remaining sizes and dates are Unknown.', reason)))
+			self.publish(status)
 		self.collector.rows.clear()
-		return Result(rows, status, reason[:STDERR_BYTES], self.progress, validated)
+		missing = sum(value is None for value in metadata.values())
+		return Result(rows, status, reason[:STDERR_BYTES], self.progress, validated, tuple(metadata.items()), missing)

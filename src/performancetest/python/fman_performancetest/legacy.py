@@ -303,8 +303,9 @@ class FindFilesPerformance(fd_tests.FindFilesEngineTest):
 			self.assertEqual(expected > 10000, result.table_limited)
 			self.assertIsNone(runner.child)
 			self.assertLess(peak, 64 * 1024 * 1024)
-			rows = tuple(TableRow(str(index), (hit.relative_path, str(hit.size), hit.modified), hit.path) for index, hit in enumerate(result.rows))
-			self.assertEqual(rows, TableSchema(3, ('Path', 'Size', 'Modified')).snapshot(lambda: rows))
+			from find_files import COLUMNS
+			rows = tuple(TableRow((hit.relative_path, hit.size, hit.modified_ns)) for hit in result.rows)
+			self.assertEqual(len(rows), len(TableSchema(COLUMNS).snapshot(rows)))
 			reports.append({'pattern': pattern, 'matches': result.total, 'retained': len(rows),
 				'seconds_with_tracemalloc': round(elapsed, 3), 'python_peak_bytes': peak,
 				'python_retained_bytes': retained, 'cache': 'warm after fixture creation'})
@@ -376,14 +377,14 @@ class TablePerformance(qt_tests.TableIT):
 	def test_large_snapshot_projection_timing(self):
 		from time import perf_counter
 		from fman.impl.ui.table import Table
-		from fman.impl.ui.table_data import TableRow, TableSchema
+		from fman.impl.ui.table_data import TableColumn, TableRow, TableSchema
 		ready = Event()
-		rows = tuple(TableRow(str(index), ('folder/file-%05d.txt' % index,
+		rows = tuple(TableRow(('folder/file-%05d.txt' % index,
 			'A long matching text snippet ' * 16)) for index in range(10000))
 		def prepare():
 			started = perf_counter()
-			schema = TableSchema(2, ('File Path', 'Snippet'))
-			widget = Table(schema, schema.snapshot(lambda: rows))
+			schema = TableSchema((TableColumn('File Path', 'file_path'), TableColumn('Snippet')))
+			widget = Table(schema, schema.snapshot(rows))
 			construction = perf_counter() - started
 			widget.state_changed.connect(lambda: ready.set() if widget.model.matches else None)
 			started = perf_counter()

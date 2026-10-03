@@ -144,7 +144,7 @@ Everything starts lazily. Its index and runtime state stay under
 It does not install a service or control your unnamed Everything instance.
 
 See [Everything settings and portability](https://github.com/RoyiAvital/RoyiFileManager/blob/main/src/main/resources/base/Plugins/Everything/README.md)
-and the [official Everything syntax reference](https://www.voidtools.com/support/everything/searching/).
+and the [official Everything syntax reference](https://www.voidtools.com/support/everything/searching).
 
 ## Search Files
 
@@ -247,21 +247,15 @@ Both commands are bundled with the application.
   or `checksums` at a drive/share root. Replacement requires confirmation.
 - Verify the highlighted supported checksum file, or the first supported file
   in case-insensitive filename order. Verification checks every manifest entry.
-- Results initially show problems, with the summary above the table. Right-click
-  a result or the empty table background for **Show all results** and
-  **Show only mismatches** when the complete view fits.
-  Missing files and invalid records remain visible in the mismatches view.
+- Results open in a non-modal table with the summary above it. Every result is
+  listed when the complete view fits the display limit; otherwise only problems
+  are listed and the summary says so. Use the column filters to narrow the view.
 - A navigated junction root is supported; redirected paths below that root are
   refused. Cancellation or a read failure prevents publication of a generated file.
 
 <figure class="product-shot" markdown>
-  ![Empty checksum results with Show all results highlighted in the background context menu](assets/royifilemanager-checksum-empty-menu.png)
-  <figcaption>All files matched, so the problems view is empty. Right-click its background and choose Show all results.</figcaption>
-</figure>
-
-<figure class="product-shot" markdown>
-  ![All checksum results with Show only mismatches highlighted in a file-row context menu](assets/royifilemanager-checksum-all-menu.png)
-  <figcaption>The all-results view shows the verified files. Right-click a result and choose Show only mismatches to return to problems.</figcaption>
+  ![Checksum verification results listing three matched files](assets/royifilemanager-checksum-results.png)
+  <figcaption>All three sample files matched. The table stays open while you work in the panes.</figcaption>
 </figure>
 
 Five supplied Total Commander formats are verified. Other TC/DC profiles and

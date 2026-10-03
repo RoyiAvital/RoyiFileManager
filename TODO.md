@@ -42,6 +42,10 @@
 - [x] CHANGE: Update the structure of the "About" box.
 - [x] CHANGE: Use `app_version` and `APP_VERSION` instead of `fman_version` and `FMAN_VERSION`.
 - [x] CHANGE: Rename the command "Show processes" to "Show OS' processes".
+- [ ] FEATURE: Add metadata to commands in _Command Palette_ for better search (Bookmarks for Favorites).
+- [ ] CHANGE: Update to Everything 1.5 when released. It supports tags on Windows files.
+- [ ] FEATURE: _Folder Diff_ based on names, dates and hash.
+- [ ] CHANGE: Candidates for presets as text viewer / editor: [Editpad](https://github.com/imluyg/editpad), [Dan](https://github.com/dfallman/dan), [FastPad](https://github.com/coccor/Fastpad), [Lite Anvil](https://github.com/danpozmanter/lite-anvil), [Noter](https://github.com/blisspixel/noter), [Token](https://github.com/HelgeSverre/token).
 
 ## Performance
 
@@ -62,3 +66,8 @@ Each task should be pretty localized and low risk.
 - [Strata](https://github.com/lgse/strata) - Linux only. 
 - [Fulgur](https://github.com/fulgur-app/Fulgur) - Great text editor. Once they have a [Portable Version](https://github.com/fulgur-app/Fulgur/issues/299) we should add a preset for it.
 - [Xverb](https://xverb.pages.dev) - Plug In based.
+- [Elio](https://github.com/elio-fm/elio).
+- [Tauri Explorer](https://github.com/xnmp/tauri-explorer).
+- [NCrs](https://github.com/CosmicDriftGameStudio/ncrs).
+- [Furman](https://github.com/fenio/furman).
+- [lvdExplorer](https://github.com/lvdsystems/lvdExplorer).

@@ -2,7 +2,7 @@ site_name: "{{ app_name }}"
 hooks:
   - src/misc/docs_hooks.py
 site_description: Fast, keyboard-focused file management for Windows.
-site_url: https://royiavital.github.io/RoyiFileManager/
+site_url: https://royiavital.github.io/RoyiFileManager
 repo_url: https://github.com/RoyiAvital/RoyiFileManager
 repo_name: RoyiAvital/RoyiFileManager
 edit_uri: edit/main/docs/

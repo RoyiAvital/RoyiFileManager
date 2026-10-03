@@ -4,12 +4,15 @@ from time import monotonic
 from fman import DirectoryPaneCommand, load_json, save_json, show_status_message
 from fman.impl.status_bar import format_size
 from fman.impl.util.qt.thread import run_in_main_thread
-from fman.ui import Action, Choice, DateField, IntegerField, Label, Select, Separator, TableRow, TextField, Toggle, UiController, settings_resource, show_panel, show_table
+from fman.ui import Action, Choice, DateField, IntegerField, Label, Select, Separator, TableColumn, TableRow, TextField, Toggle, UiController, settings_resource, show_panel, show_table
 from fman.url import as_human_readable
 from find_files.engine import Options, Runner, TYPES, UNITS, arguments, count_text
 
 
 SETTINGS_NAME = 'FindFiles.json'
+COLUMNS = (TableColumn('Path', 'entry_path'),
+	TableColumn('Size', 'numeric', unit='bytes', format=format_size, missing=''),
+	TableColumn('Modified', 'date', missing=''))
 DEFAULTS = {'pattern_mode': 'glob', 'case_mode': 'smart', 'type': 'f', 'full_path': False,
 	'recursive': True, 'hidden': False, 'honor_gitignore': True, 'follow_symlinks': False,
 	'min_size_unit': 'b', 'max_size_unit': 'b'}
@@ -47,7 +50,7 @@ class FindSession:
 	def __init__(self, owner, pane, root, settings):
 		self.owner, self.pane, self.root = owner, pane, root
 		self.settings = settings
-		self.runner = self.table = None
+		self.runner = None
 		self.generation = 0
 		self.unsubscribe_path = None
 		self.save_lock = Lock()
@@ -100,9 +103,6 @@ class FindSession:
 			if self.runner is not None:
 				self.runner.stop()
 				self.runner = None
-			if self.table is not None and self.table.is_open:
-				self.table.close()
-			self.table = None
 			self.root = root
 			self.panel.set_activity_status()
 		self.panel.update(values={'root': self.root or 'Local folder required'})
@@ -151,7 +151,7 @@ class FindSession:
 					pass
 
 	def enable_form(self):
-		busy = self.runner is not None or self.table is not None and self.table.is_open
+		busy = self.runner is not None
 		values = self.panel.snapshot()
 		enabled = {key: not busy for key in self.editable}
 		enabled.update(search=not busy and self.root is not None, stop=True)
@@ -174,7 +174,7 @@ class FindSession:
 				self.runner.stop()
 				self.panel.set_activity_status('Stopping')
 			return
-		if name != 'search' or self.runner is not None or self.table is not None and self.table.is_open:
+		if name != 'search' or self.runner is not None:
 			return
 		self.refresh_root()
 		try:
@@ -203,27 +203,18 @@ class FindSession:
 		if result.reason:
 			summary += ' - ' + result.reason
 		try:
-			if result.rows:
-				rows = tuple(TableRow(str(index), (hit.relative_path, '' if hit.size is None else format_size(hit.size), hit.modified), hit.path)
-					for index, hit in enumerate(result.rows))
-				self.table = show_table(owner=self.owner, panel=self.panel, get_rows=lambda: rows,
-					num_columns=3, columns_header=('Path', 'Size', 'Modified'), title='Find files',
-					entry_path_column=0, base_path=self.root, modal=True, summary=self.root + ' | ' + summary,
-					get_count_text=lambda shown, retained: count_text(shown, result),
-					get_details=lambda row, column: row.value,
-					on_closed=lambda: self.results_closed(generation, summary))
 			self.enable_form()
 			self.panel.set_activity_status(summary)
+			if result.rows:
+				rows = tuple(TableRow((hit.relative_path, hit.size, hit.modified_ns)) for hit in result.rows)
+				omitted = result.table_limited or result.total > len(rows)
+				show_table(columns=COLUMNS, rows=rows, pane=self.pane, title='Find files',
+					summary=self.root + ' | ' + summary, base_path=self.root,
+					truncated=True if omitted else False if result.complete else None)
 		except (RuntimeError, ValueError) as error:
 			if self.panel.is_open:
 				self.enable_form()
 				self.panel.set_activity_status('Could not show Find Files results: ' + str(error))
-
-	def results_closed(self, generation, summary):
-		if generation == self.generation and self.owner.active and self.panel.is_open:
-			self.table = None
-			self.enable_form()
-			self.panel.set_activity_status(summary)
 
 	@run_in_main_thread
 	def dispose(self):
@@ -234,7 +225,6 @@ class FindSession:
 			unsubscribe()
 		if self.runner is not None:
 			self.runner.stop()
-		self.table = None
 
 
 class FindFiles(DirectoryPaneCommand):

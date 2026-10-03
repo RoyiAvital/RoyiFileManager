@@ -12,8 +12,6 @@
 - [Flat View](Plan/FlatView.md)
 - [Migrate to PyQt6](Plan/MigrateToPyQt6.md)
 - [QuickView 002: Videos and Animated Images](Plan/QuickView002.md)
-- [Search Files 003: Extended Mode](Plan/SearchFiles003.md)
-- [UI Elements](Plan/UIElements.md)
 
 ## Completed
 
@@ -53,6 +51,7 @@
 - [Release Workflow Hardening](Done/ReleaseWorkflowHardening.md)
 - [Search Files 001](Done/SearchFiles001.md)
 - [Search Files 002: File Name Only Search](Done/SearchFiles002.md)
+- [Search Files 003: Extended Mode](Done/SearchFiles003.md)
 - [Self-Contained ZIP Tests](Done/SelfContainedZipTests.md)
 - [Status Bar](Done/StatusBar.md)
 - [Status Bar Active Background](Done/StatusBarActiveBackground.md)
@@ -60,4 +59,5 @@
 - [Status Bar Worker Results](Done/StatusBarWorkerResults.md)
 - [Sync Pane Location](Done/SyncPaneLocation.md)
 - [Text Editor and Viewer](Done/TextEditor.md)
+- [UI Elements 001: Typed Read-Only Table](Done/UIElements001.md)
 - [Unpack Archive](Done/UnpackArchive.md)

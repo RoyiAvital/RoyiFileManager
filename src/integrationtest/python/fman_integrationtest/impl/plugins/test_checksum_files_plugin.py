@@ -202,7 +202,6 @@ class ChecksumProbe(DirectoryPaneListener):
         from PyQt5.QtWidgets import QApplication
         from fman import APP_VERSION, YES
         from fman.url import as_url
-        from fman.impl.util.qt.thread import run_in_main_thread
         report = {'host': APP_VERSION, 'python': sys.version, 'qt': QT_VERSION_STR,
                   'pyqt': PYQT_VERSION_STR, 'frozen': bool(getattr(sys, 'frozen', False))}
         try:
@@ -232,13 +231,17 @@ class ChecksumProbe(DirectoryPaneListener):
                 core_commands.show_quicksearch = original_quicksearch
             report['palette_queries'] = palette_queries
             original_choose, original_prompt, original_alert = commands._choose, commands.show_prompt, commands.show_alert
+            original_show_table = commands.show_table
             alerts = []
             replacements = []
+            tables = []
             def alert(message, *args, **kwargs):
                 if message.startswith('Replace checksum file?'):
                     replacements.append(message)
                     return YES
                 alerts.append(message)
+            # show_table blocks until closed; record its arguments instead of opening a window.
+            commands.show_table = lambda **kwargs: tables.append(kwargs)
             try:
                 commands._choose = lambda items, default=0: 'sha256'
                 commands.show_prompt = lambda *args, **kwargs: ('CheckSum.sha256', True)
@@ -254,17 +257,10 @@ class ChecksumProbe(DirectoryPaneListener):
                 assert not alerts, alerts
             finally:
                 commands._choose, commands.show_prompt, commands.show_alert = original_choose, original_prompt, original_alert
-            table = commands._tables[self.pane]
-            assert '83 matched, 0 problems' in table.summary, table.summary
-            assert len(table.rows) == 0
-            @run_in_main_thread
-            def inspect_table():
-                table.switch(True)
-                assert len(table.rows) == 83
-                assert self.pane.window._widget._panel_dock is None
-                table.handle.close()
-                assert table.closed
-            inspect_table()
+            table = tables.pop()
+            assert '83 matched, 0 problems' in table['summary'], table['summary']
+            assert len(table['rows']) == 83 and table['modal'] is False
+            assert self.pane.window._widget._panel_dock is None
             first = corpus / 'a-first.sha256'
             highlighted = corpus / 'B-highlighted.sha256'
             first.write_bytes((corpus / 'CHECKSUM.sha256').read_bytes())
@@ -289,19 +285,13 @@ class ChecksumProbe(DirectoryPaneListener):
                     assert self.pane.get_file_under_cursor() == as_url(cursor), (self.pane.get_file_under_cursor(), as_url(cursor))
                     commands.VerifyChecksum(self.pane)()
                     assert not alerts, alerts
-                    chosen_table = commands._tables[self.pane]
-                    assert Path(chosen_table.manifest).name == expected_manifest.name
-                    assert expected_summary in chosen_table.summary, chosen_table.summary
-                    @run_in_main_thread
-                    def close_chosen_table():
-                        from fman.impl.ui.facade import _hosts
-                        host = next(host for host in _hosts.values() if host.owner is chosen_table.owner)
-                        assert expected_manifest.name in host.windowTitle()
-                        chosen_table.handle.close()
-                    close_chosen_table()
+                    chosen_table = tables.pop()
+                    assert chosen_table['title'].endswith(expected_manifest.name), chosen_table['title']
+                    assert expected_summary in chosen_table['summary'], chosen_table['summary']
                     choices.append(expected_manifest.name)
             finally:
                 commands._choose, commands.show_alert = original_choose, original_alert
+                commands.show_table = original_show_table
             report['manifest_selection'] = choices
             sample = corpus / 'empty.bin'
             if not sample.exists():

@@ -4,8 +4,8 @@ Press **Alt+F7** in a local folder, or use **Search files** in the command
 palette. The Panel stays tied to that pane. A half-filled square marks it; hover for
 "Left pane" or "Right pane". Its folder follows that pane while idle. Changing
 the other pane has no effect.
-An active search and its results keep their captured root until results close,
-then the form catches up. Search is disabled when that pane is not in a local folder.
+An active search and its results keep their captured root; the form then
+catches up. Search is disabled when that pane is not in a local folder.
 
 Each field has three mutually exclusive icon buttons: text lines for **Literal**,
 an asterisk for **Glob**, and the regex symbol for **RegEx**. Hover for the matching
@@ -19,8 +19,8 @@ rule; field labels and inputs share their tooltips.
 
 All modes are case-insensitive and spaces are significant. Leave Content Pattern
 empty to list files by name alone in any name mode, for example `*.log` in Glob
-or `^report_\d{4}` in RegEx. Each result is one file with an empty Snippet and
-path-only details; binary and empty files are included without reading contents.
+or `^report_\d{4}` in RegEx. Each result is one file with an empty Snippet;
+binary and empty files are included without reading contents.
 Directories are not results. Both patterns empty shows
 `Enter a file name or content pattern.` without starting a search.
 
@@ -39,14 +39,17 @@ Leading and trailing `*` do not widen the highlight; internal wildcards remain
 part of the match. `*` or `**` alone matches whole lines, including blank ones.
 For whole-line matching, use RegEx anchors such as `^cuda$`.
 
-- **Recursive:** include subfolders. **Search** starts background work;
+- **Recursive:** include subfolders. **Extended** (table icon, tooltip
+  "Extended metadata mode") adds Size and Date Modified columns; see below.
+  **Search** starts background work;
   **Stop** keeps collected results and does nothing while idle.
-  These three icon buttons align below the mode buttons, with 3-pixel gaps.
+  These icon buttons align below the mode buttons, with 3-pixel gaps.
   Hover for labels. Stop stays enabled and its square icon is red.
   Closing/replacing the Panel cancels the run and prevents a later results window.
 
-After collection, the form stays locked while results await an active window
-and while the modal is open. Dismiss results to edit the form or search again.
+The form stays locked while collecting. Results then open in a modal window,
+with the search root and summary above the table; close them to edit the form
+or search again.
 
 Results appear only after collection finishes. Each row is one matching line
 or, in name-only searches, one file, with File Path and Snippet columns.
@@ -55,10 +58,38 @@ contiguous match before a fuzzy subsequence; Ctrl+F focuses it. Click a header
 to cycle ascending, descending and original order.
 Double-click or press Enter on a File Path cell to open its parent and highlight
 the file. Its context menu offers **Copy Path** and **Go To**. Snippet cells do
-not navigate. Navigation leaves focus on the target pane and its current file.
+not navigate. A successful Go To closes the results and leaves focus on the
+target pane and its current file.
 Escape/window close dismisses results, retains the Panel and focuses its first
-text field after re-enabling the form.
+text field.
 F1 and its shortcuts dialog are unchanged.
+
+## Extended Mode
+
+Turn on **Extended** before searching. After ripgrep finishes, each returned
+file is stat'ed once (no content reread). Results then have four columns:
+
+```text
+| File Path        ▽ | Size       ▽ | Date Modified              ▽ | Snippet       ▽ |
+| docs\report.txt    |    12,345 B  | 2026-10-03T14:05:09+03:00    | final draft   |
+| old\gone.txt       |     Unknown  | Unknown                      | final         |
+```
+
+- **Filter box:** whitespace-separated words must all appear (AND), anywhere in
+  File Path or Snippet, case-insensitive substrings. `"final draft"` is one
+  phrase; `""` inside quotes is a literal quote. Up to 32 terms / 4,096 characters.
+  An unclosed quote shows `Filter error: ...`.
+- **Size / date filters:** click a header funnel or press Alt+Down. Size offers
+  `=`, `<`, `≤`, `>`, `≥`, Between and Missing with B/KiB/MiB/GiB units. Date
+  Modified offers On, Before, After, Between and Missing with `YYYY-MM-DD` input.
+- Both filters combine with AND. Unknown values sort last and match only Missing.
+- Filters refine retained rows only; they never rerun the search. A `truncated`
+  note follows the count when limits or Stop omitted rows.
+- Missing, denied, link or nonregular targets show Unknown; the summary counts
+  them. Stop while reading metadata keeps values read so far.
+
+The toggle persists as `extended`. Off mode keeps the two-column table and does
+no metadata work.
 
 ## Scope and Limits
 
@@ -93,7 +124,7 @@ filename regex. These are local measurements, not throughput guarantees.
 
 [SearchFiles.json](SearchFiles.json) is the settings entry point; engine and
 recursion defaults live in [search_files/__init__.py](search_files/__init__.py).
-The two modes (`name_mode`, `content_mode`), recursion and validated limits persist
+The two modes (`name_mode`, `content_mode`), recursion, `extended` and validated limits persist
 under `UserSettings`; queries and results are session-only. Mode values are
 `literal`, `glob` and `regex`, defaulting to filename Glob/content Literal.
 Old `name_regex`/`content_regex` booleans migrate automatically; valid new modes

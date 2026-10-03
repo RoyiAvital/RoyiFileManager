@@ -32,6 +32,10 @@ def exercise(context, root, output, layout_only=False):
 			check()
 		gui(connect)
 		assert ready.wait(15), message
+	def open_table():
+		from fman.impl.ui.facade import TableWindow
+		return next((widget for widget in QApplication.topLevelWidgets()
+			if isinstance(widget, TableWindow) and widget.alive.is_set() and widget.isVisible()), None)
 	code = 1
 	try:
 		wait_for(lambda: len(context.window.get_panes()) == 2 and all(
@@ -86,7 +90,7 @@ def exercise(context, root, output, layout_only=False):
 					assert control.mapTo(host.form, QPoint(control.width(), 0)).x() <= host.form.width(), 'Clipped mode buttons'
 				controls = [host.controls[name][1] for name in ('name_mode', 'content_mode', 'recursive')]
 				assert len({control.mapTo(host.form, QPoint()).x() for control in controls}) == 1, 'Search controls are not aligned with modes'
-				buttons = [host.controls[name][1] for name in ('recursive', 'search', 'stop')]
+				buttons = [host.controls[name][1] for name in ('recursive', 'extended', 'search', 'stop')]
 				centers = [button.mapTo(host.form, button.rect().center()).y() for button in buttons]
 				assert max(centers) - min(centers) <= 1, 'Search actions are not on one row'
 				assert buttons[-1].mapTo(host.form, buttons[-1].rect().topRight()).x() < host.form.width(), 'Clipped search actions'
@@ -94,7 +98,7 @@ def exercise(context, root, output, layout_only=False):
 				for row in button_rows:
 					assert all(button.width() == button.height() == 28 and button.toolTip() for button in row), 'Unequal or unlabeled icon buttons'
 					positions = [button.mapTo(host.form, QPoint()).x() for button in row]
-					assert positions == [buttons[0].mapTo(host.form, QPoint()).x() + 31 * index for index in range(3)], 'Button columns or 3px spacing do not match'
+					assert positions == [buttons[0].mapTo(host.form, QPoint()).x() + 31 * index for index in range(len(row))], 'Button columns or 3px spacing do not match'
 				assert all(not host.controls[name][1].text() for name in ('search', 'stop')), 'Action labels are still visible'
 				assert buttons[-1].isEnabled() and stop_is_red(), 'Stop must remain enabled and red'
 				before = session.panel.snapshot()
@@ -133,25 +137,23 @@ def exercise(context, root, output, layout_only=False):
 			assert stop.isEnabled() and stop_is_red(), 'Stop icon did not remain enabled and red'
 			context.main_window._panel_dock.grab().save(str(output.with_name(output.stem + '-panel-running.png')))
 		gui(search)
-		wait_for(lambda: session.runner is None and session.table is not None, 'Search did not finish')
+		wait_for(lambda: open_table() is not None, 'Search did not show results')
+		assert session.runner is None
 		assert gui(lambda: host.controls['stop'][1].isEnabled()), 'Completed search disabled Stop'
-		window = gui(lambda: host.table_window)
-		wait_for(window.isVisible, 'Results did not become visible')
+		window = gui(open_table)
 		assert gui(window.windowTitle) == 'Search files', 'Incorrect results title'
-		assert session.table.current_cell[0].value.line == 2
+		assert gui(window.windowModality) == Qt.WindowModal, 'Results are not modal'
 		assert not gui(host.activity_timer.isActive), 'Progress timer leaked'
-		gui(lambda: setattr(session.table, 'filter_text', 'txt'))
+		gui(lambda: window.table.query.setText('txt'))
 		wait_for(lambda: tuple(window.table.model.index(0, 0).data(Qt.UserRole + 1) or ()) == (14, 15, 16), 'Extension highlight is not contiguous')
 		gui(lambda: window.grab().save(str(output)))
 		print('Search-to-visible seconds:', round(perf_counter() - started, 3), flush=True)
 		target = root / 'nested' / 'report.txt'
-		table = session.table
-		gui(lambda: window.activate_cell(*table.current_cell))
-		wait_for(lambda: not table.is_open, 'Tracked navigation did not close modal')
+		gui(lambda: window.activate_cell(*window.table.current_cell))
+		wait_for(lambda: not window.alive.is_set(), 'Tracked navigation did not close modal')
 		wait_for(lambda: pane.get_path() == as_url(str(target.parent)) and
 			pane.get_file_under_cursor() == as_url(str(target)), 'Target file was not highlighted')
 		assert session.panel.is_open
-		assert session.table is None
 		assert gui(lambda: host.controls['search'][1].isEnabled()), 'Search remained locked after results closed'
 		assert session.root == str(target.parent), 'Root did not follow successful result navigation'
 		session.panel.close()

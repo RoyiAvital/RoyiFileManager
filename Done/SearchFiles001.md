@@ -33,7 +33,7 @@ F1 migration and progressive search-result population are deferred. Modeless
 hosting is included for reuse, not a live-search requirement. The latest Qt-free
 facade and cell-role design supersedes the earlier public-widget/row-menu design.
 The contract is canonical for
-this increment of [UI Elements](../Plan/UIElements.md).
+this increment of [UI Elements](../UIElements.md).
 
 ## Scope
 

@@ -536,7 +536,7 @@ class Results:
         if omitted:
             message += ' Results truncated; %s problem rows omitted.' % omitted
         if self.all_rows is None:
-            message += ' Show all unavailable: display limit exceeded.'
+            message += ' Showing problems only: display limit exceeded.'
         return message
 
 

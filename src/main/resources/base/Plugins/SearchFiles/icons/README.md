@@ -12,3 +12,7 @@ used by [StatusBarExtended](https://github.com/kek91/StatusBarExtended).
 They use square corners and a solid left/right half, rendered at 20 logical
 pixels without depending on font glyph size. The host applies the current
 palette color to all icons except the red Stop icon.
+
+[table-columns.svg](table-columns.svg) is a custom Lucide-style icon (24-pixel
+grid, 2-pixel round strokes): a table with a header row and three columns. It
+marks the Extended toggle.

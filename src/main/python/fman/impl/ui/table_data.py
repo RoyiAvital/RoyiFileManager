@@ -1,12 +1,27 @@
-from collections.abc import Sequence
-from dataclasses import dataclass, fields, is_dataclass
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass, fields, is_dataclass, replace
 from datetime import date
 from itertools import islice
+import math
 import ntpath
 
 
 MAX_ROWS = 10000
 MAX_TEXT_BYTES = 16 * 1024 * 1024
+MAX_COLUMNS = 64
+TYPED_SLOT_BYTES = 8
+INT64_MIN, INT64_MAX = -2 ** 63, 2 ** 63 - 1
+# Kind -> (comparison policy, cell-menu copy label, navigation role).
+COLUMN_KINDS = {
+	'text': ('text', 'Copy Text', None),
+	'file_name': ('natural', 'Copy Name', 'file'),
+	'folder_name': ('natural', 'Copy Name', 'folder'),
+	'file_path': ('natural', 'Copy Path', 'file'),
+	'folder_path': ('natural', 'Copy Path', 'folder'),
+	'entry_path': ('natural', 'Copy Path', 'entry'),
+	'date': ('date', 'Copy Date', None),
+	'numeric': ('number', 'Copy Value', None),
+}
 
 
 def text(value, name, limit=None):
@@ -19,26 +34,46 @@ def text(value, name, limit=None):
 
 @dataclass(frozen=True, slots=True)
 class TableRow:
-	id: str
 	cells: tuple
-	value: object = None
 	highlights: tuple = ()
+	# Host-filled: the caller's raw cells, kept when Date/Numeric cells are formatted.
+	values: tuple = ()
 
 	def __post_init__(self):
-		if not text(self.id, 'Row ID', 4096):
-			raise ValueError('Row IDs must not be empty.')
 		if not isinstance(self.cells, (tuple, list)):
-			raise TypeError('Row cells must be a sequence of strings.')
+			raise TypeError('Row cells must be a sequence.')
 		object.__setattr__(self, 'cells', tuple(self.cells))
 		object.__setattr__(self, 'highlights', tuple(
 			tuple(tuple(span) for span in column) for column in self.highlights))
 
 
 @dataclass(frozen=True, slots=True)
-class TableAction:
-	id: str
+class TableColumn:
 	label: str
-	callback: object
+	kind: str = 'text'
+	sortable: bool = True
+	filterable: bool = True
+	searchable: bool | None = None
+	unit: str | None = None
+	date_display: str = 'timestamp'
+	format: object = None
+	missing: str = 'Unknown'
+
+	@property
+	def policy(self):
+		return COLUMN_KINDS[self.kind][0]
+
+	@property
+	def copy_label(self):
+		return COLUMN_KINDS[self.kind][1]
+
+	@property
+	def role(self):
+		return COLUMN_KINDS[self.kind][2]
+
+	@property
+	def typed(self):
+		return self.policy in ('date', 'number')
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,41 +177,98 @@ class Action:
 	tooltip: str = ''
 
 
+def _validate_columns(columns):
+	if isinstance(columns, (str, bytes)) or not isinstance(columns, Sequence):
+		raise TypeError('columns must be a sequence of TableColumn descriptors.')
+	columns = tuple(columns)
+	if not 1 <= len(columns) <= MAX_COLUMNS:
+		raise ValueError('Tables require 1-64 columns.')
+	for column in columns:
+		if type(column) is not TableColumn:
+			raise TypeError('columns must contain TableColumn descriptors.')
+		if not text(column.label, 'Column label', 128):
+			raise ValueError('Column labels must not be empty.')
+		if column.kind not in COLUMN_KINDS:
+			raise ValueError('Unknown column kind: %s' % column.kind)
+		if any(type(value) is not bool for value in (column.sortable, column.filterable)) or \
+				column.searchable is not None and type(column.searchable) is not bool:
+			raise TypeError('Column capabilities must be boolean.')
+		if column.unit not in (None, 'bytes') or column.unit and column.kind != 'numeric':
+			raise ValueError('Only numeric columns accept the bytes unit.')
+		if column.date_display not in ('timestamp', 'date'):
+			raise ValueError('date_display must be timestamp or date.')
+		if column.format is not None and (column.kind != 'numeric' or not callable(column.format)):
+			raise TypeError('format must be a callable on a numeric column.')
+		text(column.missing, 'Missing text', 128)
+	return columns
+
+
+def _checked_value(column, value):
+	if type(value) is int:
+		if not INT64_MIN <= value <= INT64_MAX:
+			raise ValueError('Typed integers must fit signed 64 bits.')
+		if column.unit == 'bytes' and value < 0:
+			raise ValueError('Byte values must be nonnegative.')
+	elif type(value) is float and column.policy == 'number' and column.unit is None:
+		if not math.isfinite(value):
+			raise ValueError('Numeric values must be finite.')
+	else:
+		raise TypeError('%s values must be %s or None.' % (column.label,
+			'integer UTC epoch nanoseconds' if column.policy == 'date' else
+			'integer bytes' if column.unit else 'integers or finite floats'))
+
+
+def _number_text(column, value):
+	if column.format is not None:
+		return text(column.format(value), 'Formatted value', 128)
+	if column.unit == 'bytes':
+		return '{:,} B'.format(value)
+	return format(value, ',' if type(value) is int else ',.6g')
+
+
 class TableSchema:
-	def __init__(self, num_columns, columns_header, file_path_column=None,
-			folder_path_column=None, resolve_path=None, base_path=None, entry_path_column=None):
-		if type(num_columns) is not int:
-			raise TypeError('num_columns must be an integer.')
-		if num_columns <= 0:
-			raise ValueError('num_columns must be positive.')
-		if isinstance(columns_header, str) or not isinstance(columns_header, Sequence):
-			raise TypeError('columns_header must be a sequence of strings.')
-		if len(columns_header) != num_columns:
-			raise ValueError('columns_header must contain num_columns labels.')
-		self.headers = tuple(text(label, 'Column header', 128) for label in columns_header)
-		if not all(self.headers):
-			raise ValueError('Column headers must not be empty.')
-		self.num_columns = num_columns
-		self.roles = {}
-		for column, role in ((file_path_column, 'file'), (folder_path_column, 'folder'), (entry_path_column, 'entry')):
-			if column is None:
-				continue
-			if type(column) is not int:
-				raise TypeError('Path column indices must be integers or None.')
-			if not 0 <= column < num_columns or column in self.roles:
-				raise ValueError('Path columns must be distinct and within the column range.')
-			self.roles[column] = role
-		if resolve_path is not None and not callable(resolve_path):
-			raise TypeError('resolve_path must be callable or None.')
-		self.resolver = resolve_path
+	def __init__(self, columns, base_path=None, dates=None):
+		self.columns = _validate_columns(columns)
+		self.headers = tuple(column.label for column in self.columns)
+		self.num_columns = len(self.columns)
+		self.roles = {index: column.role for index, column in enumerate(self.columns) if column.role}
 		self.base = absolute_path(base_path) if base_path is not None else None
+		self.searchable = tuple(index for index, column in enumerate(self.columns)
+			if (column.searchable if column.searchable is not None else not column.typed))
+		self.typed = tuple(index for index, column in enumerate(self.columns) if column.typed)
+		self.dates = None
+		if any(column.policy == 'date' for column in self.columns):
+			if dates is None:
+				from fman.impl.ui.table_dates import LocalDates
+				dates = LocalDates()
+			self.dates = dates
+
+	def column(self, index):
+		return self.columns[index]
+
+	def _display(self, row):
+		cells = list(row.cells)
+		for index in self.typed:
+			value = cells[index]
+			if row.highlights and row.highlights[index]:
+				raise ValueError('Date and Numeric cells do not accept highlights.')
+			column = self.columns[index]
+			if value is None:
+				cells[index] = column.missing
+				continue
+			_checked_value(column, value)
+			if column.policy == 'date':
+				try:
+					cells[index] = self.dates.format(value, column.date_display == 'date')
+				except (OverflowError, ValueError) as error:
+					raise ValueError('Date value cannot be displayed: %s' % error) from None
+			else:
+				cells[index] = _number_text(column, value)
+		return replace(row, cells=tuple(cells), values=row.cells)
 
 	def target(self, row, column):
 		if column not in self.roles:
 			return None
-		if self.resolver is not None:
-			result = self.resolver(row, column)
-			return None if result is None else absolute_path(result)
 		value = text(row.cells[column], 'Path')
 		if not value:
 			return None
@@ -187,23 +279,29 @@ class TableSchema:
 			raise ValueError('Expected a native Windows path, not a URL.')
 		return ntpath.normpath(ntpath.join(self.base, value)) if self.base else None
 
-	def snapshot(self, provider):
-		if not callable(provider):
-			raise TypeError('get_rows must be callable.')
-		rows, ids, seen = [], set(), set()
+	def snapshot(self, rows):
+		if isinstance(rows, (str, bytes)) or not isinstance(rows, Iterable):
+			raise TypeError('rows must be an iterable of TableRow records.')
+		result, seen = [], set()
 		size = 0
-		for row in provider():
-			if len(rows) >= MAX_ROWS:
+		width = self.num_columns
+		typed_bytes = TYPED_SLOT_BYTES * len(self.typed)
+		for row in rows:
+			if len(result) >= MAX_ROWS:
 				raise ValueError('Table exceeds the 10,000-row limit.')
 			if not isinstance(row, TableRow):
-				raise TypeError('get_rows must yield TableRow records.')
-			if row.id in ids or len(row.cells) != self.num_columns:
-				raise ValueError('Duplicate row ID or incorrect cell count.')
+				raise TypeError('rows must contain TableRow records.')
+			if len(row.cells) != width:
+				raise ValueError('Each row needs one cell per column.')
+			if row.highlights and len(row.highlights) != width:
+				raise ValueError('Highlights must have one entry per column.')
+			if self.typed:
+				row = self._display(row)
+			elif row.values:
+				row = replace(row, values=())
 			for cell in row.cells:
 				text(cell, 'Cell')
 			if row.highlights:
-				if len(row.highlights) != self.num_columns:
-					raise ValueError('Highlights must have one entry per column.')
 				for cell, spans in zip(row.cells, row.highlights):
 					if len(spans) > 128:
 						raise ValueError('Too many highlight spans.')
@@ -212,12 +310,11 @@ class TableSchema:
 							raise TypeError('Highlight spans must contain two integers.')
 						if not 0 <= span[0] <= span[1] <= len(cell):
 							raise ValueError('Highlight outside cell text.')
-			size += plain_size(row, seen)
+			size += plain_size(row, seen) + typed_bytes
 			if size > MAX_TEXT_BYTES:
-				raise ValueError('Table exceeds the 16 MiB text/payload limit.')
-			ids.add(row.id)
-			rows.append(row)
-		return tuple(rows)
+				raise ValueError('Table exceeds the 16 MiB text limit.')
+			result.append(row)
+		return tuple(result)
 
 
 def absolute_path(value):

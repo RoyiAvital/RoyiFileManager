@@ -56,7 +56,7 @@ If you want to explore further, I can help you with:
 [7] [https://en.wikipedia.org](https://en.wikipedia.org/wiki/NTFS_links)
 [8] [https://www.linkedin.com](https://www.linkedin.com/posts/2brightsparks-pte-ltd_ntfs-supports-three-different-mechanisms-activity-7490315977310576640-Kcm1)
 [9] [https://superuser.com](https://superuser.com/questions/347930/creating-the-equivalent-of-soft-and-hard-links-in-windows)
-[10] [https://wentzwu.com](https://wentzwu.com/2012/12/09/ntfs-hard-link-junction-point-and-symbolic-link-2/)
+[10] [https://wentzwu.com](https://wentzwu.com/2012/12/09/ntfs-hard-link-junction-point-and-symbolic-link-2)
 [11] [https://en.wikipedia.org](https://en.wikipedia.org/wiki/NTFS_reparse_point)
 [12] [https://superuser.com](https://superuser.com/questions/67870/what-is-the-difference-between-ntfs-hard-links-and-directory-junctions)
 [13] [https://blog.walterlv.com](https://blog.walterlv.com/post/ntfs-link-comparisons-en.html)
@@ -90,8 +90,8 @@ Would you like instructions on how to automate link creation or check if Develop
 [7] [https://stackoverflow.com](https://stackoverflow.com/questions/58038683/allow-mklink-for-a-non-admin-user)
 [8] [https://wiki.scanframe.com](https://wiki.scanframe.com/en/Configuration/Windows/mklink-for-users)
 [9] [https://github.com](https://github.com/volta-cli/volta/issues/1406)
-[10] [https://www.howtogeek.com](https://www.howtogeek.com/16226/complete-guide-to-symbolic-links-symlinks-on-windows-or-linux/)
-[11] [https://www.howtogeek.com](https://www.howtogeek.com/16226/complete-guide-to-symbolic-links-symlinks-on-windows-or-linux/)
+[10] [https://www.howtogeek.com](https://www.howtogeek.com/16226/complete-guide-to-symbolic-links-symlinks-on-windows-or-linux)
+[11] [https://www.howtogeek.com](https://www.howtogeek.com/16226/complete-guide-to-symbolic-links-symlinks-on-windows-or-linux)
 [12] [https://superuser.com](https://superuser.com/questions/1323598/create-symbolic-link-as-regular-user)
 
 
@@ -178,12 +178,12 @@ Windows cannot just change a file path entry; it has to physically write data to
 Would you like to see how to use Robocopy switches to safely clone folder structures without accidentally pulling and duplicating linked target files?
 
 [1] [https://superuser.com](https://superuser.com/questions/1647873/robocopy-issues-with-symbolic-links-and-output-log-file)
-[2] [https://petri.com](https://petri.com/robocopy-complete-guide/)
+[2] [https://petri.com](https://petri.com/robocopy-complete-guide)
 [3] [https://superuser.com](https://superuser.com/questions/1642106/how-does-robocopy-handle-file-system-links-symbolic-links-hard-links-and-junct)
-[4] [https://www.reddit.com](https://www.reddit.com/r/Windows10/comments/1jb6k7f/whats_the_best_way_to_copy_files_while/)
+[4] [https://www.reddit.com](https://www.reddit.com/r/Windows10/comments/1jb6k7f/whats_the_best_way_to_copy_files_while)
 [5] [https://learn.microsoft.com](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/robocopy)
 [6] [https://en.wikipedia.org](https://en.wikipedia.org/wiki/Symbolic_link)
-[7] [https://linuxize.com](https://linuxize.com/post/hard-links-vs-symbolic-links/)
+[7] [https://linuxize.com](https://linuxize.com/post/hard-links-vs-symbolic-links)
 
 
 Question: What if the links are relative path?

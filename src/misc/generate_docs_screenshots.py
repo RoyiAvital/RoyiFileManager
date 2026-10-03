@@ -319,10 +319,7 @@ def _source_outputs(output_dir, capture):
 		'favorites': ('royifilemanager-favorites.png',),
 		'directory-size': ('royifilemanager-directory-size.png',),
 		'file-hash': ('royifilemanager-file-hash.png',),
-		'checksum-files': (
-			'royifilemanager-checksum-empty-menu.png',
-			'royifilemanager-checksum-all-menu.png',
-		),
+		'checksum-files': ('royifilemanager-checksum-results.png',),
 		'process-pane': ('royifilemanager-process-pane.png',),
 		'pack-archive': ('royifilemanager-pack-archive.png',),
 	}
@@ -686,11 +683,7 @@ def _capture_source_child(args):
 						outputs[0], window.close
 					)
 			elif args._capture == 'checksum-files':
-				from checksum_files import commands
-				from fman.impl.ui.facade import _hosts
-				from PyQt5.QtCore import QPoint
-				from PyQt5.QtGui import QContextMenuEvent
-				from PyQt5.QtTest import QTest
+				from fman.impl.ui.facade import TableWindow
 				if not state['started']:
 					manifest_url = as_url(str(left_path / 'Samples.sha256'))
 					pane.place_cursor_at(manifest_url)
@@ -698,46 +691,18 @@ def _capture_source_child(args):
 						return
 					pane.focus()
 					state['started'] = True
+					state['settled'] = 0
 					pane.run_command('verify_checksum')
 					return
-				table = commands._tables.get(pane)
-				if table is None or not table.handle.is_open:
+				window = next((candidate for candidate in context.main_window.findChildren(TableWindow)
+					if candidate.isVisible() and candidate.windowTitle().startswith('Verify checksum file')), None)
+				if window is None:
+					state['settled'] = 0
 					return
-				host = next(host for host in _hosts.values() if host.owner is table.owner)
-				all_results = state.get('all_results', False)
-				if len(table.rows) != (3 if all_results else 0) or '3 matched, 0 problems' not in table.summary:
+				if window.table.model.rowCount() != 3 or '3 matched, 0 problems' not in window.summary.content:
 					raise RuntimeError('Checksum sample verification or result view is incorrect')
-				if not state.get('menu_open'):
-					host.show()
-					host.raise_()
-					host.activateWindow()
-					view = host.table.view
-					position = view.visualRect(view.currentIndex()).center() if all_results else QPoint(100, 70)
-					QApplication.sendEvent(view.viewport(), QContextMenuEvent(
-						QContextMenuEvent.Mouse, position, view.viewport().mapToGlobal(position)))
-					menu = host.menu
-					if menu is None:
-						raise RuntimeError('Checksum result menu did not open')
-					actions = {action.text(): action for action in menu.actions()}
-					if not {'Show all results', 'Show only mismatches'} <= actions.keys():
-						raise RuntimeError('Checksum view options are missing')
-					menu.setActiveAction(actions['Show only mismatches' if all_results else 'Show all results'])
-					state['menu_open'] = True
-					state['settled'] = 0
-					return
-				if host.menu is None or not host.menu.isVisible():
-					raise RuntimeError('Checksum menu closed before capture')
-				pixmap = _grab_window_with_dialog(host, host.menu)
-				QTest.keyClick(host.menu, Qt.Key_Return)
-				if all_results:
-					if table.rows:
-						raise RuntimeError('Show only mismatches did not restore the empty view')
-					finish(pixmap, outputs[1], table.handle.close)
-				else:
-					_save_pixmap(pixmap, outputs[0])
-					state['all_results'] = True
-					state['menu_open'] = False
-					state['settled'] = 0
+				if state['settled'] >= 3:
+					finish(_grab_window_with_dialog(context.main_window, window), outputs[0], window.close)
 			elif args._capture == 'process-pane':
 				filter_bar = pane._widget._filter_bar
 				if not state['started']:

@@ -507,7 +507,7 @@ other CPU-intensive work concurrently with measurements.
 ### Everything Search Backend Probe
 
 [everything_probe.py](src/misc/everything_probe.py) evaluates
-[voidtools Everything](https://www.voidtools.com/) as a search backend. It runs a
+[voidtools Everything](https://www.voidtools.com) as a search backend. It runs a
 portable Everything 1.4 executable as a *named* background instance with standard
 privileges and folder indexing only, queries it through the built-in loopback HTTP
 JSON API and reports index build time, memory, per-query latency and instance

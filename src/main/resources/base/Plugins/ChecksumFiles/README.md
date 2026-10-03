@@ -19,10 +19,10 @@ copy before starting a build that bundles it. Do not keep duplicate installation
 `Reload Plugins` and `Remove Plugin` manage user-installed plug-ins, not this
 bundled copy; application updates replace it.
 
-The summary-free results require a host with
-`show_table(get_background_menu=...)`. Existing portable binaries need a rebuilt
-application, not just replacement plug-in resources; the older supplied 0.10.2
-host lacks this API. Current portable-build validation remains pending.
+The results require a host with the static `show_table(columns=..., rows=...)` API.
+Existing portable binaries need a rebuilt application, not just replacement
+plug-in resources; the older supplied 0.10.2 and 0.11.0 hosts lack this API.
+Current portable-build validation remains pending.
 
 ## Standalone Packaging
 
@@ -66,12 +66,11 @@ the existing checksum owner and hashing still works afterward.
   reports its problems without silently switching to another file. The results
   title identifies the chosen manifest. Cursor movement after capture cannot
   change the choice, and no manifest picker opens.
-  The standalone results table initially shows problems, with the summary above
-  it and no Summary row. Right-click a result or the empty table background for
-  **Show all results** and **Show only mismatches** when the complete view fits.
-  The mismatches view includes missing files, unreadable files and invalid records.
-
-See [result-menu screenshots](../../../../../../docs/tools.md#checksum-files).
+  The results open in a non-modal table with the summary above it, so files can
+  be inspected while it stays open. It lists every result when the complete
+  view fits the display limit; otherwise it lists only problems and the summary
+  says so. Problems include mismatches, missing files, unreadable files and
+  invalid records. Use the column filters (for example on Status) to narrow the view.
 
 Supported algorithms: CRC32/SFV, MD5, BLAKE3, SHA1, SHA224, SHA256, SHA384, SHA512,
 SHA3_224, SHA3_256, SHA3_384 and SHA3_512. SHA256 is the default. CRC32, MD5 and SHA1

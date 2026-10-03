@@ -4,7 +4,7 @@
    defaults to the folder under the cursor, otherwise the current local folder.
    Or run **Add favorite folders to Everything database** to import saved local favorites.
 2. Press **Ctrl+E**, or run **Search file by Everything**. Enter an
-   [Everything query](https://www.voidtools.com/support/everything/searching/),
+   [Everything query](https://www.voidtools.com/support/everything/searching),
    such as `*.pdf dm:thisweek`, `ext:txt`, or `folder: reports`.
 3. Press **Enter** to enter a result folder or navigate to and highlight a file.
    **Escape** cancels. Results include match highlights, modification date and size.

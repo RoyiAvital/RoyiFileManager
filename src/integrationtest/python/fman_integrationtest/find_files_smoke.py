@@ -114,17 +114,20 @@ def exercise(context, root, output):
 		assert not {'pattern', 'max_results', 'start_date', 'min_size'} & saved.keys()
 		gui(lambda: session.panel.update(values={'pattern': '*.txt', 'max_results': None}))
 		gui(lambda: session.action('search', session.panel.snapshot()))
-		wait_for(lambda: session.runner is None and session.table is not None, 'Search did not finish')
-		window = gui(lambda: host.table_window)
-		wait_for(window.isVisible, 'Results were not presented')
+		def open_table():
+			from fman.impl.ui.facade import TableWindow
+			return next((widget for widget in QApplication.topLevelWidgets()
+				if isinstance(widget, TableWindow) and widget.alive.is_set() and widget.isVisible()), None)
+		wait_for(lambda: open_table() is not None, 'Results were not presented')
+		window = gui(open_table)
 		assert gui(window.windowTitle) == 'Find files'
-		assert gui(lambda: window.table.counts.text()) == 'Showing 2 / 2 entries'
-		gui(lambda: setattr(session.table, 'filter_text', 'report'))
-		wait_for(lambda: window.table.counts.text() == 'Showing 1 / 2 entries', 'Filtered counter did not update')
+		assert gui(lambda: window.table.counts.text()) == '2 / 2 rows'
+		assert 'Showing 2 / 2 entries' in gui(lambda: window.summary.content)
+		gui(lambda: window.table.query.setText('report'))
+		wait_for(lambda: window.table.counts.text() == '1 / 2 rows', 'Filtered counter did not update')
 		gui(lambda: window.grab().save(str(output)))
-		table = session.table
-		gui(lambda: window.activate_cell(*table.current_cell))
-		wait_for(lambda: not table.is_open, 'Navigation did not close results')
+		gui(lambda: window.activate_cell(*window.table.current_cell))
+		wait_for(lambda: not window.alive.is_set(), 'Navigation did not close results')
 		wait_for(lambda: pane.get_file_under_cursor() == as_url(root / 'nested/report.txt'), 'Result was not highlighted')
 		assert session.root == str(root / 'nested')
 		session.panel.close()

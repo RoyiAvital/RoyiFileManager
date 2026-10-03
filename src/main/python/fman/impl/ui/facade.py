@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from itertools import count, islice
+from itertools import count
 import os
 from pathlib import Path
 from threading import Event
@@ -9,26 +9,26 @@ from fman.impl.ui import UiOwner
 from fman.impl.ui.panel import DropDown, OptionalField, Panel, TextButton, WrappingRow
 from fman.impl.ui.session import MessageDialog, ToolWindow, navigate
 from fman.impl.ui.table import Table
-from fman.impl.ui.table_data import Action, Choice, DateField, IntegerField, Label, Select, Separator, TableAction, TableSchema, TextField, Toggle, panel_records, text, validate_field_value
+from fman.impl.ui.table_data import Action, Choice, DateField, IntegerField, Label, Select, Separator, TableSchema, TextField, Toggle, absolute_path, panel_records, text, validate_field_value
 from fman.impl.util.qt.thread import run_in_main_thread
 from fman.url import as_human_readable, as_url
 from PyQt5 import sip
-from PyQt5.QtCore import QEvent, QSize, Qt, QSignalBlocker, QTimer, pyqtSignal
-from PyQt5.QtGui import QColor, QIcon, QPainter, QPalette, QPixmap
+from PyQt5.QtCore import QEvent, QEventLoop, QSize, Qt, QSignalBlocker, QTimer, pyqtSignal
+from PyQt5.QtGui import QColor, QIcon, QKeySequence, QPainter, QPalette, QPixmap
 from PyQt5.QtSvg import QSvgRenderer
-from PyQt5.QtWidgets import QApplication, QButtonGroup, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMenu, QSizePolicy, QSpacerItem, QToolButton, QVBoxLayout, QWidget
+from PyQt5.QtWidgets import QApplication, QButtonGroup, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMenu, QPushButton, QShortcut, QSizePolicy, QSpacerItem, QToolButton, QVBoxLayout, QWidget
 
 
 _keys = count(1)
 _hosts = {}
+# Tables are static snapshots, independent of plug-in lifetimes.
+_table_owner = UiOwner()
 
 
 @dataclass
 class HandleState:
 	key: int = field(default_factory=lambda: next(_keys))
 	open: bool = True
-	cell: object = None
-	filter_text: str = ''
 	values: object = field(default_factory=lambda: MappingProxyType({}))
 	cancelled: Event = field(default_factory=Event)
 
@@ -51,35 +51,6 @@ def _call(key, method, *args, **kwargs):
 			return
 		raise RuntimeError('The UI handle is closed.')
 	return getattr(host, method)(*args, **kwargs)
-
-
-class TableHandle:
-	__slots__ = ('__state',)
-
-	def __init__(self, state):
-		self.__state = state
-
-	@property
-	def is_open(self):
-		return self.__state.open and not self.__state.cancelled.is_set()
-
-	@property
-	def current_cell(self):
-		return self.__state.cell if self.is_open else None
-
-	@property
-	def filter_text(self):
-		return self.__state.filter_text
-
-	@filter_text.setter
-	def filter_text(self, value):
-		_call(self.__state.key, 'set_filter', value)
-
-	def refresh(self):
-		_call(self.__state.key, 'refresh')
-
-	def close(self):
-		_call(self.__state.key, 'close')
 
 
 class PanelHandle:
@@ -134,6 +105,11 @@ class ElidedLabel(QLabel):
 def _validate_callbacks(*callbacks):
 	if any(callback is not None and not callable(callback) for callback in callbacks):
 		raise TypeError('UI callbacks must be callable or None.')
+
+
+def _validate_truncated(value):
+	if value is not None and type(value) is not bool:
+		raise TypeError('truncated must be True, False or None.')
 
 
 def _require_owner(owner):
@@ -453,7 +429,6 @@ class PanelSession(ToolWindow):
 		self.on_change, self.on_action, self.on_closed = on_change, on_action, on_closed
 		self.controls, self.icon_bytes, self.icon_controls = {}, {}, []
 		self.icon_labels = []
-		self.table_window = None
 		self.status = None
 		self.status_provider = None
 		self.activity_timer = QTimer(self)
@@ -622,13 +597,7 @@ class PanelSession(ToolWindow):
 			controls[-1 if backwards else 0].setFocus(Qt.BacktabFocusReason if backwards else Qt.TabFocusReason)
 
 	def focus_from_panel(self, backwards=False):
-		window = self.table_window
-		if window and window.alive.is_set() and window.isVisible():
-			window.raise_()
-			window.activateWindow()
-			(window.table.view if backwards else window.table.focusProxy()).setFocus()
-		else:
-			self.focus_panel(backwards)
+		self.focus_panel(backwards)
 
 	def eventFilter(self, watched, event):
 		if watched is self.main:
@@ -647,8 +616,6 @@ class PanelSession(ToolWindow):
 		self.state.cancelled.set()
 		self.state.open = False
 		_hosts.pop(self.state.key, None)
-		if self.table_window is not None:
-			self.table_window.close()
 		self.main.removeEventFilter(self)
 		self.set_activity()
 		self.main.remove_bottom_panel(self.panel)
@@ -664,7 +631,7 @@ class PanelSession(ToolWindow):
 		if self.main._panel_dock is not None or QApplication.activeModalWidget() not in (None, self):
 			return
 		active = QApplication.activeWindow()
-		if active not in (None, self.main, self, self.table_window):
+		if active not in (None, self.main, self):
 			return
 		if isinstance(target, QWidget) and not sip.isdeleted(target) and target.isVisible() and target.isEnabled():
 			self.main.activateWindow()
@@ -672,97 +639,83 @@ class PanelSession(ToolWindow):
 
 
 class TableWindow(ToolWindow):
-	def __init__(self, owner, main, pane, panel, schema, rows, provider, title,
-			fuzzy, modal, close_on_navigate, summary, get_details, on_activate, get_menu, on_closed, get_count_text=None, get_background_menu=None):
-		self.state = HandleState()
-		super().__init__(main, owner)
+	def __init__(self, main, pane, schema, rows, title, summary, modal, text_filter, truncated, accept=None):
+		super().__init__(main, _table_owner)
 		self.setWindowFlags(Qt.Dialog)
 		self.setWindowModality(Qt.WindowModal if modal else Qt.NonModal)
 		self.setWindowTitle(title or 'Table')
 		self.resize(820, 520)
 		self.setMinimumSize(460, 280)
-		self.main, self.pane, self.panel_session = main, pane, panel
-		self.provider, self.schema = provider, schema
-		self.close_on_navigate = modal if close_on_navigate is None else close_on_navigate
+		self.main, self.pane, self.schema, self.modal = main, pane, schema, modal
 		self.navigated = False
-		self.get_details, self.on_activate, self.get_menu = get_details, on_activate, get_menu
-		self.get_background_menu = get_background_menu
-		self.on_closed = on_closed
-		self.action_generation = 0
 		self.menu = None
-		self.pending = False
-		self.retry_queued = False
-		self.table = Table(schema, rows, self, fuzzy, get_count_text)
+		self.accept_label = accept
+		self.result = None
+		self.table = Table(schema, rows, self, text_filter, truncated)
 		self.table.view.setColumnWidth(0, 300)
 		self.focus_widget = self.table
 		layout = QVBoxLayout(self)
 		layout.setContentsMargins(14, 12, 14, 12)
 		self.summary = ElidedLabel(summary, self)
 		self.summary.setVisible(bool(summary))
-		self.details = ElidedLabel(parent=self)
-		self.details.setVisible(get_details is not None)
 		layout.addWidget(self.summary)
 		layout.addWidget(self.table, 1)
-		layout.addWidget(self.details)
-		self.table.state_changed.connect(self.changed)
+		self.accept_button = None
+		if accept is not None:
+			buttons = QHBoxLayout()
+			buttons.addStretch(1)
+			self.accept_button = QPushButton(self)
+			self.accept_button.setObjectName('table-accept')
+			self.accept_button.setToolTip(accept + ' the visible rows (Ctrl+Enter)')
+			cancel = QPushButton('Cancel', self)
+			cancel.setToolTip('Close without a result (Escape)')
+			# Enter belongs to the view (Go To); only Ctrl+Enter accepts.
+			for button in (self.accept_button, cancel):
+				button.setAutoDefault(False)
+				buttons.addWidget(button)
+			layout.addLayout(buttons)
+			self.accept_button.clicked.connect(self.accept_rows)
+			cancel.clicked.connect(self.close)
+			for sequence in ('Ctrl+Return', 'Ctrl+Enter'):
+				shortcut = QShortcut(QKeySequence(sequence), self)
+				shortcut.activated.connect(self.accept_rows)
+			self.table.state_changed.connect(self.update_accept)
+			self.update_accept()
+		self.table.state_changed.connect(self.close_menu)
 		self.table.view.cell_activated.connect(self.activate_cell)
 		self.table.view.menu_requested.connect(self.open_menu)
 		self.disposed.connect(self.cleanup)
 		self.main.installEventFilter(self)
 		if pane is not None:
 			self.disposed.connect(pane.on_closed(self.close))
-		if panel is not None:
-			panel.table_window = self
-		_hosts[self.state.key] = self
-		self.changed()
 
-	def invalidate(self):
-		self.state.cancelled.set()
-		super().invalidate()
-
-	def changed(self):
-		self.action_generation += 1
-		self.close_menu()
-		if not self.alive.is_set() or not self.owner.active:
-			return
-		self.state.cell = self.table.current_cell
-		self.state.filter_text = self.table.query.text()
-		if self.get_details is not None and self.state.cell is not None:
-			try:
-				self.details.set_content(self.get_details(*self.state.cell))
-			except Exception as error:
-				self.details.set_content(str(error))
-		else:
-			self.details.set_content('')
-
-	def refresh(self):
-		rows = self.schema.snapshot(self.provider)
-		self.table.replace(rows)
-
-	def set_filter(self, value):
-		self.table.query.setText(text(value, 'Filter', 4096))
-
-	def valid_action(self, row, column, generation):
+	def is_current(self, row, column):
 		cell = self.table.current_cell
-		if not self.alive.is_set() or not self.owner.active or generation != self.action_generation:
-			return False
-		return row is None or cell is not None and cell[0] is row and cell[1] == column
+		return self.alive.is_set() and cell is not None and cell[0] is row and cell[1] == column
+
+	def update_accept(self):
+		count = self.table.model.rowCount()
+		self.accept_button.setText('%s (%s)' % (self.accept_label, format(count, ',')))
+		self.accept_button.setEnabled(self.table.settled and count > 0)
+
+	def accept_rows(self):
+		if self.accept_button is None or not self.accept_button.isEnabled() or not self.alive.is_set():
+			return
+		self.result = self.table.visible_positions()
+		self.close()
 
 	def activate_cell(self, row, column):
-		if self.busy:
+		if self.busy or column not in self.schema.roles:
 			return
 		try:
-			if column in self.schema.roles:
-				path = self.schema.target(row, column)
-				if path is not None and self.pane is not None:
-					self.go_to(row, column, path, self.action_generation)
-			elif self.on_activate is not None:
-				self.on_activate(row, column)
+			path = self.schema.target(row, column)
+			if path is not None and self.pane is not None:
+				self.go_to(row, column, path)
 		except Exception as error:
 			self.alert(str(error))
 
-	def go_to(self, row, column, path, generation):
-		if self.busy or self.pane is None or not self.valid_action(row, column, generation):
+	def go_to(self, row, column, path):
+		if self.busy or self.pane is None or not self.is_current(row, column):
 			return
 		role = self.schema.roles[column]
 		def check(url):
@@ -770,55 +723,52 @@ class TableWindow(ToolWindow):
 			if not valid:
 				raise OSError('The target is missing, inaccessible or not a %s: %s' % (role, path))
 		def complete(outcome, message):
-			if not self.valid_action(row, column, generation):
+			if not self.alive.is_set():
 				return
-			if outcome == 'success':
-				if self.close_on_navigate:
-					self.navigated = True
-					self.close()
-			else:
+			if outcome != 'success':
 				self.alert(message or 'Navigation did not complete.')
+			elif self.modal:
+				self.navigated = True
+				self.close()
+			else:
+				self.focus_pane()
 		navigate(self.pane, as_url(path), complete, window=self, check=check)
+
+	def focus_pane(self):
+		target = self.pane._widget
+		if isinstance(target, QWidget) and not sip.isdeleted(target) and target.isVisible() and target.isEnabled():
+			self.main.activateWindow()
+			target.setFocus(Qt.OtherFocusReason)
 
 	def open_menu(self, row, column, position):
 		self.close_menu()
-		generation = self.action_generation
+		if row is None:
+			return
 		try:
-			if row is None:
-				path = None
-				custom = tuple(islice(self.get_background_menu(), 33)) if self.get_background_menu is not None else ()
-			else:
-				path = self.schema.target(row, column)
-				custom = tuple(islice(self.get_menu(row, column), 33)) if self.get_menu is not None else ()
-			if len(custom) > 32:
-				raise ValueError('At most 32 custom menu actions are supported.')
-			ids = {'copy_path', 'go_to'}
-			for item in custom:
-				if not isinstance(item, TableAction) or not callable(item.callback):
-					raise TypeError('Menus require TableAction records with callable callbacks.')
-				if not text(item.id, 'Action ID', 128) or item.id in ids or not text(item.label, 'Action label', 128):
-					raise ValueError('Menu action IDs and labels must be nonempty and unique.')
-				ids.add(item.id)
-			if path is None and not custom:
-				return
+			path = self.schema.target(row, column)
+			descriptor = self.schema.columns[column]
+			table = self.table
 			menu = QMenu(self)
 			self.menu = menu
 			def guarded(callback):
 				def invoke(checked=False):
-					if self.valid_action(row, column, generation):
+					if self.is_current(row, column):
 						try:
 							callback()
 						except Exception as error:
 							self.alert(str(error))
 				return invoke
+			# Path kinds copy the resolved absolute path; other kinds copy the displayed text.
+			copied = path if path is not None and descriptor.copy_label == 'Copy Path' else row.cells[column]
+			menu.addAction(descriptor.copy_label, guarded(lambda: QApplication.clipboard().setText(copied)))
 			if path is not None:
-				menu.addAction('Copy Path', guarded(lambda: QApplication.clipboard().setText(path)))
-				go = menu.addAction('Go To', guarded(lambda: self.go_to(row, column, path, generation)))
+				go = menu.addAction('Go To', guarded(lambda: self.go_to(row, column, path)))
 				go.setEnabled(self.pane is not None and not self.busy)
-				if custom:
-					menu.addSeparator()
-			for item in custom:
-				menu.addAction(item.label, guarded(lambda item=item: item.callback(row, column)))
+			if table.filterable(column):
+				menu.addSeparator()
+				menu.addAction('Filter This Column...', guarded(lambda: table.open_filter_menu(column)))
+				clear = menu.addAction('Clear All Filters', guarded(table.clear_all_filters))
+				clear.setEnabled(bool(table.filters or table.query.text()))
 			menu.aboutToHide.connect(menu.deleteLater)
 			menu.destroyed.connect(lambda: self.menu_gone(menu))
 			menu.popup(position)
@@ -832,96 +782,30 @@ class TableWindow(ToolWindow):
 	def close_menu(self):
 		if self.menu is not None:
 			menu, self.menu = self.menu, None
+			# Hiding triggers the connected deleteLater; a direct Python call would expose the menu to GC.
 			menu.close()
-			menu.deleteLater()
-
-	def present(self):
-		self.pending = True
-		app = QApplication.instance()
-		app.installEventFilter(self)
-		app.applicationStateChanged.connect(self.schedule_present)
-		self.try_present()
-
-	def schedule_present(self, *args):
-		if self.pending and not self.retry_queued:
-			self.retry_queued = True
-			QTimer.singleShot(0, self.try_present)
-
-	def try_present(self):
-		self.retry_queued = False
-		if not self.pending or not self.alive.is_set() or not self.owner.active:
-			return
-		app = QApplication.instance()
-		if app.applicationState() != Qt.ApplicationActive or app.activeWindow() is not self.main or app.activeModalWidget() is not None:
-			if self.panel_session is not None:
-				self.panel_session.set_activity('Results ready')
-			return
-		self.stop_presenting()
-		if self.panel_session is not None:
-			self.panel_session.set_activity()
-		if self.windowModality() == Qt.WindowModal:
-			self.open()
-		else:
-			self.show()
-		self.table.setFocus()
-
-	def stop_presenting(self):
-		if self.pending:
-			self.pending = False
-			app = QApplication.instance()
-			app.removeEventFilter(self)
-			app.applicationStateChanged.disconnect(self.schedule_present)
 
 	def eventFilter(self, watched, event):
 		if watched is self.main and event.type() == QEvent.Close:
 			self.close()
-		elif self.pending and event.type() in (QEvent.WindowActivate, QEvent.Hide, QEvent.Close, QEvent.DeferredDelete):
-			self.schedule_present()
 		return False
 
-	def focusNextPrevChild(self, next):
-		if self.windowModality() == Qt.NonModal and self.panel_session is not None:
-			current = QApplication.focusWidget()
-			if current is self.table.view and next or current is self.table.focusProxy() and not next:
-				self.panel_session.focus_panel(not next)
-				return True
-		return super().focusNextPrevChild(next)
-
 	def cleanup(self):
-		self.state.cancelled.set()
-		self.state.open = False
-		self.state.cell = None
-		_hosts.pop(self.state.key, None)
-		self.stop_presenting()
 		self.main.removeEventFilter(self)
 		self.close_menu()
 		self.table.dispose()
-		self.schema.resolver = None
-		panel = self.panel_session
-		restore_panel = panel is not None and panel.table_window is self
-		if restore_panel:
-			panel.table_window = None
-		callback, self.on_closed = self.on_closed, None
-		self.provider = self.get_details = self.get_menu = self.on_activate = None
-		self.get_background_menu = None
-		_finished_callback(callback, self.owner)
-		if not self.owner.active or sip.isdeleted(self.main) or not self.main.isVisible():
-			return
-		if panel is not None:
-			if not restore_panel or not panel.alive.is_set() or sip.isdeleted(panel) or panel.table_window is not None:
-				return
-			dock = self.main._panel_dock
-			if dock is None or sip.isdeleted(dock) or dock.panel is not panel.panel:
-				return
-		if QApplication.activeModalWidget() not in (None, self):
+		if sip.isdeleted(self.main) or not self.main.isVisible():
 			return
 		if self.navigated and self.pane is not None:
-			target = self.pane._widget
-			if isinstance(target, QWidget) and not sip.isdeleted(target) and target.isVisible() and target.isEnabled():
+			self.focus_pane()
+		elif self.modal:
+			# Return to the docked panel (if any) that produced these results.
+			dock = getattr(self.main, '_panel_dock', None)
+			controls = [widget for widget in dock.findChildren(QWidget) if widget.isVisible() and widget.isEnabled()
+				and widget.focusPolicy() & Qt.TabFocus] if dock is not None and not sip.isdeleted(dock) else []
+			if controls:
 				self.main.activateWindow()
-				target.setFocus(Qt.OtherFocusReason)
-		elif restore_panel:
-			panel.focus_panel()
+				controls[0].setFocus(Qt.OtherFocusReason)
 
 
 @run_in_main_thread
@@ -935,42 +819,40 @@ def show_panel(*, owner, pane, rows, on_change=None, on_action=None, on_closed=N
 
 
 @run_in_main_thread
-def show_table(*, owner, get_rows, num_columns, columns_header, pane=None,
-		panel=None, title='', fuzzy=True, file_path_column=None, folder_path_column=None,
-		resolve_path=None, base_path=None, modal=True, close_on_navigate=None,
-		summary='', get_details=None, on_activate=None, get_menu=None, on_closed=None,
-		entry_path_column=None, get_count_text=None, get_background_menu=None):
-	_require_owner(owner)
-	_validate_callbacks(get_details, on_activate, get_menu, on_closed, get_count_text, get_background_menu)
-	for value in (fuzzy, modal):
-		if type(value) is not bool:
-			raise TypeError('fuzzy and modal must be boolean.')
-	if close_on_navigate is not None and type(close_on_navigate) is not bool:
-		raise TypeError('close_on_navigate must be bool or None.')
+def open_table(*, columns, rows, pane=None, title='', summary='', modal=True,
+		text_filter='fuzzy', base_path=None, truncated=None, accept=None):
+	_validate_truncated(truncated)
+	if text_filter not in (None, 'fuzzy', 'substring') and not callable(text_filter):
+		raise ValueError('text_filter must be fuzzy, substring, None or a callable.')
+	if type(modal) is not bool:
+		raise TypeError('modal must be boolean.')
 	text(title, 'Title')
 	text(summary, 'Summary')
-	panel_session = None
-	if panel is not None:
-		if not isinstance(panel, PanelHandle) or not panel.is_open:
-			raise ValueError('panel must be an open PanelHandle.')
-		panel_session = _hosts.get(panel._key())
-		if panel_session is None or panel_session.owner is not owner or pane is not None and pane is not panel_session.pane:
-			raise ValueError('Panel, pane and Table must have the same owner and target pane.')
-		if panel_session.table_window is not None:
-			raise RuntimeError('This Panel already owns a Table.')
-		pane = panel_session.pane
-	if base_path is None and pane is not None and any(column is not None for column in (file_path_column, folder_path_column, entry_path_column)):
+	if accept is not None and not text(accept, 'Accept label', 64).strip():
+		raise ValueError('accept must be a non-empty label or None.')
+	schema = TableSchema(columns, base_path)
+	if schema.base is None and schema.roles and pane is not None:
 		location = pane.get_path()
 		if isinstance(location, str) and location.startswith('file://'):
-			base_path = as_human_readable(location)
-	schema = TableSchema(num_columns, columns_header, file_path_column, folder_path_column, resolve_path, base_path, entry_path_column)
-	rows = schema.snapshot(get_rows)
+			schema.base = absolute_path(as_human_readable(location))
+	snapshot = schema.snapshot(rows)
 	if pane is None:
 		from fman import _get_ui
 		main = _get_ui()
 	else:
 		main = pane.window._widget
-	window = TableWindow(owner, main, pane, panel_session, schema, rows, get_rows,
-		title, fuzzy, modal, close_on_navigate, summary, get_details, on_activate, get_menu, on_closed, get_count_text, get_background_menu)
-	window.present()
-	return TableHandle(window.state)
+	window = TableWindow(main, pane, schema, snapshot, title, summary, modal, text_filter, truncated, accept)
+	window.show()
+	window.table.setFocus()
+	return window
+
+
+@run_in_main_thread
+def show_table(*, columns, rows, pane=None, title='', summary='', modal=True,
+		text_filter='fuzzy', base_path=None, truncated=None, accept=None):
+	window = open_table(columns=columns, rows=rows, pane=pane, title=title, summary=summary,
+		modal=modal, text_filter=text_filter, base_path=base_path, truncated=truncated, accept=accept)
+	loop = QEventLoop()
+	window.disposed.connect(loop.quit)
+	loop.exec_()
+	return window.result

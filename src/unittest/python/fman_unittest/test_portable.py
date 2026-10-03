@@ -77,8 +77,8 @@ class PluginApiCompatibilityTest(TestCase):
 			'ListItem', 'QuickList', 'Panel', 'IconButton', 'TextButton',
 			'DropDown', 'JsonSettings', 'UiController', 'UiOwner', 'Resource',
 			'settings_resource', 'matchers', 'ToolWindow', 'PaneToolWindow',
-			'NavigationHandle', 'navigate', 'OutputTextBox', 'TableRow', 'TableAction',
-			'TextField', 'Toggle', 'Choice', 'Label', 'Action', 'TableHandle', 'PanelHandle',
+			'NavigationHandle', 'navigate', 'OutputTextBox', 'TableRow', 'TableColumn',
+			'TextField', 'Toggle', 'Choice', 'Label', 'Action', 'PanelHandle',
 			'Select', 'DateField', 'IntegerField', 'Separator',
 			'show_table', 'show_panel'
 		}

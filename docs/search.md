@@ -80,6 +80,10 @@ Leave the content field empty to search names only.
 
 Search runs in the background. Use **Stop** to keep results collected so far.
 
+Turn on **Extended** to add **Size** and **Date Modified** columns. Click a
+column's funnel icon, or press ++alt+down++, to filter by size or date. Words in
+the filter box must all appear; use `"quotes"` for a phrase.
+
 <figure class="product-shot" markdown>
   ![Search Files panel configured to find font settings](assets/royifilemanager-search-files-panel.png)
   <figcaption>Search INI files containing “fonts” under C:\Windows.</figcaption>

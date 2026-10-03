@@ -1,21 +1,27 @@
-from dataclasses import dataclass
 from threading import Lock, Thread
 from time import monotonic
 
 from fman import DirectoryPaneCommand, load_json, save_json, show_status_message
-from fman.ui import Action, Choice, Label, TableRow, TextField, Toggle, UiController, settings_resource, show_panel, show_table
-from fman.url import as_human_readable, as_url
+from fman.ui import Action, Choice, Label, TableColumn, TableRow, TextField, Toggle, UiController, settings_resource, show_panel, show_table
+from fman.url import as_human_readable
 from search_files.engine import Options, Runner
+from search_files.query import compile_text_filter
 
 
 SETTINGS_NAME = 'SearchFiles.json'
 LEGACY_SETTINGS_NAME = 'SearchFileContent.json'
 DEFAULTS = {'name_mode': 'glob', 'content_mode': 'literal', 'recursive': True,
-	'encoding': 'auto', 'max_rows': 10000, 'max_text_bytes': 16 * 1024 * 1024,
+	'extended': False, 'encoding': 'auto', 'max_rows': 10000, 'max_text_bytes': 16 * 1024 * 1024,
 	'max_file_lines': 200, 'max_file_bytes': 50 * 1024 * 1024}
 MODE_OPTIONS = (('literal', 'icons/text.svg', 'Literal text, case-insensitive'),
 	('glob', 'icons/asterisk.svg', 'Glob: * any text, ? one character, [ab] a set'),
 	('regex', 'icons/regex.svg', 'Regular expression (ripgrep syntax), case-insensitive'))
+FORM_CONTROLS = ('name', 'content', 'name_mode', 'content_mode', 'recursive', 'extended', 'search')
+COLUMNS = (TableColumn('File Path', 'file_path'), TableColumn('Snippet'))
+EXTENDED_COLUMNS = (TableColumn('File Path', 'file_path'), TableColumn('Size', 'numeric', unit='bytes'),
+	TableColumn('Date Modified', 'date'), TableColumn('Snippet'))
+# Engine status -> Table truncation flag; None means the status does not say.
+TRUNCATED = {'Complete': False, 'Limited': True, 'Stopped': True}
 
 
 def load_settings():
@@ -51,13 +57,11 @@ class SearchUI(UiController):
 	pass
 
 
-@dataclass(frozen=True, slots=True)
-class Location:
-	url: str
-	path: str
-	line: int
-	column: int
-	spans: tuple
+def result_row(hit, metadata=None, extended=False):
+	if not extended:
+		return TableRow((hit.relative_path, hit.snippet), ((), hit.spans))
+	size, modified = metadata if metadata is not None else (None, None)
+	return TableRow((hit.relative_path, size, modified, hit.snippet), ((), (), (), hit.spans))
 
 
 class SearchSession:
@@ -69,7 +73,7 @@ class SearchSession:
 		self.settings = settings
 		self.runner = None
 		self.names_only = False
-		self.table = None
+		self.extended = False
 		self.generation = 0
 		self.save_lock = Lock()
 		self.pending_settings = None
@@ -81,6 +85,7 @@ class SearchSession:
 				Choice('content_mode', 'Content mode', MODE_OPTIONS, settings['content_mode'])),
 			(Label('root', self.root_text(), 'icons/panel-' + pane_side + '.svg', pane_side.title() + ' pane'),
 				Toggle('recursive', 'icons/folder-tree.svg', 'Recursive', settings['recursive'], 'Search subfolders'),
+				Toggle('extended', 'icons/table-columns.svg', 'Extended', settings['extended'], 'Extended metadata mode'),
 				Action('search', '', 'icons/search.svg', 'Search'),
 				Action('stop', '', 'icons/square.svg', 'Stop'))),
 			on_change=self.changed, on_action=self.action, on_closed=self.dispose)
@@ -94,7 +99,7 @@ class SearchSession:
 		return self.root or 'Local folder required'
 
 	def refresh_root(self):
-		if not self.owner.active or not self.panel.is_open or self.runner is not None or self.table is not None and self.table.is_open:
+		if not self.owner.active or not self.panel.is_open or self.runner is not None:
 			return
 		path = self.pane.get_path()
 		self.root = as_human_readable(path) if isinstance(path, str) and path.startswith('file://') else None
@@ -102,7 +107,7 @@ class SearchSession:
 
 	def changed(self, values):
 		updated = dict(self.settings)
-		for name in ('name_mode', 'content_mode', 'recursive'):
+		for name in ('name_mode', 'content_mode', 'recursive', 'extended'):
 			updated[name] = values[name]
 		if updated == self.settings:
 			return
@@ -150,7 +155,7 @@ class SearchSession:
 				self.panel.set_activity_status('Stopping')
 				self.runner.stop()
 			return
-		if name != 'search' or self.runner is not None or self.table is not None and self.table.is_open:
+		if name != 'search' or self.runner is not None:
 			return
 		self.refresh_root()
 		if self.root is None:
@@ -167,7 +172,8 @@ class SearchSession:
 		runner = Runner(options, self.panel.cancelled)
 		self.runner = runner
 		self.names_only = options.names_only
-		self.panel.update(enabled={key: False for key in ('name', 'content', 'name_mode', 'content_mode', 'recursive', 'search')})
+		self.extended = options.extended
+		self.panel.update(enabled={key: False for key in FORM_CONTROLS})
 		self.panel.set_activity_status('Validating', get_text=lambda: self.progress_text(runner))
 		if not runner.start(lambda result: self.completed(generation, result)):
 			self.runner = None
@@ -182,13 +188,8 @@ class SearchSession:
 			progress.phase, progress.lines, progress.files, monotonic() - runner.started)
 
 	def enable_form(self):
-		self.panel.update(enabled={key: True for key in ('name', 'content', 'name_mode', 'content_mode', 'recursive', 'search')})
+		self.panel.update(enabled={key: True for key in FORM_CONTROLS})
 		self.refresh_root()
-
-	def results_closed(self, generation):
-		if generation == self.generation and self.owner.active and self.panel.is_open:
-			self.table = None
-			self.enable_form()
 
 	def completed(self, generation, result):
 		if generation != self.generation or not self.owner.active or self.panel.cancelled.is_set():
@@ -201,24 +202,20 @@ class SearchSession:
 				result.status, len(result.rows), progress.files, progress.elapsed)
 		if result.reason:
 			summary += ' - ' + result.reason
+		if result.metadata_missing:
+			summary += ' - %d file%s without metadata' % (result.metadata_missing, '' if result.metadata_missing == 1 else 's')
 		try:
+			root = self.root
 			self.panel.set_activity_status(summary)
-			if result.validated and self.table is not None and self.table.is_open:
-				self.table.close()
-			if result.rows:
-				rows = tuple(TableRow('%d:%d' % (generation, index), (hit.relative_path, hit.snippet),
-					Location(as_url(hit.path), hit.path, hit.line, hit.column, hit.spans), ((), hit.spans))
-					for index, hit in enumerate(result.rows))
-				self.table = show_table(owner=self.owner, panel=self.panel, get_rows=lambda: rows,
-					num_columns=2, columns_header=('File Path', 'Snippet'), title='Search files',
-					file_path_column=0, base_path=self.root, modal=True,
-					summary=self.root + ' | ' + summary,
-					on_closed=lambda: self.results_closed(generation),
-					get_details=lambda row, column: '%s | %d:%d' % (row.value.path, row.value.line, row.value.column)
-						if row.value.line else row.value.path)
 			self.runner = None
-			if self.table is None or not self.table.is_open:
-				self.enable_form()
+			self.enable_form()
+			if result.rows:
+				metadata = dict(result.metadata)
+				rows = tuple(result_row(hit, metadata.get(hit.path), self.extended) for hit in result.rows)
+				show_table(columns=EXTENDED_COLUMNS if self.extended else COLUMNS, rows=rows,
+					pane=self.pane, title='Search files', summary=root + ' | ' + summary,
+					text_filter=compile_text_filter if self.extended else 'fuzzy',
+					base_path=root, truncated=TRUNCATED.get(result.status))
 		except (RuntimeError, ValueError):
 			if self.panel.is_open:
 				self.runner = None
@@ -233,7 +230,6 @@ class SearchSession:
 			unsubscribe()
 		if self.runner is not None:
 			self.runner.stop()
-		self.table = None
 
 
 class SearchFiles(DirectoryPaneCommand):

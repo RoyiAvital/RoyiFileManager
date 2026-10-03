@@ -89,7 +89,7 @@ Plug-in layout `Plugins/CalculateFileHash/`:
 
 Add the generic implementation under `fman.impl.ui.output` and re-export it
 from [fman.ui](../src/main/python/fman/ui.py), including `__all__`. Follow the
-[shared UI design](../Plan/UIElements.md) and existing
+[UI catalogue](../UIElements.md) and existing
 [component conventions](../src/main/python/fman/impl/ui/panel.py). This replaces
 the older QuickList-based hash-result sketch for this consumer.
 
