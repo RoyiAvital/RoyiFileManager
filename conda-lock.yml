@@ -13,7 +13,7 @@
 version: 1
 metadata:
   content_hash:
-    win-64: 17e7fbcd9bb929655f2d2ae939c32a410c9e16058742c90ddd59e02c99d2317c
+    win-64: 9459df4c26de489c1c0ba4d21b09b71960a44cd67b1ed97afb3f4f2849298647
   channels:
   - url: conda-forge
     used_env_vars: []
@@ -22,6 +22,19 @@ metadata:
   sources:
   - environment.yml
 package:
+- name: _python_abi3_support
+  version: '1.0'
+  manager: conda
+  platform: win-64
+  dependencies:
+    cpython: ''
+    python-gil: ''
+  url: https://conda.anaconda.org/conda-forge/noarch/_python_abi3_support-1.0-hd8ed1ab_3.conda
+  hash:
+    md5: 3845f3d75991bae0fb90884662f4327c
+    sha256: 2a7204314663eeda5dec482a956f0e2eaf289bd5b9953eaaaad0e81aa64638f2
+  category: main
+  optional: false
 - name: altgraph
   version: 0.17.5
   manager: conda
@@ -119,6 +132,22 @@ package:
   hash:
     md5: 775c265f0f4c94cd0bf125a0914f54aa
     sha256: 8b3f31167895e32e494feba6849ad443e2e378ad422c8f1599d2d26ef77cbd80
+  category: main
+  optional: false
+- name: blake3
+  version: 1.0.10
+  manager: conda
+  platform: win-64
+  dependencies:
+    python: ''
+    python_abi: 3.14.*
+    ucrt: '>=10.0.20348.0'
+    vc: '>=14.3,<15'
+    vc14_runtime: '>=14.44.35208'
+  url: https://conda.anaconda.org/conda-forge/win-64/blake3-1.0.10-py314h9f07db2_0.conda
+  hash:
+    md5: 4ed07af7b8615960bd80fc6a6f1aef52
+    sha256: 720d190d6e07a0b363392e754595db806c52cfe97e1c38861631ecc3a4041962
   category: main
   optional: false
 - name: boltons
@@ -257,15 +286,20 @@ package:
   category: main
   optional: false
 - name: charset-normalizer
-  version: 3.5.1
+  version: 3.5.2
   manager: conda
   platform: win-64
   dependencies:
-    python: '>=3.10'
-  url: https://conda.anaconda.org/conda-forge/noarch/charset-normalizer-3.5.1-pyhd8ed1ab_0.conda
+    _python_abi3_support: 1.*
+    cpython: '>=3.9'
+    python: ''
+    ucrt: '>=10.0.20348.0'
+    vc: '>=14.3,<15'
+    vc14_runtime: '>=14.44.35208'
+  url: https://conda.anaconda.org/conda-forge/win-64/charset-normalizer-3.5.2-h308a848_0.conda
   hash:
-    md5: e0ac3accc64e23e40969d660e5f58ac8
-    sha256: cb60ef3e0631c8bacb4f7057196dee4496091a22baa3bb4b9bccb12c7e1c921b
+    md5: 9435e7be4c7a58a0baa36d1a96e4eea0
+    sha256: 15ef0ff35f316beeb8d0ab045cb3c29655f0e38ed1ea49c56f5606d2ff2bc3e4
   category: main
   optional: false
 - name: click
@@ -365,6 +399,19 @@ package:
   hash:
     md5: b4e3dcace82b486f69bc693f30120205
     sha256: af3b666ea6043a146901cd151d6201126bbe19af8307b58fb175015e3710064c
+  category: main
+  optional: false
+- name: cpython
+  version: 3.14.7
+  manager: conda
+  platform: win-64
+  dependencies:
+    python: '>=3.14,<3.15.0a0'
+    python_abi: '*'
+  url: https://conda.anaconda.org/conda-forge/noarch/cpython-3.14.7-py314hd8ed1ab_106.conda
+  hash:
+    md5: 3b52b830ac00367685c08f98f50963bf
+    sha256: fd701880cf6f696420aa5b4b530dbdf0c83a16bdb50aeb760b3159eec5c416bf
   category: main
   optional: false
 - name: crashtest
@@ -608,17 +655,17 @@ package:
   category: main
   optional: false
 - name: gitpython
-  version: 3.1.62
+  version: 3.2.0
   manager: conda
   platform: win-64
   dependencies:
     gitdb: '>=4.0.1,<5'
     python: '>=3.11'
     typing_extensions: '>=3.10.0.2'
-  url: https://conda.anaconda.org/conda-forge/noarch/gitpython-3.1.62-pyh5ded981_0.conda
+  url: https://conda.anaconda.org/conda-forge/noarch/gitpython-3.2.0-pyh5ded981_0.conda
   hash:
-    md5: bc66034cae0ff9168c130766eb2b33d1
-    sha256: c70321228e3b7e200791629bf2d598fa6a334407b77001511697b749e8ae171a
+    md5: a71c955d6cee9418cec14879e4bbc8d6
+    sha256: b28899d98ac49da80396bee4640455a9719caf0cd0c5ddda46dc0e3cf9e6f6a0
   category: main
   optional: false
 - name: glib
@@ -984,26 +1031,26 @@ package:
   category: main
   optional: false
 - name: libharfbuzz
-  version: 14.5.0
+  version: 14.5.1
   manager: conda
   platform: win-64
   dependencies:
     cairo: '>=1.18.6,<2.0a0'
     graphite2: '>=1.3.15,<2.0a0'
     icu: '>=78.3,<79.0a0'
-    libexpat: '>=2.8.1,<3.0a0'
+    libexpat: '>=2.8.5,<3.0a0'
     libfreetype: '>=2.14.3'
     libfreetype6: '>=2.14.3'
     libglib: '>=2.90.0,<3.0a0'
-    libpng: '>=1.6.58,<1.7.0a0'
+    libpng: '>=1.6.59,<1.7.0a0'
     libzlib: '>=1.3.2,<2.0a0'
     ucrt: '>=10.0.20348.0'
     vc: '>=14.3,<15'
     vc14_runtime: '>=14.44.35208'
-  url: https://conda.anaconda.org/conda-forge/win-64/libharfbuzz-14.5.0-h03b5201_0.conda
+  url: https://conda.anaconda.org/conda-forge/win-64/libharfbuzz-14.5.1-h03b5201_0.conda
   hash:
-    md5: c0b52894b8f10778b0ea2d1ded020b11
-    sha256: 9e9a29fc8bacc2018719a5b18d3b31bffefb7db4a0cf2eb731e2b77293372ebc
+    md5: 35f82f5d6a26fa121075365df46d6089
+    sha256: 5413b0e567284f12001b219258d4b8e95429c775c7a3a411597ac47df51274fe
   category: main
   optional: false
 - name: libiconv
@@ -1102,7 +1149,7 @@ package:
   category: main
   optional: false
 - name: libpng
-  version: 1.6.58
+  version: 1.6.59
   manager: conda
   platform: win-64
   dependencies:
@@ -1110,10 +1157,10 @@ package:
     ucrt: '>=10.0.20348.0'
     vc: '>=14.3,<15'
     vc14_runtime: '>=14.44.35208'
-  url: https://conda.anaconda.org/conda-forge/win-64/libpng-1.6.58-hdc8cecf_1.conda
+  url: https://conda.anaconda.org/conda-forge/win-64/libpng-1.6.59-hdc8cecf_0.conda
   hash:
-    md5: 5aa7348e73691187c81d51616f17e48a
-    sha256: 8c49c32adf3ba2c59783630b82377f54ab72204ea99e2bafc90a47a8e25c1032
+    md5: 05145e03eb7b7f4ad2e0575454061c87
+    sha256: 36050852deae6edc98d7b71489b8d07254e2753c69bd524bf5784927cd1f0b2c
   category: main
   optional: false
 - name: libpython
@@ -1355,7 +1402,7 @@ package:
   category: main
   optional: false
 - name: msgpack-python
-  version: 1.2.2
+  version: 1.2.3
   manager: conda
   platform: win-64
   dependencies:
@@ -1364,10 +1411,10 @@ package:
     ucrt: '>=10.0.20348.0'
     vc: '>=14.3,<15'
     vc14_runtime: '>=14.44.35208'
-  url: https://conda.anaconda.org/conda-forge/win-64/msgpack-python-1.2.2-py314hf309875_2.conda
+  url: https://conda.anaconda.org/conda-forge/win-64/msgpack-python-1.2.3-py314hf309875_0.conda
   hash:
-    md5: a60ac4e5c43cf1f77fe3b1d2fd4c214b
-    sha256: 8abb424976b3b210d091ba7cf6c9caef600b86b93040cc946b306d4302c0c1a4
+    md5: 5b5964104dc13d45e8fcb0f7b00cf57d
+    sha256: 35b8974ac631baa67ca2cec332b21a69575ae91cf955d7dc7d74de27f93d111f
   category: main
   optional: false
 - name: openssl
@@ -1502,15 +1549,15 @@ package:
   category: main
   optional: false
 - name: platformdirs
-  version: 4.11.13
+  version: 4.12.2
   manager: conda
   platform: win-64
   dependencies:
     python: '>=3.11'
-  url: https://conda.anaconda.org/conda-forge/noarch/platformdirs-4.11.13-pyh5ded981_0.conda
+  url: https://conda.anaconda.org/conda-forge/noarch/platformdirs-4.12.2-pyh5ded981_0.conda
   hash:
-    md5: 68cd791f764c7e158a61424eec38e67c
-    sha256: 9b63090f465ec1d113f8f23c43669542f6d8fb560740f0b1aa9e71f060f1a861
+    md5: 4b76957bed5e02e067a348eda60c6f94
+    sha256: f23f022bbbf809cd248940eca853d1132f05752e0404984cde7b014fd6384c97
   category: main
   optional: false
 - name: ply
@@ -1607,18 +1654,18 @@ package:
   category: main
   optional: false
 - name: pyinstaller-hooks-contrib
-  version: '2026.7'
+  version: '2026.8'
   manager: conda
   platform: win-64
   dependencies:
     importlib-metadata: '>=4.6'
     packaging: '>=22.0'
-    python: '>=3.10'
+    python: '>=3.11'
     setuptools: '>=42.0.0'
-  url: https://conda.anaconda.org/conda-forge/noarch/pyinstaller-hooks-contrib-2026.7-pyhd8ed1ab_0.conda
+  url: https://conda.anaconda.org/conda-forge/noarch/pyinstaller-hooks-contrib-2026.8-pyhd8ed1ab_0.conda
   hash:
-    md5: 5beb75ed634b4d6c7ae563182f6c4655
-    sha256: 6510574cd55c2a4ad5cf600a360bf6f9f77c766c8563a809c38b33e23887752c
+    md5: 45d92b2a4cdfc71b0caed6abfed3155e
+    sha256: 9187d2c720b64f7028e88f662a019c4665fa862938225f730a18df7c10330eca
   category: main
   optional: false
 - name: pymdown-extensions
@@ -1767,6 +1814,19 @@ package:
   hash:
     md5: aa75b7f096d17621bc307b3025b29461
     sha256: fc4a704822df22defce49d0fb811fdc036a1fd3b579aeaa601228e9cfd198b3d
+  category: main
+  optional: false
+- name: python-gil
+  version: 3.14.7
+  manager: conda
+  platform: win-64
+  dependencies:
+    cpython: 3.14.7.*
+    python_abi: '*'
+  url: https://conda.anaconda.org/conda-forge/noarch/python-gil-3.14.7-h4df99d1_106.conda
+  hash:
+    md5: b672ecb44198ade19ef249bf99f4b1ff
+    sha256: 801ef80bc9f9394d9b3b5cae5a90c33cbbc33004b3e93195b93af818aad8888b
   category: main
   optional: false
 - name: python-installer

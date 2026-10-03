@@ -21,6 +21,7 @@
 - [Archive Transfers](Done/ArchiveTransfers.md)
 - [Assigned Model Signatures](Done/AssignedModelSignatures.md)
 - [Calculate File Hash](Done/CalculateFileHash.md)
+- [Checksum Files](Done/ChecksumFiles.md)
 - [Code Review 001: Dead Code Removal](Done/CodeReview001.md)
 - [Code Review 002: Application Name Single Source](Done/CodeReview002.md)
 - [Code Review 003: Low-Risk Safety and Performance](Done/CodeReview003.md)

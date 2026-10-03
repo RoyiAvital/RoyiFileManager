@@ -29,9 +29,10 @@ See the [tools](tools.md) and [search guide](search.md).
 - Fit, zoom, pan or copy the displayed image.
 - Calculate directory sizes in the Size column.
 - Calculate hashes with a choice of algorithms.
+- Generate recursive checksum files and verify their contents with twelve algorithms.
 - Cycle file and selection statistics in the status bar.
 
-See [QuickView](tools.md#quickview), [Directory Size](tools.md#directory-size) and [File Hash](tools.md#file-hash).
+See [QuickView](tools.md#quickview), [Directory Size](tools.md#directory-size), [File Hash](tools.md#file-hash) and [Checksum Files](tools.md#checksum-files).
 
 ## Work with Files
 

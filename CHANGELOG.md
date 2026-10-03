@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Bundled ChecksumFiles plug-in with Generate checksum file and Verify
+  checksum file commands, twelve algorithms including native BLAKE3, SHA256 defaults,
+  recursive selection handling, staged publication and standalone problem-first
+  results. Verification uses the highlighted supported manifest, otherwise the
+  first in case-insensitive filename order. Normal application builds include
+  its ABI-pinned private BLAKE3 dependency and license; no separate installation
+  is needed. Supports navigated junction roots while refusing links below them.
+  Results keep the summary above the table; result-row and empty-background
+  menus switch between all results and mismatches without a synthetic row.
+  See [usage and compatibility](src/main/resources/base/Plugins/ChecksumFiles/README.md).
+- Optional `get_background_menu` callback in `fman.ui.show_table` for table-wide
+  actions, including empty or fully filtered results. Existing row-menu callbacks
+  are unchanged.
+
 ## [0.10.2] - 2026-10-02
 
 The focus of this release is an optimization of selections and solving few edge cases bugs.

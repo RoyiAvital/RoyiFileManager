@@ -126,6 +126,9 @@ class TableView(QTableView):
 			self.setCurrentIndex(index)
 			position = self.viewport().mapToGlobal(self.visualRect(index).center()) if event.reason() == event.Keyboard else event.globalPos()
 			self.menu_requested.emit(index.data(Qt.UserRole), index.column(), position)
+		else:
+			position = self.viewport().mapToGlobal(self.viewport().rect().center()) if event.reason() == event.Keyboard else event.globalPos()
+			self.menu_requested.emit(None, -1, position)
 		event.accept()
 
 	def keyPressEvent(self, event):

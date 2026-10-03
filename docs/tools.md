@@ -139,6 +139,41 @@ Calculate the SHA-256 hash of the file under the cursor.
 
 See [File Hash usage](https://github.com/RoyiAvital/RoyiFileManager/blob/main/src/main/resources/base/Plugins/CalculateFileHash/README.md).
 
+## Checksum Files
+
+Press ++ctrl+p++ and run **Generate checksum file** or **Verify checksum file**.
+Both commands are bundled with the application.
+
+- Generate from marked files and folders, recursively. With no marked selection,
+  include the entire current folder. SHA256 is the default; twelve algorithms
+  are available, including native BLAKE3.
+- The suggested output name is the folder name plus the algorithm's extension,
+  or `checksums` at a drive/share root. Replacement requires confirmation.
+- Verify the highlighted supported checksum file, or the first supported file
+  in case-insensitive filename order. Verification checks every manifest entry.
+- Results initially show problems, with the summary above the table. Right-click
+  a result or the empty table background for **Show all results** and
+  **Show only mismatches** when the complete view fits.
+  Missing files and invalid records remain visible in the mismatches view.
+- A navigated junction root is supported; redirected paths below that root are
+  refused. Cancellation or a read failure prevents publication of a generated file.
+
+<figure class="product-shot" markdown>
+  ![Empty checksum results with Show all results highlighted in the background context menu](assets/royifilemanager-checksum-empty-menu.png)
+  <figcaption>All files matched, so the problems view is empty. Right-click its background and choose Show all results.</figcaption>
+</figure>
+
+<figure class="product-shot" markdown>
+  ![All checksum results with Show only mismatches highlighted in a file-row context menu](assets/royifilemanager-checksum-all-menu.png)
+  <figcaption>The all-results view shows the verified files. Right-click a result and choose Show only mismatches to return to problems.</figcaption>
+</figure>
+
+Five supplied Total Commander formats are verified. Other TC/DC profiles and
+network-storage checks remain unverified; writer-reader roundtrips alone do not
+establish interoperability.
+
+See [Checksum Files usage and compatibility](https://github.com/RoyiAvital/RoyiFileManager/blob/main/src/main/resources/base/Plugins/ChecksumFiles/README.md).
+
 ## Process Pane
 
 Run **Show OS' processes** from the Command Center.

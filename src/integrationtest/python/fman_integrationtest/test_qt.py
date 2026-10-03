@@ -4981,6 +4981,137 @@ class SearchFilesIT(QtIT):
 				self.run_in_app(main.deleteLater)
 
 
+class ChecksumFilesIT(QtIT):
+	def test_standalone_results_views_navigation_and_close(self):
+		def check():
+			from fman import DirectoryPane, Window
+			from fman.ui import UiOwner
+			from fman.impl.ui.facade import _hosts
+			from fman.impl.widgets import MainWindow
+			from PyQt5.QtWidgets import QLineEdit
+			from checksum_files import commands, engine
+			from unittest.mock import Mock, patch
+			main = MainWindow(Mock(), Mock(), Mock(), Mock(), 'null://')
+			widget = QLineEdit(main)
+			main._central_layout.addWidget(widget)
+			pane = DirectoryPane(Window(main, Mock()), widget, Mock())
+			owner = UiOwner()
+			main.show()
+			main.activateWindow()
+			QApplication.processEvents()
+			try:
+				results = engine.Results()
+				results.add(engine.ResultRow(1, 'matched.txt', 'Matched', target='C:\\checks\\matched.txt'))
+				results.add(engine.ResultRow(2, 'bad\x00name', 'Invalid record', details='bad\x00record'))
+				results.complete = True
+				table = commands.ResultsTable(results.freeze(), owner, pane, 'C:\\checks\\checks.sha256')
+				handle = table.show()
+				commands._tables[pane] = table
+				host = next(host for host in _hosts.values() if host.owner is owner)
+				self.assertEqual(Qt.NonModal, host.windowModality())
+				self.assertIsNone(main._panel_dock)
+				self.assertEqual(('2',), tuple(row.id for row in table.rows))
+				self.assertEqual(results.summary, host.summary.content)
+				self.assertEqual('1 results loaded', host.table.counts.text())
+				self.assertIsNone(host.schema.resolver(table.rows[0], 0))
+				with patch('builtins.open', side_effect=AssertionError('Table action performed I/O')):
+					table.menu(table.rows[0], 0)[0].callback(table.rows[0], 0)
+				self.assertEqual(('1', '2'), tuple(row.id for row in table.rows))
+				self.assertEqual('2 results loaded', host.table.counts.text())
+				self.assertEqual('C:\\checks\\matched.txt', host.schema.resolver(table.rows[0], 0))
+				self.assertNotIn('\x00', table.get_details(table.rows[1], 0))
+				table.switch(False)
+				self.assertEqual(1, len(table.rows))
+				handle.close()
+				self.assertTrue(table.closed)
+				self.assertEqual({}, table.targets)
+				self.assertNotIn(pane, commands._tables)
+				table.switch(True)
+				self.assertEqual((), table.rows)
+			finally:
+				owner.invalidate()
+				main.close()
+				main.deleteLater()
+		self.run_in_app(check)
+
+	def test_empty_truncated_and_maximum_snapshots(self):
+		from checksum_files import commands, engine
+		prepared = []
+		for count in (0, 9999, 10000):
+			results = engine.Results()
+			for index in range(count):
+				results.add(engine.ResultRow(index + 1, 'file-%s.txt' % index, 'Matched'))
+			results.complete = True
+			prepared.append(results.freeze())
+		def check():
+			from fman import DirectoryPane, Window
+			from fman.ui import UiOwner
+			from fman.impl.ui.facade import _hosts
+			from fman.impl.widgets import MainWindow
+			from PyQt5.QtCore import QPoint
+			from PyQt5.QtGui import QContextMenuEvent
+			from PyQt5.QtTest import QTest
+			from PyQt5.QtWidgets import QLineEdit
+			from time import perf_counter
+			from unittest.mock import Mock
+			main = MainWindow(Mock(), Mock(), Mock(), Mock(), 'null://')
+			widget = QLineEdit(main)
+			main._central_layout.addWidget(widget)
+			pane = DirectoryPane(Window(main, Mock()), widget, Mock())
+			owner = UiOwner()
+			main.show()
+			try:
+				for results in prepared:
+					table = commands.ResultsTable(results, owner, pane, 'C:\\checks\\checks.sha256')
+					handle = table.show()
+					self.assertEqual((), table.rows)
+					host = next(host for host in _hosts.values() if host.owner is owner)
+					host.show()
+					QApplication.processEvents()
+					self.assertEqual(results.summary, host.summary.content)
+					self.assertEqual('', host.details.content)
+					self.assertEqual('0 results loaded', host.table.counts.text())
+					view = host.table.view
+					position = QPoint(10, 10)
+					QApplication.sendEvent(view.viewport(), QContextMenuEvent(QContextMenuEvent.Mouse, position, view.viewport().mapToGlobal(position)))
+					if results.total == 9999:
+						self.assertEqual(['Show all results', 'Show only mismatches'], [action.text() for action in host.menu.actions()])
+						host.menu.setActiveAction(host.menu.actions()[0])
+						started = perf_counter()
+						QTest.keyClick(host.menu, Qt.Key_Return)
+						elapsed = perf_counter() - started
+						self.assertEqual(9999, len(table.rows))
+						self.assertEqual('9999 results loaded', host.table.counts.text())
+						print('Checksum Table 9,999-row refresh: %.3f s' % elapsed)
+						host.set_filter('no-such-checksum-file')
+						deadline = perf_counter() + 3
+						while host.table.model.rowCount() and perf_counter() < deadline:
+							QApplication.processEvents()
+						self.assertIsNone(host.table.current_cell)
+						QApplication.sendEvent(view.viewport(), QContextMenuEvent(QContextMenuEvent.Keyboard, position))
+						host.menu.setActiveAction(host.menu.actions()[1])
+						QTest.keyClick(host.menu, Qt.Key_Return)
+						self.assertEqual((), table.rows)
+					elif results.total == 10000:
+						self.assertIsNone(host.menu)
+						self.assertIn('Show all unavailable', table.summary)
+					else:
+						self.assertEqual(2, len(host.menu.actions()))
+						host.menu.setActiveAction(host.menu.actions()[0])
+						QTest.keyClick(host.menu, Qt.Key_Return)
+						self.assertEqual((), table.rows)
+					QApplication.processEvents()
+					image = host.grab().toImage()
+					self.assertFalse(image.isNull())
+					self.assertGreater(image.width(), 400)
+					self.assertGreater(len({image.pixelColor(horizontal, vertical).rgba() for horizontal in range(0, image.width(), 30) for vertical in range(0, image.height(), 30)}), 1)
+					handle.close()
+			finally:
+				owner.invalidate()
+				main.close()
+				main.deleteLater()
+		self.run_in_app(check)
+
 class TableIT(QtIT):
 	def test_panel_escape_returns_focus_to_last_active_pane(self):
 		def check():
@@ -5169,6 +5300,71 @@ class TableIT(QtIT):
 				self.assertEqual('Replacement', handle.current_cell[0].cells[0])
 			finally:
 				owner.invalidate()
+				main.close()
+				main.deleteLater()
+		self.run_in_app(check)
+
+	def test_background_menu_is_opt_in_and_rejects_stale_actions(self):
+		def check():
+			from fman.ui import TableAction, TableRow, UiOwner, show_table
+			from fman.impl.ui.facade import _hosts
+			from PyQt5.QtCore import QPoint, QThread
+			from PyQt5.QtGui import QContextMenuEvent
+			from PyQt5.QtWidgets import QWidget
+			from unittest.mock import Mock, patch
+			main = QWidget()
+			main.show()
+			main.activateWindow()
+			QApplication.processEvents()
+			try:
+				for enabled in (False, True):
+					owner, calls = UiOwner(), []
+					rows = [TableRow('one', ('C:\\checks\\one.txt',))]
+					row_menu, resolver = Mock(return_value=()), Mock(return_value=None)
+					background = lambda: (TableAction('all', 'Show all results',
+						lambda row, column: calls.append((row, column, QThread.currentThread()))),)
+					try:
+						with patch('fman._get_ui', return_value=main):
+							handle = show_table(owner=owner, get_rows=lambda: rows, num_columns=1,
+								columns_header=('Path',), modal=False, file_path_column=0,
+								resolve_path=resolver, get_menu=row_menu,
+								get_background_menu=background if enabled else None)
+						window = next(host for host in _hosts.values() if host.owner is owner)
+						window.show()
+						QApplication.processEvents()
+						view = window.table.view
+						position = view.viewport().rect().bottomRight() - QPoint(4, 4)
+						self.assertFalse(view.indexAt(position).isValid())
+						QApplication.sendEvent(view.viewport(), QContextMenuEvent(QContextMenuEvent.Mouse, position, view.viewport().mapToGlobal(position)))
+						row_menu.assert_not_called()
+						resolver.assert_not_called()
+						if not enabled:
+							self.assertIsNone(window.menu)
+							continue
+						self.assertEqual(['Show all results'], [action.text() for action in window.menu.actions()])
+						action = window.menu.actions()[0]
+						action.trigger()
+						self.assertEqual([(None, -1, QApplication.instance().thread())], calls)
+						handle.refresh()
+						action.trigger()
+						self.assertEqual(1, len(calls))
+						rows.clear()
+						handle.refresh()
+						QApplication.sendEvent(view.viewport(), QContextMenuEvent(QContextMenuEvent.Keyboard, QPoint()))
+						action = window.menu.actions()[0]
+						window.set_filter('missing')
+						action.trigger()
+						self.assertEqual(1, len(calls))
+						QApplication.sendEvent(view.viewport(), QContextMenuEvent(QContextMenuEvent.Keyboard, QPoint()))
+						action = window.menu.actions()[0]
+						owner.invalidate()
+						action.trigger()
+						self.assertEqual(1, len(calls))
+						QApplication.processEvents()
+						self.assertIsNone(window.get_background_menu)
+					finally:
+						owner.invalidate()
+			finally:
 				main.close()
 				main.deleteLater()
 		self.run_in_app(check)

@@ -92,6 +92,9 @@ class BuildNamingTest(TestCase):
 		helper = root / 'src/main/python/fbs_runtime/build_settings.py'
 		helper.parent.mkdir(parents=True)
 		shutil.copy2(self.ROOT / helper.relative_to(root), helper)
+		checksum_helper = root / 'src/main/resources/base/Plugins/ChecksumFiles/package.py'
+		checksum_helper.parent.mkdir(parents=True)
+		shutil.copy2(self.ROOT / checksum_helper.relative_to(root), checksum_helper)
 		shutil.copy2(self.ROOT / 'build.py', root / 'build.py')
 		return settings_path
 

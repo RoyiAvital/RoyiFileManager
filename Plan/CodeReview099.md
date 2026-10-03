@@ -110,6 +110,21 @@ These checks transfer here without being labeled passed:
   Existing full catalog evidence predates the latest operation fixes; no automatic
   rerun or relaxed compatibility checks. Keep the historical results intact.
 
+### ChecksumFiles Release Checks
+
+Carried from [ChecksumFiles](../Done/ChecksumFiles.md), whose implementation is
+complete by user request. These checks remain unrun or unresolved; keeping them
+here does not authorize a build, full suite, external-tool setup or privileged work.
+
+| ID | Check And Completion Evidence |
+| --- | --- |
+| CS01 | Genuine references for the seven remaining TC algorithms and Unix/DC profiles; verify generated manifests in TC/DC as well as importing theirs. Retain exact versions/options and bytes. |
+| CS02 | Live UNC, volume mount points, cold/HDD storage, case-sensitive NTFS and cloud placeholders; distinguish below-root refusals from trusted navigated-root access. Local junction tests do not certify these environments. |
+| CS03 | Process/native memory, actual BLAKE3 thread counts, metadata latency, blocked-I/O cancellation and worst-case 16 MiB Table refresh. Local call counts and short-row refresh timings are not substitutes. |
+| CS04 | Preference overrides across a full application restart and a fresh release build/upgrade with the locked environment. Existing portable-copy smokes inject current resources and are not a new freeze. |
+| CS05 | Investigate intermittent source/portable-exit `0xC0000005`; the review follow-up reproduced it in a portable copy after successful functional checks. The smoke now enables fault diagnostics and retains child stderr. Diagnostic and final-gate reruns passed, but do not establish a shutdown fix. |
+| CS06 | Optional standalone distribution only: native unload during active frozen hashing and Remove Plugin before/after native use, including full-exit recovery from partial removal. Bundled plug-ins are not unloaded/removed by these commands. |
+
 ### M01: Asynchronous Find-Dialog Matching
 
 **Requires major changes and separate approval.**
@@ -287,3 +302,15 @@ Their references describe that historical scope, not new work approved here.
   the broader commit, pending-cursor, callback and view-revision constraints
   found in current source. Recommend a separately approved no-change refresh
   design; no production implementation, performance claim or waived gate.
+
+### 2026_10_03 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Extra High
+- Context Window: 272K
+- Outcome: Carried CS01-CS06 from the completed ChecksumFiles task into this
+  existing Pending backlog. Distinguishes bundled behavior from optional
+  standalone lifecycle checks; no gate is waived or newly claimed as passed.

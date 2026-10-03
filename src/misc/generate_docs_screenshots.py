@@ -4,6 +4,7 @@ The source capture follows the Qt smoke-test approach and grabs widgets directly
 The packaged capture launches the frozen executable and grabs its native window.
 Both use isolated settings and only show ``C:\\`` and ``C:\\Windows`` locations.
 The text preview uses a generated Python sample with a neutral location label.
+Checksum captures verify generated sample files and show only relative paths.
 Generated PNG files remain ignored by Git. The Pages workflow generates them
 before building its deployment artifact.
 
@@ -40,7 +41,7 @@ SOURCE_CAPTURES = (
 	'overview', 'go-to', 'context-menu', 'filter-pane', 'quick-view', 'quick-view-text',
 	'fuzzy-find',
 	'search-files', 'find-files', 'favorites', 'directory-size', 'file-hash',
-	'process-pane', 'pack-archive'
+	'checksum-files', 'process-pane', 'pack-archive'
 )
 PYTHON_SAMPLE = '''from dataclasses import dataclass
 from pathlib import Path
@@ -76,6 +77,7 @@ SOURCE_PATHS = (
 	ROOT / 'src' / 'main' / 'resources' / 'base' / 'Plugins' / 'Favorites',
 	ROOT / 'src' / 'main' / 'resources' / 'base' / 'Plugins' /
 	'CalculateFileHash',
+	ROOT / 'src' / 'main' / 'resources' / 'base' / 'Plugins' / 'ChecksumFiles',
 	ROOT / 'src' / 'main' / 'resources' / 'base' / 'Plugins' / 'SearchFiles',
 	ROOT / 'src' / 'main' / 'resources' / 'base' / 'Plugins' / 'FindFiles',
 	ROOT / 'src' / 'main' / 'resources' / 'base' / 'Plugins' / 'ProcessPane',
@@ -237,6 +239,20 @@ def _grab_window_with_sample_location(window, location_bar):
 
 def _source_capture_paths(capture):
 	root, windows = _public_paths()
+	if capture == 'checksum-files':
+		from checksum_files import engine
+		folder = WORK_DIR / 'source-checksum-files' / 'sample'
+		for name, content in {
+			'README.txt': b'Checksum documentation sample.\n',
+			'Data/readings.csv': b'time,value\n0,12\n1,15\n',
+			'Documents/notes.txt': b'Release notes for the sample files.\n',
+		}.items():
+			path = folder / name
+			path.parent.mkdir(parents=True, exist_ok=True)
+			path.write_bytes(content)
+		engine.generate(str(folder), (), str(folder / 'Samples.sha256'),
+			engine.BY_ID['sha256'], engine.Settings())
+		return folder, windows
 	if capture == 'quick-view':
 		return _public_image().parent, windows
 	if capture == 'quick-view-text':
@@ -276,6 +292,10 @@ def _source_outputs(output_dir, capture):
 		'favorites': ('royifilemanager-favorites.png',),
 		'directory-size': ('royifilemanager-directory-size.png',),
 		'file-hash': ('royifilemanager-file-hash.png',),
+		'checksum-files': (
+			'royifilemanager-checksum-empty-menu.png',
+			'royifilemanager-checksum-all-menu.png',
+		),
 		'process-pane': ('royifilemanager-process-pane.png',),
 		'pack-archive': ('royifilemanager-pack-archive.png',),
 	}
@@ -536,6 +556,59 @@ def _capture_source_child(args):
 						_grab_window_with_dialog(context.main_window, window),
 						outputs[0], window.close
 					)
+			elif args._capture == 'checksum-files':
+				from checksum_files import commands
+				from fman.impl.ui.facade import _hosts
+				from PyQt5.QtCore import QPoint
+				from PyQt5.QtGui import QContextMenuEvent
+				from PyQt5.QtTest import QTest
+				if not state['started']:
+					manifest_url = as_url(str(left_path / 'Samples.sha256'))
+					pane.place_cursor_at(manifest_url)
+					if pane.get_file_under_cursor() != manifest_url:
+						return
+					pane.focus()
+					state['started'] = True
+					pane.run_command('verify_checksum')
+					return
+				table = commands._tables.get(pane)
+				if table is None or not table.handle.is_open:
+					return
+				host = next(host for host in _hosts.values() if host.owner is table.owner)
+				all_results = state.get('all_results', False)
+				if len(table.rows) != (3 if all_results else 0) or '3 matched, 0 problems' not in table.summary:
+					raise RuntimeError('Checksum sample verification or result view is incorrect')
+				if not state.get('menu_open'):
+					host.show()
+					host.raise_()
+					host.activateWindow()
+					view = host.table.view
+					position = view.visualRect(view.currentIndex()).center() if all_results else QPoint(100, 70)
+					QApplication.sendEvent(view.viewport(), QContextMenuEvent(
+						QContextMenuEvent.Mouse, position, view.viewport().mapToGlobal(position)))
+					menu = host.menu
+					if menu is None:
+						raise RuntimeError('Checksum result menu did not open')
+					actions = {action.text(): action for action in menu.actions()}
+					if not {'Show all results', 'Show only mismatches'} <= actions.keys():
+						raise RuntimeError('Checksum view options are missing')
+					menu.setActiveAction(actions['Show only mismatches' if all_results else 'Show all results'])
+					state['menu_open'] = True
+					state['settled'] = 0
+					return
+				if host.menu is None or not host.menu.isVisible():
+					raise RuntimeError('Checksum menu closed before capture')
+				pixmap = _grab_window_with_dialog(host, host.menu)
+				QTest.keyClick(host.menu, Qt.Key_Return)
+				if all_results:
+					if table.rows:
+						raise RuntimeError('Show only mismatches did not restore the empty view')
+					finish(pixmap, outputs[1], table.handle.close)
+				else:
+					_save_pixmap(pixmap, outputs[0])
+					state['all_results'] = True
+					state['menu_open'] = False
+					state['settled'] = 0
 			elif args._capture == 'process-pane':
 				filter_bar = pane._widget._filter_bar
 				if not state['started']:

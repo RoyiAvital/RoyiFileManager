@@ -621,7 +621,8 @@ show_table(*, owner, get_rows, num_columns, columns_header, pane=None,
   panel=None, title='', fuzzy=True, file_path_column=None,
   folder_path_column=None, resolve_path=None, base_path=None, modal=True,
   close_on_navigate=None, summary='', get_details=None, on_activate=None,
-  get_menu=None, on_closed=None, entry_path_column=None, get_count_text=None)
+  get_menu=None, on_closed=None, entry_path_column=None, get_count_text=None,
+  get_background_menu=None)
 
 show_panel(*, owner, pane, rows, on_change=None, on_action=None, on_closed=None)
 ```
@@ -655,6 +656,13 @@ returns passive text. `get_menu(row, column)` returns at most 32
 Labels are limited to 128 characters; `copy_path` and `go_to` IDs are reserved.
 Callbacks are serialized on Qt and must be fast, nonblocking plain Python.
 Stale menus/navigation completions and unloaded-owner callbacks are rejected.
+
+`get_background_menu()` optionally returns the same `TableAction` records for
+right-clicks outside result rows, including an empty or fully filtered table.
+Keyboard context menus use it when there is no current cell. Its action callbacks
+receive `(None, -1)`; no path resolver, Copy Path, Go To or row-menu callback is
+invoked for the background. The same limits, Qt-thread and stale-action rules
+apply. Omit it to preserve the existing no-background-menu behavior.
 
 `TableHandle` provides `refresh()`, idempotent `close()`, `is_open`,
 `current_cell` (row and logical column, or `None`) and read/write `filter_text`.

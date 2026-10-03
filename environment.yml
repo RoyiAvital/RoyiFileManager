@@ -16,5 +16,6 @@ dependencies:
   - markdown #<! QuickView for text based files
   - pygments #<! Syntax highlighting for QuickView
   - pymdown-extensions #<! Extensions for Markdown rendering
+  - blake3=1.0.10 #<! Fast hashing algorithm (Checksum)
   - conda-lock
   - mkdocs-material #<! Downgrades `click` (https://github.com/conda-forge/mkdocs-feedstock/issues/55) run `micromamba update click --no-deps`

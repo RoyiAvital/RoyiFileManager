@@ -14,16 +14,26 @@ app_name = load_build_settings(root / 'src/build/settings/base.json')['app_name'
 winpty_datas, winpty_binaries, winpty_imports = collect_all('winpty')
 send2trash_datas, send2trash_binaries, send2trash_imports = \
 	collect_all('send2trash')
+checksum_native_files = run_path(
+	str(root / 'src/main/resources/base/Plugins/ChecksumFiles/package.py')
+)['native_files']()
+checksum_native_destination = 'resources/Plugins/ChecksumFiles/checksum_files/_vendor/blake3'
 
 datas = [
 	('src/main/resources/base', 'resources'),
 	('src/build/settings/base.json', 'resources/build-settings'),
 	('src/main/resources/windows', 'resources'),
 	('src/main/icons/Icon.ico', 'resources')
-] + winpty_datas + send2trash_datas + copy_metadata('Pygments')
+] + winpty_datas + send2trash_datas + copy_metadata('Pygments') + [
+	(str(path), checksum_native_destination) for path in checksum_native_files
+	if path.suffix != '.pyd'
+]
 binaries = winpty_binaries + send2trash_binaries + [
 	(str(Path(sys.prefix) / 'bin' / 'rg.exe'), 'resources/Plugins/SearchFiles/bin'),
 	(str(Path(sys.prefix) / 'bin' / 'fd.exe'), 'resources/Plugins/FindFiles/bin')
+] + [
+	(str(path), checksum_native_destination) for path in checksum_native_files
+	if path.suffix == '.pyd'
 ]
 hidden_imports = [
 	'adodbapi', 'ctypes.wintypes', 'win32com.shell.shell',

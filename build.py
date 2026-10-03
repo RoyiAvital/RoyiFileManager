@@ -146,6 +146,8 @@ def _environment():
 		ROOT / 'src' / 'main' / 'resources' / 'base' / 'Plugins' /
 		'CalculateFileHash',
 		ROOT / 'src' / 'main' / 'resources' / 'base' / 'Plugins' /
+		'ChecksumFiles',
+		ROOT / 'src' / 'main' / 'resources' / 'base' / 'Plugins' /
 		'SearchFiles',
 		ROOT / 'src' / 'main' / 'resources' / 'base' / 'Plugins' /
 		'FindFiles',

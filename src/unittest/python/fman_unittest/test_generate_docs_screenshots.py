@@ -62,6 +62,8 @@ class GenerateDocsScreenshotsTest(TestCase):
 			'royifilemanager-favorites.png',
 			'royifilemanager-directory-size.png',
 			'royifilemanager-file-hash.png',
+			'royifilemanager-checksum-empty-menu.png',
+			'royifilemanager-checksum-all-menu.png',
 			'royifilemanager-process-pane.png',
 			'royifilemanager-pack-archive.png',
 		), outputs)
@@ -79,6 +81,23 @@ class GenerateDocsScreenshotsTest(TestCase):
 			self.assertEqual(screenshots.PYTHON_SAMPLE, source)
 			self.assertNotIn('\t', source)
 			compile(source, 'file_summary.py', 'exec')
+
+	def test_checksum_capture_generates_a_verifiable_sample(self):
+		from checksum_files import engine
+		with TemporaryDirectory() as temporary_directory, \
+				patch.object(screenshots, 'WORK_DIR', Path(temporary_directory)), \
+				patch.object(screenshots, '_public_paths', return_value=(
+					Path('C:\\'), Path('C:\\Windows')
+				)):
+			left, right = screenshots._source_capture_paths('checksum-files')
+			self.assertEqual(Path(temporary_directory) / 'source-checksum-files/sample', left)
+			self.assertEqual(Path('C:\\Windows'), right)
+			results = engine.verify(str(left / 'Samples.sha256'), engine.Settings())
+			self.assertTrue(results.complete)
+			self.assertEqual(3, results.total)
+			self.assertEqual(3, results.matched)
+			self.assertEqual({'README.txt', 'Data/readings.csv', 'Documents/notes.txt'},
+				{row.path.replace('\\', '/') for row in results.all_rows})
 
 	def test_python_capture_grabs_window_and_restores_location_label(self):
 		for fail in (False, True):

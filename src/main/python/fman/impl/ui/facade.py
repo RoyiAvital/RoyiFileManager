@@ -673,7 +673,7 @@ class PanelSession(ToolWindow):
 
 class TableWindow(ToolWindow):
 	def __init__(self, owner, main, pane, panel, schema, rows, provider, title,
-			fuzzy, modal, close_on_navigate, summary, get_details, on_activate, get_menu, on_closed, get_count_text=None):
+			fuzzy, modal, close_on_navigate, summary, get_details, on_activate, get_menu, on_closed, get_count_text=None, get_background_menu=None):
 		self.state = HandleState()
 		super().__init__(main, owner)
 		self.setWindowFlags(Qt.Dialog)
@@ -686,6 +686,7 @@ class TableWindow(ToolWindow):
 		self.close_on_navigate = modal if close_on_navigate is None else close_on_navigate
 		self.navigated = False
 		self.get_details, self.on_activate, self.get_menu = get_details, on_activate, get_menu
+		self.get_background_menu = get_background_menu
 		self.on_closed = on_closed
 		self.action_generation = 0
 		self.menu = None
@@ -743,7 +744,9 @@ class TableWindow(ToolWindow):
 
 	def valid_action(self, row, column, generation):
 		cell = self.table.current_cell
-		return self.alive.is_set() and self.owner.active and generation == self.action_generation and cell is not None and cell[0] is row and cell[1] == column
+		if not self.alive.is_set() or not self.owner.active or generation != self.action_generation:
+			return False
+		return row is None or cell is not None and cell[0] is row and cell[1] == column
 
 	def activate_cell(self, row, column):
 		if self.busy:
@@ -781,8 +784,12 @@ class TableWindow(ToolWindow):
 		self.close_menu()
 		generation = self.action_generation
 		try:
-			path = self.schema.target(row, column)
-			custom = tuple(islice(self.get_menu(row, column), 33)) if self.get_menu is not None else ()
+			if row is None:
+				path = None
+				custom = tuple(islice(self.get_background_menu(), 33)) if self.get_background_menu is not None else ()
+			else:
+				path = self.schema.target(row, column)
+				custom = tuple(islice(self.get_menu(row, column), 33)) if self.get_menu is not None else ()
 			if len(custom) > 32:
 				raise ValueError('At most 32 custom menu actions are supported.')
 			ids = {'copy_path', 'go_to'}
@@ -896,6 +903,7 @@ class TableWindow(ToolWindow):
 			panel.table_window = None
 		callback, self.on_closed = self.on_closed, None
 		self.provider = self.get_details = self.get_menu = self.on_activate = None
+		self.get_background_menu = None
 		_finished_callback(callback, self.owner)
 		if not self.owner.active or sip.isdeleted(self.main) or not self.main.isVisible():
 			return
@@ -931,9 +939,9 @@ def show_table(*, owner, get_rows, num_columns, columns_header, pane=None,
 		panel=None, title='', fuzzy=True, file_path_column=None, folder_path_column=None,
 		resolve_path=None, base_path=None, modal=True, close_on_navigate=None,
 		summary='', get_details=None, on_activate=None, get_menu=None, on_closed=None,
-		entry_path_column=None, get_count_text=None):
+		entry_path_column=None, get_count_text=None, get_background_menu=None):
 	_require_owner(owner)
-	_validate_callbacks(get_details, on_activate, get_menu, on_closed, get_count_text)
+	_validate_callbacks(get_details, on_activate, get_menu, on_closed, get_count_text, get_background_menu)
 	for value in (fuzzy, modal):
 		if type(value) is not bool:
 			raise TypeError('fuzzy and modal must be boolean.')
@@ -963,6 +971,6 @@ def show_table(*, owner, get_rows, num_columns, columns_header, pane=None,
 	else:
 		main = pane.window._widget
 	window = TableWindow(owner, main, pane, panel_session, schema, rows, get_rows,
-		title, fuzzy, modal, close_on_navigate, summary, get_details, on_activate, get_menu, on_closed, get_count_text)
+		title, fuzzy, modal, close_on_navigate, summary, get_details, on_activate, get_menu, on_closed, get_count_text, get_background_menu)
 	window.present()
 	return TableHandle(window.state)

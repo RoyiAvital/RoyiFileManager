@@ -138,19 +138,63 @@ git push --force origin refs/tags/vX.Y.Z
 Developer utilities that are not included in release packages live under
 `src/misc`.
 
+### Checksum Reference Fixtures
+
+Run `python src/misc/generate_checksum_fixtures.py <empty-directory>` to create
+the deterministic checksum corpus directly in that directory, including 26 root
+files and nested folders. In Total Commander, select the fixture files/folders,
+excluding any existing checksum manifests, and save recursive manifests in the
+root. Record the TC version and encoding/Unix-format options. The generator
+refuses nonempty targets; `--verify` allows root-level checksum reference files
+without changing them and rejects other unexpected entries. See the
+[checksum task](Done/ChecksumFiles.md) for coverage and reference-test integration.
+
+Five TC reference manifests are preserved byte-exactly in a
+[JSON fixture](src/unittest/resources/ChecksumFiles/v2/references.json). Tests
+regenerate all 83 files in temporary directories and compare 415 digests without
+requiring the original folder or a Total Commander installation.
+
+Focused check: `python -m unittest src.unittest.python.fman_unittest.test_checksum_fixtures -v`.
+
+The implementation lives alongside the other bundled plug-ins under
+[ChecksumFiles](src/main/resources/base/Plugins/ChecksumFiles/README.md).
+Source runs use the environment's BLAKE3 dependency. The PyInstaller spec validates
+the pinned native files and collects them and their license into the plug-in's
+private package. Normal `python build.py freeze` includes the complete plug-in;
+do not install a second copy under `UserSettings/Plugins/Third-party`.
+Check the implementation with the repository environment, without the full suite:
+
+```powershell
+python -c "import build, subprocess, sys; sys.exit(subprocess.run([sys.executable, '-m', 'unittest', 'src.unittest.python.fman_unittest.test_checksum_files', 'src.unittest.python.fman_unittest.test_checksum_fixtures', 'fman_integrationtest.impl.plugins.test_checksum_files_plugin', 'fman_integrationtest.test_qt.ChecksumFilesIT'], env=build._environment()).returncode)"
+```
+
+Set `CHECKSUM_FILES_PORTABLE_EXE` to an existing portable executable to include
+the frozen-host smoke; otherwise that one test skips. It copies the host into a
+temporary directory, replaces only that copy's ChecksumFiles resources with the
+current spec's collected files, uses isolated settings and removes development
+Python paths. Source and frozen probes check bundled discovery, both commands,
+all backends and continued hashing after user-plugin reload. The original host
+is untouched. This tests collected resources in an existing host, not a new freeze.
+Exact executed configurations and remaining gates are recorded in the
+[task's validation results](Done/ChecksumFiles.md#validation-results).
+
 ### Documentation Screenshots
 
 [generate_docs_screenshots.py](src/misc/generate_docs_screenshots.py) creates
 repeatable documentation screenshots using only public locations under `C:\`
 and `C:\Windows`. Source mode captures the main window, Command Center,
 Find a Location, pane filtering, image and Python QuickView, recursive fuzzy find, Search Files,
-Find Files, Favorites, directory sizes, File Hash, the process pane and the
+Find Files, Favorites, directory sizes, File Hash, Checksum Files, the process pane and the
 Pack prompt. Command Center and Find a Location include the full application.
 Favorites and directory sizes use seeded settings in their isolated `UserSettings`;
 the process pane is filtered to `svchost`, and the Pack prompt is canceled.
 Python QuickView uses a generated sample under the screenshot work directory,
 waits for syntax colors, and captures the whole application. Its source location
 label reads "Python sample" during the capture so no working path is shown.
+Checksum Files generates and verifies three sample files in the isolated work
+directory. Two results-window captures show the empty-background and file-row
+menus, highlighting Show all results and Show only mismatches respectively.
+Both actions are exercised; only relative sample paths appear in these images.
 Source mode uses the Qt smoke-test approach and captures widgets directly.
 Packaged mode launches the frozen executable for a parity image.
 
