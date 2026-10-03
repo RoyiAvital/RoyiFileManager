@@ -247,6 +247,10 @@ startup or capture blocks past `--timeout`. Restricted-child output and fault tr
 `UserSettings/Local/capture.log` and printed when it exits. Launch failures, timeouts
 and nonzero exits fail generation. The shared build launcher uses a Windows job
 to terminate descendants on timeout or completion, without a UAC prompt or Registry changes.
+For screenshots and `smoke-everything`, it grants the current user access in the
+restricted token's default ACL so its process and threads can initialize even when
+the original ACL grants access only to Administrators and SYSTEM. Administrator
+rights remain disabled; parent-token, filesystem and desktop permissions are unchanged.
 Packaged mode launches the frozen executable for a parity image.
 
 ```powershell

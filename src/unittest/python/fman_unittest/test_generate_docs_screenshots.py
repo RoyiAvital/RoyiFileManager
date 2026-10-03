@@ -23,6 +23,53 @@ SPEC.loader.exec_module(screenshots)
 
 
 class GenerateDocsScreenshotsTest(TestCase):
+	def test_restricted_child_with_admin_only_default_dacl(self):
+		script = '''
+import os, sys
+from pathlib import Path
+import build, win32api, win32con, win32security
+
+token = win32security.OpenProcessToken(win32api.GetCurrentProcess(), win32con.TOKEN_ALL_ACCESS)
+original = win32security.GetTokenInformation(token, win32security.TokenDefaultDacl)
+restricted_acl = win32security.ACL()
+for identity in (win32security.WinBuiltinAdministratorsSid, win32security.WinLocalSystemSid):
+    restricted_acl.AddAccessAllowedAce(win32security.ACL_REVISION, win32con.GENERIC_ALL,
+        win32security.CreateWellKnownSid(identity))
+child_script = """
+print('Started restricted Python', flush=True)
+import ctypes, win32api, win32con
+assert not ctypes.windll.shell32.IsUserAnAdmin(), 'Child still has admin privileges'
+process = win32api.OpenProcess(win32con.PROCESS_ALL_ACCESS, False, win32api.GetCurrentProcessId())
+process.Close()
+from PyQt5.QtWidgets import QApplication, QWidget
+app = QApplication([])
+widget = QWidget()
+widget.resize(320, 240)
+widget.show()
+app.processEvents()
+assert not widget.grab().isNull()
+widget.close()
+print('PASS: restricted Qt capture', flush=True)
+"""
+try:
+    win32security.SetTokenInformation(token, win32security.TokenDefaultDacl, restricted_acl)
+    build._run_restricted([sys.executable, '-u', '-c', child_script],
+        {**os.environ, 'QT_QPA_PLATFORM': 'windows'}, Path(sys.argv[1]) / 'child.log', 10)
+	remaining = win32security.GetTokenInformation(token, win32security.TokenDefaultDacl)
+	assert [remaining.GetAce(index) for index in range(remaining.GetAceCount())] == [
+		restricted_acl.GetAce(index) for index in range(restricted_acl.GetAceCount())
+	], 'Launcher changed the parent token default ACL'
+finally:
+    win32security.SetTokenInformation(token, win32security.TokenDefaultDacl, original)
+    token.Close()
+'''
+		with TemporaryDirectory() as temporary_directory:
+			result = subprocess.run([sys.executable, '-X', 'faulthandler', '-c',
+				dedent(script.expandtabs(4)), temporary_directory], cwd=ROOT,
+				capture_output=True, text=True, timeout=25)
+			self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+			self.assertIn('PASS: restricted Qt capture', result.stdout)
+
 	def test_source_child_watchdog_is_canceled_on_success_and_error(self):
 		for error in (None, RuntimeError('Capture failed')):
 			with self.subTest(error=error), \

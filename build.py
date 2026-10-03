@@ -90,6 +90,11 @@ def _run_restricted(command, environment, log, timeout):
 			resources.callback(token.Close)
 			win32security.SetTokenInformation(token, win32security.TokenIntegrityLevel,
 				(win32security.ConvertStringSidToSid('S-1-16-8192'), 0x20))
+			default_dacl = win32security.GetTokenInformation(token, win32security.TokenDefaultDacl)
+			if default_dacl is not None:
+				user_sid, _ = win32security.GetTokenInformation(token, win32security.TokenUser)
+				default_dacl.AddAccessAllowedAce(win32security.ACL_REVISION, win32con.GENERIC_ALL, user_sid)
+				win32security.SetTokenInformation(token, win32security.TokenDefaultDacl, default_dacl)
 			job = win32job.CreateJobObject(None, '')
 			resources.callback(job.Close)
 			limits = win32job.QueryInformationJobObject(job, win32job.JobObjectExtendedLimitInformation)

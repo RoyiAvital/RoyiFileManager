@@ -150,15 +150,15 @@ and the [official Everything syntax reference](https://www.voidtools.com/support
 
 Press ++alt+f7++.
 
-Search file names, file contents or both.
+Search file names, file contents or both based on [`ripgrep`](https://github.com/burntsushi/ripgrep).
 
 <figure class="product-shot" markdown>
   ![Search Files panel with name and content patterns](assets/royifilemanager-search-files.png)
   <figcaption>Search INI files containing “fonts” under C:\Windows.</figcaption>
 </figure>
 
-- Choose Literal, Glob or RegEx for each field.
-- Leave Content Pattern empty for a name-only search.
+- Choose _Literal_, _Glob_ or _RegEx_ for each field.
+- Leave Content Pattern empty for a name only search.
 - Include subfolders with Recursive.
 - Stop background work and keep results collected so far.
 - Open results by path and matching snippet.
