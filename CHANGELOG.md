@@ -56,7 +56,9 @@ Results on the _test suite_:
 | Settled Working Memory     | 771.1 [MiB] | 771.3 [MiB] | 165.6 [MiB] | 167.4 [MiB] | 160.3 [MiB] |
 
 > [!NOTE]
-> * Version `0.9.0` is the 1st version with the new architecture (_Snapshot Architecture_) which is an order of magnitude faster than `0.8.1`.
+> * Version `0.13.0` added a native `C` directory parser and a validation free snapshot fast path for `NTFS`/`ReFS` folders.
+> * Versions `0.10.x` optimized the existing code and remove the slower legacy paths.
+> * Version `0.9.x` is the 1st version with the new architecture (_Snapshot Architecture_) which is an order of magnitude faster than `0.8.1`.
 > * Version `0.8.1` had an improved version of the `fman` architecture (About 30% faster than `0.8.0`).
 > * Version `0.8.0` and earlier versions use the `fman` architecture and performance.
 
