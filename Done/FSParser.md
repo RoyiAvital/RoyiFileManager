@@ -183,13 +183,14 @@ the pairing; the binary digest is raw bytes; the sidecar is read tolerant of
 either line ending. Current values:
 
 ```
-source c80b126ce6358ea42801cced661c42a498b8c46b9b58f8073ab6535131358b7f
-binary a69a69a178cc57cb2455d69de1616fd048b0f45c848657fff7ec290fb9fe626f
+source c77d846e2b0152a99983161c1cde30100d9b1d86a70d2e17f75860530ab028c2
+binary 18587c3e86fef4a434ded1d247940f7f763e6aa56d19309bca5c5d3031e83ba5
 ```
 
-(binary of 2026_10_04 after the implementation reviews, 61,440 bytes,
-llvm-mingw 20260922, imports `python3.dll`, `KERNEL32.dll`,
-`api-ms-win-crt-*`). Loading: in a repository checkout `listing.py` loads
+(binary of 2026_10_04 after [FSPaneArch002](FSPaneArch002.md) R10 added
+`natural_keys`, 69,120 bytes, llvm-mingw 20260922, imports `python3.dll`,
+`KERNEL32.dll`, `api-ms-win-crt-*`; the pre-R10 binary was
+`a69a69a1…`, 61,440 bytes). Loading: in a repository checkout `listing.py` loads
 `src/main/c/_fsparser.pyd` directly; in the frozen application it loads the
 copy next to itself, which `application.spec` places there from `src/main/c`
 as a `binaries` entry so PyInstaller analyses it and bundles `python3.dll`.

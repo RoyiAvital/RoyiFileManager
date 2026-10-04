@@ -418,12 +418,24 @@ class NativeListingTest(TestCase):
 		column = Name()
 		for ascending in (True, False):
 			keys = column.keys(listing, ascending)
-			self.assertEqual(tuple((is_dir ^ ascending, minor)
+			self.assertEqual(tuple(('1' if is_dir ^ ascending else '0') + minor
 				for is_dir, minor in zip(listing.is_dir, reversed(expected))), keys)
-			minor = dict(zip(listing.display_names, (key[1] for key in keys)))
+			minor = dict(zip(listing.display_names, (key[1:] for key in keys)))
 			self.assertLess(minor['file999999'], minor['file1000000'])
 			self.assertEqual(minor['file02'], minor['file2'])
 			self.assertLess(minor['v\uff12'], minor['v\u0662\u0663'])
+
+	def test_name_keys_match_python_reference(self):
+		from core import Name
+		from fman.impl.util.natural import natural_key
+		names = ('File2.txt', 'a' + '9' * 80, '000', 'Straße_café_CAFÉ_12', 'İstanbul 5',
+			'K 7', 'lone\udc80 3', '\U0001F600 42', '\U0001D7CE\U0001D7D7', '\u0660\u0661\u0662 3')
+		is_dir = tuple(index % 3 == 0 for index in range(len(names)))
+		listing = Listing.create('file://C:/fixture', names, is_dir=is_dir)
+		for ascending in (True, False):
+			expected = tuple(('1' if d ^ ascending else '0') + natural_key(name)
+				for name, d in zip(names, is_dir))
+			self.assertEqual(expected, Name().keys(listing, ascending))
 
 	def test_core_column_goldens_both_sort_directions(self):
 		from core import LocalFileSystem, Name, Size, Modified
@@ -453,15 +465,17 @@ class NativeListingTest(TestCase):
 					for index, name in enumerate(listing.names):
 						is_dir = name in ('directory02', 'Directory1')
 						if isinstance(column, Name):
-							text, minor = name, natural[name]
+							text = name
+							expected = ('1' if is_dir ^ ascending else '0') + natural[name]
 						elif isinstance(column, Size):
 							text = '' if is_dir else '%d B' % (7 * len(name))
 							minor = tuple(ord(character) if ascending else -ord(character) for character in name.lower()) if is_dir else 7 * len(name)
+							expected = (is_dir ^ ascending, minor)
 						else:
-							text, minor = date_text, modified
+							text, expected = date_text, (is_dir ^ ascending, modified)
 						with self.subTest(column=type(column).__name__, ascending=ascending, name=name):
 							self.assertEqual(text, column.text(listing, index))
-							self.assertEqual((is_dir ^ ascending, minor), keys[index])
+							self.assertEqual(expected, keys[index])
 
 	def test_record_bounds_and_128_bit_identity(self):
 		from core.fs.local.windows.listing import _RECORD, records

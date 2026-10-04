@@ -4,6 +4,10 @@
 
 Supported extensions: `.zip`, `.zipx`, `.jar`, `.xpi`, `.7z` and `.tar`.
 
+!!! hint "Large Archives"
+    Browsing archives can be slower than browsing regular folders. For large archives,
+    use **Unpack archive** from the Command Center, then browse the extracted folder.
+
 ## Browse an Archive
 
 Press ++enter++ on an archive to open it.

@@ -1,3 +1,4 @@
+from fman.impl.model.listing import ROW_MAP_LIMIT
 from fman.impl.util.qt import Key_Home, Key_End, \
 	ShiftModifier, Key_Return, Key_Enter, ToolTipRole, connect_once
 from fman.impl.view.drag_and_drop import DragAndDrop
@@ -35,6 +36,7 @@ class FileListView(
 		self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 		self.setContextMenuPolicy(Qt.DefaultContextMenu)
 		self._snapshot_state = None
+		self._restored_projection = None
 		self._view_generation = 0
 		self._pending_snapshot_restore = None
 		self._pending_cursor = None
@@ -182,12 +184,20 @@ class FileListView(
 		if hasattr(model, 'snapshot_about_to_commit'):
 			model.snapshot_about_to_commit.connect(self._capture_snapshot_state)
 			model.snapshot_committed.connect(self._restore_snapshot_state)
+			model.snapshot_state_provider = self._snapshot_request_state
 	def _disconnect_signals(self, model):
 		model.sort_order_changed.disconnect(self._on_sort_order_changed)
 		model.transaction_ended.disconnect(self._on_transaction_ended)
 		if hasattr(model, 'snapshot_about_to_commit'):
 			model.snapshot_about_to_commit.disconnect(self._capture_snapshot_state)
 			model.snapshot_committed.disconnect(self._restore_snapshot_state)
+			model.snapshot_state_provider = None
+	def _snapshot_request_state(self):
+		# Called by the model when it requests a projection: the entries this
+		# state names are the ones _restore_snapshot_state will look up.
+		if self._pending_snapshot_restore is not None:
+			return self._pending_snapshot_restore
+		return self.snapshot_state()
 	def _capture_snapshot_state(self):
 		if self._pending_snapshot_restore is not None:
 			self._snapshot_state, self._pending_snapshot_restore = self._pending_snapshot_restore, None
@@ -206,9 +216,17 @@ class FileListView(
 			return
 		previous, entry, old_row, selected, scroll = self._snapshot_state
 		self._snapshot_state = None
+		if projection is self._restored_projection:
+			# Unchanged refresh (R03): the rows the view shows are this very
+			# projection, so marks, cursor and scroll are already in place.
+			self._resolve_pending_cursor(projection)
+			return
+		self._restored_projection = projection
 		same = previous is projection.listing or projection.remap is None
+		if not projection.complete and len(selected) > ROW_MAP_LIMIT:
+			projection.complete_rows()
 		def row_of(entry):
-			return projection.rows.get(entry if same else projection.remap.get(entry))
+			return projection.row_of(entry if same else projection.remap.get(entry))
 		rows = sorted(row for entry in selected if (row := row_of(entry)) is not None)
 		selection = QItemSelection()
 		start = end = None
@@ -225,12 +243,14 @@ class FileListView(
 		row = row_of(entry) if entry is not None else None
 		if projection.preferred is not None and (row is None or not
 			projection.listing.display_names[projection.visible[row]].lower().startswith(projection.prefix)):
-			row = projection.rows[projection.preferred]
+			row = projection.row_of(projection.preferred)
 		if row is None and self.model().rowCount():
 			row = min(max(old_row, 0), self.model().rowCount() - 1)
 		if row is not None:
 			self.setCurrentIndex(self.model().index(row, 0))
 		self.verticalScrollBar().setValue(scroll)
+		self._resolve_pending_cursor(projection)
+	def _resolve_pending_cursor(self, projection):
 		if self._pending_cursor:
 			source, url, scan_revision = self._pending_cursor
 			if source is self.model().sourceModel():

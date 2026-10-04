@@ -18,6 +18,11 @@ class Canceled(Exception):
 	pass
 
 
+YIELD_INTERVAL = .016
+# Row map (R05): up to this many requested entries are located with
+# tuple.index (< 1 ms each at 200k rows); beyond it the full map is cheaper.
+ROW_MAP_LIMIT = 8
+
 class ScanObservation:
 	def __init__(self, fs, location):
 		self._fs, self._location = fs, location
@@ -95,7 +100,12 @@ class LatestJobs:
 			return (work, deliver, canceled_callback), error
 
 	def _run(self, work, deliver, canceled, canceled_callback):
-		deadline = perf_counter() + .004
+		# Cooperative lanes hand the GIL to the Qt thread about once per frame
+		# (Done/FSPaneArch002.md R04). Measured on the 200k filter benchmark:
+		# sleep(0) does not reliably hand over the GIL (Qt heartbeat gaps up to
+		# 85 ms); sleep(.001) every 4 ms kept gaps at 11 ms but cost ~20 % of
+		# the projection time; sleep(.001) every 16 ms gives 17 ms gaps.
+		deadline = perf_counter() + YIELD_INTERVAL
 		def check():
 			nonlocal deadline
 			if canceled.is_set():
@@ -104,7 +114,7 @@ class LatestJobs:
 				sleep(.001)
 				if canceled.is_set():
 					raise Canceled()
-				deadline = perf_counter() + .004
+				deadline = perf_counter() + YIELD_INTERVAL
 		try:
 			try:
 				check()
@@ -159,9 +169,34 @@ class Projection:
 	highlights: object = None
 	order: object = None
 	columns: tuple = ()
+	complete: bool = True  # rows covers every visible entry
+
+	def row_of(self, entry):
+		"""Row of a visible entry, or None. `rows` holds the entries the view
+		asked for when the projection was requested (Done/FSPaneArch002.md R05);
+		anything else (cursor moved meanwhile) is located once and remembered."""
+		if entry is None:
+			return None
+		row = self.rows.get(entry)
+		if row is None and not self.complete:
+			try:
+				row = self.visible.index(entry)
+			except ValueError:
+				return None
+			self.rows[entry] = row
+		return row
+
+	def complete_rows(self):
+		"""Fill `rows` for every visible entry (one linear pass) before many
+		lookups that were not requested up front."""
+		if not self.complete:
+			self.rows.update((entry, row) for row, entry in enumerate(self.visible))
+			object.__setattr__(self, 'complete', True)
 
 
-def project(listing, previous, column, column_index, ascending, filters, check, prefix='', search=None, order=None):
+def project(listing, previous, column, column_index, ascending, filters, check, prefix='', search=None, order=None, wanted=None):
+	"""`wanted`: entries of `previous` the view will look up after the commit
+	(cursor and marks), or None for a complete row map."""
 	check()
 	highlights = None
 	if search is not None:
@@ -188,10 +223,23 @@ def project(listing, previous, column, column_index, ascending, filters, check, 
 			visible = filtered
 	check()
 	remap = {} if previous is None or previous is listing else reconcile(previous, listing, check)
-	return Projection(listing, tuple(visible), {entry: row for row, entry in enumerate(visible)},
-		remap, column_index, ascending, prefix,
-		next((entry for entry in visible if listing.display_names[entry].lower().startswith(prefix)), None) if prefix else None,
-		highlights, order)
+	visible = tuple(visible)
+	preferred_row, preferred = next(((row, entry) for row, entry in enumerate(visible)
+		if listing.display_names[entry].lower().startswith(prefix)), (None, None)) if prefix else (None, None)
+	if wanted is None or len(wanted) > ROW_MAP_LIMIT:
+		rows, complete = {entry: row for row, entry in enumerate(visible)}, True
+	else:
+		targets = wanted if not remap else {remap.get(entry) for entry in wanted} - {None}
+		rows, complete = {}, False
+		for entry in targets:
+			try:
+				rows[entry] = visible.index(entry)
+			except ValueError:
+				pass
+		if preferred is not None:
+			rows[preferred] = preferred_row
+	return Projection(listing, visible, rows, remap, column_index, ascending, prefix,
+		preferred, highlights, order, complete=complete)
 
 
 class ListingModel(DragAndDrop):
@@ -221,7 +269,7 @@ class ListingModel(DragAndDrop):
 		self._listing = listing
 		self._displayed = None
 		self._visible = ()
-		self._row_numbers = {}
+		self._last_projection = None
 		self._names = None
 		self._text_cache = OrderedDict()
 		self._icon_cells = OrderedDict()
@@ -233,6 +281,7 @@ class ListingModel(DragAndDrop):
 		self._columns_callback = None
 		self._revision = 0
 		self._committed_revision = 0
+		self._projecting = False
 		self._scan_revision = 0
 		self._scanning = False
 		self._dirty = False
@@ -241,6 +290,10 @@ class ListingModel(DragAndDrop):
 		self._columns_recreated = False
 		self._callback = None
 		self._watching = False
+		# Set by the owning view (through the proxy model): returns the view's
+		# snapshot state (displayed listing, cursor entry, row, marks, scroll)
+		# so the projection only maps the rows it will be asked about (R05).
+		self.state_provider = None
 		self._file_watcher = FileWatcher(fs, self)
 		self.transaction_ended = Event()
 		self._result.connect(self._receive, Qt.QueuedConnection)
@@ -268,7 +321,7 @@ class ListingModel(DragAndDrop):
 		self._scanning = True
 		self._scan_revision += 1
 		revision = self._scan_revision
-		scanner, location = self._scanner, self._location
+		scanner, location, current = self._scanner, self._location, self._listing
 		def work(check):
 			check()
 			if not self._watching:
@@ -281,9 +334,15 @@ class ListingModel(DragAndDrop):
 					observation, self._observation = self._observation, None
 					observation.close()
 					if not observation.changed.is_set():
-						return self._listing
+						return current
 			self._fs.clear_cache(location)
-			return scanner(check)
+			result = scanner(check)
+			# R03: an unchanged folder is reported as the listing already shown;
+			# the comparison (~11 ms at 200k entries) runs here, off the Qt thread.
+			if current is not None and result == current:
+				check()
+				return current
+			return result
 		self._scan_jobs.submit(work,
 			lambda result, error: self._deliver('scan', revision, result, error),
 			lambda: self._deliver('scan', revision, None, Canceled()))
@@ -322,8 +381,15 @@ class ListingModel(DragAndDrop):
 		search = self._search
 		cache = self._order_cache
 		order = cache[3] if cache is not None and cache[0] is listing and cache[1:3] == (index, ascending) else None
+		wanted = None
+		if self.state_provider is not None:
+			state = self.state_provider()
+			# Above ROW_MAP_LIMIT the worker builds the full map anyway (IR6).
+			if state is not None and state[0] is previous and len(state[3]) <= ROW_MAP_LIMIT:
+				wanted = frozenset(entry for entry in (state[1], *state[3]) if entry is not None)
+		self._projecting = True
 		self._view_jobs.submit(lambda check:
-			replace(project(listing, previous, column, index, ascending, filters, check, prefix, search, order),
+			replace(project(listing, previous, column, index, ascending, filters, check, prefix, search, order, wanted),
 				columns=tuple(columns)),
 			lambda result, error: self._deliver('view', revision, result, error))
 
@@ -350,14 +416,25 @@ class ListingModel(DragAndDrop):
 				elif result is not self._listing:
 					self._listing = result
 					self.update()
+				elif self._projecting:
+					pass  # the projection in flight commits and notifies
+				elif self._revision != self._committed_revision or self._displayed is not result \
+					or self._last_projection is None \
+					or self._columns[self._sort_column].keys_depend_on_external_data:
+					self.update()  # includes retrying a projection that failed (IR1)
+				else:
+					self._refresh_unchanged()
 			if self._dirty:
 				self._dirty = False
 				self._request_scan()
 		elif revision != self._revision:
 			return
 		elif error is None:
+			self._projecting = False
 			self._committed_revision = revision
 			self._commit(result)
+		else:
+			self._projecting = False
 		if error is not None:
 			if self._navigation_request and self._navigation_request.active:
 				self._navigation_request.fail(error)
@@ -373,7 +450,8 @@ class ListingModel(DragAndDrop):
 		self._columns = result.columns
 		self._pending_columns = None
 		self._displayed = result.listing
-		self._visible, self._row_numbers = result.visible, result.rows
+		self._visible = result.visible
+		self._last_projection = result
 		self._highlights = result.highlights or {}
 		self._restore_from = None
 		if result.order is not None:
@@ -390,6 +468,26 @@ class ListingModel(DragAndDrop):
 		if callback is not None:
 			callback()
 			self.location_loaded.emit(self._location)
+		self.sort_order_changed.emit(result.column,
+			Qt.AscendingOrder if result.ascending else Qt.DescendingOrder)
+		self.transaction_ended.trigger()
+		self.files_changed.emit()
+		self.all_rows_loaded.emit()
+
+	def _refresh_unchanged(self):
+		"""R03 (Done/FSPaneArch002.md): a rescan found the displayed listing
+		unchanged and no projection is pending. Emit what a commit emits so
+		pending cursors, search acceptance and status listeners resolve, but
+		keep the rows, selection and scroll position: no projection, no model
+		reset. Cell texts may still depend on external data (directory sizes),
+		so the text cache is dropped and the rows repaint like refresh_files."""
+		result = self._last_projection
+		self.about_to_commit.emit()
+		self._text_cache.clear()
+		if self._visible:
+			self.dataChanged.emit(self.index(0, 0),
+				self.index(len(self._visible) - 1, len(self._columns) - 1), [Qt.DisplayRole])
+		self.committed.emit(result)
 		self.sort_order_changed.emit(result.column,
 			Qt.AscendingOrder if result.ascending else Qt.DescendingOrder)
 		self.transaction_ended.trigger()

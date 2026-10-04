@@ -7,6 +7,83 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-10-04
+
+This release focuses on performance. Name sort keys are now built in native
+code. Refreshing an unchanged folder no longer re-sorts or resets the
+table. Large folders load and refresh faster and the UI stays responsive
+while they do.
+Rendering time is now close to its lower bound. _RoyiFileManager_ should be
+competitive with the fastest file managers available for Windows.
+
+### Changed
+
+- Name-column sort keys are built in C (`_fsparser.natural_keys`, same
+  extension as the directory parser): 94 ms to 7 ms for 200k short names and
+  515 ms to 67 ms for 200k long names, identical ordering (verified against the
+  Python `natural_key` over every Unicode code point).
+- Refreshing a folder whose contents did not change no longer re-sorts, resets
+  the table or drops marks, the rename editor or a drag in progress; cells are
+  repainted and the usual completion notifications are still sent.
+- The projection worker yields to the UI thread every ~16 ms instead of
+  every 4 ms (`sleep(0)` was measured and rejected: it does not reliably hand
+  the GIL to the UI thread).
+- The row map a projection carries covers only the cursor and marked entries
+  the view will restore (full map above eight entries), saving ~14 ms and
+  ~10 MB per sort, filter keystroke and refresh of a 200k-row pane.
+
+Results on the _test suite_ (milliseconds, medians of three fresh processes,
+native Qt, warm cache):
+
+| Measurement                                           |   0.13.0 |  0.13.1 |   Target |
+|-------------------------------------------------------|---------:|--------:|---------:|
+| `pane.load.large` first paint (200k, long names)      |      759 | **262** |    < 500 |
+| `refresh.large` unchanged refresh, no marks           |     ~356 |     123 |          |
+| `refresh.large` unchanged refresh, all marked         |     ~356 |     128 |          |
+| `filter.large` substring query paint                  |      137 |     115 |          |
+| `filter.large` UI heartbeat gap, typical query        |       11 |      17 |     ≤ 16 |
+| `filter.large` UI heartbeat gap, worst query          |       23 |      38 |     ≤ 16 |
+
+### Performance
+
+Results of the performance test suite per version. Run time in [ms], lower is better.
+
+| Test                            |   0.9.0 |   0.9.3 | 0.10.3 | 0.13.0 | 0.13.1 |
+|---------------------------------|--------:|--------:|-------:|-------:|-------:|
+| Pane Load - Small Folder        |   42.23 |   35.20 |  33.93 |  37.52 |  37.02 |
+| Pane Load - Large Folder        | 1001.54 |  964.31 | 958.23 | 758.64 | 266.27 |
+| Filter Bar - Small Folder       |    8.96 |    8.69 |   8.79 |  10.88 |   9.77 |
+| Filter Bar - Large Folder       |  332.17 |  331.28 | 338.27 | 364.34 | 289.53 |
+| Fuzzy Find - Small Folder       |    4.57 |    4.55 |   7.17 |   5.28 |   4.86 |
+| Fuzzy Find - Large Folder       |  408.47 |  407.95 | 441.02 | 357.29 | 354.73 |
+| Fuzzy Find (Recursive)          |   91.68 |   91.05 |  91.91 |  92.54 |  91.28 |
+| QuickView Images - Small Folder |  122.09 |  122.61 | 122.04 | 121.09 | 116.37 |
+| QuickView Images - Large Folder |  123.29 |  121.14 | 135.86 | 119.46 | 120.62 |
+| QuickView Text - Small Folder   |       - |       - | 133.03 | 129.55 | 132.58 |
+| QuickView Text - Large Folder   |       - |       - | 129.47 | 132.35 | 131.50 |
+| Selections - Small Folder       |   15.67 |   15.24 |  15.35 |  16.18 |  15.79 |
+| Selections - Large Folder       |   88.18 |   87.85 |  88.36 |  89.65 |  87.64 |
+| Selections Readback             | 1994.44 | 1974.51 |  73.78 |  69.86 |  65.65 |
+| Navigation                      |    7.17 |    7.36 |   7.17 |   7.05 |   6.97 |
+| Refresh / Selection             |  581.97 |  592.84 | 585.17 | 355.99 |  67.59 |
+
+[CelebA](https://mmlab.ie.cuhk.edu.hk/projects/CelebA.html) folder with about 200,000 entries. Lower is better.
+
+| Measurement                | Ver. 0.8.0  | Ver. 0.8.1  | Ver. 0.9.0  | Ver. 0.9.2  | Ver. 0.13.0 | Ver. 0.13.1 |
+|----------------------------|-------------|-------------|-------------|-------------|-------------|-------------|
+| First Populated Pane Paint | 8.949 [s]   | 5.663 [s]   | 0.583 [s]   | 0.506 [s]   | 0.257 [s]   | 0.112 [s]   |
+| Metadata Loading Complete  | 17.786 [s]  | 11.498 [s]  | 0.571 [s]   | 0.494 [s]   | 0.244 [s]   | 0.100 [s]   |
+| Post Paint Qt Commit Work  | 2.765 [s]   | 1.282 [s]   | 0 [s]       | 0 [s]       | 0 [s]       | 0 [s]       |
+| Settled Working Memory     | 771.1 [MiB] | 771.3 [MiB] | 165.6 [MiB] | 167.4 [MiB] | 160.3 [MiB] | 145.5 [MiB] |
+
+> [!NOTE]
+> * Version `0.13.1` added native `C` natural sort keys, an unchanged-refresh path without re-sorting or a table reset, a per-projection row map limited to the entries the view restores and a once-per-frame worker yield cadence.
+> * Version `0.13.0` added a native `C` directory parser and a validation free snapshot fast path for `NTFS`/`ReFS` folders.
+> * Versions `0.10.x` optimized the existing code and remove the slower legacy paths.
+> * Version `0.9.x` is the 1st version with the new architecture (_Snapshot Architecture_) which is an order of magnitude faster than `0.8.1`.
+> * Version `0.8.1` had an improved version of the `fman` architecture (About 30% faster than `0.8.0`).
+> * Version `0.8.0` and earlier versions use the `fman` architecture and performance.
+
 ## [0.13.0] - 2026-10-04
 
 This release focuses on performance. It replaces a Python code with native code
@@ -642,7 +719,7 @@ full-candidate Find/sort/refresh run peaked at 285 MiB, and selected-all sorting
 had 36 ms arrow-to-paint p95. Initial loading gains do not establish uniformly
 frame-budget interaction. Reproduction and known limits are recorded in
 [FSPaneArch001](Done/FSPaneArch001.md); further investigations are tracked in
-[FSPaneArch002](Plan/FSPaneArch002.md).
+[FSPaneArch002](Done/FSPaneArch002.md).
 
 ### Fixed
 

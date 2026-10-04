@@ -19,7 +19,7 @@ implementation steps and reviewer history below are historical, not pending work
   metadata, identity, transfers, links, invalidation, cancellation and cleanup.
 - The standalone listing benchmark remains a developer diagnostic. Further
   measured pane optimizations belong to
-  [FSPaneArch002](../Plan/FSPaneArch002.md), not this retired design.
+  [FSPaneArch002](../Done/FSPaneArch002.md), not this retired design.
 
 Retirement is complete when the old module is absent from discovery, retained
 tests pass with documented environment skips, and this canonical document is

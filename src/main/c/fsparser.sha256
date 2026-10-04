@@ -1,4 +1,4 @@
 # SHA-256 pairing of fsparser.c (CRLF normalised to LF) and _fsparser.pyd (raw bytes).
 # Regenerate with write_hashes.py after rebuilding; check with check_hashes.py.
-source c80b126ce6358ea42801cced661c42a498b8c46b9b58f8073ab6535131358b7f
-binary a69a69a178cc57cb2455d69de1616fd048b0f45c848657fff7ec290fb9fe626f
+source c77d846e2b0152a99983161c1cde30100d9b1d86a70d2e17f75860530ab028c2
+binary 18587c3e86fef4a434ded1d247940f7f763e6aa56d19309bca5c5d3031e83ba5

@@ -30,6 +30,8 @@ class SortedFileSystemModel(QIdentityProxyModel):
 		self._closed = False
 		self._extra_columns = {}
 		self._default_columns = ()
+		# Set by the file view; forwarded to each ListingModel (R05 row map).
+		self.snapshot_state_provider = None
 		from fman.impl.model.listing import LatestJobs
 		self._snapshot_scans = LatestJobs(capacity=2)
 		self._snapshot_refreshes = LatestJobs()
@@ -352,6 +354,10 @@ class SortedFileSystemModel(QIdentityProxyModel):
 		if hasattr(model, 'about_to_commit'):
 			model.about_to_commit.connect(self.snapshot_about_to_commit)
 			model.committed.connect(self.snapshot_committed)
+			model.state_provider = self._request_snapshot_state
+	def _request_snapshot_state(self):
+		provider = self.snapshot_state_provider
+		return provider() if provider is not None else None
 	def _disconnect_signals(self, model):
 		# Would prefer signal.disconnect(self.signal.emit) here. But PyQt
 		# doesn't support it. So we need Python wrappers "_emit_...":
@@ -366,6 +372,7 @@ class SortedFileSystemModel(QIdentityProxyModel):
 		if hasattr(model, 'about_to_commit'):
 			model.about_to_commit.disconnect(self.snapshot_about_to_commit)
 			model.committed.disconnect(self.snapshot_committed)
+			model.state_provider = None
 	def _emit_location_loaded(self, location):
 		if not self.sourceModel()._columns_recreated:
 			self.location_loaded.emit(location)

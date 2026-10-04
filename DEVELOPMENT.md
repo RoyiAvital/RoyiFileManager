@@ -421,9 +421,11 @@ summary statistics. Repetition counts are unchanged; new records retain metric
 counts, medians, ranges and p95 instead of raw observations. The runner never
 rewrites the YAML or an existing result, and older raw records remain readable.
 
-```powershell
-python build.py measure
-```
+Run `python build.py measure` for the regular sixteen-row performance report,
+including five selection patterns each for small and large folders. Add `--full`
+to include medium-folder cases for all folder-based benchmarks, with separate
+full-run history. Selection latency and selected-file readback are measured
+separately. See the [performance protocol](src/performancetest/README.md).
 
 `python build.py test` runs correctness verification; `python build.py measure`
 runs the regular performance suite, updates the version result, generates an offline

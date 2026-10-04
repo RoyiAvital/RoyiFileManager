@@ -77,38 +77,39 @@ Significant additions compared with `fman`:
     
 Results of the performance test suite per version. Run time in [ms], lower is better.
 
-| Test                            |   0.9.0 |   0.9.1 |   0.9.2 |   0.9.3 | 0.10.3 | 0.13.0 |
-|---------------------------------|--------:|--------:|--------:|--------:|-------:|-------:|
-| Pane Load - Small Folder        |   42.23 |   42.78 |   44.66 |   35.20 |  33.93 |  37.52 |
-| Pane Load - Large Folder        | 1001.54 | 1014.82 |  978.07 |  964.31 | 958.23 | 758.64 |
-| Filter Bar - Small Folder       |    8.96 |    9.21 |    8.70 |    8.69 |   8.79 |  10.88 |
-| Filter Bar - Large Folder       |  332.17 |  331.48 |  333.62 |  331.28 | 338.27 | 364.34 |
-| Fuzzy Find - Small Folder       |    4.57 |    4.52 |    4.51 |    4.55 |   7.17 |   5.28 |
-| Fuzzy Find - Large Folder       |  408.47 |  379.09 |  389.25 |  407.95 | 441.02 | 357.29 |
-| Fuzzy Find (Recursive)          |   91.68 |   91.09 |   91.12 |   91.05 |  91.91 |  92.54 |
-| QuickView Images - Small Folder |  122.09 |  120.89 |  120.60 |  122.61 | 122.04 | 121.09 |
-| QuickView Images - Large Folder |  123.29 |  128.92 |  125.64 |  121.14 | 135.86 | 119.46 |
-| QuickView Text - Small Folder   |       - |       - |       - |       - | 133.03 | 129.55 |
-| QuickView Text - Large Folder   |       - |       - |       - |       - | 129.47 | 132.35 |
-| Selections - Small Folder       |   15.67 |   15.64 |   15.40 |   15.24 |  15.35 |  16.18 |
-| Selections - Large Folder       |   88.18 |   88.37 |   88.94 |   87.85 |  88.36 |  89.65 |
-| Selections Readback             | 1994.44 | 1987.26 | 1967.05 | 1974.51 |  73.78 |  69.86 |
-| Navigation                      |    7.17 |    7.20 |    7.17 |    7.36 |   7.17 |   7.05 |
-| Refresh / Selection             |  581.97 |  581.73 |  582.82 |  592.84 | 585.17 | 355.99 |
+| Test                            |   0.9.0 |   0.9.3 | 0.10.3 | 0.13.0 | 0.13.1 |
+|---------------------------------|--------:|--------:|-------:|-------:|-------:|
+| Pane Load - Small Folder        |   42.23 |   35.20 |  33.93 |  37.52 |  37.02 |
+| Pane Load - Large Folder        | 1001.54 |  964.31 | 958.23 | 758.64 | 266.27 |
+| Filter Bar - Small Folder       |    8.96 |    8.69 |   8.79 |  10.88 |   9.77 |
+| Filter Bar - Large Folder       |  332.17 |  331.28 | 338.27 | 364.34 | 289.53 |
+| Fuzzy Find - Small Folder       |    4.57 |    4.55 |   7.17 |   5.28 |   4.86 |
+| Fuzzy Find - Large Folder       |  408.47 |  407.95 | 441.02 | 357.29 | 354.73 |
+| Fuzzy Find (Recursive)          |   91.68 |   91.05 |  91.91 |  92.54 |  91.28 |
+| QuickView Images - Small Folder |  122.09 |  122.61 | 122.04 | 121.09 | 116.37 |
+| QuickView Images - Large Folder |  123.29 |  121.14 | 135.86 | 119.46 | 120.62 |
+| QuickView Text - Small Folder   |       - |       - | 133.03 | 129.55 | 132.58 |
+| QuickView Text - Large Folder   |       - |       - | 129.47 | 132.35 | 131.50 |
+| Selections - Small Folder       |   15.67 |   15.24 |  15.35 |  16.18 |  15.79 |
+| Selections - Large Folder       |   88.18 |   87.85 |  88.36 |  89.65 |  87.64 |
+| Selections Readback             | 1994.44 | 1974.51 |  73.78 |  69.86 |  65.65 |
+| Navigation                      |    7.17 |    7.36 |   7.17 |   7.05 |   6.97 |
+| Refresh / Selection             |  581.97 |  592.84 | 585.17 | 355.99 |  67.59 |
 
 Comparisons with previous versions:
 
 [CelebA](https://mmlab.ie.cuhk.edu.hk/projects/CelebA.html) folder with about 200,000 entries. Lower is better.
 
-| Measurement                | ver. 0.8.0  | ver. 0.8.1  | ver. 0.9.0  | ver. 0.9.2  | ver. 0.13.0 |
-|----------------------------|-------------|-------------|-------------|-------------|-------------|
-| First Populated Pane Paint | 8.949 [s]   | 5.663 [s]   | 0.583 [s]   | 0.506 [s]   | 0.257 [s]   |
-| Metadata Loading Complete  | 17.786 [s]  | 11.498 [s]  | 0.571 [s]   | 0.494 [s]   | 0.244 [s]   |
-| Post Paint Qt Commit Work  | 2.765 [s]   | 1.282 [s]   | 0 [s]       | 0 [s]       | 0 [s]       |
-| Settled Working Memory     | 771.1 [MiB] | 771.3 [MiB] | 165.6 [MiB] | 167.4 [MiB] | 160.3 [MiB] |
+| Measurement                | Ver. 0.8.0  | Ver. 0.8.1  | Ver. 0.9.0  | Ver. 0.9.2  | Ver. 0.13.0 | Ver. 0.13.1 |
+|----------------------------|-------------|-------------|-------------|-------------|-------------|-------------|
+| First Populated Pane Paint | 8.949 [s]   | 5.663 [s]   | 0.583 [s]   | 0.506 [s]   | 0.257 [s]   | 0.112 [s]   |
+| Metadata Loading Complete  | 17.786 [s]  | 11.498 [s]  | 0.571 [s]   | 0.494 [s]   | 0.244 [s]   | 0.100 [s]   |
+| Post Paint Qt Commit Work  | 2.765 [s]   | 1.282 [s]   | 0 [s]       | 0 [s]       | 0 [s]       | 0 [s]       |
+| Settled Working Memory     | 771.1 [MiB] | 771.3 [MiB] | 165.6 [MiB] | 167.4 [MiB] | 160.3 [MiB] | 145.5 [MiB] |
 
 > [!NOTE]
-> * Version `0.13.0` added a native `C` directory parser and a validation free snapshot fast path for `NTFS`/`ReFS` folders.
+> * Version `0.13.1` added native `C` natural sort keys and skips re-sorting and table resets when a refreshed folder is unchanged.
+> * Version `0.13.0` added a native `C` directory parser and a fast path for `NTFS`/`ReFS` folders.
 > * Versions `0.10.x` optimized the existing code and remove the slower legacy paths.
 > * Version `0.9.x` is the 1st version with the new architecture (_Snapshot Architecture_) which is an order of magnitude faster than `0.8.1`.
 > * Version `0.8.1` had an improved version of the `fman` architecture (About 30% faster than `0.8.0`).
@@ -146,12 +147,6 @@ conda-lock lock -f environment.yml -p win-64
 ```
 
 See [`DEVELOPMENT.md`](DEVELOPMENT.md) for more details.
-
-Run `python build.py measure` for the regular 13-row performance report, including
-five selection patterns each for small and large folders. Add `--full` to include
-medium-folder cases for all folder-based benchmarks, with separate full-run
-history. Selection timings include painting and selected-file readback through
-the next Qt-thread response. See the [performance protocol](src/performancetest/README.md).
 
 ### Documentation
 

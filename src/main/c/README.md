@@ -41,9 +41,14 @@ Flags:
 The module exposes three shapes over one record decoder: `Columns(link_tags)`
 (`add`/`entry`/`patch`/`finish(frozen=)`, the shape the scanner integrates),
 `parse_records` (whole directory) and `parse_batch` (append per batch), the
-latter two kept as reference shapes for the gauge. There is no version
-constant: the committed binary is paired with this source by SHA-256. Tests:
-`core.tests.fs.test_fsparser`; gauge: `src/misc/benchmark_fsparser.py`.
+latter two kept as reference shapes for the gauge. `natural_keys(names,
+is_dir, ascending)` builds the Name-column sort keys (`core.Name.keys`); it
+must equal the Python `natural_key` reference for every code point, and
+`UNICODE_VERSION` must equal `unicodedata.unidata_version` of the Python the
+binary ships with (regenerate `DECIMAL_RUN_STARTS` when Python's Unicode
+database changes). There is no version constant: the committed binary is
+paired with this source by SHA-256. Tests: `core.tests.fs.test_fsparser`;
+gauge: `src/misc/benchmark_fsparser.py`.
 
 ## Verify
 
@@ -51,7 +56,7 @@ constant: the committed binary is paired with this source by SHA-256. Tests:
 python -c "import sys; sys.path.insert(0, 'target/native'); import _fsparser; print(_fsparser.HEADER_SIZE, sorted(n for n in dir(_fsparser) if not n.startswith('_')))"
 ```
 
-Expected output: `88 ['Columns', 'HEADER_SIZE', 'parse_batch', 'parse_records']`.
+Expected output: `88 ['Columns', 'HEADER_SIZE', 'UNICODE_VERSION', 'natural_keys', 'parse_batch', 'parse_records']`.
 
 Dependency check (should list only `python3.dll`, `KERNEL32.dll` and
 `api-ms-win-crt-*.dll`):

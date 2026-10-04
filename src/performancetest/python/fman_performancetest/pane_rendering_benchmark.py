@@ -231,6 +231,19 @@ def child(directory, label, mode, show_hidden, rows_output=None, interactions=Fa
 				state['commits_ms'].append(elapsed)
 	if ListingModel is not None:
 		ListingModel._commit = snapshot_commit
+		# R03: an unchanged refresh keeps the displayed listing and does not
+		# call _commit; it is still the measured completion of the refresh.
+		original_refresh_unchanged = ListingModel._refresh_unchanged
+		def refresh_unchanged(model):
+			begin = perf_counter()
+			original_refresh_unchanged(model)
+			if operation and model.get_location() == target:
+				operation['committed'] = True
+				operation['commits'].append((perf_counter() - begin) * 1000)
+				view = view_holder[0] if view_holder else None
+				if view is not None:
+					view.viewport().update()
+		ListingModel._refresh_unchanged = refresh_unchanged
 	if Model is not None:
 		original_initialize = Model._initialize
 		def initialize(model, callback):
@@ -465,8 +478,8 @@ def child(directory, label, mode, show_hidden, rows_output=None, interactions=Fa
 						memory_after = win32process.GetProcessMemoryInfo(win32api.GetCurrentProcess())
 						def check_refresh():
 							source = view.model().sourceModel()
-							if source._displayed is previous or source._scan_revision <= revision:
-								raise RuntimeError('Refresh did not commit a new scan')
+							if source._scan_revision <= revision:
+								raise RuntimeError('Refresh did not complete a new scan')
 							if source._displayed != previous or source._visible != visible:
 								raise RuntimeError('Unchanged refresh changed snapshot data or row order')
 							if pane_state() != before:

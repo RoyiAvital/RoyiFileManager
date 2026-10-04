@@ -10,4 +10,6 @@
 3. Extract the ZIP file to a folder of your choice.
 4. Run `{{ app_name }}.exe` from the extracted folder.
 
-Keep the extracted files together. You can move the application folder whenever needed.
+!!! tip "Portable Application"
+    Keep all extracted files together. You can move the entire {{ app_name }} folder
+    to another location whenever needed.

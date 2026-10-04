@@ -115,9 +115,10 @@ class SortedFileSystemModelAT: # Instantiated in fman_integrationtest.test_qt
 			self.run_in_app(self._model.remove_filter, predicate)
 			self._drain_initialization()
 			self.run_in_app(check, {'stub://6', 'stub://4'})
+			# An unchanged folder keeps its marks even without identities (R03).
 			self._model.reload()
 			self._drain_initialization()
-			self.run_in_app(check, set())
+			self.run_in_app(check, {'stub://6', 'stub://4'})
 			self.run_in_app(view.select, ['stub://6', 'stub://4'])
 			self.run_in_app(check, {'stub://6', 'stub://4'})
 			self._set_location('stub://dir')

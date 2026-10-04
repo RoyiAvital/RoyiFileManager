@@ -7,6 +7,10 @@ Press ++ctrl+q++.
 QuickView previews the file under the cursor over the other pane.
 Both folder locations stay unchanged.
 
+!!! danger "QuickView Availability"
+  QuickView previews files on local drives and network shares, not inside archives
+  or other virtual file systems.
+
 ### QuickView for Images
 
 <figure class="product-shot" markdown>

@@ -1832,12 +1832,97 @@ class SnapshotFilterBarIT(FilterBarIT):
 			self.assertIsNotNone(editor)
 			editor.setText('not-committed.txt')
 		self.run_in_app(begin)
+		(self.root / 'added-while-editing.txt').write_bytes(b'x')
 		pane.reload()
 		self.drain(pane)
 		renamed.assert_not_called()
 		self.assertIsNone(self.run_in_app(lambda: pane._file_view._dragged_index))
 		self.assertNotEqual(pane._file_view.EditingState, self.run_in_app(pane._file_view.state))
 		self.assertTrue((self.root / 'report.txt').exists())
+
+	def test_unchanged_refresh_notifies_without_reset(self):
+		from fman.url import as_url
+		from PyQt5.QtWidgets import QLineEdit
+		from unittest.mock import Mock, patch
+		pane = self.panes[0]
+		url = as_url(self.root / 'report.txt')
+		pane.place_cursor_at(url)
+		pane.select([url])
+		self.drain(pane)
+		source = self.run_in_app(pane._model.sourceModel)
+		reset, committed, files_changed, all_rows_loaded, ended = (Mock() for _ in range(5))
+		def begin():
+			source.modelReset.connect(reset)
+			source.committed.connect(committed)
+			source.files_changed.connect(files_changed)
+			source.all_rows_loaded.connect(all_rows_loaded)
+			source.transaction_ended.add_callback(ended)
+			pane.edit_name(url)
+			self.assertIsNotNone(pane._file_view.findChild(QLineEdit, 'editor'))
+		self.run_in_app(begin)
+		try:
+			with patch.object(source._view_jobs, 'submit', wraps=source._view_jobs.submit) as submit:
+				pane.reload()
+				self.drain(pane)
+				submit.assert_not_called()
+			reset.assert_not_called()
+			for signal in (committed, files_changed, all_rows_loaded, ended):
+				signal.assert_called_once()
+			self.assertIs(source._last_projection, committed.call_args[0][0])
+			self.assertEqual(url, pane.get_file_under_cursor())
+			self.assertEqual([url], pane.get_selected_files())
+			self.assertEqual(pane._file_view.EditingState, self.run_in_app(pane._file_view.state))
+			# Changed metadata still goes through the normal commit.
+			(self.root / 'report.txt').write_bytes(b'longer content')
+			pane.reload()
+			self.drain(pane)
+			reset.assert_called_once()
+			self.assertEqual(2, committed.call_count)
+			self.assertEqual(url, pane.get_file_under_cursor())
+		finally:
+			self.run_in_app(source.transaction_ended.remove_callback, ended)
+
+	def test_unchanged_refresh_resolves_missing_cursor_request(self):
+		from fman.url import as_url
+		from unittest.mock import patch
+		pane = self.panes[0]
+		source = self.run_in_app(pane._model.sourceModel)
+		def request():
+			with patch.object(source, 'reload'):
+				pane._file_view.place_cursor_at(as_url(self.root / 'absent.txt'))
+			self.assertIsNotNone(pane._file_view._pending_cursor)
+		self.run_in_app(request)
+		pane.reload()
+		self.drain(pane)
+		self.assertIsNone(self.run_in_app(lambda: pane._file_view._pending_cursor))
+
+	def test_unchanged_refresh_retries_failed_projection(self):
+		import sys
+		from core import Name
+		from time import monotonic
+		from unittest.mock import Mock, patch
+		pane = self.panes[0]
+		self.drain(pane)
+		source = self.run_in_app(pane._model.sourceModel)
+		committed, hooks = Mock(), []
+		self.run_in_app(source.committed.connect, committed)
+		with patch.object(sys, 'excepthook', lambda *args: hooks.append(args)):
+			with patch.object(Name, 'keys', side_effect=RuntimeError('injected key failure')):
+				def rebuild_keys():
+					source._order_cache = None  # otherwise the cached order skips Name.keys
+					source.update()
+				self.run_in_app(rebuild_keys)
+				deadline = monotonic() + 5
+				while monotonic() < deadline and not hooks:
+					pass
+			self.assertEqual(1, len(hooks))
+			self.assertTrue(self.run_in_app(lambda: source._revision != source._committed_revision))
+			committed.assert_not_called()
+			pane.reload()
+			self.drain(pane)
+		committed.assert_called_once()
+		self.assertTrue(self.run_in_app(lambda: source._revision == source._committed_revision))
+		self.assertEqual(1, len(hooks))
 
 	def test_native_mutations_refresh_both_panes_and_operation_cache(self):
 		from fman.url import as_url

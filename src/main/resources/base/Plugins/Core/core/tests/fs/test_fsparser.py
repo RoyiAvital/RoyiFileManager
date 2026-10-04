@@ -37,7 +37,6 @@ def _load():
 	module = importlib.util.module_from_spec(spec)
 	loader.exec_module(module)
 	return module
-	return None
 
 
 _fsparser = _load() if os.name == 'nt' else None
@@ -358,4 +357,52 @@ class ColumnsTest(ParserCases, TestCase):
 		for _ in range(3):
 			columns.add(batch(*(record('x%04d' % i) for i in range(500))))
 		del columns
+
+
+@skipUnless(_fsparser is not None, '_fsparser extension not available')
+class NaturalKeysTest(TestCase):
+
+	EDGE_NAMES = ('File2.txt', 'file02.txt', 'file10.txt', 'a' + '9' * 80, '0', '000', 'x0000001y',
+		'Stra\u00dfe_caf\u00e9_CAF\u00c9_12', 'v\u0662\u0663', 'v\uff12', '\u0130stanbul 5', 'K 7',
+		'lone\udc80 3', '\U0001F600 42', '\U0001D7CE\U0001D7D7', '', '\u0660\u0660\u0661\u0662\u0663',
+		'1234567', '12345678901234567890' * 3, 'ab\u0665\u0666cd', '\xff\xfe 1', '\u0100 2')
+
+	@staticmethod
+	def reference(names, is_dir, ascending):
+		from fman.impl.util.natural import natural_key
+		return tuple(('1' if d ^ ascending else '0') + natural_key(name) for name, d in zip(names, is_dir))
+
+	def test_matches_python_reference_on_edge_names(self):
+		is_dir = [index % 3 == 0 for index in range(len(self.EDGE_NAMES))]
+		for ascending in (True, False):
+			keys = _fsparser.natural_keys(self.EDGE_NAMES, is_dir, ascending)
+			self.assertIsInstance(keys, tuple)
+			self.assertEqual(self.reference(self.EDGE_NAMES, is_dir, ascending), keys)
+
+	def test_matches_python_reference_on_every_code_point(self):
+		import unicodedata
+		self.assertEqual(unicodedata.unidata_version, _fsparser.UNICODE_VERSION)
+		for start in range(0, 0x110000, 0x10000):
+			names = [chr(code) for code in range(start, start + 0x10000)]
+			flags = [False] * len(names)
+			self.assertEqual(self.reference(names, flags, True), _fsparser.natural_keys(names, flags, True))
+
+	def test_accepts_sequences_and_truthy_flags(self):
+		keys = _fsparser.natural_keys(iter(['b', 'a']), (1, 0), True)
+		self.assertEqual(('0b', '1a'), keys)  # directories sort first when ascending
+		self.assertEqual((), _fsparser.natural_keys([], [], False))
+
+	def test_empty_names_in_any_position(self):
+		self.assertEqual(('1',), _fsparser.natural_keys(('',), (False,), True))
+		self.assertEqual(('1', '1a', '1'), _fsparser.natural_keys(('', 'a', ''), (False,) * 3, True))
+		self.assertEqual(('0', '1\xe9'), _fsparser.natural_keys(('', '\xc9'), (False, True), False))
+
+	def test_rejects_bad_arguments(self):
+		with self.assertRaises(ValueError):
+			_fsparser.natural_keys(['a', 'b'], [False], True)
+		for names in (['a', 1], ['a', b'b'], [None]):
+			with self.assertRaises(TypeError):
+				_fsparser.natural_keys(names, [False] * len(names), True)
+		with self.assertRaises(TypeError):
+			_fsparser.natural_keys(['a'], [False])
 

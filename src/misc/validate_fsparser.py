@@ -384,7 +384,12 @@ def check_against_os(listing, root, problems):
         actual = (listing.is_dir[index], listing.sizes[index], listing.mtimes_ns[index])
         if target is own and stat.S_ISDIR(own.st_mode):
             # The parent's index reports 0 for a folder; lstat reports its index allocation.
+            # NTFS also updates the folder's last-write time in the parent's index lazily
+            # (on handle close), so a freshly filled folder may lag lstat by milliseconds.
+            lag_ns = expected[2] - actual[2]
             expected, actual = expected[::2], actual[::2]
+            if not 0 <= lag_ns <= 2_000_000_000:
+                problems.append('%s: folder mtime_ns lags lstat by %d ns' % (name, lag_ns))
         if expected != actual:
             problems.append('%s: (is_dir, size, mtime_ns) %r vs stat %r' % (name, actual, expected))
         if listing.created_ns[index] != own.st_birthtime_ns:

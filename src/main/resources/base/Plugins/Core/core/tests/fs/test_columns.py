@@ -59,7 +59,21 @@ class NameTest(ColumnTest, TestCase):
 		for ascending in (False, True):
 			keys = self._column.keys(listing, ascending)
 			self.assertEqual(names, sorted(names, key=dict(zip(names, keys)).__getitem__))
-			self.assertEqual((ascending,) * len(names), tuple(key[0] for key in keys))
+			# Files sort after directories when ascending: prefix '1' (is_dir ^ ascending).
+			self.assertEqual(('1' if ascending else '0',) * len(names), tuple(key[0] for key in keys))
+			self.assertEqual(tuple(natural_key(name) for name in names), tuple(key[1:] for key in keys))
+	def test_keys_match_reference_across_native_slices_and_empty_labels(self):
+		from core import _NATIVE_KEY_SLICE
+		from fman.impl.util.natural import natural_key
+		count = 2 * _NATIVE_KEY_SLICE + 3
+		names = tuple('entry%d' % index for index in range(count))
+		labels = ('',) + names[1:-1] + ('',)
+		is_dir = tuple(index % 2 == 0 for index in range(count))
+		listing = Listing.create('test://', names, is_dir=is_dir, labels=labels)
+		for ascending in (False, True):
+			expected = tuple(('1' if d ^ ascending else '0') + natural_key(label)
+				for label, d in zip(labels, is_dir))
+			self.assertEqual(expected, self._column.keys(listing, ascending))
 	def test_mixed_text_punctuation_and_numeric_ties(self):
 		from fman.impl.util.natural import natural_key
 		names = ['a', 'a!', 'a-2', 'a.2', 'a0', 'a2', 'a02', 'a2!', 'a2a', 'a10', 'a_', 'ab']

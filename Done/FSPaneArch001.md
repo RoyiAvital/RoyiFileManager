@@ -12,7 +12,7 @@ operation is ten times faster.
 
 The user explicitly accepted the implementation and closed its original adoption
 gates with documented limitations. Remaining performance and validation work is
-tracked in [FSPaneArch002](../Plan/FSPaneArch002.md). Historical review records and
+tracked in [FSPaneArch002](../Done/FSPaneArch002.md). Historical review records and
 measurements below are preserved; their pending/adoption-blocked statements
 describe the state at the time, not the current task status. PoC timings remain
 observations, not application guarantees.
@@ -387,7 +387,7 @@ Required before adoption:
 - The original 16 ms loaded-input p95 and 250 MiB peak-memory targets, together
   with unrun adoption checks, are no longer completion blockers for this task.
   They were not retroactively passed. Remaining investigations are captured in
-  [FSPaneArch002](../Plan/FSPaneArch002.md).
+  [FSPaneArch002](../Done/FSPaneArch002.md).
 - Existing provider, identity, selection, query-semantics and plug-in migration
   requirements are retained; acceptance does not waive known correctness defects.
   No new application changes or broad validation run are implied by this closure.
@@ -1718,7 +1718,7 @@ python -c "import build, subprocess, sys, os; env=build._environment(); env['QT_
 
 The following items were open adoption gates before the user's 2026_09_22
 acceptance. They are preserved as limitations and copied into
-[FSPaneArch002](../Plan/FSPaneArch002.md), not claimed as passed:
+[FSPaneArch002](../Done/FSPaneArch002.md), not claimed as passed:
 
 - Not all loaded interaction phases meet 16 ms p95; peak interaction memory
   exceeds 250 MiB. Python sort/key generation, large marked-state restoration

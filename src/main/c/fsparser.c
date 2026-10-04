@@ -27,6 +27,7 @@
 #include <Python.h>
 
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 /* FILE_ID_EXTD_DIR_INFO fixed header: 88 bytes, followed by FileName (UTF-16LE). */
@@ -888,6 +889,302 @@ static PyType_Spec columns_spec = {
 	columns_slots
 };
 
+/* ---- Natural sort keys (R10 in Done/FSPaneArch002.md) ---- */
+
+/*
+ * Reference: fman.impl.util.natural.natural_key, kept in Python as the
+ * specification the tests compare this against:
+ *
+ *   parts = re.split(r'(\d+)', name.lower())
+ *   for each digit run: value digits (unicodedata.decimal), lstrip('0') or '0';
+ *     len <= 6  -> '0' + digits.zfill(6)
+ *     otherwise -> '1' + '1' * len(str(len)) + '0' + str(len) + digits
+ *   return ''.join(parts)
+ *
+ * re's \d for str is Unicode category Nd, whose members all carry a decimal
+ * value in runs of ten. The table lists the first code point of every run.
+ */
+static const uint32_t DECIMAL_RUN_STARTS[] = {
+	0x0030, 0x0660, 0x06F0, 0x07C0, 0x0966, 0x09E6, 0x0A66, 0x0AE6, 0x0B66, 0x0BE6,
+	0x0C66, 0x0CE6, 0x0D66, 0x0DE6, 0x0E50, 0x0ED0, 0x0F20, 0x1040, 0x1090, 0x17E0,
+	0x1810, 0x1946, 0x19D0, 0x1A80, 0x1A90, 0x1B50, 0x1BB0, 0x1C40, 0x1C50, 0xA620,
+	0xA8D0, 0xA900, 0xA9D0, 0xA9F0, 0xAA50, 0xABF0, 0xFF10, 0x104A0, 0x10D30, 0x10D40,
+	0x11066, 0x110F0, 0x11136, 0x111D0, 0x112F0, 0x11450, 0x114D0, 0x11650, 0x116C0, 0x116D0,
+	0x116DA, 0x11730, 0x118E0, 0x11950, 0x11BF0, 0x11C50, 0x11D50, 0x11DA0, 0x11F50, 0x16130,
+	0x16A60, 0x16AC0, 0x16B50, 0x16D70, 0x1CCF0, 0x1D7CE, 0x1D7D8, 0x1D7E2, 0x1D7EC, 0x1D7F6,
+	0x1E140, 0x1E2F0, 0x1E4F0, 0x1E5F1, 0x1E950, 0x1FBF0
+};
+#define DECIMAL_RUN_COUNT (sizeof(DECIMAL_RUN_STARTS) / sizeof(DECIMAL_RUN_STARTS[0]))
+#define UNICODE_VERSION "16.0.0"
+
+/* Decimal value 0-9 of `code`, or -1. Binary search over the run starts. */
+static int decimal_value(uint32_t code)
+{
+	if (code < 0x80) {
+		return (code >= '0' && code <= '9') ? (int)(code - '0') : -1;
+	}
+	size_t low = 0, high = DECIMAL_RUN_COUNT;
+	while (low < high) {
+		size_t middle = (low + high) / 2;
+		if (DECIMAL_RUN_STARTS[middle] <= code) {
+			low = middle + 1;
+		} else {
+			high = middle;
+		}
+	}
+	if (low == 0) {
+		return -1;
+	}
+	uint32_t start = DECIMAL_RUN_STARTS[low - 1];
+	return code - start < 10 ? (int)(code - start) : -1;
+}
+
+/* Growable UCS-4 output buffer reused across keys. */
+typedef struct {
+	uint32_t *data;
+	Py_ssize_t length;
+	Py_ssize_t capacity;
+} key_buffer_t;
+
+static int key_reserve(key_buffer_t *buffer, Py_ssize_t extra)
+{
+	if (buffer->length + extra <= buffer->capacity) {
+		return 0;
+	}
+	Py_ssize_t capacity = buffer->capacity ? buffer->capacity : 256;
+	while (capacity < buffer->length + extra) {
+		capacity *= 2;
+	}
+	uint32_t *data = PyMem_Realloc(buffer->data, sizeof(uint32_t) * (size_t)capacity);
+	if (data == NULL) {
+		PyErr_NoMemory();
+		return -1;
+	}
+	buffer->data = data;
+	buffer->capacity = capacity;
+	return 0;
+}
+
+/* Emit one normalised digit run: `digits` holds the values 0-9, `count` of them. */
+static int key_emit_digits(key_buffer_t *buffer, const uint8_t *digits, Py_ssize_t count)
+{
+	Py_ssize_t first = 0;
+	while (first < count - 1 && digits[first] == 0) {
+		first++;                                   /* lstrip('0') or '0' */
+	}
+	Py_ssize_t significant = count - first;
+	char length_text[24];
+	int length_digits = 0;
+	if (significant > 6) {
+		length_digits = snprintf(length_text, sizeof(length_text), "%lld", (long long)significant);
+	}
+	if (key_reserve(buffer, 1 + 6 + 1 + 2 * length_digits + significant) < 0) {
+		return -1;
+	}
+	uint32_t *out = buffer->data + buffer->length;
+	if (significant <= 6) {
+		*out++ = '0';
+		for (Py_ssize_t pad = significant; pad < 6; pad++) {
+			*out++ = '0';
+		}
+	} else {
+		*out++ = '1';
+		for (int k = 0; k < length_digits; k++) {
+			*out++ = '1';
+		}
+		*out++ = '0';
+		for (int k = 0; k < length_digits; k++) {
+			*out++ = (uint32_t)length_text[k];
+		}
+	}
+	for (Py_ssize_t k = first; k < count; k++) {
+		*out++ = (uint32_t)('0' + digits[k]);
+	}
+	buffer->length = out - buffer->data;
+	return 0;
+}
+
+/*
+ * Append the natural key of the lower-cased code points `text[0..length)`
+ * to `buffer`. `digits` is scratch space of at least `length` bytes.
+ */
+static int key_append(key_buffer_t *buffer, const uint32_t *text, Py_ssize_t length, uint8_t *digits)
+{
+	Py_ssize_t i = 0;
+	while (i < length) {
+		int value = decimal_value(text[i]);
+		if (value < 0) {
+			if (key_reserve(buffer, 1) < 0) {
+				return -1;
+			}
+			buffer->data[buffer->length++] = text[i++];
+			continue;
+		}
+		Py_ssize_t count = 0;
+		while (i < length && (value = decimal_value(text[i])) >= 0) {
+			digits[count++] = (uint8_t)value;
+			i++;
+		}
+		if (key_emit_digits(buffer, digits, count) < 0) {
+			return -1;
+		}
+	}
+	return 0;
+}
+
+/* Grow the per-name scratch buffers to hold `length` code points. */
+static int scratch_reserve(uint32_t **text, uint8_t **digits, Py_ssize_t *scratch, Py_ssize_t length)
+{
+	if (length < 1) {
+		length = 1; /* PyUnicode_AsUCS4 rejects a NULL buffer even for "" */
+	}
+	if (length <= *scratch) {
+		return 0;
+	}
+	uint32_t *new_text = PyMem_Realloc(*text, sizeof(uint32_t) * (size_t)length);
+	if (new_text == NULL) {
+		PyErr_NoMemory();
+		return -1;
+	}
+	*text = new_text;
+	uint8_t *new_digits = PyMem_Realloc(*digits, (size_t)length);
+	if (new_digits == NULL) {
+		PyErr_NoMemory();
+		return -1;
+	}
+	*digits = new_digits;
+	*scratch = length;
+	return 0;
+}
+
+/*
+ * natural_keys(names, is_dir, ascending) -> tuple[str]
+ *
+ * One sort key per entry: '1' or '0' for (is_dir ^ ascending), then
+ * natural_key(name). ASCII names are lower-cased in C; others go through
+ * str.lower() for Python's exact Unicode case mapping. Equivalent Python:
+ *   tuple(('1' if d ^ ascending else '0') + natural_key(n) for n, d in zip(names, is_dir))
+ * Caller: core.Name.keys (Done/FSPaneArch002.md R10).
+ */
+static PyObject *natural_keys(PyObject *self, PyObject *args)
+{
+	(void)self;
+	PyObject *names_in, *is_dir_in;
+	int ascending;
+	if (!PyArg_ParseTuple(args, "OOp:natural_keys", &names_in, &is_dir_in, &ascending)) {
+		return NULL;
+	}
+	PyObject *names = PySequence_Tuple(names_in);
+	if (names == NULL) {
+		return NULL;
+	}
+	PyObject *flags = PySequence_Tuple(is_dir_in);
+	if (flags == NULL) {
+		Py_DECREF(names);
+		return NULL;
+	}
+	Py_ssize_t count = PyTuple_Size(names);
+	PyObject *result = NULL;
+	key_buffer_t buffer = {NULL, 0, 0};
+	uint32_t *text = NULL;
+	uint8_t *digits = NULL;
+	Py_ssize_t scratch = 0;
+	if (PyTuple_Size(flags) != count) {
+		PyErr_SetString(PyExc_ValueError, "names and is_dir differ in length");
+		goto done;
+	}
+	result = PyTuple_New(count);
+	if (result == NULL) {
+		goto done;
+	}
+	for (Py_ssize_t i = 0; i < count; i++) {
+		PyObject *name = PyTuple_GetItem(names, i);
+		if (!PyUnicode_Check(name)) {
+			PyErr_SetString(PyExc_TypeError, "names must be str");
+			goto fail;
+		}
+		int is_dir = PyObject_IsTrue(PyTuple_GetItem(flags, i));
+		if (is_dir < 0) {
+			goto fail;
+		}
+		Py_ssize_t length = PyUnicode_GetLength(name);
+		if (scratch_reserve(&text, &digits, &scratch, length) < 0
+			|| PyUnicode_AsUCS4(name, text, length, 0) == NULL) {
+			goto fail;
+		}
+		int ascii = 1;
+		for (Py_ssize_t k = 0; k < length; k++) {
+			if (text[k] >= 0x80) {
+				ascii = 0;
+				break;
+			}
+		}
+		if (ascii) {
+			/* ASCII: lower-casing is A-Z -> a-z, identical to str.lower(). */
+			for (Py_ssize_t k = 0; k < length; k++) {
+				if (text[k] >= 'A' && text[k] <= 'Z') {
+					text[k] += 32;
+				}
+			}
+		} else {
+			PyObject *lowered = PyObject_CallMethod(name, "lower", NULL);
+			if (lowered == NULL) {
+				goto fail;
+			}
+			length = PyUnicode_GetLength(lowered);
+			if (scratch_reserve(&text, &digits, &scratch, length) < 0
+				|| PyUnicode_AsUCS4(lowered, text, length, 0) == NULL) {
+				Py_DECREF(lowered);
+				goto fail;
+			}
+			Py_DECREF(lowered);
+		}
+		buffer.length = 0;
+		if (key_reserve(&buffer, 1) < 0) {
+			goto fail;
+		}
+		buffer.data[0] = (is_dir ^ ascending) ? '1' : '0';
+		buffer.length = 1;
+		if (key_append(&buffer, text, length, digits) < 0) {
+			goto fail;
+		}
+		/* Latin-1 keys (the common case) skip the UTF-32 decoder: pack into bytes. */
+		uint32_t widest = 0;
+		for (Py_ssize_t k = 0; k < buffer.length; k++) {
+			widest |= buffer.data[k];
+		}
+		PyObject *key;
+		if (widest < 0x100) {
+			if (scratch_reserve(&text, &digits, &scratch, buffer.length) < 0) {
+				goto fail;
+			}
+			for (Py_ssize_t k = 0; k < buffer.length; k++) {
+				digits[k] = (uint8_t)buffer.data[k];
+			}
+			key = PyUnicode_DecodeLatin1((const char *)digits, buffer.length, NULL);
+		} else {
+			int byteorder = -1; /* native little endian on Windows */
+			key = PyUnicode_DecodeUTF32((const char *)buffer.data,
+				buffer.length * (Py_ssize_t)sizeof(uint32_t), "surrogatepass", &byteorder);
+		}
+		if (key == NULL) {
+			goto fail;
+		}
+		PyTuple_SetItem(result, i, key);
+	}
+	goto done;
+
+fail:
+	Py_CLEAR(result);
+done:
+	PyMem_Free(buffer.data);
+	PyMem_Free(text);
+	PyMem_Free(digits);
+	Py_DECREF(names);
+	Py_DECREF(flags);
+	return result;
+}
+
 /* ---- Module ---- */
 
 static PyMethodDef methods[] = {
@@ -897,6 +1194,9 @@ static PyMethodDef methods[] = {
 	{"parse_batch", parse_batch, METH_VARARGS,
 	 "parse_batch(batch, names, is_dir, sizes, mtimes_ns, attributes, created_ns, "
 	 "identities, reparse_tags) -> count"},
+	{"natural_keys", natural_keys, METH_VARARGS,
+	 "natural_keys(names, is_dir, ascending) -> tuple of sort keys "
+	 "('1'/'0' for is_dir ^ ascending, then the natural key of the lower-cased name)"},
 	{NULL, NULL, 0, NULL}
 };
 
@@ -922,7 +1222,8 @@ PyMODINIT_FUNC PyInit__fsparser(void)
 	}
 	int status = PyModule_AddObjectRef(result, "Columns", type);
 	Py_DECREF(type);
-	if (status < 0 || PyModule_AddIntConstant(result, "HEADER_SIZE", HEADER_SIZE) < 0) {
+	if (status < 0 || PyModule_AddIntConstant(result, "HEADER_SIZE", HEADER_SIZE) < 0
+		|| PyModule_AddStringConstant(result, "UNICODE_VERSION", UNICODE_VERSION) < 0) {
 		Py_DECREF(result);
 		return NULL;
 	}
