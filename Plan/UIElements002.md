@@ -1,332 +1,320 @@
-# UI Elements 002: QuickList for Selecting and Working With Items
+# UI Elements 002: QuickList
 
-Status: Design, awaiting review.
+Status: Design, 2026_10_05. Ready for review.
 
 ## Task
 
-Make QuickList the element for **selecting items and working with them**.
-QuickTable narrows a set by filters and is immutable; QuickList lets the user pick
-an explicit set and act on it. Third-party plug-ins should be able to present
-files, folders or virtual file items and let the user run familiar pane
-operations on them without writing Qt code or reimplementing file operations.
+Add `fman.ui.show_quick_list`, a Qt-free list for selecting **one or many**
+items from a mutable list. It blocks and returns the chosen IDs, or `None` on
+Escape, like `show_quicksearch` and `show_quick_table`. An optional `on_open`
+callback receives a handle, so a driver (a Panel, a command, a subscription) can
+read the list's state and replace its items while it is open. Items can carry
+immutable metadata, shown on an aligned line and sortable.
 
-Motivation: many-file tools (cleanup, duplicate review, archive pickers,
-Everything results, batch targets) need "pick these, then Copy / Move / Delete
-them" with pane semantics. Today QuickList is a Qt widget that only Favorites
-uses, items are text only and every operation must be written by the plug-in.
+Motivation: the current QuickList is a public Qt widget that plug-ins must
+embed in a host window, wire through signals and pair with a Qt Panel widget.
+That exposes Qt threading and object lifetime to plug-ins and ties them to
+PyQt5. A plain-data element lets any plug-in, bundled or third-party, build a
+list-based tool without Qt. [Favorites 004](Favorites004.md) is the reference
+consumer.
 
 ## Scope
 
 Included:
 
-- A Qt-free blocking service `show_list(...)`, built on the existing QuickList
-  widget, hosted like `show_quick_table`.
-- `ListItem` gains an optional `url` (any fman URL: `file://`, `zip://`, ...).
-- Caller opt-in file operations with pane keys, no buttons:
-  Go To, Copy, Move, Delete (Recycle Bin), Delete permanently, Rename.
-  Copy, Move and both Deletes act on a **batch**; Rename and Go To act on a
-  **single** item (the current one).
-- Host-maintained items after operations (removed, or renamed in place).
-- A result without buttons or labels: Enter returns the chosen items (the
-  selection, else the highlighted item); Escape returns `None`.
+- `show_quick_list(...)` and `ListItem.metadata`.
+- `QuickListHandle`: `snapshot()`, `set_items()`, `focus()`, `close()`,
+  `is_open`.
+- Selection only: Space selects, Enter returns the selection. The list never
+  acts on items and reports no other keys.
+- Sorting by title, hint and metadata with `Ctrl+F<n>` and a sort bar; optional
+  saved sort.
+- Selection keys: existing ones plus Ctrl+I (invert) and Ctrl+Shift+A (clear).
+- Global Tab between a modeless list and the docked Panel.
+- Removing the Qt widget exports once Favorites 004 no longer uses them.
 
 Excluded:
 
-- Any change to QuickTable (immutable; no operations besides Go To).
-- Any change to QuickList's look: item rendering, filter box, footer text and
-  layout stay as they are; right-click keeps toggling selection.
-- Batch rename (the future File Renamer: Panel rules, Preview, QuickTable Enter result).
-- Results as a pane / Flat View, drag and drop, Quick View, pack/unpack,
-  symlink, new file/folder, open-with and external tools.
-- Watching the file system for changes the list did not make.
-- Buttons inside the list window.
+- Operations performed by the list, caller-defined keys, context menus and
+  buttons inside it. The widget's `Delete` key signal is not used.
+- Table layout and per-field filters (QuickTable), multi-key sorting,
+  filtering by metadata.
+- Watching the file system; items change only through `set_items`.
+- Changes to QuickSearch, QuickTable or the Panel service.
 
 Compatibility:
 
-- The Qt `QuickList` widget API and Favorites behavior stay unchanged
-  (its Delete still emits `delete_requested`; no operations are implied).
-- `ListItem(id, title, hint='', title_matches=(), hint_matches=())` keeps its
-  fields; `url=None` is added last.
-- Core's pane rename behavior is unchanged; its logic moves into a shared
-  function (see Design).
+- `fman.ui` is a provisional extension; the fman 1.7.5 API is unchanged.
+- `ListItem(id, title, hint='')` keeps its fields; `metadata=()` is added.
+- `QuickList`, `Panel`, `TextButton`, `DropDown`, `IconButton` and
+  `JsonSettings` leave the public `fman.ui` exports after Favorites 004.
+  CHANGELOG and PlugIn.md record the migration to `show_quick_list` and
+  `show_panel`. `UiController`, `UiOwner`, `ToolWindow`, `PaneToolWindow` and
+  `OutputTextBox` stay (Calculate File Hash still uses them).
 
 ## Design
 
 ### API
 
 ```python
-show_list(*, items, pane=None, title='', summary='', modal=True, filter='fuzzy',
-          selected=(), operations=frozenset()) -> tuple[str, ...] | None
+show_quick_list(*, items, title='', summary='', modal=True, filter='fuzzy',
+                query='', selected=(), title_label=None,
+                hint_label=None, sort=None, settings=None,
+                on_open=None) -> tuple[str, ...] | None
 ```
 
 | Argument | Meaning |
 | --- | --- |
-| `items` | Iterable of `ListItem`; unique string IDs; at most 10,000 items, 16 MiB text. |
-| `pane` | Required when `operations` is not empty: Go To target, Copy/Move default destination (its opposite pane) and command context. |
-| `title`, `summary` | Window title and one elided line above the list. |
-| `modal` | Default `True`: blocks the main window, as QuickTable. `False` keeps it usable. |
-| `filter` | `'fuzzy'` (default, existing subsequence matcher) or `None` (no filter box). |
-| `selected` | IDs selected initially (e.g. all, for "review then act"). |
-| `operations` | Subset of `{'go_to', 'copy', 'move', 'delete', 'rename'}`. Empty: no file behavior. |
+| `items` | Iterable of `ListItem`; unique string IDs; at most 10,000 items; title at most 512, hint at most 2,048 characters. |
+| `title`, `summary` | Window title; one elided line above the list. |
+| `modal` | `True` (default) blocks the main window. `False` keeps it usable, for example with a docked Panel. |
+| `filter` | `'fuzzy'` (default) or `None` (no filter box). |
+| `query`, `selected` | Initial filter text and selected IDs. Unknown IDs raise `ValueError`. |
+| `title_label`, `hint_label` | Sort labels for the title and hint, for example `'Name'`, `'Path'`. `None`: not sortable. |
+| `sort` | Initial sort: `None` (input order) or `(label, ascending)`. |
+| `settings` | Optional plug-in JSON filename; the host restores and saves the sort there. |
+| `on_open` | `on_open(handle)`, called once when the list is shown. |
 
-The call blocks until the window closes, exactly like `show_quick_table`.
+- Returns the chosen IDs in input order when the user presses Enter or
+  double-clicks, or when a driver calls `handle.close(result)`. Returns `None`
+  on Escape, window close or `handle.close()`.
+- **Chosen** = the selection, including selected items hidden by the filter,
+  else the highlighted item. Enter does nothing when nothing is chosen.
+- The call is not `@run_in_main_thread`: a worker caller waits on its own
+  event; a Qt-thread caller runs a nested event loop (QuickTable's split).
+- Arguments are validated, and sort keys prepared, on the calling thread before
+  the window appears. Invalid arguments raise there.
 
-### Keys and Result
+### Handle
 
-All operations are defined by the selection and by what the caller does with
-the result. There is no `accept` label and no button:
+`on_open(handle)` runs on the calling thread right after the window is shown
+and before waiting. If it raises, the list closes and the exception propagates.
+
+| Member | Behavior |
+| --- | --- |
+| `snapshot()` | Immutable `QuickListState(selected, chosen, current, query, sort)`. Never blocks; returns the last state the list published. After closing it returns the final state. |
+| `set_items(items)` | Validates on the calling thread, then replaces the items on Qt. Keeps the query, the sort, the selection of surviving IDs and the current item if it survives. |
+| `focus()` | Raises and focuses the list window. |
+| `close(result=None)` | Closes the list; `show_quick_list` returns `result` (a tuple of known IDs) or `None`. |
+| `is_open` | `False` once the list closed. |
+
+- Every member is safe from any thread. Calls after closing do nothing.
+- `set_items` calls are applied in call order; the last one wins.
+
+### Keys
+
+This table is the user documentation: it goes to the QuickList section of
+[docs/plugins/ui-elements.md](../docs/plugins/ui-elements.md) (step 7).
 
 | Key | Effect |
 | --- | --- |
-| Enter (list or filter box), double-click | Close and return the **chosen** IDs in input order |
-| Escape, window close | Close and return `None` |
-| Ctrl+Enter | Go To the highlighted URL item (when `go_to` is enabled) |
+| Space, Insert, Shift+navigation, Ctrl+A, right-click | Select (existing QuickList keys; list focus) |
+| Ctrl+I, Ctrl+Shift+A | Invert, clear the selection |
+| Enter, double-click | Close and return the chosen IDs |
+| Escape | Close and return `None` |
+| `Ctrl+F<n>` | Sort (see Sorting) |
+| Tab, Shift+Tab | Move between the filter box and the list; in a modeless list, past the last (or first) control to the docked Panel, if one is open, and from the Panel back to the list |
 
-- **Chosen** = the selection (including selected items hidden by the filter),
-  else the highlighted item as a 1-tuple (pane `get_chosen_files` rule).
-- Enter does nothing when nothing is selected and nothing is highlighted
-  (empty list or no matches), so a result is never empty and `None` always
-  means cancelled.
-- A working list (operations only) simply ignores the result. Lists of
-  non-file items (bookmarks, processes, commands) use the result directly.
+No other keys and no caller-defined keys.
 
-### Selection, Not Narrowing
+**Global Tab** (host behavior, no API):
 
-The filter box only helps **find** items. Selection is independent of it:
+- Only modeless lists take part; a modal list blocks the main window, so Tab
+  wraps inside the list.
+- The main-window stop is the docked Panel only. Tab in a pane stays Core's
+  Switch Panes.
+- Without a docked Panel, Tab wraps inside the list.
+- Tab past the Panel's last control returns to the modeless list that was
+  active most recently; with none open, the Panel keeps today's behavior.
 
-- Existing QuickList keys: Space toggles; Insert toggles and advances;
-  Shift+navigation; Ctrl+A selects visible items; right-click/Ctrl-click toggle.
-- Added: Ctrl+I inverts the selection over all items; Ctrl+Shift+A clears it.
-- Hidden selected items stay selected and **are included** in batch operations
-  and in the Enter result. The existing footer shows `N selected (M hidden)`.
+### Metadata
 
-### Operations
+```python
+ListItem('1', 'Projects', 'D:\\Work\\Projects', metadata={
+	'Added': 1,
+	'Used': (1759580400000000000, '2026-10-04 13:20')})
+```
 
-Enabled per call through `operations`; only items with a `url` take part.
-Targets that include an item without `url` refuse the operation with a status
-message. Keys follow the user's **Core key bindings** for the same command
-names, resolved once per window, falling back to the defaults:
+- A mapping from label to value. Every item has the same labels in the same
+  order. At most 8 fields; labels are nonempty, unique, at most 32 characters
+  and differ from `title_label` and `hint_label`.
+- A value is a string or number (`int` or finite `float`; not `bool`), a pair
+  `(sort_key, text)`, or `None` (shown empty, sorted last).
+- Within a field, sort keys are all strings or all numbers. Strings sort with
+  the host's natural, case-insensitive key. Display text is at most 128
+  characters.
+- Stored on `ListItem` as a tuple, so items stay immutable and hashable.
 
-| Operation | Command used | Default keys | Targets |
-| --- | --- | --- | --- |
-| Go To | tracked `navigate` | Ctrl+Enter | Current: file -> parent folder with cursor on it; folder -> open folder |
-| Copy | `copy(files, dest_dir)` | F5 | Chosen batch |
-| Move | `move(files, dest_dir)` | F6 | Chosen batch |
-| Delete | `move_to_trash(urls)` | F8, Delete | Chosen batch |
-| Delete permanently | `delete_permanently(urls)` | Shift+Delete | Chosen batch |
-| Rename | `rename_url(url, new_name)` (new hidden Core command) | Shift+F6 | Current only |
+### Display
 
-- **Batch rule:** chosen = selected (including hidden), else the current item.
-- **Reuse:** the host executes the registered Core commands through the pane's
-  command registry, with explicit targets. Core keeps its confirmations,
-  destination prompt (default: the pane's opposite pane), overwrite handling,
-  progress dialog, cancellation, archive support and file-system notifications.
-- **No pane listener rewriting:** commands are executed directly, not through
-  `pane.run_command`, because `on_command` listeners reflect the pane's location
-  (for example the process pane rewrites Delete), not the listed items.
-- **Rename** is inline: Shift+F6 opens an editor on the current item's title
-  with the name stem preselected; Enter commits, Escape cancels. Core's
-  `RenameListener.on_name_edited` validation and `_Rename` task move into one
-  pane-independent function used by both the pane listener and the new hidden
-  `rename_url` command. Rules stay identical: empty/unchanged ignored, `\`,
-  `/`, `.`, `..` refused ("use Move"), existing target refused except a
-  case-only change.
-- **Discoverability without changing the look:** the keyboard context menu
-  (Menu key or Shift+F10) lists the enabled operations with their shortcuts
-  and Copy Path for URL items. Right-click keeps toggling selection, as today;
-  no footer hint or other visible element is added.
-- Without `operations`, only selection and the Enter/Escape result apply.
+```
+[ filter                                                       ]
+ Name Ctrl+F1 · Path Ctrl+F2 · Added Ctrl+F3 ▲
+ Projects
+ D:\Work\Projects
+ Added ▲ 1
+```
 
-### Item Maintenance After Operations
+- Items with metadata get a third line in the hint style: `Label value` cells.
+  Each field has one width for the whole list (label plus widest value, capped
+  at 24 average characters, longer values elide), so cells line up across rows.
+- The active sort field shows a bold label with ▲ or ▼.
+- Without metadata, rows look exactly like today's QuickList.
+- The filter matches the title and hint, not metadata.
 
-The host, not the caller, keeps the list truthful:
+### Sorting
 
-- **Delete / Delete permanently / Move:** after the command returns, each
-  target URL is checked with `fman.fs.exists`; missing items are removed from
-  the list and the selection. Moved items leave the list like moved files leave
-  a pane.
-- **Copy:** no change.
-- **Rename:** on success the item's `url` becomes the new URL; its `title` is
-  replaced when it equals the old base name, its `hint` when it equals the old
-  human-readable path. Other caller text is kept. Selection and current stay.
-- Canceled or failed operations remove only items that no longer exist.
-
-### Ownership, Threading and Failure
-
-- `show_list` is `@run_in_main_thread` and runs a nested event loop, as
-  `show_quick_table`. The window is a `ToolWindow` (`busy`, `post`, `alive`).
-- Operations run one at a time on a worker (`ToolWindow.work`): the window is
-  busy and operation keys are ignored meanwhile. Core's `submit_task` is
-  synchronous on that worker and shows its own progress dialog.
-- The worker captures immutable targets, runs the command, then checks
-  existence; results are posted to Qt, which updates items. Results for a
-  disposed window are dropped.
-- Closing the window during an operation does not cancel it (use the progress
-  dialog's Cancel); item updates are then discarded.
-- Exceptions from commands are reported with `window.alert`; the list stays
-  consistent because only verified-missing items are removed.
+- Sort fields, in key order: title (when labeled), hint (when labeled), then
+  metadata fields; at most 10.
+- `Ctrl+F<n>` sorts by field *n* ascending; again reverses. Works from the
+  filter box and the list.
+- The sort bar, shown only when sort fields exist, lists each field with its
+  key; clicking an entry acts like its key; the active entry shows its arrow.
+  When narrow, key texts drop first (they stay in tooltips).
+- No sort means input order. There is no "unsorted" third state; callers expose
+  input order as a field when needed.
+- Stable sort; `None` last in both directions. Sorting keeps selection and the
+  current item.
+- With sort fields, filtering keeps the current order; without them, matches
+  are ranked as today.
 
 ### Persistence
 
-None. Items, selection and filter are session-only.
+- With `settings`, the host reads `sort` (label) and `ascending` (boolean) with
+  `load_json` when opening; they override the `sort` argument. Unknown labels
+  mean input order; invalid values are ignored.
+- Each sort change is saved with `save_json` under the file's
+  `settings_resource` lock on a short-lived thread, changing only those two
+  keys. A failed save shows a status message.
 
 ## Alternatives
 
-- **Operations in QuickTable:** rejected; QuickTable is an immutable snapshot and rows
-  would go stale or require mutation.
-- **Results as a pane / Flat View:** unrelated feature; leaves the results
-  window and loses list semantics.
-- **Buttons (Delete, Copy, OK):** rejected by the buttonless design; pane keys
-  and the context menu cover discovery.
-- **Host-implemented file operations:** rejected; duplicates Core's
-  confirmations, overwrite logic, archives and notifications.
-- **`pane.run_command` with listeners:** rejected; location-specific rewrites
-  could change the meaning of an operation on unrelated items.
-- **Caller callbacks per operation:** rejected; keeps the API static and
-  avoids plug-in code running inside UI event handling.
-- **Visible-only batches (narrowing):** rejected; QuickList is for explicit
-  selection, so hidden selected items stay targets and are counted.
-- **`accept` label (Ctrl+Enter or Enter returning a result only when set):**
-  rejected for simplicity; every list returns the chosen items on Enter.
-- **Enter for the highlighted item, Ctrl+Enter for the selection:** rejected;
-  one key with the pane rule is simpler and matches QuickList's focus on
-  selection.
-- **Right-click context menu or footer key hints:** rejected; they would
-  change QuickList's existing look and right-click toggling.
+- **Public Qt widgets (today):** rejected; Qt threading, object lifetime and
+  PyQt5 coupling leak into every plug-in.
+- **Operations in the list:** rejected; managing items is the caller's job,
+  and host-run operations brought most of the complexity of earlier drafts.
+- **Caller-defined keys (`keys`/`on_key`):** rejected; focus scope, built-in
+  conflicts, concurrent calls and prompt stacking add edge cases. Actions live
+  in a Panel.
+- **Explicit list/Panel pairing argument:** rejected; global Tab gives keyboard
+  access without coupling the two APIs.
+- **A mode flag returning a handle or a result:** rejected; one return type, and
+  interactivity as an add-on through `on_open`.
+- **Non-blocking call returning a handle with `wait()`:** rejected for
+  consistency with QuickSearch and QuickTable, which block and return.
+- **Metadata as table columns:** rejected; QuickTable is the column element.
+- **Footer key hint for sorting:** rejected; not clickable and cannot show the
+  current sort.
 
 ## Runtime Effects
 
-- Startup/idle: none. Nothing is created until `show_list` is called.
-- Open list: memory proportional to items (bounded by 10,000 items / 16 MiB);
-  filtering is existing in-memory QuickList work on Qt.
-- Operations: Core's existing I/O and progress; plus one `exists` check per
-  target after Delete/Move. One worker at a time; no timers or polling.
-- Disabled path: `operations` empty means no key bindings lookup, no worker,
-  no extra I/O.
-- Cancellation: through Core's progress dialog; window close drops late updates.
+- Startup and idle: none.
+- Open list: memory proportional to items plus prepared sort keys (at most
+  10,000 items x 10 fields).
+- Filtering and sorting run synchronously on Qt; bounded by the item and text
+  caps and measured at the limits.
+- Settings: one read when opening, one short-lived thread per sort change.
+- Disabled path: without metadata, labels, `on_open` and `settings` there is no
+  sort bar, no metadata line and no settings I/O.
+- Cancellation: not applicable.
 
 ## Tests
 
-Unit:
+Unit (`fman_unittest.test_ui_elements`):
 
-- `ListItem.url` validation; `show_list` argument validation (operations set,
-  `pane` required, limits, duplicate IDs, `selected` unknown IDs).
-- Chosen-target rule (selected incl. hidden, else current; non-URL refusal).
-- Core: shared rename function keeps all `RenameListener` rules (existing pane
-  tests plus direct calls), `rename_url` command hidden from the palette.
+- `ListItem.metadata` validation, normalization and hashability.
+- `show_quick_list` argument validation: limits, duplicate IDs, unknown
+  `selected`, labels, `sort`, `settings` name.
+- Sort order: natural strings, numbers, `None` last both ways, stability.
+- Settings: unknown labels, invalid values, other keys kept.
+- Public `fman.ui` exports: new names present; Qt widget names absent after
+  Favorites 004.
 
-Qt integration (`QuickListServiceIT`, offscreen and native):
+Qt integration (`QuickListIT`, offscreen and native):
 
-- Blocking from worker and Qt thread; modal by default; Escape and close
-  return `None`; Enter and double-click return the selection in input order
-  (including hidden selected items), else the highlighted item; Enter with no
-  selection and no matches does nothing.
-- Ctrl+I / Ctrl+Shift+A; footer counts with a filter active.
-- Delete (F8, Delete) with patched confirmation: deleted items disappear,
-  others stay; cancel keeps everything. Delete permanently via Shift+Delete.
-- Move to a temporary folder removes moved items; Copy keeps items.
-- Rename: inline edit, success updates url/title/hint, conflict and
-  relative-name refusals keep the item.
-- Go To (Ctrl+Enter) file and folder; modal closes, modeless stays (as QuickTable).
-- Process-pane style `on_command` rewrite is **not** applied to list items.
-- Custom Core key binding (e.g. Delete rebound) is honored.
-- No operations: F5/F8/Ctrl+Enter do nothing; Favorites Manager tests unchanged.
-- Right-click still toggles selection; the Menu key / Shift+F10 opens the
-  operations menu.
-- `gc.collect()` after closing context menus and the inline editor.
+- Worker and Qt-thread callers; two modeless worker callers closed out of order
+  each return on their own close.
+- Enter, double-click, Escape, window close; chosen rule including hidden
+  selections; Enter with nothing chosen.
+- Handle: `snapshot` during and after the list; `set_items` from a worker keeps
+  query, sort, surviving selection and current; `close(result)`; `focus`; calls
+  after closing ignored.
+- `on_open` raising closes the list and propagates.
+- Delete and other unlisted keys do nothing.
+- Global Tab: modeless list to docked Panel and back, both directions; wraps
+  without a Panel and in a modal list; with two modeless lists the Panel
+  returns to the most recently active one; Tab in panes still switches panes.
+- Ctrl+I, Ctrl+Shift+A; footer counts with a filter.
+- Metadata line alignment, elision, empty cells, active-sort marker; unchanged
+  look without metadata.
+- Sort bar visibility, keys, reversal, clicks, narrow widths; filter order rules.
+- Saved sort restored, saved on change, survives Escape.
+- 10,000 items with maximum text and 8 fields: filter and sort latency recorded.
 
-Manual: native 100/150% look compared with the current QuickList (Favorites
-Manager) to confirm no visual change, context menu shortcuts, progress dialogs
-over the list window, archive (`zip://`) items for Copy.
+Manual: native 100/150% look of the metadata line and sort bar.
 
 Focused command (offscreen and `windows`):
 
 ```powershell
-python -c "import build, os, subprocess, sys; env=build._environment(); env['QT_QPA_PLATFORM']='offscreen'; env['QT_QPA_FONTDIR']=os.path.join(os.environ['WINDIR'],'Fonts'); sys.exit(subprocess.run([sys.executable,'-B','-m','unittest','fman_unittest.test_ui_elements','core.tests.commands.test___init__','fman_integrationtest.test_qt.QuickListServiceIT','fman_integrationtest.test_qt.FavoritesManagerIT'], env=env).returncode)"
+python -c "import build, os, subprocess, sys; env=build._environment(); env['QT_QPA_PLATFORM']='offscreen'; env['QT_QPA_FONTDIR']=os.path.join(os.environ['WINDIR'],'Fonts'); sys.exit(subprocess.run([sys.executable,'-B','-m','unittest','fman_unittest.test_ui_elements','fman_integrationtest.test_qt.QuickListIT'], env=env).returncode)"
 ```
 
 ## Implementation Steps
 
-1. Core: extract pane-independent rename; add hidden `rename_url`; run Core
-   command tests.
-2. `ListItem.url`; validation and limits; unit tests.
-3. `ListWindow` + `show_list`/`open_list` in the facade (blocking, modal by
-   default, summary, filter, `selected`, Enter/Escape result) reusing the
-   QuickList widget unchanged; Qt tests.
-4. Selection helpers (Ctrl+I, Ctrl+Shift+A) in QuickList's view, opt-in for
-   the service so Favorites is unchanged; Qt tests.
-5. Operations: key resolution, worker execution through the command registry,
-   existence checks and item maintenance; Qt tests per operation.
-6. Inline rename editor; Qt tests.
-7. Keyboard context menu (Menu key, Shift+F10) with shortcuts and Copy Path;
-   GC regression check.
-8. Docs: PlugIn.md, UIElements.md, CHANGELOG; record validation; move to Done.
+1. `ListItem.metadata`, validation and sort-key preparation; unit tests.
+2. Window and `show_quick_list` on the existing widget, now host-private: caller
+   split, modal, summary, filter, initial query and selection, Enter/Escape
+   result; Qt tests.
+3. Handle (`snapshot`, `set_items`, `focus`, `close`) and `on_open`; Qt tests.
+4. Ctrl+I, Ctrl+Shift+A and global Tab; Qt tests.
+5. Metadata line, sort bar, `Ctrl+F<n>`, order rules, settings persistence;
+   tests.
+6. Measurement at the limits.
+7. After Favorites 004: remove the Qt widget exports; PlugIn.md, UIElements.md,
+   CHANGELOG, and `docs/plugins/ui-elements.md`: replace the widget section
+   with `show_quick_list`, the key table above and a new screenshot.
 
 ## Acceptance Criteria
 
-- A plug-in can show URL items with `show_list(..., operations=...)` and,
-  without Qt code, the user can Copy/Move/Delete a selected batch and Rename or
-  Go To the current item with pane keys.
-- Batch operations include hidden selected items; counts are visible first.
-- Deleted/moved items disappear; renamed items update; nothing else changes.
-- Core confirmations, prompts and progress are used; pane listeners are not.
-- Enter returns the selection, else the highlighted item; Escape returns
-  `None`; there is no `accept` argument and no button.
-- Without `operations`, behavior has no file semantics.
-- QuickList looks exactly as before; right-click still toggles selection.
-- QuickTable and the Qt `QuickList` widget API are unchanged; Favorites tests pass.
+- A plug-in shows a list with `show_quick_list` without Qt code and gets the
+  chosen IDs, or `None`.
+- Through the `on_open` handle, a driver reads the state and replaces items
+  while the list is open, from any thread.
+- The list only selects and returns; it never acts on items itself.
+- In a modeless list, Tab reaches the docked Panel and returns.
+- Metadata appears on one aligned line; `Ctrl+F<n>` and the sort bar sort by
+  title, hint and each field; a saved sort is restored.
+- Lists without metadata look and behave like today's QuickList.
+- After Favorites 004, `fman.ui` exports no QuickList or Panel Qt widgets.
 - Focused tests pass offscreen and native.
 
 ## Reviewers
 
-### 2026_10_03 - Maintainer and Documenter Claude Opus 5.5
+### 2026_10_05 - GitHub Copilot
 
 - Role: Reviewer
 - Activity: Design
 - Agent: GitHub Copilot
-- Model: Claude Opus 5.5
+- Model: GPT-6 Astra
 - Effort: High
-- Context Window: 872K
-- Outcome: Initial design from the user discussion: QuickList selects and
-  works with items (Table only narrows). Buttonless, opt-in pane operations
-  reusing Core commands; Rename and Go To single item, others batch. Open
-  points for review: modal default for a working list, and whether accept
-  should fall back to the current item.
+- Context Window: 272K
+- Outcome: Clean restart at the user's request; earlier drafts and reviews
+  discarded. Qt-free `show_quick_list` that blocks and returns the chosen IDs,
+  with an `on_open` handle (`snapshot`, `set_items`, `focus`, `close`), caller
+  keys reported to `on_key`, immutable metadata with an aligned line, sorting
+  by `Ctrl+F<n>` and a sort bar, and optional saved sort. Qt widget exports
+  removed after Favorites 004. Ready for review.
 
-### 2026_10_04 - Maintainer and Documenter Claude Opus 5.5
+### 2026_10_05 - GitHub Copilot
 
 - Role: Reviewer
 - Activity: Review
 - Agent: GitHub Copilot
-- Model: Claude Opus 5.5
+- Model: GPT-6 Astra
 - Effort: High
-- Context Window: 872K
-- Outcome: User decisions: modal by default (confirmed); `accept` removed
-  because the list is interactive and acts through its operations; Table
-  `accept` remains the way to hand a subset to a caller. `show_list` returns
-  `None`. No open design points remain.
-
-### 2026_10_04 - Maintainer and Documenter Claude Opus 5.5
-
-- Role: Reviewer
-- Activity: Review
-- Agent: GitHub Copilot
-- Model: Claude Opus 5.5
-- Effort: High
-- Context Window: 872K
-- Outcome: Correction: the user asked for the motivation of `accept`, not its
-  removal. `accept` is restored as originally designed; its fate is an open
-  decision. Modal by default stays confirmed.
-
-### 2026_10_04 - Maintainer and Documenter Claude Opus 5.5
-
-- Role: Reviewer
-- Activity: Review
-- Agent: GitHub Copilot
-- Model: Claude Opus 5.5
-- Effort: High
-- Context Window: 872K
-- Outcome: User decision: no `accept`. Enter (and double-click) returns the
-  selection, else the highlighted item; Escape returns `None`; Ctrl+Enter is
-  Go To. QuickList's look must not change: no footer hints, right-click keeps
-  toggling, operations menu only via Menu key / Shift+F10. No open points.
+- Context Window: 272K
+- Outcome: User decisions: QuickList is for selection only (Space selects,
+  Enter returns); `keys`/`on_key` removed to avoid their edge cases; no
+  list/Panel pairing argument; global Tab between a modeless list and the
+  docked Panel instead; the `current` argument removed; the key table becomes
+  the user documentation. Ready for review.
