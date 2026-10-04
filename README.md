@@ -54,7 +54,7 @@ Significant additions compared with `fman`:
 - **Favorites**: Press <kbd>Ctrl</kbd>+<kbd>B</kbd> for a fully featured Favorites Manager, built entirely with the plug-in APIs.
 - **Recent Commands**: <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> pins the last three commands run from the palette.
 - **Process Pane**: Run **Show the OS' processes** for a flat Name/PID list of the system running processes. Press <kbd>F8</kbd> to force terminate it. See [Process Pane Usage](src/main/resources/base/Plugins/ProcessPane/README.md).
-- **Extended Status Bar**: Press <kbd>Ctrl</kbd>+<kbd>S</kbd> to cycle through disabled, active-pane and per-pane file statistics.
+- **Extended Status Bar**: Press <kbd>Ctrl</kbd>+<kbd>S</kbd> to toggle file statistics of the active pane in the status bar.
 - **Sync Panes**: Select **Sync pane location** in Command Center to sync the inactive pane to the active pane's path.
 - **Checksum Files**: Generate checksum files for selected files or folders, including subfolders and verify file integrity against existing checksum files. Compatible with [Total Commander](https://www.ghisler.com) and [Double Commander](https://github.com/doublecmd/doublecmd). See [algorithms and TC/DC compatibility status](src/main/resources/base/Plugins/ChecksumFiles/README.md).
 - **File Hash**: Press <kbd>Ctrl</kbd>+<kbd>H</kbd> for centered checksum output; use Calculate File Hash By to pick an algorithm in QuickSearch, then view the result. See [File Hash Calculation Usage](src/main/resources/base/Plugins/CalculateFileHash/README.md).

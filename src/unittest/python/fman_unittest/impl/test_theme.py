@@ -16,8 +16,3 @@ class StatusBarSelectorTest(TestCase):
 			'PaneStatusWidget QLabel',
 			Theme._CSS_TO_QSS['.statusbar-pane']
 		)
-	def test_active_background_only_targets_container(self):
-		self.assertEqual(
-			'PaneStatusWidget[active="true"]',
-			Theme._CSS_TO_QSS['.statusbar-pane[active="true"]']
-		)

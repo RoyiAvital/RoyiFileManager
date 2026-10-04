@@ -3,7 +3,7 @@ from fman.impl.filter_pattern import compile_filter, MAX_FILTER_LENGTH
 from fman.impl.model import SortedFileSystemModel
 from fman.impl.product import APP_NAME
 from fman.impl.quicksearch import Quicksearch
-from fman.impl.status_bar import ACTIVE_PANE, DISABLED, PER_PANE, \
+from fman.impl.status_bar import ACTIVE_PANE, DISABLED, \
 	PaneStatusSnapshot, PaneStatusWidget, StatusCalculationService, \
 	set_size_divisor
 from fman.impl.util.qt import Key_Escape, NoFocus, Key_Backspace
@@ -75,7 +75,6 @@ class DirectoryPaneWidget(QWidget):
 		self._filter_bar.filter_changed.connect(self.filter_changed)
 		self._filter_bar.filter_cleared.connect(self.filter_cleared)
 		self._hidden_files_shown = False
-		self._status_widget = None
 		self._status_tracking = False
 		self._column_widths_by_name = {}
 	def resizeEvent(self, e):
@@ -168,12 +167,6 @@ class DirectoryPaneWidget(QWidget):
 		return PaneStatusSnapshot(
 			self._model.get_location(), entries, True, self._hidden_files_shown
 		)
-	def set_status_widget(self, widget):
-		if self._status_widget is not None:
-			self.layout().removeWidget(self._status_widget)
-		self._status_widget = widget
-		if widget is not None:
-			self.layout().addWidget(widget)
 	def enable_status_tracking(self):
 		if self._status_tracking:
 			return
@@ -463,7 +456,6 @@ class MainWindow(QMainWindow):
 		self._extended_status_mode = DISABLED
 		self._status_service = None
 		self._single_pane_status = None
-		self._pane_status_widgets = {}
 		self._status_focus_tracking = False
 		self._splitter = Splitter(self)
 		central = QWidget(self)
@@ -591,9 +583,7 @@ class MainWindow(QMainWindow):
 		result.filter_cleared.connect(self._on_filter_cleared)
 		if self._active_pane is None:
 			self._set_active_pane(result)
-		if self._extended_status_mode == PER_PANE:
-			self._add_pane_status(result)
-		elif self._extended_status_mode == ACTIVE_PANE:
+		if self._extended_status_mode == ACTIVE_PANE:
 			self._single_pane_status.bind(self._active_pane)
 		return result
 	@run_in_main_thread
@@ -606,37 +596,19 @@ class MainWindow(QMainWindow):
 			return
 		self._on_focus_changed(None, self._app.focusWidget())
 		self._status_service = StatusCalculationService(self._fs, self)
-		if self._extended_status_mode == ACTIVE_PANE:
-			widget = PaneStatusWidget(
-				self._status_service, settings['max_entries'],
-				settings['size_divisor'], False, self._status_bar
-			)
-			self._single_pane_status = widget
-			self._status_bar.addPermanentWidget(widget)
-			widget.bind(self._active_pane)
-		else:
-			for pane in self._panes:
-				self._add_pane_status(pane)
-	def _add_pane_status(self, pane):
 		widget = PaneStatusWidget(
-			self._status_service,  self._status_settings['max_entries'],
-			self._status_settings['size_divisor'], True, pane
+			self._status_service, settings['max_entries'],
+			settings['size_divisor'], self._status_bar
 		)
-		widget.bind(pane)
-		widget.set_active(pane is self._active_pane)
-		pane.set_status_widget(widget)
-		self._pane_status_widgets[pane] = widget
+		self._single_pane_status = widget
+		self._status_bar.addPermanentWidget(widget)
+		widget.bind(self._active_pane)
 	def _clear_extended_status_bar(self):
 		if self._single_pane_status is not None:
 			self._single_pane_status.deactivate()
 			self._status_bar.removeWidget(self._single_pane_status)
 			self._single_pane_status.deleteLater()
 			self._single_pane_status = None
-		for pane, widget in self._pane_status_widgets.items():
-			widget.deactivate()
-			pane.set_status_widget(None)
-			widget.deleteLater()
-		self._pane_status_widgets.clear()
 		if self._status_service is not None:
 			self._status_service.shutdown()
 			self._status_service = None
@@ -654,8 +626,6 @@ class MainWindow(QMainWindow):
 		self._active_pane = pane
 		if self._single_pane_status is not None:
 			self._single_pane_status.bind(pane)
-		for candidate, widget in self._pane_status_widgets.items():
-			widget.set_active(candidate is pane)
 		if pane.is_filtering():
 			pane.publish_filter_count()
 		elif previous is not None and previous.is_filtering():

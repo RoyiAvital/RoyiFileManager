@@ -1,7 +1,7 @@
 """Provisional RoyiFileManager UI extension, separate from the fman 1.7.5 API.
 
 New consumers can use show_panel with plain descriptors and handles, and the
-blocking show_table for static results.
+blocking show_quick_table for narrowing static results.
 Legacy commands call UiController.show(); the host constructs widgets on the Qt thread
 and invokes UiController.build(window, pane), the canonical UI construction hook.
 Keep plug-in state and actions in plain Python objects rather than subclassing
@@ -17,16 +17,16 @@ from fman.impl.ui.quicklist import QuickList
 from fman.impl.ui.panel import Panel, DropDown, IconButton, JsonSettings, TextButton
 from fman.impl.ui.output import OutputTextBox
 from fman.impl.ui.session import NavigationHandle, PaneToolWindow, ToolWindow, navigate
-from fman.impl.ui.table_data import Action, Choice, DateField, IntegerField, Label, Select, Separator, TableColumn, TableRow, TextField, Toggle
-from fman.impl.ui.facade import PanelHandle, show_panel, show_table
+from fman.impl.ui.table_data import Action, Choice, DateField, IntegerField, Label, Select, Separator, QuickTableColumn, QuickTableRow, TextField, Toggle
+from fman.impl.ui.facade import PanelHandle, show_panel, show_quick_table
 
 
 __all__ = [
 	'ListItem', 'QuickList', 'Panel', 'IconButton', 'TextButton',
 	'DropDown', 'JsonSettings', 'UiController', 'UiOwner', 'Resource',
 	'settings_resource', 'matchers', 'ToolWindow', 'PaneToolWindow',
-	'NavigationHandle', 'navigate', 'OutputTextBox', 'TableRow', 'TableColumn',
+	'NavigationHandle', 'navigate', 'OutputTextBox', 'QuickTableRow', 'QuickTableColumn',
 	'TextField', 'Toggle', 'Choice', 'Label', 'Action', 'PanelHandle',
 	'Select', 'DateField', 'IntegerField', 'Separator',
-	'show_table', 'show_panel'
+	'show_quick_table', 'show_panel'
 ]

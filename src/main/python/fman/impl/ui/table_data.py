@@ -33,11 +33,13 @@ def text(value, name, limit=None):
 
 
 @dataclass(frozen=True, slots=True)
-class TableRow:
+class QuickTableRow:
 	cells: tuple
 	highlights: tuple = ()
 	# Host-filled: the caller's raw cells, kept when Date/Numeric cells are formatted.
 	values: tuple = ()
+	# Optional absolute paths per column; when given, Go To/Copy Path use them instead of the cell text.
+	targets: tuple = ()
 
 	def __post_init__(self):
 		if not isinstance(self.cells, (tuple, list)):
@@ -45,10 +47,13 @@ class TableRow:
 		object.__setattr__(self, 'cells', tuple(self.cells))
 		object.__setattr__(self, 'highlights', tuple(
 			tuple(tuple(span) for span in column) for column in self.highlights))
+		if not isinstance(self.targets, (tuple, list)):
+			raise TypeError('Row targets must be a sequence.')
+		object.__setattr__(self, 'targets', tuple(self.targets))
 
 
 @dataclass(frozen=True, slots=True)
-class TableColumn:
+class QuickTableColumn:
 	label: str
 	kind: str = 'text'
 	sortable: bool = True
@@ -179,13 +184,13 @@ class Action:
 
 def _validate_columns(columns):
 	if isinstance(columns, (str, bytes)) or not isinstance(columns, Sequence):
-		raise TypeError('columns must be a sequence of TableColumn descriptors.')
+		raise TypeError('columns must be a sequence of QuickTableColumn descriptors.')
 	columns = tuple(columns)
 	if not 1 <= len(columns) <= MAX_COLUMNS:
 		raise ValueError('Tables require 1-64 columns.')
 	for column in columns:
-		if type(column) is not TableColumn:
-			raise TypeError('columns must contain TableColumn descriptors.')
+		if type(column) is not QuickTableColumn:
+			raise TypeError('columns must contain QuickTableColumn descriptors.')
 		if not text(column.label, 'Column label', 128):
 			raise ValueError('Column labels must not be empty.')
 		if column.kind not in COLUMN_KINDS:
@@ -269,6 +274,9 @@ class TableSchema:
 	def target(self, row, column):
 		if column not in self.roles:
 			return None
+		if row.targets:
+			value = row.targets[column]
+			return None if value is None else absolute_path(value)
 		value = text(row.cells[column], 'Path')
 		if not value:
 			return None
@@ -281,7 +289,7 @@ class TableSchema:
 
 	def snapshot(self, rows):
 		if isinstance(rows, (str, bytes)) or not isinstance(rows, Iterable):
-			raise TypeError('rows must be an iterable of TableRow records.')
+			raise TypeError('rows must be an iterable of QuickTableRow records.')
 		result, seen = [], set()
 		size = 0
 		width = self.num_columns
@@ -289,12 +297,20 @@ class TableSchema:
 		for row in rows:
 			if len(result) >= MAX_ROWS:
 				raise ValueError('Table exceeds the 10,000-row limit.')
-			if not isinstance(row, TableRow):
-				raise TypeError('rows must contain TableRow records.')
+			if not isinstance(row, QuickTableRow):
+				raise TypeError('rows must contain QuickTableRow records.')
 			if len(row.cells) != width:
 				raise ValueError('Each row needs one cell per column.')
 			if row.highlights and len(row.highlights) != width:
 				raise ValueError('Highlights must have one entry per column.')
+			if row.targets:
+				if len(row.targets) != width:
+					raise ValueError('Targets must have one entry per column.')
+				for index, target in enumerate(row.targets):
+					if target is not None:
+						if index not in self.roles:
+							raise ValueError('Only name and path columns accept targets.')
+						absolute_path(target)
 			if self.typed:
 				row = self._display(row)
 			elif row.values:

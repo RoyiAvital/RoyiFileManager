@@ -1,5 +1,5 @@
 from fman.impl.status_bar import ACTIVE_PANE, DEFAULT_SETTINGS, DISABLED, \
-	PER_PANE, PaneStatusSnapshot, StatusCalculationService, StatusEntry, \
+	PaneStatusSnapshot, StatusCalculationService, StatusEntry, \
 	PaneStatusWidget, _CancellationToken, calculate_status_summary, format_size, \
 	next_status_bar_mode, validate_status_bar_settings
 from PyQt5.QtCore import QCoreApplication, QEventLoop, QObject, QThread, \
@@ -60,13 +60,12 @@ class StatusBarSettingsTest(TestCase):
 	def test_defaults_and_mode_cycle(self):
 		self.assertEqual(DEFAULT_SETTINGS, validate_status_bar_settings(None))
 		self.assertEqual(ACTIVE_PANE, next_status_bar_mode(DISABLED))
-		self.assertEqual(PER_PANE, next_status_bar_mode(ACTIVE_PANE))
-		self.assertEqual(DISABLED, next_status_bar_mode(PER_PANE))
+		self.assertEqual(DISABLED, next_status_bar_mode(ACTIVE_PANE))
 	def test_invalid_values_fall_back_independently(self):
 		self.assertEqual({
-			'mode': PER_PANE, 'max_entries': 5000, 'size_divisor': 1024
+			'mode': ACTIVE_PANE, 'max_entries': 5000, 'size_divisor': 1024
 		}, validate_status_bar_settings({
-			'mode': PER_PANE, 'max_entries': True, 'size_divisor': 7
+			'mode': ACTIVE_PANE, 'max_entries': True, 'size_divisor': 7
 		}))
 
 
@@ -127,30 +126,11 @@ class CalculateStatusSummaryTest(TestCase):
 
 
 class PaneStatusWidgetTest(TestCase):
-	def test_active_marker_follows_per_pane_active_state(self):
-		app = QApplication.instance() or QApplication([])
-		service = StatusCalculationService(_FileSystem())
-		widget = PaneStatusWidget(service, 10, 1024, True)
-		self.assertTrue(widget._active.isHidden())
-		widget.set_active(True)
-		self.assertFalse(widget._active.isHidden())
-		widget.set_active(False)
-		self.assertTrue(widget._active.isHidden())
-		service.shutdown()
-		self.assertIsNotNone(app)
-	def test_active_marker_stays_hidden_in_active_pane_mode(self):
-		app = QApplication.instance() or QApplication([])
-		service = StatusCalculationService(_FileSystem())
-		widget = PaneStatusWidget(service, 10, 1024, False)
-		widget.set_active(True)
-		self.assertTrue(widget._active.isHidden())
-		service.shutdown()
-		self.assertIsNotNone(app)
 	def test_worker_result_renders_selected_details(self):
 		app = QApplication.instance() or QApplication([])
 		event_loop = QEventLoop()
 		service = StatusCalculationService(_FileSystem())
-		widget = PaneStatusWidget(service, 10, 1024, False)
+		widget = PaneStatusWidget(service, 10, 1024)
 		widget.bind(_Pane())
 		QTimer.singleShot(500, event_loop.quit)
 		event_loop.exec()

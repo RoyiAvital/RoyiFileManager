@@ -115,9 +115,9 @@ def exercise(context, root, output):
 		gui(lambda: session.panel.update(values={'pattern': '*.txt', 'max_results': None}))
 		gui(lambda: session.action('search', session.panel.snapshot()))
 		def open_table():
-			from fman.impl.ui.facade import TableWindow
+			from fman.impl.ui.facade import QuickTableWindow
 			return next((widget for widget in QApplication.topLevelWidgets()
-				if isinstance(widget, TableWindow) and widget.alive.is_set() and widget.isVisible()), None)
+				if isinstance(widget, QuickTableWindow) and widget.alive.is_set() and widget.isVisible()), None)
 		wait_for(lambda: open_table() is not None, 'Results were not presented')
 		window = gui(open_table)
 		assert gui(window.windowTitle) == 'Find files'

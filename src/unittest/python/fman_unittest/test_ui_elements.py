@@ -41,45 +41,45 @@ class TableDataTest(TestCase):
 				Choice('mode', 'Mode', invalid, 'literal')
 
 	def test_column_kinds_define_roles_and_default_resolution(self):
-		from fman.impl.ui.table_data import TableColumn, TableRow, TableSchema
-		row = TableRow(('nested/file.txt', 'C:\\elsewhere'))
-		self.assertIsNone(TableSchema((TableColumn('A'), TableColumn('B'))).target(row, 0))
-		schema = TableSchema((TableColumn('File', 'file_path'), TableColumn('Folder', 'folder_path')), base_path='C:\\base')
+		from fman.impl.ui.table_data import QuickTableColumn, QuickTableRow, TableSchema
+		row = QuickTableRow(('nested/file.txt', 'C:\\elsewhere'))
+		self.assertIsNone(TableSchema((QuickTableColumn('A'), QuickTableColumn('B'))).target(row, 0))
+		schema = TableSchema((QuickTableColumn('File', 'file_path'), QuickTableColumn('Folder', 'folder_path')), base_path='C:\\base')
 		self.assertEqual({0: 'file', 1: 'folder'}, schema.roles)
 		self.assertEqual('C:\\base\\nested\\file.txt', schema.target(row, 0))
 		self.assertEqual('C:\\elsewhere', schema.target(row, 1))
-		self.assertIsNone(TableSchema((TableColumn('A', 'file_path'), TableColumn('B'))).target(row, 0))
-		self.assertIsNone(schema.target(TableRow(('', '')), 0))
+		self.assertIsNone(TableSchema((QuickTableColumn('A', 'file_path'), QuickTableColumn('B'))).target(row, 0))
+		self.assertIsNone(schema.target(QuickTableRow(('', '')), 0))
 		kinds = ('file_name', 'folder_name', 'entry_path')
 		self.assertEqual({0: 'file', 1: 'folder', 2: 'entry'},
-			TableSchema(tuple(TableColumn(kind, kind) for kind in kinds)).roles)
+			TableSchema(tuple(QuickTableColumn(kind, kind) for kind in kinds)).roles)
 
 	def test_paths_are_lexical(self):
-		from fman.impl.ui.table_data import TableColumn, TableRow, TableSchema
+		from fman.impl.ui.table_data import QuickTableColumn, QuickTableRow, TableSchema
 		from unittest.mock import patch
-		schema = TableSchema((TableColumn('Path', 'file_path'),), base_path='C:\\base')
+		schema = TableSchema((QuickTableColumn('Path', 'file_path'),), base_path='C:\\base')
 		with patch('os.stat', side_effect=AssertionError('No filesystem probe')):
 			for value, expected in (('..\\a.txt', 'C:\\a.txt'),
 					('\\\\server\\share\\a.txt', '\\\\server\\share\\a.txt'),
 					(' spaced .txt', 'C:\\base\\ spaced .txt')):
-				self.assertEqual(expected, schema.target(TableRow((value,)), 0))
+				self.assertEqual(expected, schema.target(QuickTableRow((value,)), 0))
 			for value in ('C:relative', '\\rooted', 'file:///C:/a', 'https://a', 'bad\x00path'):
 				with self.subTest(value=value), self.assertRaises(ValueError):
-					schema.target(TableRow((value,)), 0)
+					schema.target(QuickTableRow((value,)), 0)
 
 	def test_snapshot_schema_bounds(self):
-		from fman.impl.ui.table_data import TableColumn, TableRow, TableSchema
+		from fman.impl.ui.table_data import QuickTableColumn, QuickTableRow, TableSchema
 		from unittest.mock import patch
-		schema = TableSchema((TableColumn('Path'), TableColumn('Snippet')))
-		row = TableRow(['one', 'text'], ((), ((0, 4),)))
+		schema = TableSchema((QuickTableColumn('Path'), QuickTableColumn('Snippet')))
+		row = QuickTableRow(['one', 'text'], ((), ((0, 4),)))
 		self.assertEqual((row, row), schema.snapshot([row, row]))
 		self.assertEqual((row,), schema.snapshot(iter([row])))
-		for rows in ([TableRow(('one',))], [TableRow(('one', 'two'), ((), ((0, 4),)))],
-				[TableRow(('one', 2))], ['one'], 'rows', None):
+		for rows in ([QuickTableRow(('one',))], [QuickTableRow(('one', 'two'), ((), ((0, 4),)))],
+				[QuickTableRow(('one', 2))], ['one'], 'rows', None):
 			with self.subTest(rows=rows), self.assertRaises((TypeError, ValueError)):
 				schema.snapshot(rows)
 		with patch('fman.impl.ui.table_data.MAX_ROWS', 1), self.assertRaises(ValueError):
-			schema.snapshot(TableRow(('a', 'b')) for index in range(3))
+			schema.snapshot(QuickTableRow(('a', 'b')) for index in range(3))
 		with patch('fman.impl.ui.table_data.MAX_TEXT_BYTES', 1), self.assertRaises(ValueError):
 			schema.snapshot([row])
 
@@ -106,56 +106,56 @@ def utc_dates():
 
 
 def typed_schema(dates=None):
-	from fman.impl.ui.table_data import TableColumn, TableSchema
-	columns = (TableColumn('Path', 'file_path'), TableColumn('Size', 'numeric', unit='bytes'),
-		TableColumn('Modified', 'date'), TableColumn('Note'))
+	from fman.impl.ui.table_data import QuickTableColumn, TableSchema
+	columns = (QuickTableColumn('Path', 'file_path'), QuickTableColumn('Size', 'numeric', unit='bytes'),
+		QuickTableColumn('Modified', 'date'), QuickTableColumn('Note'))
 	return TableSchema(columns, base_path='C:\\root', dates=dates or utc_dates())
 
 
 class TypedTableTest(TestCase):
 	def test_column_descriptors_validate(self):
-		from fman.impl.ui.table_data import TableColumn, TableSchema
+		from fman.impl.ui.table_data import QuickTableColumn, TableSchema
 		schema = typed_schema()
 		self.assertEqual((0, 3), schema.searchable)
 		self.assertEqual((1, 2), schema.typed)
 		self.assertEqual(('Path', 'Size', 'Modified', 'Note'), schema.headers)
 		self.assertEqual(('Copy Path', 'Copy Value', 'Copy Date', 'Copy Text'),
 			tuple(column.copy_label for column in schema.columns))
-		for columns in ((), (TableColumn('A'),) * 65, (TableColumn(''),), (TableColumn('A', 'unknown'),),
-				(TableColumn('A', unit='bytes'),), (TableColumn('A', 'date', date_display='time'),),
-				(TableColumn('A', sortable=1),), (TableColumn('A', format=str),),
-				(TableColumn('A', 'numeric', format='x'),), (TableColumn('A', missing=None),), ('A',), 'A'):
+		for columns in ((), (QuickTableColumn('A'),) * 65, (QuickTableColumn(''),), (QuickTableColumn('A', 'unknown'),),
+				(QuickTableColumn('A', unit='bytes'),), (QuickTableColumn('A', 'date', date_display='time'),),
+				(QuickTableColumn('A', sortable=1),), (QuickTableColumn('A', format=str),),
+				(QuickTableColumn('A', 'numeric', format='x'),), (QuickTableColumn('A', missing=None),), ('A',), 'A'):
 			with self.subTest(columns=columns), self.assertRaises((TypeError, ValueError)):
 				TableSchema(columns)
 
 	def test_typed_cells_are_formatted_and_bounded(self):
-		from fman.impl.ui.table_data import TableColumn, TableRow, TableSchema
+		from fman.impl.ui.table_data import QuickTableColumn, QuickTableRow, TableSchema
 		schema = typed_schema()
-		row = TableRow(['a.txt', 5, 86400 * 10 ** 9, 'n'])
-		snapshot = schema.snapshot((row, TableRow(('b', None, None, ''))))
+		row = QuickTableRow(['a.txt', 5, 86400 * 10 ** 9, 'n'])
+		snapshot = schema.snapshot((row, QuickTableRow(('b', None, None, ''))))
 		self.assertEqual(('a.txt', '5 B', '1970-01-02T00:00:00Z', 'n'), snapshot[0].cells)
 		self.assertEqual(('a.txt', 5, 86400 * 10 ** 9, 'n'), snapshot[0].values)
 		self.assertEqual(('b', 'Unknown', 'Unknown', ''), snapshot[1].cells)
-		self.assertEqual((), TableSchema((TableColumn('A'),)).snapshot((TableRow(('a',), values=('stale',)),))[0].values)
+		self.assertEqual((), TableSchema((QuickTableColumn('A'),)).snapshot((QuickTableRow(('a',), values=('stale',)),))[0].values)
 		for cells in (('a', -1, None, ''), ('a', True, None, ''), ('a', 1.5, None, ''), ('a', '5 B', None, ''),
 				('a', None, 2 ** 63, ''), ('a', None, 1.0, ''), (None, None, None, ''), ('a', None, None, 3)):
 			with self.subTest(cells=cells), self.assertRaises((TypeError, ValueError)):
-				schema.snapshot((TableRow(cells),))
+				schema.snapshot((QuickTableRow(cells),))
 		with self.assertRaises(ValueError):
-			schema.snapshot((TableRow(('a', None, 0, ''), highlights=((), (), ((0, 1),), ())),))
-		numbers = TableSchema((TableColumn('N', 'numeric'),))
+			schema.snapshot((QuickTableRow(('a', None, 0, ''), highlights=((), (), ((0, 1),), ())),))
+		numbers = TableSchema((QuickTableColumn('N', 'numeric'),))
 		self.assertEqual(('1,234,567', '1.5', '-2'), tuple(row.cells[0] for row in numbers.snapshot(
-			(TableRow((1234567,)), TableRow((1.5,)), TableRow((-2,))))))
+			(QuickTableRow((1234567,)), QuickTableRow((1.5,)), QuickTableRow((-2,))))))
 		for value in (float('nan'), float('inf')):
 			with self.assertRaises(ValueError):
-				numbers.snapshot((TableRow((value,)),))
-		custom = TableSchema((TableColumn('S', 'numeric', unit='bytes', format=lambda value: '%d KiB' % (value // 1024), missing=''),))
+				numbers.snapshot((QuickTableRow((value,)),))
+		custom = TableSchema((QuickTableColumn('S', 'numeric', unit='bytes', format=lambda value: '%d KiB' % (value // 1024), missing=''),))
 		self.assertEqual(('2 KiB', ''), tuple(row.cells[0] for row in custom.snapshot(
-			(TableRow((2048,)), TableRow((None,))))))
+			(QuickTableRow((2048,)), QuickTableRow((None,))))))
 		with self.assertRaises(TypeError):
-			TableSchema((TableColumn('S', 'numeric', format=lambda value: value),)).snapshot((TableRow((1,)),))
-		days = TableSchema((TableColumn('D', 'date', date_display='date'),), dates=utc_dates())
-		self.assertEqual(('1970-01-01',), days.snapshot((TableRow((0,)),))[0].cells)
+			TableSchema((QuickTableColumn('S', 'numeric', format=lambda value: value),)).snapshot((QuickTableRow((1,)),))
+		days = TableSchema((QuickTableColumn('D', 'date', date_display='date'),), dates=utc_dates())
+		self.assertEqual(('1970-01-01',), days.snapshot((QuickTableRow((0,)),))[0].cells)
 
 	def test_local_day_bounds_handle_gaps_and_overlaps(self):
 		from datetime import date
@@ -178,13 +178,13 @@ class TypedTableTest(TestCase):
 				parse_date(value)
 
 	def test_column_filters(self):
-		from fman.impl.ui.table_data import TableRow
+		from fman.impl.ui.table_data import QuickTableRow
 		from fman.impl.ui.table_filters import compile_filter, operators
 		schema = typed_schema()
 		day = 86400 * 10 ** 9
-		rows = (TableRow(('Alpha.txt', 1024, 0, 'a')),
-			TableRow(('beta.txt', 4096, day, 'b')),
-			TableRow(('gamma.txt', None, None, 'c')))
+		rows = (QuickTableRow(('Alpha.txt', 1024, 0, 'a')),
+			QuickTableRow(('beta.txt', 4096, day, 'b')),
+			QuickTableRow(('gamma.txt', None, None, 'c')))
 		rows = schema.snapshot(rows)
 		def ids(column, *arguments, **keywords):
 			flt = compile_filter(schema.columns[column], column, *arguments, dates=schema.dates, **keywords)
@@ -206,6 +206,74 @@ class TypedTableTest(TestCase):
 				(2, ('between', '1970-01-02', '1970-01-01')), (2, ('=', '1970-01-01')), (0, ('>', 'x'))):
 			with self.subTest(arguments=arguments), self.assertRaises(ValueError):
 				compile_filter(schema.columns[column], column, *arguments, dates=schema.dates)
+
+	def test_extreme_byte_exponents_are_validation_errors(self):
+		from fman.impl.ui.table_filters import compile_filter
+		size = typed_schema().columns[1]
+		self.assertIsNotNone(compile_filter(size, 1, '>=', '1e999999', unit='B').predicate)
+		for unit in ('B', 'GiB'):
+			for value in ('1e1000000', '-1e1000000'):
+				with self.subTest(unit=unit, value=value), self.assertRaises(ValueError):
+					compile_filter(size, 1, '>=', value, unit=unit)
+
+	def test_float_cells_match_their_typed_bounds(self):
+		from fman.impl.ui.table_data import QuickTableColumn, QuickTableRow, TableSchema
+		from fman.impl.ui.table_filters import compile_filter
+		column = QuickTableColumn('Ratio', 'numeric')
+		schema = TableSchema((column,))
+		rows = schema.snapshot(QuickTableRow((value,)) for value in (0.1, 0.3, 1.5, 2, None))
+		self.assertEqual(('0.1', '0.3', '1.5', '2', 'Unknown'), tuple(row.cells[0] for row in rows))
+		def kept(*arguments):
+			predicate = compile_filter(column, 0, *arguments).predicate
+			return tuple(row.cells[0] for row in rows if predicate(row))
+		self.assertEqual(('0.1',), kept('=', '0.1'))
+		self.assertEqual(('0.3',), kept('=', '0.3'))
+		self.assertEqual(('0.1',), kept('<=', '0.1'))
+		self.assertEqual(('0.3', '1.5', '2'), kept('>=', '0.3'))
+		self.assertEqual(('0.1', '0.3'), kept('between', '0.1', '0.3'))
+		self.assertEqual(('2',), kept('=', '2'))
+		self.assertEqual(('1.5', '2'), kept('>', '0.3'))
+		# Integers keep exact comparison against the typed bound.
+		self.assertEqual((), kept('=', '2.0000000000000000001'))
+
+	def test_day_before_a_skipped_date_can_be_filtered(self):
+		from datetime import date
+		from fman.impl.ui.table_data import QuickTableColumn, QuickTableRow, TableSchema
+		from fman.impl.ui.table_dates import LocalDates, NS
+		from fman.impl.ui.table_filters import compile_filter
+		# At 2001-01-02 00:00 UTC the zone moves from UTC+00 to UTC+24: local 2001-01-02 never happens.
+		skip = 978393600
+		dates = LocalDates(lambda seconds: 86400 if seconds >= skip else 0)
+		self.assertEqual(skip * NS, dates.next_day_start(date(2001, 1, 1)))
+		column = QuickTableColumn('Modified', 'date', date_display='date')
+		schema = TableSchema((column,), dates=dates)
+		jan_1, jan_3 = (skip - 3600) * NS, (skip + 3600) * NS
+		rows = schema.snapshot((QuickTableRow((jan_1,)), QuickTableRow((jan_3,))))
+		self.assertEqual(('2001-01-01', '2001-01-03'), tuple(row.cells[0] for row in rows))
+		def kept(*arguments):
+			predicate = compile_filter(column, 0, *arguments, dates=dates).predicate
+			return tuple(row.cells[0] for row in rows if predicate(row))
+		self.assertEqual(('2001-01-01',), kept('on', '2001-01-01'))
+		self.assertEqual(('2001-01-03',), kept('after', '2001-01-01'))
+		self.assertEqual(('2001-01-01',), kept('between', '2001-01-01', '2001-01-01'))
+		self.assertEqual(('2001-01-03',), kept('on', '2001-01-03'))
+		self.assertEqual(('2001-01-01',), kept('before', '2001-01-03'))
+		self.assertEqual(('2001-01-01', '2001-01-03'), kept('between', '2001-01-01', '2001-01-03'))
+		with self.assertRaises(ValueError):
+			compile_filter(column, 0, 'on', '2001-01-02', dates=dates)
+
+	def test_row_targets_override_cell_text_for_navigation(self):
+		from fman.impl.ui.table_data import QuickTableColumn, QuickTableRow, TableSchema
+		schema = TableSchema((QuickTableColumn('Path', 'file_path'), QuickTableColumn('Note')), base_path='C:\\base')
+		displayed, target = 'report\\u200b.txt', 'C:\\base\\report\u200b.txt'
+		navigable, diagnostic = schema.snapshot((QuickTableRow((displayed, 'a'), targets=(target, None)),
+			QuickTableRow(('bad record', 'b'), targets=(None, None))))
+		self.assertEqual(target, schema.target(navigable, 0))
+		self.assertIsNone(schema.target(diagnostic, 0))
+		self.assertEqual('C:\\base\\report\\u200b.txt', schema.target(QuickTableRow((displayed, 'a')), 0))
+		for targets in ((target,), (target, 'C:\\note'), ('relative.txt', None), ('C:\\bad\x00', None), (1, None)):
+			with self.subTest(targets=targets), self.assertRaises((TypeError, ValueError)):
+				schema.snapshot((QuickTableRow((displayed, 'a'), targets=targets),))
 
 	def test_natural_key_orders_numbers_and_case(self):
 		from fman.impl.util.natural import natural_key

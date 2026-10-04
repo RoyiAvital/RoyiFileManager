@@ -10,13 +10,13 @@ from fman.impl.ui.panel import DropDown, OptionalField, Panel, TextButton, Wrapp
 from fman.impl.ui.session import MessageDialog, ToolWindow, navigate
 from fman.impl.ui.table import Table
 from fman.impl.ui.table_data import Action, Choice, DateField, IntegerField, Label, Select, Separator, TableSchema, TextField, Toggle, absolute_path, panel_records, text, validate_field_value
-from fman.impl.util.qt.thread import run_in_main_thread
+from fman.impl.util.qt.thread import is_in_main_thread, run_in_main_thread
 from fman.url import as_human_readable, as_url
 from PyQt5 import sip
 from PyQt5.QtCore import QEvent, QEventLoop, QSize, Qt, QSignalBlocker, QTimer, pyqtSignal
-from PyQt5.QtGui import QColor, QIcon, QKeySequence, QPainter, QPalette, QPixmap
+from PyQt5.QtGui import QColor, QIcon, QPainter, QPalette, QPixmap
 from PyQt5.QtSvg import QSvgRenderer
-from PyQt5.QtWidgets import QApplication, QButtonGroup, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMenu, QPushButton, QShortcut, QSizePolicy, QSpacerItem, QToolButton, QVBoxLayout, QWidget
+from PyQt5.QtWidgets import QApplication, QButtonGroup, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMenu, QSizePolicy, QSpacerItem, QToolButton, QVBoxLayout, QWidget
 
 
 _keys = count(1)
@@ -638,18 +638,17 @@ class PanelSession(ToolWindow):
 			target.setFocus(Qt.OtherFocusReason)
 
 
-class TableWindow(ToolWindow):
-	def __init__(self, main, pane, schema, rows, title, summary, modal, text_filter, truncated, accept=None):
+class QuickTableWindow(ToolWindow):
+	def __init__(self, main, pane, schema, rows, title, summary, modal, text_filter, truncated):
 		super().__init__(main, _table_owner)
 		self.setWindowFlags(Qt.Dialog)
 		self.setWindowModality(Qt.WindowModal if modal else Qt.NonModal)
-		self.setWindowTitle(title or 'Table')
+		self.setWindowTitle(title or 'QuickTable')
 		self.resize(820, 520)
 		self.setMinimumSize(460, 280)
 		self.main, self.pane, self.schema, self.modal = main, pane, schema, modal
 		self.navigated = False
 		self.menu = None
-		self.accept_label = accept
 		self.result = None
 		self.table = Table(schema, rows, self, text_filter, truncated)
 		self.table.view.setColumnWidth(0, 300)
@@ -660,29 +659,9 @@ class TableWindow(ToolWindow):
 		self.summary.setVisible(bool(summary))
 		layout.addWidget(self.summary)
 		layout.addWidget(self.table, 1)
-		self.accept_button = None
-		if accept is not None:
-			buttons = QHBoxLayout()
-			buttons.addStretch(1)
-			self.accept_button = QPushButton(self)
-			self.accept_button.setObjectName('table-accept')
-			self.accept_button.setToolTip(accept + ' the visible rows (Ctrl+Enter)')
-			cancel = QPushButton('Cancel', self)
-			cancel.setToolTip('Close without a result (Escape)')
-			# Enter belongs to the view (Go To); only Ctrl+Enter accepts.
-			for button in (self.accept_button, cancel):
-				button.setAutoDefault(False)
-				buttons.addWidget(button)
-			layout.addLayout(buttons)
-			self.accept_button.clicked.connect(self.accept_rows)
-			cancel.clicked.connect(self.close)
-			for sequence in ('Ctrl+Return', 'Ctrl+Enter'):
-				shortcut = QShortcut(QKeySequence(sequence), self)
-				shortcut.activated.connect(self.accept_rows)
-			self.table.state_changed.connect(self.update_accept)
-			self.update_accept()
 		self.table.state_changed.connect(self.close_menu)
 		self.table.view.cell_activated.connect(self.activate_cell)
+		self.table.view.accept_requested.connect(self.accept_rows)
 		self.table.view.menu_requested.connect(self.open_menu)
 		self.disposed.connect(self.cleanup)
 		self.main.installEventFilter(self)
@@ -693,13 +672,9 @@ class TableWindow(ToolWindow):
 		cell = self.table.current_cell
 		return self.alive.is_set() and cell is not None and cell[0] is row and cell[1] == column
 
-	def update_accept(self):
-		count = self.table.model.rowCount()
-		self.accept_button.setText('%s (%s)' % (self.accept_label, format(count, ',')))
-		self.accept_button.setEnabled(self.table.settled and count > 0)
-
 	def accept_rows(self):
-		if self.accept_button is None or not self.accept_button.isEnabled() or not self.alive.is_set():
+		# Enter during a pending projection or with no visible rows is ignored, so None always means cancelled.
+		if self.busy or not self.alive.is_set() or not self.table.settled or not self.table.model.rowCount():
 			return
 		self.result = self.table.visible_positions()
 		self.close()
@@ -715,7 +690,8 @@ class TableWindow(ToolWindow):
 			self.alert(str(error))
 
 	def go_to(self, row, column, path):
-		if self.busy or self.pane is None or not self.is_current(row, column):
+		# A pending projection still shows the previous rows; navigating one of them would act on a stale row.
+		if self.busy or self.pane is None or not self.table.settled or not self.is_current(row, column):
 			return
 		role = self.schema.roles[column]
 		def check(url):
@@ -763,7 +739,7 @@ class TableWindow(ToolWindow):
 			menu.addAction(descriptor.copy_label, guarded(lambda: QApplication.clipboard().setText(copied)))
 			if path is not None:
 				go = menu.addAction('Go To', guarded(lambda: self.go_to(row, column, path)))
-				go.setEnabled(self.pane is not None and not self.busy)
+				go.setEnabled(self.pane is not None and not self.busy and table.settled)
 			if table.filterable(column):
 				menu.addSeparator()
 				menu.addAction('Filter This Column...', guarded(lambda: table.open_filter_menu(column)))
@@ -819,8 +795,8 @@ def show_panel(*, owner, pane, rows, on_change=None, on_action=None, on_closed=N
 
 
 @run_in_main_thread
-def open_table(*, columns, rows, pane=None, title='', summary='', modal=True,
-		text_filter='fuzzy', base_path=None, truncated=None, accept=None):
+def open_quick_table(*, columns, rows, pane=None, title='', summary='', modal=True,
+		text_filter='fuzzy', base_path=None, truncated=None):
 	_validate_truncated(truncated)
 	if text_filter not in (None, 'fuzzy', 'substring') and not callable(text_filter):
 		raise ValueError('text_filter must be fuzzy, substring, None or a callable.')
@@ -828,8 +804,6 @@ def open_table(*, columns, rows, pane=None, title='', summary='', modal=True,
 		raise TypeError('modal must be boolean.')
 	text(title, 'Title')
 	text(summary, 'Summary')
-	if accept is not None and not text(accept, 'Accept label', 64).strip():
-		raise ValueError('accept must be a non-empty label or None.')
 	schema = TableSchema(columns, base_path)
 	if schema.base is None and schema.roles and pane is not None:
 		location = pane.get_path()
@@ -841,17 +815,30 @@ def open_table(*, columns, rows, pane=None, title='', summary='', modal=True,
 		main = _get_ui()
 	else:
 		main = pane.window._widget
-	window = TableWindow(main, pane, schema, snapshot, title, summary, modal, text_filter, truncated, accept)
+	window = QuickTableWindow(main, pane, schema, snapshot, title, summary, modal, text_filter, truncated)
 	window.show()
 	window.table.setFocus()
 	return window
 
 
 @run_in_main_thread
-def show_table(*, columns, rows, pane=None, title='', summary='', modal=True,
-		text_filter='fuzzy', base_path=None, truncated=None, accept=None):
-	window = open_table(columns=columns, rows=rows, pane=pane, title=title, summary=summary,
-		modal=modal, text_filter=text_filter, base_path=base_path, truncated=truncated, accept=accept)
+def _open_watched_quick_table(closed, **arguments):
+	window = open_quick_table(**arguments)
+	window.disposed.connect(closed.set)
+	return window
+
+
+def show_quick_table(*, columns, rows, pane=None, title='', summary='', modal=True,
+		text_filter='fuzzy', base_path=None, truncated=None):
+	arguments = dict(columns=columns, rows=rows, pane=pane, title=title, summary=summary,
+		modal=modal, text_filter=text_filter, base_path=base_path, truncated=truncated)
+	if not is_in_main_thread():
+		# Workers wait on their own event, so modeless tables can close in any order.
+		closed = Event()
+		window = _open_watched_quick_table(closed, **arguments)
+		closed.wait()
+		return window.result
+	window = open_quick_table(**arguments)
 	loop = QEventLoop()
 	window.disposed.connect(loop.quit)
 	loop.exec_()

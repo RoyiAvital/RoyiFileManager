@@ -142,6 +142,7 @@ class TableDelegate(QStyledItemDelegate):
 
 class TableView(QTableView):
 	cell_activated = pyqtSignal(object, int)
+	accept_requested = pyqtSignal()
 	menu_requested = pyqtSignal(object, int, object)
 
 	def activate_current(self):
@@ -178,11 +179,18 @@ class TableView(QTableView):
 
 	def keyPressEvent(self, event):
 		if event.key() in (Qt.Key_Return, Qt.Key_Enter):
-			if not event.modifiers() & (Qt.ControlModifier | Qt.AltModifier | Qt.ShiftModifier):
-				self.activate_current()
+			self.enter_pressed(event.modifiers())
 			event.accept()
 			return
 		super().keyPressEvent(event)
+
+	def enter_pressed(self, modifiers):
+		# Enter returns the visible rows; Ctrl+Enter is Go To; other combinations are ignored.
+		modifiers &= Qt.ControlModifier | Qt.AltModifier | Qt.ShiftModifier
+		if modifiers == Qt.NoModifier:
+			self.accept_requested.emit()
+		elif modifiers == Qt.ControlModifier:
+			self.activate_current()
 
 
 class TableHeader(QHeaderView):
@@ -379,7 +387,7 @@ class FilterEditor(QWidget):
 		try:
 			self.compiled = compile_filter(self.column, self.index, operator, self.first.text(),
 				self.second.text(), self.unit.currentData() if self.unit is not None else 'B', self.table.schema.dates)
-		except ValueError as error:
+		except (ValueError, ArithmeticError) as error:
 			self.compiled = None
 			blank = not self.first.text().strip() and not (ranged and self.second.text().strip())
 			self.error.setText('' if blank else str(error))
@@ -525,8 +533,7 @@ class Table(QWidget):
 	def eventFilter(self, watched, event):
 		if watched is self.query and event.type() == QEvent.KeyPress:
 			if event.key() in (Qt.Key_Return, Qt.Key_Enter):
-				if not event.modifiers() & (Qt.ControlModifier | Qt.AltModifier | Qt.ShiftModifier):
-					self.view.activate_current()
+				self.view.enter_pressed(event.modifiers())
 				return True
 			if event.key() in (Qt.Key_Up, Qt.Key_Down):
 				self.view.setFocus()

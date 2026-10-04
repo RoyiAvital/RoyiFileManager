@@ -40,7 +40,13 @@ def _number(text, unit, label):
 		value = None
 	if not cleaned or value is None or not value.is_finite():
 		raise ValueError('Enter a number for %s.' % label)
-	return value * dict(BYTE_UNITS)[unit] if unit else value
+	if not unit:
+		return value
+	try:
+		return value * dict(BYTE_UNITS)[unit]
+	except ArithmeticError:
+		# Decimal signals Overflow for exponents beyond its context, e.g. 1e1000000.
+		raise ValueError('%s is out of range.' % label) from None
 
 
 def compile_filter(column, index, operator, first='', second='', unit='B', dates=None):
@@ -69,21 +75,26 @@ def compile_filter(column, index, operator, first='', second='', unit='B', dates
 		if scale is not None and scale not in dict(BYTE_UNITS):
 			raise ValueError('Unknown size unit.')
 		low = _number(first, scale, label)
+		high = _number(second, scale, label) if operator == 'between' else None
 		suffix = ' ' + scale if scale else ''
 		if operator == 'between':
-			high = _number(second, scale, label)
 			if high < low:
 				raise ValueError('The second value must not be smaller than the first.')
-			test = lambda value: low <= value <= high
+			test = lambda value, low, high: low <= value <= high
 			description = '%s between %s and %s%s' % (label, first.strip(), second.strip(), suffix)
 		else:
-			test = {'=': lambda value: value == low, '<': lambda value: value < low,
-				'<=': lambda value: value <= low, '>': lambda value: value > low,
-				'>=': lambda value: value >= low}[operator]
+			test = {'=': lambda value, low, high: value == low, '<': lambda value, low, high: value < low,
+				'<=': lambda value, low, high: value <= low, '>': lambda value, low, high: value > low,
+				'>=': lambda value, low, high: value >= low}[operator]
 			description = '%s %s %s%s' % (label, dict(NUMBER_OPERATORS)[operator], first.strip(), suffix)
+		# Integers compare exactly with the Decimal bounds; floats with the nearest float, so 0.1 = 0.1 holds.
+		exact = low, high
+		nearest = float(low), None if high is None else float(high)
 		def predicate(row):
 			value = row.values[index]
-			return value is not None and test(value)
+			if value is None:
+				return False
+			return test(value, *(nearest if type(value) is float else exact))
 		return ColumnFilter(index, operator, first.strip(), second.strip(), unit, description, predicate)
 	if column.policy != 'date' or operator not in dict(DATE_OPERATORS):
 		raise ValueError('Unknown date operator.')

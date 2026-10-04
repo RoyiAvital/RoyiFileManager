@@ -335,7 +335,7 @@ persist plug-in input:
 settings = {'mode': 'single', 'max_entries': 5000, 'size_divisor': 1024}
 ```
 
-- `mode`: `'disabled'`, `'single'` (active pane), or `'dual'` (per pane).
+- `mode`: `'disabled'` or `'single'` (active pane).
 - `max_entries`: positive non-boolean integer limiting size queries.
 - `size_divisor`: `1000` or `1024`; affects displayed size units.
 
@@ -593,89 +593,98 @@ Import from `fman.ui`. The complete explicit export list is:
 ListItem, QuickList, Panel, IconButton, TextButton, DropDown, JsonSettings,
 UiController, UiOwner, Resource, settings_resource, matchers,
 ToolWindow, PaneToolWindow, NavigationHandle, navigate, OutputTextBox
-TableRow, TableColumn, TextField, Toggle, Choice, Select, DateField, IntegerField, Separator, Label, Action,
-PanelHandle, show_table, show_panel
+QuickTableRow, QuickTableColumn, TextField, Toggle, Choice, Select, DateField, IntegerField, Separator, Label, Action,
+PanelHandle, show_quick_table, show_panel
 ```
 
 This is an additive **provisional** API, not upstream fman 1.7.5. Public names
 do not imply permission to change host widget parenting, lifetime or internal
 model state arbitrarily. The legacy widget components use Qt for composition.
-New Table/Panel consumers can use the plain services below without importing Qt.
+New QuickTable/Panel consumers can use the plain services below without importing Qt.
 
-### Qt-Free Table and Panel
+### Qt-Free QuickTable and Panel
 
 Panels need an owner: expose a `UiController` subclass in the plug-in's root
 package as an owner carrier. Do not implement/call `build` or `show` when using
-these services; obtain its loader-owned lifetime with `require_owner()`. Tables
-are static snapshots and need no owner.
+these services; obtain its loader-owned lifetime with `require_owner()`.
+QuickTables are static snapshots and need no owner.
 
 ```python
-from fman.ui import TableColumn, TableRow, show_table
+from fman.ui import QuickTableColumn, QuickTableRow, show_quick_table
 
-COLUMNS = (TableColumn('File Path', 'file_path'), TableColumn('Size', 'numeric', unit='bytes'),
-  TableColumn('Snippet'))
+COLUMNS = (QuickTableColumn('File Path', 'file_path'),
+  QuickTableColumn('Size', 'numeric', unit='bytes'), QuickTableColumn('Snippet'))
 
-def display_results(pane, hits):
-  rows = [TableRow((hit.path, hit.size, hit.snippet)) for hit in hits]
-  show_table(columns=COLUMNS, rows=rows, pane=pane, title='Results')
+def choose_results(pane, hits):
+  rows = [QuickTableRow((hit.path, hit.size, hit.snippet)) for hit in hits]
+  kept = show_quick_table(columns=COLUMNS, rows=rows, pane=pane, title='Results',
+    summary='Filter the results, then press Enter')
+  if kept is not None:
+    process([hits[index] for index in kept])
 ```
 
 ```python
-show_table(*, columns, rows, pane=None, title='', summary='', modal=True,
-  text_filter='fuzzy', base_path=None, truncated=None, accept=None) -> tuple[int, ...] | None
+show_quick_table(*, columns, rows, pane=None, title='', summary='', modal=True,
+  text_filter='fuzzy', base_path=None, truncated=None) -> tuple[int, ...] | None
 
 show_panel(*, owner, pane, rows, on_change=None, on_action=None, on_closed=None)
 ```
 
-`show_table` shows a static snapshot and **blocks until the window closes**.
-From a command worker thread it blocks that worker; on the Qt thread it runs a
-nested event loop. Rows cannot be replaced while the table is open; call it
-again for new results.
+QuickTable narrows a predefined, immutable set of rows. `show_quick_table`
+**blocks until the window closes**: a command worker thread waits for its own
+window only, so several modeless tables can close in any order; on the Qt
+thread it runs a nested event loop. Rows cannot be
+replaced while the table is open; call it again for new results.
 
-`columns` is a sequence of 1-64 `TableColumn` descriptors; it defines headers,
-navigation, sorting, filtering and formatting (see below).
+The window is buttonless:
 
-`TableRow(cells, highlights=())` is frozen. `cells` holds one value per column:
+| Key | Effect |
+| --- | --- |
+| Enter (table or filter box) | Close and return the positions in `rows` of the visible rows, in input order (not display order) |
+| Escape, window close | Close and return `None` |
+| Ctrl+Enter, double-click | Go To the current name/path cell |
+| Alt+Down | Filter menu of the current column |
+| Ctrl+F | Focus the filter box |
+
+Enter and Go To do nothing while filtering runs, and Enter also after a filter
+error or when no row is visible, so `None` always means cancelled and Go To
+never acts on a row the new filter is about to hide. Callers explain the task through
+`title`, `summary` and, when useful, `show_status_message`.
+
+`columns` is a sequence of 1-64 `QuickTableColumn` descriptors; it defines
+headers, navigation, sorting, filtering and formatting (see below).
+
+`QuickTableRow(cells, highlights=(), targets=())` is frozen. `cells` holds one value per column:
 a string for text, name and path kinds; an `int`/`float`/`None` for Numeric;
 integer UTC epoch nanoseconds or `None` for Date. Optional highlights contain
 one tuple of `(start, end)` character spans per column (text-like columns only).
+Optional `targets` holds one entry per column: an absolute native path for a
+name/path column, or `None`. When given, Copy Path and Go To use it instead of
+the cell text, so display text can be escaped or shortened; `None` makes that
+cell non-navigable. Other columns must be `None`.
 `rows` is any iterable, validated once: at most 10,000 rows, 16 MiB text and
 128 spans per cell.
 
 `summary` is a single elided line above the table. `title` is the window title.
 
-Name and path kinds navigate. Cell text is resolved lexically: absolute native
+Name and path kinds navigate. Without `targets`, cell text is resolved lexically: absolute native
 paths, or paths relative to `base_path` (default: the supplied local pane's
 folder, captured once). No filesystem/CWD/environment expansion occurs during
 resolution. File kinds require files, folder kinds require folders and
 `entry_path` accepts either; the check happens at Go To. Without a pane, Copy
 works but Go To is disabled; no active pane is silently selected.
 
-Enter, double-click or **Go To** navigates the pane. With `modal=True` (the
-default) the table blocks its main window and closes after a successful Go To;
-focus returns to the pane. With `modal=False` the main window stays usable and
-Go To keeps the table open while focusing the pane. The table closes with its
-pane or main window.
+Go To on a file opens its folder in the pane and selects it; on a folder it
+opens the folder. With `modal=True` (the default) the table blocks its main
+window and closes after a successful Go To (result `None`); focus returns to the
+pane. With `modal=False` the main window stays usable and Go To keeps the table
+open while focusing the pane. The table closes with its pane or main window.
 
-The only caller interaction is `text_filter`. The table has no caller menus,
-callbacks, details or refresh. Its built-in cell menu offers the column's Copy
-action, Go To for name/path kinds, **Filter This Column...** and **Clear All
-Filters**.
+The table has no file operations besides Go To, and no caller menus, callbacks,
+details or refresh. Its built-in cell menu offers the column's Copy action, Go To
+for name/path kinds, **Filter This Column...** and **Clear All Filters**.
 
-`accept` turns the table into a filtering step. A label such as `'Rename'` adds
-**Rename (N)** and **Cancel** buttons; Ctrl+Enter also accepts. Accepting returns
-the positions in `rows` of every row that passes the text and column filters, in
-input order (not display order). Cancel, Escape, closing or a modal Go To return
-`None`. The button is disabled while filtering runs, on a filter error and when
-no row is visible. Without `accept` the call always returns `None`.
-
-```python
-kept = show_table(columns=COLUMNS, rows=rows, pane=pane, accept='Rename')
-if kept is not None:
-  rename([plans[index] for index in kept])
-```
-
-Table and QuickList use the shared fuzzy matcher: prefer a contiguous match
+QuickTable and QuickList use the shared fuzzy matcher: prefer a contiguous match
 when available, otherwise use an in-order subsequence. Highlight positions map
 back to the original text after casefolding. F1 Shortcuts has its own substring
 filter and is not a fuzzy-matcher consumer.
@@ -683,7 +692,7 @@ filter and is not a fuzzy-matcher consumer.
 #### Columns and Filters
 
 ```python
-TableColumn(label, kind='text', sortable=True, filterable=True, searchable=None,
+QuickTableColumn(label, kind='text', sortable=True, filterable=True, searchable=None,
   unit=None, date_display='timestamp', format=None, missing='Unknown')
 ```
 
@@ -697,10 +706,17 @@ TableColumn(label, kind='text', sortable=True, filterable=True, searchable=None,
 
 - Copy Path copies the resolved absolute path; other kinds copy the displayed text.
 - Dates display as ISO `YYYY-MM-DDTHH:MM:SS±HH:MM` (or `YYYY-MM-DD` with
-  `date_display='date'`) in the system zone, captured once per Table.
+  `date_display='date'`) in the system zone, captured once per QuickTable.
+  Date filters cover whole local days; a day ends where the next existing day
+  starts, so a day before a skipped calendar date filters normally. Selecting a
+  date that does not exist in the zone is an input error.
 - Numeric values are signed 64-bit integers or finite floats. `unit='bytes'`
   requires nonnegative integers, displays `12,345 B` and adds a B/KiB/MiB/GiB
   filter unit. `format(value) -> str` overrides numeric display.
+- Numeric filters compare integers exactly with the typed bound and floats with
+  the nearest float to it, so a cell holding `0.1` matches `= 0.1`. Bounds
+  outside the representable range (for example `1e1000000` bytes) are input
+  errors.
 - `None` displays `missing`. Missing values fail comparisons, match the Missing
   filter and sort last both ways.
 - `searchable` defaults to text-like columns only. Each Date/Numeric column adds
@@ -1141,7 +1157,7 @@ generic API does not impose that consumer policy.
 
 Supply `Theme.css` in the plug-in root, optionally with a platform variant.
 Supported selector mappings include `*`, `th`, `.locationbar`, `.statusbar`,
-`.statusbar-pane`, `.statusbar-pane[active="true"]`, `.quicksearch-query`,
+`.statusbar-pane`, `.quicksearch-query`,
 `.quicksearch-item`, `.panel`, `.plugin-panel-dock`, and `.plugin-tool-window`.
 Legacy `.bottom-panel` remains a CSS selector mapping even though the Python
 BottomPanel alias was removed.

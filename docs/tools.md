@@ -161,7 +161,7 @@ Search file names, file contents or both based on [`ripgrep`](https://github.com
 - Leave Content Pattern empty for a name only search.
 - Include subfolders with Recursive.
 - Stop background work and keep results collected so far.
-- Open results by path and matching snippet.
+- Narrow, sort and open the results in the [results table](search.md#results-table).
 
 ## Find Files with `fd`
 
@@ -177,7 +177,7 @@ Use `fd` for precise file-system searches.
 - Filter by name, extension, exclusion, date, size or type.
 - Choose Glob, Literal or RegEx matching.
 - Control hidden files, ignore rules and symbolic links.
-- View path, size and modified time in the results.
+- Sort and filter path, size and modified time in the [results table](search.md#results-table).
 
 ## Favorites
 

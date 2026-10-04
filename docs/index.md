@@ -20,7 +20,7 @@ Minimal interface. Fast navigation. Powerful search. Commands are always close.
 - **Data Safety** - Careful handling protects files during copies, moves, link operations and archive transfers.
 - **Performance** - Architecture based on snapshot file listing, virtual rows and background projections for **responsiveness** and **reactivity**.
 - **Fuzzy Find Files** - Search the path hierarchy with [`fzf`](https://github.com/junegunn/fzf) style search syntax.
-- **Search Files** - Search files and content through an easy to use UI panel powered by [`ripgrep`](https://github.com/burntsushi/ripgrep).
+- **Search Files** - Search files and content through an easy to use UI panel powered by [`ripgrep`](https://github.com/burntsushi/ripgrep) with an extension to filter by date and file size.
 - **Find Files** - Find files by name, date, size, type and traversal rules through an easy to use UI panel powered by [`fd`](https://github.com/sharkdp/fd).
 - **Search Files with Everything** - Search files and content using the _built in_ [Everything](https://www.voidtools.com) search engine with a full support of the [everything search syntax](https://www.voidtools.com/support/everything/search_syntax) and a dedicated indexed folder manager.
 - **Pane Filter** - Type directly in a pane to filter names with globs, anchors and negation.

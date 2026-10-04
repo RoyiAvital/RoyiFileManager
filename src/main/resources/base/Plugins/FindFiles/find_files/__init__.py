@@ -4,15 +4,15 @@ from time import monotonic
 from fman import DirectoryPaneCommand, load_json, save_json, show_status_message
 from fman.impl.status_bar import format_size
 from fman.impl.util.qt.thread import run_in_main_thread
-from fman.ui import Action, Choice, DateField, IntegerField, Label, Select, Separator, TableColumn, TableRow, TextField, Toggle, UiController, settings_resource, show_panel, show_table
+from fman.ui import Action, Choice, DateField, IntegerField, Label, Select, Separator, QuickTableColumn, QuickTableRow, TextField, Toggle, UiController, settings_resource, show_panel, show_quick_table
 from fman.url import as_human_readable
 from find_files.engine import Options, Runner, TYPES, UNITS, arguments, count_text
 
 
 SETTINGS_NAME = 'FindFiles.json'
-COLUMNS = (TableColumn('Path', 'entry_path'),
-	TableColumn('Size', 'numeric', unit='bytes', format=format_size, missing=''),
-	TableColumn('Modified', 'date', missing=''))
+COLUMNS = (QuickTableColumn('Path', 'entry_path'),
+	QuickTableColumn('Size', 'numeric', unit='bytes', format=format_size, missing=''),
+	QuickTableColumn('Modified', 'date', missing=''))
 DEFAULTS = {'pattern_mode': 'glob', 'case_mode': 'smart', 'type': 'f', 'full_path': False,
 	'recursive': True, 'hidden': False, 'honor_gitignore': True, 'follow_symlinks': False,
 	'min_size_unit': 'b', 'max_size_unit': 'b'}
@@ -206,9 +206,9 @@ class FindSession:
 			self.enable_form()
 			self.panel.set_activity_status(summary)
 			if result.rows:
-				rows = tuple(TableRow((hit.relative_path, hit.size, hit.modified_ns)) for hit in result.rows)
+				rows = tuple(QuickTableRow((hit.relative_path, hit.size, hit.modified_ns)) for hit in result.rows)
 				omitted = result.table_limited or result.total > len(rows)
-				show_table(columns=COLUMNS, rows=rows, pane=self.pane, title='Find files',
+				show_quick_table(columns=COLUMNS, rows=rows, pane=self.pane, title='Find files',
 					summary=self.root + ' | ' + summary, base_path=self.root,
 					truncated=True if omitted else False if result.complete else None)
 		except (RuntimeError, ValueError) as error:

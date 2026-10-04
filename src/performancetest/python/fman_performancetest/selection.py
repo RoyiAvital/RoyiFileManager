@@ -67,7 +67,7 @@ def measure(view, gui, pane, case):
 		view.setFocus()
 		status_widget = None
 		if pane._widget._status_tracking:
-			status_widget = pane._widget._status_widget or pane.window._widget._single_pane_status
+			status_widget = pane.window._widget._single_pane_status
 			if status_widget is None or status_widget._pane is not pane._widget:
 				raise RuntimeError('Tracked selection has no bound status widget')
 		view.scrollTo(view.currentIndex(), view.PositionAtCenter)

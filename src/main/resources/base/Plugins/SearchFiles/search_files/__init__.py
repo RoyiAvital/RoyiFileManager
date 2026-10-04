@@ -2,7 +2,7 @@ from threading import Lock, Thread
 from time import monotonic
 
 from fman import DirectoryPaneCommand, load_json, save_json, show_status_message
-from fman.ui import Action, Choice, Label, TableColumn, TableRow, TextField, Toggle, UiController, settings_resource, show_panel, show_table
+from fman.ui import Action, Choice, Label, QuickTableColumn, QuickTableRow, TextField, Toggle, UiController, settings_resource, show_panel, show_quick_table
 from fman.url import as_human_readable
 from search_files.engine import Options, Runner
 from search_files.query import compile_text_filter
@@ -17,9 +17,9 @@ MODE_OPTIONS = (('literal', 'icons/text.svg', 'Literal text, case-insensitive'),
 	('glob', 'icons/asterisk.svg', 'Glob: * any text, ? one character, [ab] a set'),
 	('regex', 'icons/regex.svg', 'Regular expression (ripgrep syntax), case-insensitive'))
 FORM_CONTROLS = ('name', 'content', 'name_mode', 'content_mode', 'recursive', 'extended', 'search')
-COLUMNS = (TableColumn('File Path', 'file_path'), TableColumn('Snippet'))
-EXTENDED_COLUMNS = (TableColumn('File Path', 'file_path'), TableColumn('Size', 'numeric', unit='bytes'),
-	TableColumn('Date Modified', 'date'), TableColumn('Snippet'))
+COLUMNS = (QuickTableColumn('File Path', 'file_path'), QuickTableColumn('Snippet'))
+EXTENDED_COLUMNS = (QuickTableColumn('File Path', 'file_path'), QuickTableColumn('Size', 'numeric', unit='bytes'),
+	QuickTableColumn('Date Modified', 'date'), QuickTableColumn('Snippet'))
 # Engine status -> Table truncation flag; None means the status does not say.
 TRUNCATED = {'Complete': False, 'Limited': True, 'Stopped': True}
 
@@ -59,9 +59,9 @@ class SearchUI(UiController):
 
 def result_row(hit, metadata=None, extended=False):
 	if not extended:
-		return TableRow((hit.relative_path, hit.snippet), ((), hit.spans))
+		return QuickTableRow((hit.relative_path, hit.snippet), ((), hit.spans))
 	size, modified = metadata if metadata is not None else (None, None)
-	return TableRow((hit.relative_path, size, modified, hit.snippet), ((), (), (), hit.spans))
+	return QuickTableRow((hit.relative_path, size, modified, hit.snippet), ((), (), (), hit.spans))
 
 
 class SearchSession:
@@ -212,7 +212,7 @@ class SearchSession:
 			if result.rows:
 				metadata = dict(result.metadata)
 				rows = tuple(result_row(hit, metadata.get(hit.path), self.extended) for hit in result.rows)
-				show_table(columns=EXTENDED_COLUMNS if self.extended else COLUMNS, rows=rows,
+				show_quick_table(columns=EXTENDED_COLUMNS if self.extended else COLUMNS, rows=rows,
 					pane=self.pane, title='Search files', summary=root + ' | ' + summary,
 					text_filter=compile_text_filter if self.extended else 'fuzzy',
 					base_path=root, truncated=TRUNCATED.get(result.status))

@@ -58,9 +58,7 @@ class BuiltinPlugin(Plugin):
 		)
 		self._config.save_json('Status Bar.json', self._status_settings)
 		self._window.set_extended_status_bar(self._status_settings)
-		mode_names = {
-			'disabled': 'Disabled', 'single': 'Active pane', 'dual': 'Per pane'
-		}
+		mode_names = {'disabled': 'Disabled', 'single': 'Active pane'}
 		show_status_message(
 			'Extended status bar: ' + mode_names[self._status_settings['mode']],
 			timeout_secs=2

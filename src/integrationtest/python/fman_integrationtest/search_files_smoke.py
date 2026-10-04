@@ -33,9 +33,9 @@ def exercise(context, root, output, layout_only=False):
 		gui(connect)
 		assert ready.wait(15), message
 	def open_table():
-		from fman.impl.ui.facade import TableWindow
+		from fman.impl.ui.facade import QuickTableWindow
 		return next((widget for widget in QApplication.topLevelWidgets()
-			if isinstance(widget, TableWindow) and widget.alive.is_set() and widget.isVisible()), None)
+			if isinstance(widget, QuickTableWindow) and widget.alive.is_set() and widget.isVisible()), None)
 	code = 1
 	try:
 		wait_for(lambda: len(context.window.get_panes()) == 2 and all(

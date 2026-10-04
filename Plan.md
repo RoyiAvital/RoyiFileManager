@@ -2,16 +2,18 @@
 
 ## Pending
 
+- [Code Review 007: Measured Listing Runtime Improvements](Plan/CodeReview007.md)
 - [Code Review 099: Deferred Work and Release Gates](Plan/CodeReview099.md)
 - [Date Format: Locale or ISO](Plan/DateFormat.md)
 - [Favorites 003: Favorites as a Pane Location](Plan/Favorites003.md)
-- [File System and Pane Architecture 002: Responsiveness and Memory](Plan/FSPaneArch002.md)
+- [File System and Pane Architecture 002: Performance](Plan/FSPaneArch002.md)
 - [Filter Files 002: Multiple Terms (AND)](Plan/FilterFiles002.md)
 - [Filesystem Link Operation Policy](Plan/LinkOperationPolicy.md)
 - [Find Files 003: Everything-Style Query Syntax](Plan/FindFiles003.md)
 - [Flat View](Plan/FlatView.md)
-- [Migrate to PyQt6](Plan/MigrateToPyQt6.md)
+- [PyQt6 Migration](Plan/PyQt6Migration.md)
 - [QuickView 002: Videos and Animated Images](Plan/QuickView002.md)
+- [UI Elements 002: QuickList for Selecting and Working With Items](Plan/UIElements002.md)
 
 ## Completed
 
@@ -59,5 +61,5 @@
 - [Status Bar Worker Results](Done/StatusBarWorkerResults.md)
 - [Sync Pane Location](Done/SyncPaneLocation.md)
 - [Text Editor and Viewer](Done/TextEditor.md)
-- [UI Elements 001: Typed Read-Only Table](Done/UIElements001.md)
+- [UI Elements 001: QuickTable](Done/UIElements001.md)
 - [Unpack Archive](Done/UnpackArchive.md)

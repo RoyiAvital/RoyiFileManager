@@ -55,10 +55,10 @@ idle. Cancellation reports **Stopped** even if terminating fd cuts off a record.
 
 Results show Path, Size and Modified (ISO 8601, local time). Directory sizes and
 unavailable metadata stay blank; they never remove matches. Size and Modified sort
-by value and filter from their header funnel or Alt+Down. Enter/double-click a Path
+by value and filter from their header funnel or Alt+Down. Ctrl+Enter/double-click a Path
 or use **Go To** to highlight a file or enter a folder. **Copy Path** copies its
 absolute path. Results are modal: a successful Go To closes them and focuses the
-pane; Escape closes them and returns to the Panel.
+pane; Enter or Escape closes them and returns to the Panel.
 Empty searches report their count in the Panel status.
 
 Only mode, case, type, toggles and size units persist in `FindFiles.json`.

@@ -105,7 +105,7 @@ The results table retains at most 10,000 rows or 16 MiB. An uncapped search can 
 
 | File | Parameter | Default | Effect |
 | --- | --- | ---: | --- |
-| `Status Bar.json` | `mode` | `disabled` | Use `disabled`, `single` or `dual`. ++ctrl+s++ cycles the mode. |
+| `Status Bar.json` | `mode` | `disabled` | Use `disabled` or `single` (active pane). ++ctrl+s++ toggles the mode. |
 | `Status Bar.json` | `max_entries` | 5,000 | Maximum pane entries inspected for status totals. |
 | `Status Bar.json` | `size_divisor` | 1,024 | Use 1,024 for KiB or 1,000 for KB. |
 | `DirectorySize.json` | `enabled` | `false` | Enable automatic directory totals. |

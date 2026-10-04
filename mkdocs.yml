@@ -42,6 +42,7 @@ nav:
   - Plug-ins:
       - Your First Plug-in: plugins/index.md
       - API Overview: api/index.md
+      - UI Elements: plugins/ui-elements.md
 
 markdown_extensions:
   - admonition

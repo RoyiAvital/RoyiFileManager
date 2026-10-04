@@ -59,11 +59,18 @@ class LocalDates:
 		return low * NS
 
 	def next_day_start(self, day):
-		try:
-			following = day + timedelta(days=1)
-		except OverflowError:
-			raise ValueError('The day after %s cannot be represented.' % day.isoformat()) from None
-		return self.day_start(following)
+		# A skipped calendar day has no midnight; the selected day then ends where the next existing day starts.
+		following = day
+		for attempt in range(3):
+			try:
+				following += timedelta(days=1)
+			except OverflowError:
+				raise ValueError('The day after %s cannot be represented.' % day.isoformat()) from None
+			try:
+				return self.day_start(following)
+			except ValueError:
+				if attempt == 2:
+					raise
 
 
 def parse_date(value):

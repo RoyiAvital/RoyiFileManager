@@ -45,13 +45,23 @@
 - [ ] FEATURE: Add metadata to commands in _Command Palette_ for better search (Bookmarks for Favorites).
 - [ ] CHANGE: Update to Everything 1.5 when released. It supports tags on Windows files.
 - [ ] FEATURE: _Folder Diff_ based on names, dates and hash.
-- [ ] CHANGE: Candidates for presets as text viewer / editor: [Editpad](https://github.com/imluyg/editpad), [Dan](https://github.com/dfallman/dan), [FastPad](https://github.com/coccor/Fastpad), [Lite Anvil](https://github.com/danpozmanter/lite-anvil), [Noter](https://github.com/blisspixel/noter), [Token](https://github.com/HelgeSverre/token).
+- [ ] CHANGE: Candidates for presets as text viewer / editor: [Editpad](https://github.com/imluyg/editpad), [Dan](https://github.com/dfallman/dan), [FastPad](https://github.com/coccor/Fastpad), [Lite Anvil](https://github.com/danpozmanter/lite-anvil), [Noter](https://github.com/blisspixel/noter), [Token](https://github.com/HelgeSverre/token), [Fulgur](https://github.com/fulgur-app/Fulgur).
+- [ ] CHANGE: Remove the extended status bar for 2 panes. Leave only the option for a single pane (Active pane).
 
 ## Performance
 
 List of small performance focused optimization.  
 Each task should be pretty localized and low risk.
 
+- [ ] When adopting Python 3.15, use `identities.take_bytes()` instead of
+  `bytes(identities)` at the end of `scan` in the
+  [Windows listing scanner](src/main/resources/base/Plugins/Core/core/fs/local/windows/listing.py).
+  Taking the entire private bytearray transfers its contents to immutable bytes
+  without copying in CPython and empties the builder. Avoids a 3.2 MB payload
+  copy for 200,000 16-byte file IDs; runtime benefit is not yet measured.
+  Preserve a fallback if older Python versions remain supported; verify
+  snapshot parity and benchmark on the intended Python 3.15 build.
+  See [bytearray.take_bytes](https://docs.python.org/3.15/builtins/stdtypes.html#bytearray.take_bytes).
 - [x] `reconcile` ([listing.py](src/main/python/fman/listing.py)): in the changed-listing
   loop, replace `if not any(identity):` with `if identity == unknown:`, defining
   `unknown = bytes(16)` once before the loop. Measured about 2.7 ms per 200,000
@@ -64,8 +74,7 @@ Each task should be pretty localized and low risk.
 - [GPUI FileManager](https://github.com/XPOL555/GPUIFileManager) -  Based on GPUI (Like Zed) inspired by FilePilot with emphasize on memory.
 - [The File Ninja](https://thefile.ninja) - They seems to implement my idea about structured answer for natural language to search.
 - [Strata](https://github.com/lgse/strata) - Linux only. 
-- [Fulgur](https://github.com/fulgur-app/Fulgur) - Great text editor. Once they have a [Portable Version](https://github.com/fulgur-app/Fulgur/issues/299) we should add a preset for it.
-- [Xverb](https://xverb.pages.dev) - Plug In based.
+- [Xverb](https://github.com/xsm909/xverb) - Plug In based, [App page](https://xverb.pages.dev).
 - [Elio](https://github.com/elio-fm/elio).
 - [Tauri Explorer](https://github.com/xnmp/tauri-explorer).
 - [NCrs](https://github.com/CosmicDriftGameStudio/ncrs).

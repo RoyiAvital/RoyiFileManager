@@ -56,12 +56,12 @@ or, in name-only searches, one file, with File Path and Snippet columns.
 Filter matches either column, preferring a
 contiguous match before a fuzzy subsequence; Ctrl+F focuses it. Click a header
 to cycle ascending, descending and original order.
-Double-click or press Enter on a File Path cell to open its parent and highlight
+Double-click or press Ctrl+Enter on a File Path cell to open its parent and highlight
 the file. Its context menu offers **Copy Path** and **Go To**. Snippet cells do
 not navigate. A successful Go To closes the results and leaves focus on the
 target pane and its current file.
-Escape/window close dismisses results, retains the Panel and focuses its first
-text field.
+Enter, Escape or window close dismisses results, retains the Panel and focuses
+its first text field.
 F1 and its shortcuts dialog are unchanged.
 
 ## Extended Mode

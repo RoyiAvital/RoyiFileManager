@@ -15,7 +15,7 @@ from zipfile import ZipFile
 from fman.url import as_url
 from search_file_fuzzy.indexer import build_index
 from search_file_fuzzy.matcher import Matcher, SearchEntry, normalize
-from fman_unittest import test_pane_arch_poc as poc_tests
+from fman_performancetest import test_pane_arch_poc as poc_tests
 from fman_integrationtest import test_find_files_engine as fd_tests
 from fman_integrationtest import test_qt as qt_tests
 from core.tests.fs import test_zip as zip_tests
@@ -279,7 +279,7 @@ class FindFilesPerformance(fd_tests.FindFilesEngineTest):
 	def test_large_tree_exact_count_and_bounded_storage(self):
 		import json
 		import tracemalloc
-		from fman.ui import TableRow
+		from fman.ui import QuickTableRow
 		from fman.impl.ui.table_data import TableSchema
 		for directory in range(100):
 			folder = self.root / ('folder-%03d' % directory)
@@ -304,7 +304,7 @@ class FindFilesPerformance(fd_tests.FindFilesEngineTest):
 			self.assertIsNone(runner.child)
 			self.assertLess(peak, 64 * 1024 * 1024)
 			from find_files import COLUMNS
-			rows = tuple(TableRow((hit.relative_path, hit.size, hit.modified_ns)) for hit in result.rows)
+			rows = tuple(QuickTableRow((hit.relative_path, hit.size, hit.modified_ns)) for hit in result.rows)
 			self.assertEqual(len(rows), len(TableSchema(COLUMNS).snapshot(rows)))
 			reports.append({'pattern': pattern, 'matches': result.total, 'retained': len(rows),
 				'seconds_with_tracemalloc': round(elapsed, 3), 'python_peak_bytes': peak,
@@ -377,13 +377,13 @@ class TablePerformance(qt_tests.TableIT):
 	def test_large_snapshot_projection_timing(self):
 		from time import perf_counter
 		from fman.impl.ui.table import Table
-		from fman.impl.ui.table_data import TableColumn, TableRow, TableSchema
+		from fman.impl.ui.table_data import QuickTableColumn, QuickTableRow, TableSchema
 		ready = Event()
-		rows = tuple(TableRow(('folder/file-%05d.txt' % index,
+		rows = tuple(QuickTableRow(('folder/file-%05d.txt' % index,
 			'A long matching text snippet ' * 16)) for index in range(10000))
 		def prepare():
 			started = perf_counter()
-			schema = TableSchema((TableColumn('File Path', 'file_path'), TableColumn('Snippet')))
+			schema = TableSchema((QuickTableColumn('File Path', 'file_path'), QuickTableColumn('Snippet')))
 			widget = Table(schema, schema.snapshot(rows))
 			construction = perf_counter() - started
 			widget.state_changed.connect(lambda: ready.set() if widget.model.matches else None)
@@ -394,7 +394,7 @@ class TablePerformance(qt_tests.TableIT):
 		try:
 			self.assertTrue(ready.wait(10))
 			elapsed = perf_counter() - started
-			print('Table 10000 rows: snapshot/construction %.3f s; fuzzy %.3f s' % (construction, elapsed))
+			print('QuickTable 10000 rows: snapshot/construction %.3f s; fuzzy %.3f s' % (construction, elapsed))
 			self.assertGreater(self.run_in_app(widget.model.rowCount), 0)
 		finally:
 			self.run_in_app(widget.dispose)

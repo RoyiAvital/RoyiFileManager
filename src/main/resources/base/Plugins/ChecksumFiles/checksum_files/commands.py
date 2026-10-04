@@ -6,14 +6,14 @@ import os
 
 from fman import DirectoryPaneCommand, NO, YES, QuicksearchItem, Task, load_json, show_alert, show_prompt, show_quicksearch, show_status_message, submit_task
 from fman.fs import notify_file_added, notify_file_changed
-from fman.ui import TableColumn, TableRow, UiController, settings_resource, show_table
+from fman.ui import QuickTableColumn, QuickTableRow, UiController, settings_resource, show_quick_table
 from fman.url import as_human_readable, as_url
 
 from . import engine
 
 
-COLUMNS = (TableColumn('Relative Path', 'file_path'), TableColumn('Status'), TableColumn('Expected'),
-           TableColumn('Actual'), TableColumn('Details'))
+COLUMNS = (QuickTableColumn('Relative Path', 'file_path'), QuickTableColumn('Status'), QuickTableColumn('Expected'),
+           QuickTableColumn('Actual'), QuickTableColumn('Details'))
 _busy = WeakKeyDictionary()
 _lock = Lock()
 
@@ -121,7 +121,9 @@ class _ChecksumTask(Task):
 
 def show_results(results, pane, manifest):
     retained = results.all_rows if results.all_rows is not None else results.problems
-    show_table(columns=COLUMNS, rows=tuple(TableRow(row.cells) for row in retained), pane=pane, modal=False,
+    # Display cells escape non-printable characters; navigation uses the verified raw path, if any.
+    rows = tuple(QuickTableRow(row.cells, targets=(row.target, None, None, None, None)) for row in retained)
+    show_quick_table(columns=COLUMNS, rows=rows, pane=pane, modal=False,
                title='Verify checksum file: ' + engine.display_text(os.path.basename(manifest)),
                summary=results.summary, base_path=os.path.dirname(manifest),
                truncated=len(retained) < results.total)

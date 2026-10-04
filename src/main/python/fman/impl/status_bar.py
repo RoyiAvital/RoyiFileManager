@@ -6,8 +6,7 @@ from PyQt5.QtWidgets import QWidget, QHBoxLayout, QLabel
 
 DISABLED = 'disabled'
 ACTIVE_PANE = 'single'
-PER_PANE = 'dual'
-MODES = DISABLED, ACTIVE_PANE, PER_PANE
+MODES = DISABLED, ACTIVE_PANE
 DEFAULT_SETTINGS = {
 	'mode': DISABLED,
 	'max_entries': 5000,
@@ -184,21 +183,15 @@ class StatusCalculationService(QObject):
 
 
 class PaneStatusWidget(QWidget):
-	def __init__(
-		self, service, max_entries, size_divisor, show_active, parent=None
-	):
+	def __init__(self, service, max_entries, size_divisor, parent=None):
 		super().__init__(parent)
 		self.setObjectName('pane-status')
-		self.setProperty('active', False)
 		self._service = service
 		self._max_entries = max_entries
 		self._size_divisor = size_divisor
 		self._pane = None
 		self._generation = 0
 		self._token = None
-		self._show_active = show_active
-		self._active = QLabel('Active', self)
-		self._active.setVisible(False)
 		self._hidden = QLabel(self)
 		self._directories = QLabel(self)
 		self._files = QLabel(self)
@@ -208,8 +201,8 @@ class PaneStatusWidget(QWidget):
 		layout.setContentsMargins(4, 1, 4, 1)
 		layout.setSpacing(8)
 		for label in (
-			self._active, self._hidden, self._directories, self._files,
-			self._size, self._selection
+			self._hidden, self._directories, self._files, self._size,
+			self._selection
 		):
 			layout.addWidget(label)
 		layout.addStretch()
@@ -230,13 +223,6 @@ class PaneStatusWidget(QWidget):
 			pane.status_changed.connect(self.schedule_refresh)
 			pane.enable_status_tracking()
 			self.schedule_refresh()
-	def set_active(self, active):
-		self._active.setVisible(self._show_active and active)
-		if self.property('active') == active:
-			return
-		self.setProperty('active', active)
-		self.style().unpolish(self)
-		self.style().polish(self)
 	def schedule_refresh(self):
 		self._cancel()
 		self._timer.start()

@@ -680,7 +680,7 @@ class ChecksumCommandTest(TestCase):
         results.add(engine.ResultRow(2, 'second', 'Mismatch', target='C:\\checks\\second'))
         results.complete = True
         frozen = results.freeze()
-        with patch.object(self.commands, 'show_table') as show, patch('builtins.open', side_effect=AssertionError('UI performed I/O')):
+        with patch.object(self.commands, 'show_quick_table') as show, patch('builtins.open', side_effect=AssertionError('UI performed I/O')):
             self.commands.show_results(frozen, self.pane, 'C:\\checks\\checks.sha256')
         options = show.call_args.kwargs
         self.assertEqual(['first', 'second'], [row.cells[0] for row in options['rows']])
@@ -689,6 +689,28 @@ class ChecksumCommandTest(TestCase):
         self.assertEqual('C:\\checks', options['base_path'])
         self.assertEqual(self.commands.VerifyChecksum.aliases[0] + ': checks.sha256', options['title'])
         self.assertEqual(frozen.summary, options['summary'])
+
+    def test_results_navigate_to_verified_raw_paths_not_escaped_cells(self):
+        from fman.impl.ui.table_data import TableSchema
+        with TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            target = folder / 'report\u200b.txt'
+            target.write_bytes(b'payload')
+            manifest = folder / 'checks.sha256'
+            engine.generate(str(folder), (), str(manifest), engine.BY_ID['sha256'], engine.Settings())
+            with open(manifest, 'ab') as stream:
+                stream.write(b'not a checksum record\n')
+            results = engine.verify(str(manifest), engine.Settings())
+            with patch.object(self.commands, 'show_quick_table') as show:
+                self.commands.show_results(results, self.pane, str(manifest))
+            options = show.call_args.kwargs
+            schema = TableSchema(self.commands.COLUMNS, options['base_path'])
+            rows = {row.cells[1]: row for row in schema.snapshot(options['rows'])}
+            matched, invalid = rows['Matched'], rows['Invalid record']
+            self.assertEqual('report\\u200b.txt', matched.cells[0])
+            self.assertEqual(str(target), schema.target(matched, 0))
+            self.assertTrue(os.path.isfile(schema.target(matched, 0)))
+            self.assertIsNone(schema.target(invalid, 0))
 
     def test_publication_notifies_even_if_owner_closes_after_commit(self):
         def submit(task):

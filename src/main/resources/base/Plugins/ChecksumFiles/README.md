@@ -19,7 +19,7 @@ copy before starting a build that bundles it. Do not keep duplicate installation
 `Reload Plugins` and `Remove Plugin` manage user-installed plug-ins, not this
 bundled copy; application updates replace it.
 
-The results require a host with the static `show_table(columns=..., rows=...)` API.
+The results require a host with the `show_quick_table(columns=..., rows=...)` API.
 Existing portable binaries need a rebuilt application, not just replacement
 plug-in resources; the older supplied 0.10.2 and 0.11.0 hosts lack this API.
 Current portable-build validation remains pending.
@@ -71,6 +71,8 @@ the existing checksum owner and hashing still works afterward.
   view fits the display limit; otherwise it lists only problems and the summary
   says so. Problems include mismatches, missing files, unreadable files and
   invalid records. Use the column filters (for example on Status) to narrow the view.
+  Ctrl+Enter or double-click on a path goes to the file; Enter or Escape closes
+  the results.
 
 Supported algorithms: CRC32/SFV, MD5, BLAKE3, SHA1, SHA224, SHA256, SHA384, SHA512,
 SHA3_224, SHA3_256, SHA3_384 and SHA3_512. SHA256 is the default. CRC32, MD5 and SHA1

@@ -231,7 +231,7 @@ class ChecksumProbe(DirectoryPaneListener):
                 core_commands.show_quicksearch = original_quicksearch
             report['palette_queries'] = palette_queries
             original_choose, original_prompt, original_alert = commands._choose, commands.show_prompt, commands.show_alert
-            original_show_table = commands.show_table
+            original_show_table = commands.show_quick_table
             alerts = []
             replacements = []
             tables = []
@@ -240,8 +240,8 @@ class ChecksumProbe(DirectoryPaneListener):
                     replacements.append(message)
                     return YES
                 alerts.append(message)
-            # show_table blocks until closed; record its arguments instead of opening a window.
-            commands.show_table = lambda **kwargs: tables.append(kwargs)
+            # show_quick_table blocks until closed; record its arguments instead of opening a window.
+            commands.show_quick_table = lambda **kwargs: tables.append(kwargs)
             try:
                 commands._choose = lambda items, default=0: 'sha256'
                 commands.show_prompt = lambda *args, **kwargs: ('CheckSum.sha256', True)
@@ -291,7 +291,7 @@ class ChecksumProbe(DirectoryPaneListener):
                     choices.append(expected_manifest.name)
             finally:
                 commands._choose, commands.show_alert = original_choose, original_alert
-                commands.show_table = original_show_table
+                commands.show_quick_table = original_show_table
             report['manifest_selection'] = choices
             sample = corpus / 'empty.bin'
             if not sample.exists():

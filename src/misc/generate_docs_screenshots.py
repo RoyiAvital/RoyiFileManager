@@ -45,7 +45,7 @@ SOURCE_CAPTURES = (
 	'overview', 'go-to', 'context-menu', 'filter-pane', 'quick-view', 'quick-view-text',
 	'fuzzy-find', 'everything-search', 'everything-folders',
 	'search-files', 'find-files', 'favorites', 'directory-size', 'file-hash',
-	'checksum-files', 'process-pane', 'pack-archive'
+	'checksum-files', 'process-pane', 'pack-archive', 'quick-table'
 )
 PYTHON_SAMPLE = '''from dataclasses import dataclass
 from pathlib import Path
@@ -70,7 +70,7 @@ for item in describe_files(Path(".")):
 '''.expandtabs(4)
 RIGHT_PANE_CAPTURES = (
 	'context-menu', 'filter-pane', 'search-files', 'find-files', 'file-hash',
-	'process-pane', 'pack-archive'
+	'process-pane', 'pack-archive', 'quick-table'
 )
 DIALOG_CAPTURES = ('overview', 'go-to', 'fuzzy-find', 'everything-search', 'pack-archive')
 EVERYTHING_QUERIES = (
@@ -296,6 +296,7 @@ def _source_outputs(output_dir, capture):
 		'overview': (
 			'royifilemanager-dual-pane.png',
 			'royifilemanager-command-center.png',
+			'royifilemanager-ui-quicksearch.png',
 		),
 		'go-to': ('royifilemanager-find-location.png',),
 		'context-menu': ('royifilemanager-file-context-menu.png',),
@@ -311,17 +312,29 @@ def _source_outputs(output_dir, capture):
 		'search-files': (
 			'royifilemanager-search-files.png',
 			'royifilemanager-search-files-panel.png',
+			'royifilemanager-search-files-results.png',
 		),
 		'find-files': (
 			'royifilemanager-find-files-fd.png',
 			'royifilemanager-find-files-fd-panel.png',
+			'royifilemanager-find-files-fd-results.png',
 		),
-		'favorites': ('royifilemanager-favorites.png',),
+		'favorites': (
+			'royifilemanager-favorites.png',
+			'royifilemanager-ui-quicklist.png',
+		),
 		'directory-size': ('royifilemanager-directory-size.png',),
-		'file-hash': ('royifilemanager-file-hash.png',),
+		'file-hash': (
+			'royifilemanager-file-hash.png',
+			'royifilemanager-ui-output-text-box.png',
+		),
 		'checksum-files': ('royifilemanager-checksum-results.png',),
 		'process-pane': ('royifilemanager-process-pane.png',),
 		'pack-archive': ('royifilemanager-pack-archive.png',),
+		'quick-table': (
+			'royifilemanager-ui-quicktable.png',
+			'royifilemanager-ui-quicktable-filter.png',
+		),
 	}
 	return tuple(output_dir / name for name in names[capture])
 
@@ -411,6 +424,8 @@ def _capture_source_child(args):
 		def capture_overview_dialog():
 			try:
 				output = outputs[1] if args._capture == 'overview' else outputs[0]
+				if args._capture == 'overview':
+					_save_pixmap(dialog.grab(), outputs[2])
 				finish(
 					_grab_window_with_dialog(context.main_window, dialog), output
 				)
@@ -637,10 +652,14 @@ def _capture_source_child(args):
 				if window.list.model.rowCount() == 0:
 					raise RuntimeError('Favorites Manager shows no favorites')
 				if state['settled'] >= 3:
-					finish(
-						_grab_window_with_dialog(context.main_window, window),
-						outputs[0], window.close
+					_save_pixmap(
+						_grab_window_with_dialog(context.main_window, window), outputs[0]
 					)
+					quick_list = window.list
+					quick_list.selected_ids = {item.id for item in quick_list.items[1:3]}
+					quick_list.refresh()
+					QApplication.processEvents()
+					finish(window.grab(), outputs[1], window.close)
 			elif args._capture == 'directory-size':
 				from core import directory_size
 				service = directory_size._service
@@ -678,12 +697,13 @@ def _capture_source_child(args):
 					state['settled'] = 0
 					return
 				if state['settled'] >= 3:
+					_save_pixmap(window.grab(), outputs[1])
 					finish(
 						_grab_window_with_dialog(context.main_window, window),
 						outputs[0], window.close
 					)
 			elif args._capture == 'checksum-files':
-				from fman.impl.ui.facade import TableWindow
+				from fman.impl.ui.facade import QuickTableWindow
 				if not state['started']:
 					manifest_url = as_url(str(left_path / 'Samples.sha256'))
 					pane.place_cursor_at(manifest_url)
@@ -694,7 +714,7 @@ def _capture_source_child(args):
 					state['settled'] = 0
 					pane.run_command('verify_checksum')
 					return
-				window = next((candidate for candidate in context.main_window.findChildren(TableWindow)
+				window = next((candidate for candidate in context.main_window.findChildren(QuickTableWindow)
 					if candidate.isVisible() and candidate.windowTitle().startswith('Verify checksum file')), None)
 				if window is None:
 					state['settled'] = 0
@@ -703,6 +723,59 @@ def _capture_source_child(args):
 					raise RuntimeError('Checksum sample verification or result view is incorrect')
 				if state['settled'] >= 3:
 					finish(_grab_window_with_dialog(context.main_window, window), outputs[0], window.close)
+			elif args._capture == 'quick-table':
+				from PyQt5.QtCore import QPoint
+				from PyQt5.QtGui import QPainter
+				from fman.impl.ui.facade import open_quick_table
+				from fman.impl.ui.table import FilterEditor
+				from fman.ui import QuickTableColumn, QuickTableRow
+				if not state['started']:
+					entries = sorted((entry for entry in os.scandir(right_path) if entry.is_file()),
+						key=lambda entry: entry.name.casefold())
+					rows = [QuickTableRow((entry.name, entry.stat().st_size, entry.stat().st_mtime_ns,
+						Path(entry.name).suffix.lstrip('.').upper())) for entry in entries]
+					window = open_quick_table(columns=(
+						QuickTableColumn('Name', 'file_name'),
+						QuickTableColumn('Size', 'numeric', unit='bytes'),
+						QuickTableColumn('Date Modified', 'date', date_display='date'),
+						QuickTableColumn('Type'),
+					), rows=rows, pane=pane, summary='Files in C:\\Windows: filter, then press Enter')
+					table = window.table
+					table.query.setText('.exe')
+					table.set_sort(1, True)
+					menu = table.open_filter_menu(1)
+					editor = menu.findChild(FilterEditor)
+					editor.operator.setCurrentIndex(editor.operator.findData('>='))
+					editor.first.setText('100')
+					editor.unit.setCurrentIndex(editor.unit.findData('KiB'))
+					editor.submitted.emit()
+					state.update(started=True, settled=0, window=window, total=len(rows))
+					return
+				window = state['window']
+				table = window.table
+				visible = table.model.rowCount()
+				if not table.settled or 1 not in table.filters or state['settled'] < 3:
+					return
+				if not 0 < visible < state['total']:
+					raise RuntimeError('QuickTable sample filters show no narrowed rows')
+				if 'menu' not in state:
+					table.view.setFocus()
+					table.view.setCurrentIndex(table.model.index(0, 0))
+					QApplication.processEvents()
+					_save_pixmap(window.grab(), outputs[0])
+					state['menu'] = table.open_filter_menu(1)
+					state['settled'] = 0
+					return
+				menu = state['menu']
+				if not menu.isVisible():
+					raise RuntimeError('QuickTable filter menu did not open')
+				pixmap = window.grab()
+				painter = QPainter(pixmap)
+				try:
+					painter.drawPixmap(window.mapFromGlobal(menu.mapToGlobal(QPoint())), menu.grab())
+				finally:
+					painter.end()
+				finish(pixmap, outputs[1], lambda: (menu.close(), window.close()))
 			elif args._capture == 'process-pane':
 				filter_bar = pane._widget._filter_bar
 				if not state['started']:
@@ -747,30 +820,71 @@ def _capture_source_child(args):
 					state['started'] = True
 					state['settled'] = 0
 					return
+				# Results searches use folders without access-denied children, which would mark results as errors.
+				windows = _public_paths()[1]
 				if args._capture == 'search-files':
 					from search_files import SearchUI
 					owner = SearchUI.owner
+					title = 'Search files'
 					values = {'name': '*.ini', 'content': 'fonts', 'recursive': True}
+					results_folder = windows / 'System32' / 'drivers' / 'etc'
+					results_values = {
+						'name': '', 'content': 'Copyright', 'recursive': False,
+						'extended': True,
+					}
 				else:
 					from find_files import FindUI
 					owner = FindUI.owner
+					title = 'Find files'
 					values = {
 						'pattern': 'notepad*', 'extensions': 'exe',
 						'max_results': 25, 'recursive': True,
+					}
+					results_folder = windows
+					results_values = {
+						'pattern': '*', 'extensions': 'exe',
+						'max_results': None, 'recursive': False,
 					}
 				host = next(
 					(host for host in _hosts.values() if host.owner is owner), None
 				)
 				if host is None:
 					return
-				host.on_action.__self__.panel.update(values=values)
-				QApplication.processEvents()
+				session = host.on_action.__self__
+				panel = session.panel
+				if 'searching' not in state:
+					panel.update(values=values)
+					QApplication.processEvents()
+					if state['settled'] >= 3:
+						_save_pixmap(context.main_window.grab(), outputs[0])
+						_save_pixmap(host.panel.grab(), outputs[1])
+						state['expected'] = (state['expected'][0], as_url(str(results_folder)))
+						pane.set_path(state['expected'][1])
+						state.update(searching=False, settled=0)
+					return
+				if not state['searching']:
+					if session.root != str(results_folder):
+						return
+					panel.update(values=results_values)
+					host.action('search')
+					state.update(searching=True, settled=0)
+					return
+				from fman.impl.ui.facade import QuickTableWindow
+				window = next((candidate for candidate in
+					context.main_window.findChildren(QuickTableWindow)
+					if candidate.isVisible() and candidate.windowTitle() == title), None)
+				if window is None or not window.table.settled:
+					state['settled'] = 0
+					return
+				summary = window.summary.content.casefold()
+				if window.table.model.rowCount() == 0 or 'error' in summary or 'incomplete' in summary:
+					raise RuntimeError(f'{title} results are empty or incomplete: {window.summary.content}')
+				if 'sorted' not in state:
+					window.table.set_sort(1, True)
+					state.update(sorted=True, settled=0)
+					return
 				if state['settled'] >= 3:
-					_save_pixmap(context.main_window.grab(), outputs[0])
-					finish(
-						host.panel.grab(), outputs[1],
-						host.on_action.__self__.panel.close
-					)
+					finish(window.grab(), outputs[2], lambda: (window.close(), panel.close()))
 		except BaseException:
 			fail()
 

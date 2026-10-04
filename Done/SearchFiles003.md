@@ -67,29 +67,28 @@ A file can change between ripgrep and stat. Only an explicit rerun refreshes it.
 
 Revised for [UI Elements 001](UIElements001.md): the earlier `size:` / `dm:`
 clauses and raw-row `compile_filter` / `get_sort_key` hooks are superseded.
-Size and Date Modified filtering and sorting use typed Table columns.
+Size and Date Modified filtering and sorting use typed QuickTable columns.
 
-Columns: `TableColumn('File Path', 'file_path')`,
-`TableColumn('Size', 'numeric', unit='bytes')`, `TableColumn('Date Modified', 'date')`,
-`TableColumn('Snippet')` (API revised 2026_10_03; see
-[UI Elements 001](UIElements001.md#api-revision-2026_10_03)).
+Columns: `QuickTableColumn('File Path', 'file_path')`,
+`QuickTableColumn('Size', 'numeric', unit='bytes')`, `QuickTableColumn('Date Modified', 'date')`,
+`QuickTableColumn('Snippet')` (see [UI Elements 001](UIElements001.md#columns)).
 The File Path kind provides navigation; snippet spans move to column 3. Cells are
 `(relative_path, st_size, st_mtime_ns, snippet)` with `None` for missing values.
 Size shows grouped bytes (`12,345 B`) or `Unknown`; the host formats dates as
 ISO 8601 with offset.
-Header funnels and Alt+Down open the Table's size/date filter menus. Counts show
+Header funnels and Alt+Down open the QuickTable's size/date filter menus. Counts show
 visible / captured rows; `truncated` is True for Limited/Stopped, False for
 Complete and None otherwise.
 
-Revised 2026_10_03 for the static Table
-([API Revision 2](UIElements001.md#api-revision-2-static-table-2026_10_03)):
-results open with a blocking modal `show_table(rows=...)` showing the captured
-root and run summary; rows have no IDs and there is no per-row details text.
+Results open with a blocking modal `show_quick_table(rows=...)` showing the
+captured root and run summary ([UI Elements 001](UIElements001.md#keys)).
+Search Files ignores the Enter result: Enter closes the results; Ctrl+Enter or
+double-click goes to the file.
 
 ### Query Contract
 
 The filter box uses [query.py](../src/main/resources/base/Plugins/SearchFiles/search_files/query.py)
-through `show_table(text_filter=compile_text_filter)`. It sees only File Path and Snippet.
+through `show_quick_table(text_filter=compile_text_filter)`. It sees only File Path and Snippet.
 
 | Query | Meaning |
 | --- | --- |
@@ -254,7 +253,7 @@ Reuse existing test modules. No full suite, clean or freeze unless asked.
 - Outcome: Migrated to the blocking static Table: `result_row()` builds rows,
   `completed()` captures the root before re-enabling the form, then shows
   results modally. Validation is recorded in
-  [UI Elements 001](UIElements001.md#api-revision-2-validation).
+  [UI Elements 001](UIElements001.md#validation-results).
 
 ## Validation Results
 

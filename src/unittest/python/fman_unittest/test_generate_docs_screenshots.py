@@ -370,6 +370,7 @@ assert not context.main_window.isVisible(), 'Capture left its main window open'
 		self.assertEqual((
 			'royifilemanager-dual-pane.png',
 			'royifilemanager-command-center.png',
+			'royifilemanager-ui-quicksearch.png',
 			'royifilemanager-find-location.png',
 			'royifilemanager-file-context-menu.png',
 			'royifilemanager-filter-pane.png',
@@ -381,14 +382,20 @@ assert not context.main_window.isVisible(), 'Capture left its main window open'
 			'royifilemanager-everything-folders.png',
 			'royifilemanager-search-files.png',
 			'royifilemanager-search-files-panel.png',
+			'royifilemanager-search-files-results.png',
 			'royifilemanager-find-files-fd.png',
 			'royifilemanager-find-files-fd-panel.png',
+			'royifilemanager-find-files-fd-results.png',
 			'royifilemanager-favorites.png',
+			'royifilemanager-ui-quicklist.png',
 			'royifilemanager-directory-size.png',
 			'royifilemanager-file-hash.png',
+			'royifilemanager-ui-output-text-box.png',
 			'royifilemanager-checksum-results.png',
 			'royifilemanager-process-pane.png',
 			'royifilemanager-pack-archive.png',
+			'royifilemanager-ui-quicktable.png',
+			'royifilemanager-ui-quicktable-filter.png',
 		), outputs)
 
 	def test_text_capture_generates_its_own_python_sample(self):
