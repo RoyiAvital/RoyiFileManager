@@ -21,31 +21,40 @@ New plug-ins should prefer the Qt-free services (`show_panel`, `show_quick_table
 
 ### Rationale for Elements
 
-We strive for a _buttonless_ experience. Hence for all elements:
+We strive for a _buttonless_ experience. Hence for row based elements:
  - <kbd>Enter</kbd> returns the result.
  - <kbd>Esc</kbd> cancels.
 
- - `QuickSearch` - Text list with fuzzy search. Made for a **single element** selection. <kbd>Enter</kbd> sends the caller the selected item.
- - `QuickList` - Text list with fuzzy search. Made for a **multiple elements** selection. <kbd>Enter</kbd> sends the caller the selected item(s). Allows batch operations on URLs with context menu (<kbd>Menu</kbd> / <kbd>Shift</kbd>+<kbd>F10</kbd>): Delete, Copy, Move, Rename (single element). <kbd>Ctrl</kbd>+<kbd>Enter</kbd> as a _Go To_ shortcut on URL.
- - `QuickTable` - Multi-column table with typed columns. Made for narrowing a predefined immutable table with filters per column and fuzzy search. <kbd>Enter</kbd> sends the caller the filtered (remaining) item(s). <kbd>Ctrl</kbd>+<kbd>Enter</kbd> as a _Go To_ shortcut on URL.
+Row based elements: 
+ - `QuickSearch` - Text list with fuzzy search. Made for a **single element** selection with immutable list. <kbd>Enter</kbd> sends the caller the selected item.
+ - `QuickList` - Text list with fuzzy search. Made for selecting **multiple elements** from a mutable list. <kbd>Enter</kbd> returns the selected item(s). Exposes an handler which can read its state and replace its items. Items may carry metadata, optionally sortable.
+ - `QuickTable` - Multi column table with typed columns. Made for narrowing a predefined immutable table with filters per column and fuzzy search. <kbd>Enter</kbd> sends the caller the filtered (remaining) item(s). <kbd>Ctrl</kbd>+<kbd>Enter</kbd> as a _Go To_ shortcut on URL.
 
 ## `QuickSearch` vs. `QuickList`
 
 The purpose of `QuickSearch` is the simplest and fastest list with fuzzy search with text elements in mind.  
-The `QuickList` extend that to allow interaction with multiple elements and apply operations on the selected elements.  
-`QuickList` may interact with a Panel to allow extended functionality.
+The `QuickList` element extends `QuickSearch` with multiple elements selection and metadata for display and optionally sorting.  
+Both may interact with a Panel to allow extended functionality.
 
-|                      | QuickSearch                                                | QuickList                                                                       |
-| -------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| Origin               | Original `fman` API                                        | RoyiFileManager `fman.ui` extension                                             |
-| Purpose              | Pick **one** item                                          | Navigate and select **many** items                                              |
-| Window               | Own modal dialog                                           | Embeddable widget; no window of its own                                         |
-| Result               | Returns the chosen item and closes                         | Stays open; plug-in reacts to signals                                           |
-| Filtering            | Always shows a query; the callback supplies matching items | Optional (`fuzzy=True` or `matcher=`); without it no query box, all items shown |
-| Selection            | Current item only                                          | Current item and selected set are separate; file-pane style keys and mouse      |
-| Filter and Selection | Not applicable                                             | Hidden selections are kept and counted; stable `ListItem.id`                    |
-| Actions              | None; accepting is the action                              | In a separate docked Panel                                                      |
-| Threading            | Called from a command worker, blocks until closed          | Built on the Qt thread in `UiController.build()`; command does not block        |
-| Use Cases            | Command Palette, Go To, choose an algorithm                | Favorites Manager, multi-item remove                                            |
+|                      | QuickSearch                    | QuickList                           |
+| -------------------- | ------------------------------ | ----------------------------------- |
+| Purpose              | Pick **one** item              | Select **many** items               |
+| API                  | `fman.show_quicksearch()`      | `fman.ui.show_quick_list()`         |
+| API Returns          | `(query, value)` or `None`     | The chosen items or `None`          |
+| Mutability           | Immutable list                 | Mutable list                        |
+| Window               | Own modal dialog               | Own window                          |
+| Qt Exposure          | None                           | None                                |
+| Items                | From a query callback          | Set by the caller; can be replaced  |
+| Metadata             | None                           | Optional, per item                  |
+| Sorting              | By the callback                | By title, hint or metadata          |
+| Filtering            | Always                         | Optional                            |
+| Selection            | Current item only              | Current item and selected set       |
+| Filter and Selection | Not applicable                 | Hidden selections are kept          |
+| Result               | The chosen item                | The chosen items                    |
+| State                | Not applicable                 | Via the handle from `on_open`       |
+| Actions              | None                           | By the caller, e.g. from a Panel    |
+| Modality             | Modal                          | Modal or modeless                   |
+| Threading            | Blocks a worker until closed   | Blocks a worker until closed        |
+| Use Cases            | Command Palette, choose one    | Favorites Manager, pick several     |
 
 Both share the `QuickSearch` theme (`.quicksearch-item`) and fuzzy matchers.
