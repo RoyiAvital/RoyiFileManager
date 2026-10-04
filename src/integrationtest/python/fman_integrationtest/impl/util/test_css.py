@@ -198,14 +198,14 @@ _CORE = Path(__file__).resolve().parents[5] / 'main/resources/base/Plugins/Core'
 _PLUGIN_THEME = Path(__file__).resolve().parents[4] / \
 	'resources/Simple Plugin/Theme.css'
 _RULE_SNAPSHOTS = {
-	'Theme.css': 'e6e74ecd7c8d6b5e2089864c2cc59125cc602d289f85f0e5dfcb57065a5d8521',
+	'Theme.css': 'c67d0639ccd7db33ab5daab2488ef3e8bc5e3727f37d5eabeb5b7b9794954566',
 	'Theme (Windows).css': '6bae24eaf5a5982ce36fbed375dda00e13738ac0969e68f42da4920de89b5725',
 	'Simple Plugin': '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945',
 }
 _THEME_SNAPSHOTS = {
-	'Base': '488379aa59811f1aa3f95fb9d28a7cebe2e1346ca03eda60c5090e6c2ed81ac2',
-	'Windows': '1b260fd1c52215b30b464f5ec3c5ea94f7959d2043c1de4885bdf3bc6c729c0e',
-	'Plugin': '488379aa59811f1aa3f95fb9d28a7cebe2e1346ca03eda60c5090e6c2ed81ac2',
+	'Base': '3e9de47c28b61641630c01c227042107c054caec9630b49452b4243e5707c21d',
+	'Windows': '26dea67b39a9aff7a398b509758efe53f52802ebcc7a63ebf3de4814b9716320',
+	'Plugin': '3e9de47c28b61641630c01c227042107c054caec9630b49452b4243e5707c21d',
 }
 
 _TEST_CSS = \
