@@ -110,7 +110,7 @@ class BuildNamingTest(TestCase):
 				build['DIST_DIR'].mkdir(parents=True)
 				with patch.dict(build['freeze'].__globals__, {
 					'_require_windows': Mock(), '_ensure_7za': Mock(),
-					'_ensure_everything': Mock(),
+					'_ensure_everything': Mock(), '_verify_native_parser': Mock(),
 					'_ensure_conda_lock': Mock(), '_remove_previous_freeze': Mock(),
 					'_copy_dependency_manifests': Mock()
 				}), patch('subprocess.run') as execute:
@@ -135,7 +135,7 @@ class BuildNamingTest(TestCase):
 			(distribution / 'RfmRenameProbe.exe').write_bytes(b'fixture')
 			with patch.dict(build['package'].__globals__, {
 				'_require_windows': Mock(), '_copy_dependency_manifests': Mock(),
-				'_verify_everything': Mock()
+				'_verify_everything': Mock(), '_verify_native_parser_packaged': Mock()
 			}), patch('builtins.print') as output:
 				build['package']()
 			archive = root / 'target/RfmRenameProbe-9.8.7-windows-x86_64.zip'
@@ -158,6 +158,37 @@ class BuildNamingTest(TestCase):
 			self.assertTrue(executable.call_args.kwargs['console'])
 			self.assertEqual('RfmRenameProbe', collection.call_args.kwargs['name'])
 			self.assertIn(('src/build/settings/base.json', 'resources/build-settings'), spec['datas'])
+
+
+class NativeParserPackagingTest(TestCase):
+	def test_packaged_copy_must_exist_and_match_the_verified_binary(self):
+		import build
+		with TemporaryDirectory() as temporary:
+			root = Path(temporary)
+			official = root / 'official.pyd'
+			packaged = root / 'frozen/_internal/resources/Plugins/Core/core/fs/local/windows/_fsparser.pyd'
+			with patch.object(build, '_verify_native_parser') as verify, \
+					patch.object(build, 'NATIVE_PARSER_BINARY', official), \
+					patch.object(build, 'DIST_DIR', root / 'frozen'):
+				for official_bytes, packaged_bytes in ((None, None), (b'module', None), (b'module', b'other')):
+					with self.subTest(official=official_bytes, packaged=packaged_bytes):
+						for path, content in ((official, official_bytes), (packaged, packaged_bytes)):
+							path.unlink(missing_ok=True)
+							if content is not None:
+								path.parent.mkdir(parents=True, exist_ok=True)
+								path.write_bytes(content)
+						with self.assertRaises(SystemExit):
+							build._verify_native_parser_packaged()
+				packaged.write_bytes(b'module')
+				build._verify_native_parser_packaged()
+				self.assertEqual(4, verify.call_count)
+
+	def test_source_check_failure_stops_the_packaged_check(self):
+		import build
+		with patch.object(build, '_verify_native_parser', side_effect=SystemExit('mismatch')), \
+				patch.object(build, '_sha256') as digest, self.assertRaises(SystemExit):
+			build._verify_native_parser_packaged()
+		digest.assert_not_called()
 
 
 class RuntimeNamingTest(TestCase):

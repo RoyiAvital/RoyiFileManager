@@ -788,6 +788,7 @@ class EverythingBuildTest(TestCase):
 				patch.object(build, '_require_windows'), \
 				patch.object(build, '_environment', return_value={'PYTHONPATH': 'source-imports'}), \
 				patch.object(build, '_verify_everything') as verify, \
+				patch.object(build, '_verify_native_parser_packaged'), \
 				patch.object(build, '_ensure_everything') as provision, \
 				patch.object(build, '_run_restricted') as run:
 			self.assertIsNone(build.main(['smoke-everything']))

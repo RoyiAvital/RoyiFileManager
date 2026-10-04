@@ -196,11 +196,11 @@ as a `binaries` entry so PyInstaller analyses it and bundles `python3.dll`.
 The package-local candidate is checked first and the checkout candidate only
 when the module sits deep enough for one to exist, so a drive-root portable
 install loads (IR1). A Git LFS pointer in place of the binary is reported with
-the `git lfs pull` hint before any load attempt (IR7). Git: `.gitignore` line
-`*.py[cod]` matches `_fsparser.pyd` (IR5), so the binary must be added with
-`git add -f` or an exception `!src/main/c/_fsparser.pyd` must be added to
-`.gitignore` (user decision; `.gitattributes` already applies the LFS filter
-through its `*.pyd` rule). Checks: `check_hashes.check()` runs in
+the `git lfs pull` hint before any load attempt (IR7). Git: the binary is
+tracked through LFS on `main` (oid `a69a69a1…`, equal to the sidecar's binary
+digest). `.gitignore` line `*.py[cod]` also matches `_fsparser.pyd` (IR5); that
+does not affect a tracked file, but re-adding it after a delete needs
+`git add -f`. Checks: `check_hashes.check()` runs in
 `build.py test` and `freeze`
 (source hash differs → "fsparser.c changed; rebuild and run
 write_hashes.py"; LFS pointer → "run `git lfs pull`"; binary hash differs →
@@ -529,7 +529,8 @@ Implementation reviews (IR1–IR8 below), resolved 2026_10_04:
 |                                              | `finish()` allocates every destination first, so a failure      |
 |                                              | leaves the accumulator intact; verified with `set_nomemory`     |
 | IR4 GIL/cancellation bounds                  | Runtime Effects rewritten from measured call times with a gate  |
-| IR5 binary ignored by `*.py[cod]`            | documented; user adds with `git add -f` or an exception         |
+| IR5 binary ignored by `*.py[cod]`            | resolved: committed through LFS on `main`; tracked files are    |
+|                                              | unaffected by the rule; re-adding needs `git add -f`            |
 | IR6 `\`/`/`/NUL in names                     | rejected in `count_records` and in `records()` with             |
 |                                              | "Invalid directory entry name"; tests and validator cases       |
 | IR7 LFS pointer without hint                 | loader reads the pointer prefix and raises with the hint        |
