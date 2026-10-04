@@ -62,7 +62,7 @@ site/
 *.npy
 *.npz
 *.pyc
-*.py[cod]
+# *.py[cod]
 
 # Miscellaneous Files
 .DS_Store

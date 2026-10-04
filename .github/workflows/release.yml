@@ -45,6 +45,12 @@ jobs:
               $icon[2] -ne 1 -or $icon[3] -ne 0) {
             throw 'src/main/icons/Icon.ico is not a materialized ICO file. Check Git LFS checkout.'
           }
+          # Native directory parser: binary must be the module (not an LFS pointer)
+          # and must match fsparser.c per src/main/c/fsparser.sha256 (Done/FSParser.md).
+          python src/main/c/check_hashes.py
+          if ($LASTEXITCODE -ne 0) {
+            throw 'src/main/c/_fsparser.pyd does not match its source. Check Git LFS checkout or rebuild.'
+          }
 
       - name: Resolve version
         id: version

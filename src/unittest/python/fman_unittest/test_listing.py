@@ -155,26 +155,124 @@ class ListingTest(TestCase):
 
 
 class NativeListingTest(TestCase):
-	def test_native_cancellation_checks_batches_and_each_followed_link(self):
+	@staticmethod
+	def _record(name, attributes=32, tag=0, size=0, modified_ns=0, created_ns=0, identity=bytes(16), last=True):
+		"""One FILE_ID_EXTD_DIR_INFO record; times in Unix ns, multiples of 100."""
+		from core.fs.local.windows.listing import _EPOCH, _RECORD
+		raw = name.encode('utf-16-le')
+		padded = (_RECORD.size + len(raw) + 7) // 8 * 8
+		header = _RECORD.pack(0 if last else padded, 0, created_ns // 100 + _EPOCH, 0, modified_ns // 100 + _EPOCH,
+			0, size, 0, attributes, len(raw), 0, tag, identity)
+		return header + raw + bytes(padded - _RECORD.size - len(raw))
+
+	@staticmethod
+	def _scan(batches, check, stat_side_effect):
 		from core.fs.local.windows import listing as native
-		from unittest.mock import Mock
-		def batches(check):
-			check()
-			yield b'first'
-			check()
-			yield b'second'
+		def generator(check_canceled):
+			for batch in batches:
+				check_canceled()
+				yield batch
 		with patch.object(native, 'NativeDirectory') as factory, \
-			patch.object(native, 'records', side_effect=[
-				[('file%d' % index, 0, 0, 32, 0, bytes(16), 0) for index in range(100)],
-				[('link', 0, 0, 0x410, 0xa0000003, bytes(16), 0)]]), \
-			patch.object(native.os, 'stat', side_effect=PermissionError()):
+			patch.object(native.os, 'stat', side_effect=stat_side_effect) as stat:
 			directory = factory.return_value.__enter__.return_value
 			directory.scope.return_value = (1, bytes(16))
-			directory.batches.side_effect = batches
-			check = Mock()
-			listing = native.scan('file://C:/fixture', 'C:\\fixture', check)
-			self.assertEqual(101, len(listing.names))
-			self.assertEqual(5, check.call_count)
+			directory.batches.side_effect = generator
+			try:
+				listing = native.scan('file://C:/fixture', 'C:\\fixture', check)
+			finally:
+				factory.return_value.__exit__.assert_called_once()
+			return listing, [call.args[0] for call in stat.call_args_list]
+
+	def test_native_cancellation_checks_batches_and_each_followed_link(self):
+		from unittest.mock import Mock
+		first = b''.join(self._record('file%d' % index, last=index == 99) for index in range(100))
+		second = self._record('link', attributes=0x410, tag=0xa0000003)
+		check = Mock()
+		listing, stats = self._scan([first, second], check, PermissionError())
+		self.assertEqual(101, len(listing.names))
+		self.assertEqual(5, check.call_count)
+		self.assertEqual(['C:\\fixture\\link'], stats)
+
+	def test_native_scan_matches_reference_parser_and_cancellation_points(self):
+		"""Safe path (Done/FSParser.md): Listing equals records() plus link follow-up; trusted tuples."""
+		from core.fs.local.windows.listing import records
+		from unittest.mock import Mock
+		first = b''.join(self._record('file%d' % index, size=index, modified_ns=index * 100, last=index == 99)
+			for index in range(100))
+		second = b''.join((
+			self._record('junction', attributes=0x410, tag=0xa0000003, size=5, modified_ns=700, last=False),
+			self._record('cloud.docx', attributes=0x420, tag=0x9000601A, size=9, last=False),
+			self._record('symlink', attributes=0x420, tag=0xa000000c, size=1)))
+		calls = Mock()
+		listing, stats = self._scan([first, second], calls,
+			[Mock(st_mode=0o40000, st_size=123, st_mtime_ns=456), FileNotFoundError()])
+		self.assertEqual(1 + 2 + 2 + 1, calls.call_count)
+		self.assertEqual(['C:\\fixture\\junction', 'C:\\fixture\\symlink'], stats)
+		reference = list(records(first)) + list(records(second))
+		self.assertEqual([entry[0] for entry in reference], list(listing.names))
+		self.assertEqual([entry[3] for entry in reference], list(listing.attributes))
+		self.assertEqual([entry[6] for entry in reference], list(listing.created_ns))
+		self.assertEqual(b''.join(entry[5] for entry in reference), listing.identities)
+		self.assertEqual([entry[1] for entry in reference[:100]], list(listing.sizes[:100]))
+		self.assertEqual([entry[2] for entry in reference[:100]], list(listing.mtimes_ns[:100]))
+		junction, cloud, symlink = (listing.names.index(name) for name in ('junction', 'cloud.docx', 'symlink'))
+		self.assertEqual((True, 123, 456), (listing.is_dir[junction], listing.sizes[junction], listing.mtimes_ns[junction]))
+		self.assertEqual((False, 9, 0), (listing.is_dir[cloud], listing.sizes[cloud], listing.mtimes_ns[cloud]))
+		self.assertEqual((False, 1), (listing.is_dir[symlink], listing.sizes[symlink]))
+		self.assertTrue(all(type(getattr(listing, field)) is tuple
+			for field in ('names', 'is_dir', 'sizes', 'mtimes_ns', 'attributes', 'created_ns')))
+
+	def test_native_scan_cancellation_between_links(self):
+		from unittest.mock import Mock
+		batch = b''.join((
+			self._record('link-a', attributes=0x410, tag=0xa0000003, last=False),
+			self._record('link-b', attributes=0x410, tag=0xa0000003)))
+		calls = []
+		def check():
+			calls.append(None)
+			if len(calls) == 4:  # scan, batch, link-a, then link-b
+				raise RuntimeError('canceled')
+		with self.assertRaisesRegex(RuntimeError, 'canceled'):
+			self._scan([batch], check, [Mock(st_mode=0o40000, st_size=0, st_mtime_ns=0)])
+		self.assertEqual(4, len(calls))
+
+	def test_native_scan_requires_the_extension(self):
+		from core.fs.local.windows import listing as native
+		self.assertIsNotNone(native._fsparser)
+		with patch.object(native.Path, 'is_file', return_value=False):
+			with self.assertRaisesRegex(ImportError, 'git lfs pull'):
+				native._load_native_parser()
+
+	def test_native_loader_handles_shallow_layout_and_lfs_pointer(self):
+		from core.fs.local.windows import listing as native
+		# Frozen layout at a drive root: fewer than nine parents, no checkout candidate, no IndexError.
+		root_layout = 'C:\\_internal\\resources\\Plugins\\Core\\core\\fs\\local\\windows\\listing.py'
+		with patch.object(native, '__file__', root_layout):
+			self.assertEqual([Path(root_layout).parent / '_fsparser.pyd'], list(native._native_parser_candidates()))
+			with self.assertRaisesRegex(ImportError, 'not found.*git lfs pull'):
+				native._load_native_parser()
+		with TemporaryDirectory() as temporary:
+			module_dir = Path(temporary) / 'windows'
+			module_dir.mkdir()
+			(module_dir / '_fsparser.pyd').write_bytes(b'version https://git-lfs.github.com/spec/v1\noid sha256:0\nsize 1\n')
+			with patch.object(native, '__file__', str(module_dir / 'listing.py')):
+				with self.assertRaisesRegex(ImportError, 'Git LFS pointer.*git lfs pull'):
+					native._load_native_parser()
+
+	def test_trusted_listing_is_private_and_public_constructors_still_validate(self):
+		self.assertFalse(hasattr(Listing, 'trusted'))
+		for bad in (
+			dict(names=('a/b',)), dict(names=('',)), dict(names=('.',)), dict(names=('a', 'a')),
+			dict(names=('a',), is_dir=(1,)), dict(names=('a',), sizes=(-1,)), dict(names=('a',), sizes=('1',))):
+			with self.subTest(bad):
+				with self.assertRaises(ValueError):
+					Listing.create('file://C:/fixture', **bad)
+		columns = (('a', 'b'), (False, True), (1, 0), (2, 3), (32, 16), (4, 5), bytes(32), (1, bytes(16)))
+		trusted = Listing._trusted('file://C:/fixture', *columns)
+		validated = Listing('file://C:/fixture', *columns)
+		self.assertEqual(validated, trusted)
+		with self.assertRaises(FrozenInstanceError):
+			trusted.names = ()
 
 	def test_modified_keys_preserve_datetime_order_and_unknown_values(self):
 		from core import Modified
@@ -201,22 +299,17 @@ class NativeListingTest(TestCase):
 		from stat import S_IFDIR, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT
 		from unittest.mock import Mock
 		attributes = FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT
+		batch = b''.join((
+			self._record('link', attributes=attributes, tag=0xa0000003, size=12, modified_ns=3400, last=False),
+			self._record('neighbor', attributes=32, size=7, modified_ns=800)))
 		for error in (PermissionError('denied'), OSError('network unavailable'), FileNotFoundError('missing')):
 			with self.subTest(error=type(error).__name__):
-				with patch.object(native, 'NativeDirectory') as factory, \
-					patch.object(native, 'records', return_value=[
-						('link', 12, 34, attributes, 0xa0000003, bytes(16), 56),
-						('neighbor', 7, 8, 32, 0, bytes(16), 9)]), \
-					patch('core.fs.local.os.stat', side_effect=error):
-					directory = factory.return_value.__enter__.return_value
-					directory.scope.return_value = (1, bytes(16))
-					directory.batches.return_value = [b'fixture']
-					listing = native.scan('file://C:/fixture', 'C:\\fixture', Mock())
-					self.assertEqual(('link', 'neighbor'), listing.names)
-					self.assertEqual((True, False), listing.is_dir)
-					self.assertEqual((12, 7), listing.sizes)
-					self.assertEqual((34, 8), listing.mtimes_ns)
-					factory.return_value.__exit__.assert_called_once()
+				listing, stats = self._scan([batch], Mock(), error)
+				self.assertEqual(('link', 'neighbor'), listing.names)
+				self.assertEqual((True, False), listing.is_dir)
+				self.assertEqual((12, 7), listing.sizes)
+				self.assertEqual((3400, 800), listing.mtimes_ns)
+				self.assertEqual(['C:\\fixture\\link'], stats)
 				entry = Mock(path='C:\\fixture\\link')
 				entry.name = 'link'
 				entry.stat.return_value = Mock(st_mode=S_IFDIR, st_size=12, st_mtime_ns=34,

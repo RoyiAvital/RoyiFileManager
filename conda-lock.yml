@@ -1285,7 +1285,7 @@ package:
   category: main
   optional: false
 - name: markupsafe
-  version: 3.0.3
+  version: 3.0.4
   manager: conda
   platform: win-64
   dependencies:
@@ -1294,10 +1294,10 @@ package:
     ucrt: '>=10.0.20348.0'
     vc: '>=14.3,<15'
     vc14_runtime: '>=14.44.35208'
-  url: https://conda.anaconda.org/conda-forge/win-64/markupsafe-3.0.3-py314h2359020_1.conda
+  url: https://conda.anaconda.org/conda-forge/win-64/markupsafe-3.0.4-py314h2359020_0.conda
   hash:
-    md5: 8de7b40f8b30a8fcaa423c2537fe4199
-    sha256: 02805a0f3cd168dbf13afc5e4aed75cc00fe538ce143527a6471485b36f5887c
+    md5: fed5866dcfd1045e90cc116cd34b1260
+    sha256: a64392f2224ee84a34e351c5fa856563cfcadc4594ed0643d70e051192d43908
   category: main
   optional: false
 - name: mergedeep
@@ -1418,7 +1418,7 @@ package:
   category: main
   optional: false
 - name: openssl
-  version: 3.6.4
+  version: 3.6.5
   manager: conda
   platform: win-64
   dependencies:
@@ -1426,10 +1426,10 @@ package:
     ucrt: '>=10.0.20348.0'
     vc: '>=14.3,<15'
     vc14_runtime: '>=14.44.35208'
-  url: https://conda.anaconda.org/conda-forge/win-64/openssl-3.6.4-hf411b9b_0.conda
+  url: https://conda.anaconda.org/conda-forge/win-64/openssl-3.6.5-hf411b9b_0.conda
   hash:
-    md5: 73cb1783f47c452be4c309430fbef89f
-    sha256: 9dddb559ba49744d5d94092d8d13cb0567f5c3b3f439f3acf28433d1f4256acc
+    md5: f002ec2237836867bfd3d1299a6005da
+    sha256: bc44625e0c6d83f3e02b5f6adc01e0e3ca7001d3d94e24959591a57f5a011b9a
   category: main
   optional: false
 - name: packaging
@@ -1549,15 +1549,15 @@ package:
   category: main
   optional: false
 - name: platformdirs
-  version: 4.12.2
+  version: 4.12.3
   manager: conda
   platform: win-64
   dependencies:
     python: '>=3.11'
-  url: https://conda.anaconda.org/conda-forge/noarch/platformdirs-4.12.2-pyh5ded981_0.conda
+  url: https://conda.anaconda.org/conda-forge/noarch/platformdirs-4.12.3-pyh5ded981_0.conda
   hash:
-    md5: 4b76957bed5e02e067a348eda60c6f94
-    sha256: f23f022bbbf809cd248940eca853d1132f05752e0404984cde7b014fd6384c97
+    md5: 96bd08b41fbb94da012c8f5c56132519
+    sha256: b93a46b1c1fb34a380b0afa309040d603ebefdb8184a87a4bfaeef989a07cbc4
   category: main
   optional: false
 - name: ply
@@ -2389,15 +2389,15 @@ package:
   category: main
   optional: false
 - name: zipp
-  version: 4.1.0
+  version: 4.1.1
   manager: conda
   platform: win-64
   dependencies:
-    python: '>=3.10'
-  url: https://conda.anaconda.org/conda-forge/noarch/zipp-4.1.0-pyhcf101f3_0.conda
+    python: '>=3.11'
+  url: https://conda.anaconda.org/conda-forge/noarch/zipp-4.1.1-pyh5ded981_0.conda
   hash:
-    md5: ba3dcdc8584155c97c648ae9c044b7a3
-    sha256: 210bd31c22bb88f5e2a167df24c95bb5f152b2ada7502f9b8c49d1f5366db423
+    md5: 6cad4d2cec9b7b64538c225ac91d2e8a
+    sha256: 3aa601ef121f42dcb79400375e72f833ddc68bc6243f3e5535168b2d69cc9c70
   category: main
   optional: false
 - name: zstandard

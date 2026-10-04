@@ -36,6 +36,7 @@
 - [Favorites 002: Favorites Manager](Done/Favorites002.md)
 - [File and Folder Comparators](Done/FileAndFolderComparators.md)
 - [File System and Pane Architecture 001: Columnar Snapshots](Done/FSPaneArch001.md)
+- [FS Parser: Native Directory Record Parsing](Done/FSParser.md)
 - [Filter Files 001](Done/FilterFiles001.md)
 - [Find Files 001: fzf-Style Query Syntax](Done/FindFiles001.md)
 - [Find Files 002: Result Metadata](Done/FindFiles002.md)

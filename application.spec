@@ -32,7 +32,10 @@ datas = [
 ]
 binaries = winpty_binaries + send2trash_binaries + [
 	(str(Path(sys.prefix) / 'bin' / 'rg.exe'), 'resources/Plugins/SearchFiles/bin'),
-	(str(Path(sys.prefix) / 'bin' / 'fd.exe'), 'resources/Plugins/FindFiles/bin')
+	(str(Path(sys.prefix) / 'bin' / 'fd.exe'), 'resources/Plugins/FindFiles/bin'),
+	# Native directory parser (Done/FSParser.md): verified by build.py against
+	# src/main/c/fsparser.sha256; as a binary so PyInstaller bundles python3.dll (abi3).
+	(str(root / 'src/main/c/_fsparser.pyd'), 'resources/Plugins/Core/core/fs/local/windows')
 ] + [
 	(str(path), checksum_native_destination) for path in checksum_native_files
 	if path.suffix == '.pyd'

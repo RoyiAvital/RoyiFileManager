@@ -54,6 +54,25 @@ EVERYTHING_LICENSE_SHA256 = \
 	'252a9d0a811b6c648202d3660493d859fb0a30a3d520a4d3dbadfec72b6a3910'
 DOWNLOAD_SETTLE_SECONDS = 0.25
 DOWNLOAD_RETRY_DELAYS = (1, 2, 4)
+NATIVE_PARSER_DIRECTORY = ROOT / 'src' / 'main' / 'c'
+NATIVE_PARSER_BINARY = NATIVE_PARSER_DIRECTORY / '_fsparser.pyd'
+
+
+def _verify_native_parser():
+	"""src/main/c/_fsparser.pyd must match fsparser.c per fsparser.sha256 (Done/FSParser.md).
+
+	The source digest is line-ending normalised, so Git CRLF/LF conversion cannot
+	fail this; a Git LFS pointer in place of the binary is reported as such.
+	"""
+	sys.path.insert(0, str(NATIVE_PARSER_DIRECTORY))
+	try:
+		from check_hashes import check
+	finally:
+		sys.path.remove(str(NATIVE_PARSER_DIRECTORY))
+	problems = check()
+	if problems:
+		raise SystemExit('Native directory parser check failed:\n  ' + '\n  '.join(problems))
+	print('Native directory parser: src/main/c/_fsparser.pyd matches fsparser.c')
 
 
 def _require_windows():
@@ -327,6 +346,7 @@ def test():
 	_require_windows()
 	_ensure_7za()
 	_ensure_everything()
+	_verify_native_parser()
 	environment = _environment()
 	environment.setdefault('QT_QPA_PLATFORM', 'offscreen')
 	windows_fonts = Path(environment.get('WINDIR', r'C:\Windows')) / 'Fonts'
@@ -434,6 +454,7 @@ def freeze():
 	_require_windows()
 	_ensure_7za()
 	_ensure_everything()
+	_verify_native_parser()
 	_ensure_conda_lock()
 	_remove_previous_freeze()
 	subprocess.run(
@@ -451,6 +472,7 @@ def freeze():
 
 def smoke_everything():
 	_require_windows()
+	_verify_native_parser_packaged()
 	plugin = DIST_DIR / '_internal/resources/Plugins/Everything'
 	_verify_everything(plugin / 'bin')
 	environment = _environment()
@@ -468,6 +490,7 @@ def package():
 	if not DIST_DIR.is_dir():
 		raise SystemExit('Run `python build.py freeze` first.')
 	_verify_everything(DIST_DIR / '_internal/resources/Plugins/Everything/bin')
+	_verify_native_parser_packaged()
 	_copy_dependency_manifests()
 	version = BUILD_SETTINGS['version']
 	archive = TARGET_DIR / f'{APP_NAME}-{version}-windows-x86_64.zip'
@@ -485,6 +508,15 @@ def publish():
 	clean()
 	freeze()
 	package()
+
+
+def _verify_native_parser_packaged():
+	"""The frozen tree carries the extension next to the scanner, byte-identical to the verified pair."""
+	_verify_native_parser()
+	packaged = DIST_DIR / '_internal/resources/Plugins/Core/core/fs/local/windows/_fsparser.pyd'
+	expected = _sha256(NATIVE_PARSER_BINARY)
+	if expected is None or _sha256(packaged) != expected:
+		raise SystemExit(f'{packaged} is missing or differs from {NATIVE_PARSER_BINARY}.')
 
 
 COMMANDS = {

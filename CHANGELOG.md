@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+This release focuses on performance. It replaces a Python code with native code
+for parsing the file system chucked data. It greatly improves the rendering 
+time of large folders and the UI responsivity while parsing the data.
+
+### Added
+
+- Native NTFS directory parser (`src/main/c/fsparser.c`, abi3 extension,
+  Git LFS binary paired with its source by `src/main/c/fsparser.sha256`):
+  the local Windows scanner parses `FileIdExtdDirectoryInfo` batches in C and
+  builds the pane snapshot through a validation-free `Listing` reserved for
+  that scanner. Post-kernel scan of a 202,603-entry folder drops from 275 ms
+  to 22 ms (1M entries: 1419 ms to 122 ms); link follow-up, cancellation
+  points and results are identical to the previous Python loop, which is kept
+  only as the reference the tests compare against. `build.py test`, `freeze`
+  and `package` verify the source/binary pairing and fail on a mismatch.
+
+### Performance
+
+Results on the _test suite_:
+
+| Test                            |   0.9.0 |   0.9.1 |   0.9.2 |   0.9.3 |  0.10.0 |  0.10.1 |  0.10.2 | 0.10.3 | 0.13.0 |
+|---------------------------------|--------:|--------:|--------:|--------:|--------:|--------:|--------:|-------:|-------:|
+| Pane Load - Small Folder        |   42.23 |   42.78 |   44.66 |   35.20 |   37.20 |   39.10 |   33.25 |  33.93 |  37.52 |
+| Pane Load - Large Folder        | 1001.54 | 1014.82 |  978.07 |  964.31 |  956.75 |  971.12 |  975.83 | 958.23 | 758.64 |
+| Filter Bar - Small Folder       |    8.96 |    9.21 |    8.70 |    8.69 |    8.84 |    9.28 |    8.80 |   8.79 |  10.88 |
+| Filter Bar - Large Folder       |  332.17 |  331.48 |  333.62 |  331.28 |  335.02 |  332.78 |  332.76 | 338.27 | 364.34 |
+| Fuzzy Find - Small Folder       |    4.57 |    4.52 |    4.51 |    4.55 |    4.53 |    4.51 |    4.51 |   7.17 |   5.28 |
+| Fuzzy Find - Large Folder       |  408.47 |  379.09 |  389.25 |  407.95 |  416.37 |  421.48 |  439.31 | 441.02 | 357.29 |
+| Fuzzy Find (Recursive)          |   91.68 |   91.09 |   91.12 |   91.05 |   91.06 |   91.78 |   91.39 |  91.91 |  92.54 |
+| QuickView Images - Small Folder |  122.09 |  120.89 |  120.60 |  122.61 |  120.78 |  121.67 |  121.21 | 122.04 | 121.09 |
+| QuickView Images - Large Folder |  123.29 |  128.92 |  125.64 |  121.14 |  123.83 |  136.21 |  131.20 | 135.86 | 119.46 |
+| QuickView Text - Small Folder   |       - |       - |       - |       - |  132.81 |  132.11 |  133.05 | 133.03 | 129.55 |
+| QuickView Text - Large Folder   |       - |       - |       - |       - |  132.65 |  131.57 |  131.73 | 129.47 | 132.35 |
+| Selections - Small Folder       |   15.67 |   15.64 |   15.40 |   15.24 |   15.38 |   15.56 |   15.55 |  15.35 |  16.18 |
+| Selections - Large Folder       |   88.18 |   88.37 |   88.94 |   87.85 |   87.42 |   87.53 |   87.51 |  88.36 |  89.65 |
+| Selections Readback             | 1994.44 | 1987.26 | 1967.05 | 1974.51 | 1946.02 | 1980.19 |   72.84 |  73.78 |  69.86 |
+| Navigation                      |    7.17 |    7.20 |    7.17 |    7.36 |    7.15 |    7.14 |    7.06 |   7.17 |   7.05 |
+| Refresh / Selection             |  581.97 |  581.73 |  582.82 |  592.84 |  594.40 |  578.61 |  573.50 | 585.17 | 355.99 |
+
+[CelebA](https://mmlab.ie.cuhk.edu.hk/projects/CelebA.html) folder with about 200,000 entries. Lower is better.
+
+| Measurement                | ver. 0.8.0  | ver. 0.8.1  | ver. 0.9.0  | ver. 0.9.2  | ver. 0.13.0 |
+|----------------------------|-------------|-------------|-------------|-------------|-------------|
+| First Populated Pane Paint | 8.949 [s]   | 5.663 [s]   | 0.583 [s]   | 0.506 [s]   | 0.257 [s]   |
+| Metadata Loading Complete  | 17.786 [s]  | 11.498 [s]  | 0.571 [s]   | 0.494 [s]   | 0.244 [s]   |
+| Post Paint Qt Commit Work  | 2.765 [s]   | 1.282 [s]   | 0 [s]       | 0 [s]       | 0 [s]       |
+| Settled Working Memory     | 771.1 [MiB] | 771.3 [MiB] | 165.6 [MiB] | 167.4 [MiB] | 160.3 [MiB] |
+
+> [!NOTE]
+> * Version `0.9.0` is the 1st version with the new architecture (_Snapshot Architecture_) which is an order of magnitude faster than `0.8.1`.
+> * Version `0.8.1` had an improved version of the `fman` architecture (About 30% faster than `0.8.0`).
+> * Version `0.8.0` and earlier versions use the `fman` architecture and performance.
+
 ## [0.12.0] - 2026-10-04
 
 This release focuses on the `QuickTable` UI element and defines its API and

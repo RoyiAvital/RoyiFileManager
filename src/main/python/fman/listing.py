@@ -1,5 +1,5 @@
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,6 +29,30 @@ class Listing:
 			zeros if created_ns is None else created_ns,
 			bytes(16 * count) if identities is None else identities,
 			(0, bytes(16)) if scope is None else scope, labels, extra)
+
+	@classmethod
+	def _trusted(cls, location, names, is_dir, sizes, mtimes_ns, attributes, created_ns, identities, scope):
+		"""Safe path: a Listing from columns the native NTFS scanner already guarantees.
+
+		Equivalent to ``Listing(location, names, is_dir, ...)`` minus ``__post_init__``:
+		no tuple() copies and none of the validation below. Reserved for
+		``core.fs.local.windows.listing.scan`` with the ``_fsparser`` extension
+		(Done/FSParser.md, "Integration"); every other producer - plug-ins, zip://,
+		network://, drives://, Everything, ProcessPane - is the regular path and
+		must use ``Listing(...)`` or ``Listing.create(...)`` so its columns are checked.
+
+		Why each skipped check holds: names come from the kernel (non-empty, no
+		'/', '\\\\' or NUL; '.' and '..' dropped in C; one directory has no exact
+		duplicates); is_dir/int values are created in C or checked by
+		``Columns.patch``; sizes are >= 0 by the record validation; identities are
+		16 bytes per entry by construction; scope comes from ``NativeDirectory.scope``.
+		The columns must already be tuples (``Columns.finish(frozen=True)``).
+		"""
+		listing = object.__new__(cls)
+		values = (location, names, is_dir, sizes, mtimes_ns, attributes, created_ns, identities, scope, None, ())
+		for field, value in zip(fields(cls), values):
+			object.__setattr__(listing, field.name, value)
+		return listing
 
 	@property
 	def display_names(self):

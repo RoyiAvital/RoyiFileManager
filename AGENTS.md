@@ -4,6 +4,7 @@ These instructions apply to the entire repository.
 
 ## Guidelines
 
+ - We are developing on Windows system, targeting Windows system and building GitHub Action Windows runner.
  - Do not create new virtual Python environments.
  - Do not install new Python packages. You may ask the user to install.
  - Do not change `.gitattributes` or `.gitignore` without permission or explicitly being asked for.

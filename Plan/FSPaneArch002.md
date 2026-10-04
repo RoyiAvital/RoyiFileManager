@@ -1,6 +1,68 @@
 # File System and Pane Architecture 002: Performance
 
-Status: Planned; no application changes implemented.
+Status: Planned. R09 is implemented separately in
+[Done/FSParser.md](../Done/FSParser.md) (native parser + trusted `Listing`,
+released as `0.13.0`); R02 is superseded by it. R01, R03–R06 and the new R10
+remain to be designed and implemented.
+
+## Overview
+
+Targets set by the developer on 2026_10_04: the pane must feel instant.
+
+| Measurement | Today (`0.13.0`) | Target | Perceptual bar |
+| --------------------------------------------------- | ---------------: | -------: | ---------------------------------- |
+| Suite "Pane Load - Large Folder" (200k, long names) | 759 ms | < 500 ms | ~250 ms is the realistic outcome   |
+| CelebA "First Populated Pane Paint" (202,603)       | 257 ms | ≤ 350 ms | already met; ~130 ms is reachable  |
+| CelebA "Metadata Loading Complete"                  | 244 ms | ≤ 350 ms | already met; same levers           |
+
+"Instant" in HCI terms is ≤ 100 ms perceived latency; 100–300 ms reads as
+"fast". Both datasets have a floor of kernel enumeration + native scan +
+Qt model reset/paint that no Python change moves: ≈ 130 ms for CelebA,
+≈ 170 ms for the suite fixture.
+
+### Where the time goes (measured 2026_10_04, 200k entries)
+
+The two datasets differ only in their names: CelebA names are `000001.jpg`
+(10 characters, one digit run); the suite fixture `flat-large-v1` has
+77-character names on average, built from long stems (`common_` + 72 × `a`,
+`ab` × 42, Unicode, several digit runs) plus a 24-hex token and an 8-digit
+counter. That multiplies the key and sort stages, not the scan.
+
+| Stage | CelebA | Suite fixture | Why | Lever |
+| ------------------------------------------- | -----: | ------------: | ----------------------------------------------------- | ----------------------- |
+| Record bytes / 64 KiB batches               | 21.6 MB / 330 | 48.5 MB / 740 | 7.7× longer names                                | —                       |
+| Kernel enumeration                          |  25 ms | ~55 ms (scaled) | 2.2× the bytes                                      | none (OS)               |
+| Native scan (`Columns` + trusted `Listing`) |  22 ms | ~35 ms (est.) | longer UTF-16 decodes                                 | done (R09)              |
+| **Natural keys** (`Name.keys`)              | **94 ms** | **515 ms** | each key walks the whole name, 2–4 digit runs, Unicode | R01 (−20 %), **R10** (→ ~10 % ) |
+| Sort                                        |   4 ms |  63 ms        | 25k names share a 79-char prefix; comparisons walk it | shorter keys (R01/R10)  |
+| Cooperative worker sleep (1 ms per 4 ms)    | ~30 ms | ~100–150 ms   | proportional to projection length                     | R04                     |
+| Hidden filter, row map                      |  18 ms |  ~18 ms       |                                                       | R05 (row map)           |
+| Qt model reset + first paint                | ~80 ms |  ~80 ms       | 200k-row view reset                                   | profile `_commit`       |
+| **Measured total**                          | **257** | **759**      | stages overlap on two threads; sums run high          |                         |
+
+Key and sort numbers are from `natural_key` over the actual CelebA names and
+over 200,000 names generated with the fixture's stems (`natural_key` list
+comprehension and `sorted` with precomputed keys, medians of 3). The kernel
+and scan numbers for the fixture are scaled from CelebA by record volume; the
+fixture folder was not on disk at measurement time.
+
+### What reaches the targets
+
+| Step | Suite large | CelebA first paint | Note |
+| --------------------------------------------- | ----------: | -----------------: | -------------------------------------------- |
+| Today                                         |     759     |        257         | |
+| R10 native `natural_key` (515 → ~40; 94 → ~10) |   ~285     |        ~170        | the only step that gets the suite under 500 |
+| R04 yield cadence                             |   ~200     |        ~140        | removes most of the worker's sleep time     |
+| R05 per-projection row map                    |   ~190     |        ~130        | |
+| R01 compact keys instead of R10               |   ~650     |        ~225        | not sufficient alone for the suite target   |
+
+R01 is the cheap first move and remains useful as the Python reference the
+native key is compared against, but it cannot deliver < 500 ms on the suite:
+the key stage is 68 % of that row and R01 removes only the tuple overhead,
+not the per-character work. R03 and R06 do not affect first paint; they
+target unchanged refreshes ("Refresh / Selection", 356 ms today → ~100–150).
+After R10 + R04 + R05 the remaining first-paint cost is the floor plus the
+Qt commit, which is the next thing to profile.
 
 ## Task
 
@@ -17,12 +79,13 @@ They size the opportunity; acceptance requires fresh before/after runs.
 | Candidate | Owner | Measured cost today | Expected effect |
 | --- | --- | ---: | --- |
 | R01 Compact name-sort keys | `Name.keys` | 131 ms key build per sort/rescan | Fewer per-entry tuples; gate on measured runtime |
-| R02 Selective native record unpacking | `records()` | 200 ms parse of 202k records | Five discarded values fewer per record; gate on parity + non-regression |
+| R02 Selective native record unpacking | `records()` | — | **Superseded**: `records()` is no longer on the scan path (R09 / FSParser) |
 | R03 No-change refresh fast path | `ListingModel._receive` / `_commit` | ~300 ms projection + full model reset per unchanged rescan | Skip projection and reset; keep notifications |
 | R04 Cooperative worker yield cadence | `LatestJobs._run` | 1 ms `sleep` every 4 ms ≈ 113 ms asleep per 300 ms projection | Yield per ~16 ms frame or `sleep(0)` |
 | R05 Per-projection row map | `project()` / `Projection.rows` | 12 ms and ~10 MB per keystroke, sort, refresh | Build only for entries the view asks about |
 | R06 Unchanged-rescan identity map | `reconcile()` fast path | 20 ms identity `dict` per unchanged rescan | Sentinel meaning "same order" |
-| R09 Native record parser (C, abi3, Python fallback) | `records()` and column building in the Windows scanner | 183 ms parse + ~85 ms list/`Listing` build of a 295 ms scan; kernel enumeration itself is 27 ms | One C call per scan returning the columns; scan ≈ 50 ms |
+| R09 Native record parser (C, abi3) | `records()` and column building in the Windows scanner | 183 ms parse + ~85 ms list/`Listing` build of a 295 ms scan; kernel enumeration itself is 27 ms | **Done** in [Done/FSParser.md](../Done/FSParser.md): post-kernel scan 279 → 22 ms at 202k |
+| R10 Native natural keys (C, abi3) | `natural_key` / `Name.keys` | 94 ms (CelebA) to 515 ms (suite fixture) per sort/rescan | One C call over the names tuple returning the key strings; same recipe, toolchain and hash pairing as R09; Python `natural_key` kept as the reference. To be designed |
 | R07 Revisit from a bounded listing cache | — | — | **Refused by the developer**: no caching layer; make the simple path fast instead |
 | R08 Reuse sort keys across rescans | — | — | **Refused by the developer**: same reason; no cross-snapshot state |
 
@@ -388,3 +451,21 @@ python src/performancetest/run.py suite --test 'filter.*' --test 'fuzzy.*' --tes
   the build. Expected scan 295 → ~50 ms, first visit ~250 ms with R01–R06.
   `natural_key` is the second candidate for the same treatment, deferred until
   R09 proves the toolchain. Planning only.
+
+### 2026_10_04 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Claude Fable 5.1
+- Effort: High
+- Context Window: 1M
+- Outcome: Added the Overview with the developer's targets (suite large pane
+  load < 500 ms; CelebA ≤ 350 ms, already at 257/244 ms) and a measured
+  per-stage breakdown of both datasets. The suite fixture's 77-character,
+  prefix-heavy names make natural keys 515 ms and the sort 63 ms against 94
+  and 4 ms on CelebA; that stage is 68 % of the 759 ms row, which is why R09
+  moved it only −200 ms. Marked R09 done (FSParser) and R02 superseded; added
+  R10, a native `natural_key` built like R09, as the only step that reaches
+  the suite target (→ ~285 ms), with R04 and R05 taking it to ~190 ms and
+  CelebA to ~130 ms. Planning only; no application code changed.
