@@ -7,9 +7,8 @@ UI elements available to plug-ins. `fman.ui` is a provisional RoyiFileManager ex
 | Element         | Import                  | Purpose                              | Hosting                                                          | Qt Exposure                  | Interaction                                                                                                                                                    | Consumers                                                               |
 | --------------- | ----------------------- | ------------------------------------ | ---------------------------------------------------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | QuickSearch     | `fman.show_quicksearch` | Pick **one** item                    | Own modal dialog                                                 | None                         | Query callback supplies items; click/Enter returns the choice and closes                                                                                       | Command Palette, Favorites rename/remove pickers, hash algorithm choice |
-| QuickList       | `fman.ui.QuickList`     | Navigate and select **many** items   | Widget embedded in a `PaneToolWindow` via `UiController.build()` | Qt widget                    | Optional fuzzy filter; Space/Insert/Shift/Ctrl/right-click selection; signals `activated`, `state_changed`, `delete_requested`                                 | Favorites Manager                                                       |
-| Panel (widget)  | `fman.ui.Panel`         | Operation controls and actions       | Docked above the status bar via `window.set_panel()`             | Qt widget                    | `IconButton`, `TextButton`, `DropDown`; values persisted with `JsonSettings`                                                                                   | Favorites Manager                                                       |
-| Panel (service) | `fman.ui.show_panel`    | Operation controls and actions       | Docked above the status bar; host owns layout                    | None (returns `PanelHandle`) | Plain descriptors: `TextField`, `Toggle`, `Choice`, `Select`, `DateField`, `IntegerField`, `Label`, `Action`, `Separator`; `on_change` / `on_action` callbacks | Search Files, Find Files                                                |
+| QuickList       | `fman.ui.show_quick_list` | Select **many** items            | Modal (default) or modeless window owned by the host             | None (blocks; returns the chosen IDs or `None`; `on_open` handle) | Optional fuzzy filter; Space/Insert/Shift/Ctrl/right-click selection; metadata line; sorting by title, hint or metadata                                        | Favorites Manager                                                       |
+| Panel           | `fman.ui.show_panel`    | Operation controls and actions       | Docked above the status bar; host owns layout                    | None (returns `PanelHandle`) | Plain descriptors: `TextField`, `Toggle`, `Choice`, `Select`, `DateField`, `IntegerField`, `Label`, `Action`, `Separator`; `on_change` / `on_action` callbacks | Search Files, Find Files, Favorites Manager                             |
 | QuickTable      | `fman.ui.show_quick_table` | Narrow a static, typed table      | Modal (default) or modeless window owned by the host             | None (blocks; Enter returns visible row positions, Escape `None`) | `QuickTableColumn` kinds (text, name, path, date, numeric) define headers, sorting, header filter menus and Copy / Go To; static `QuickTableRow` snapshot with raw date/number cells; fuzzy, substring or caller text filter; Ctrl+Enter / double-click Go To; `truncated` count note | Search Files, Find Files, Checksum Files                                |
 | OutputTextBox   | `fman.ui.OutputTextBox` | Selectable plain-text output         | Widget embedded in a tool window                                 | Qt widget                    | Copy icon and Return/Enter copy all                                                                                                                            | Calculate File Hash                                                     |
 
@@ -17,7 +16,7 @@ Supporting services: `UiController` / `UiOwner` (loader-bound lifetime),
 `ToolWindow` / `PaneToolWindow` (host window, prompts, `work()`), `navigate`
 (tracked navigation), `settings_resource` (shared JSON transactions), `matchers`.
 
-New plug-ins should prefer the Qt-free services (`show_panel`, `show_quick_table`).
+Plug-ins should use the Qt-free services (`show_quick_list`, `show_panel`, `show_quick_table`).
 
 ### Rationale for Elements
 
@@ -34,7 +33,7 @@ Row based elements:
 
 The purpose of `QuickSearch` is the simplest and fastest list with fuzzy search with text elements in mind.  
 The `QuickList` element extends `QuickSearch` with multiple elements selection and metadata for display and optionally sorting.  
-Both may interact with a Panel to allow extended functionality.
+A `QuickList` can be driven by a Panel to allow extended functionality.
 
 |                      | QuickSearch                    | QuickList                           |
 | -------------------- | ------------------------------ | ----------------------------------- |
@@ -54,6 +53,7 @@ Both may interact with a Panel to allow extended functionality.
 | State                | Not applicable                 | Via the handle from `on_open`       |
 | Actions              | None                           | By the caller, e.g. from a Panel    |
 | Modality             | Modal                          | Modal or modeless                   |
+| Tab                  | Within the dialog              | Modeless: also to a docked Panel    |
 | Threading            | Blocks a worker until closed   | Blocks a worker until closed        |
 | Use Cases            | Command Palette, choose one    | Favorites Manager, pick several     |
 
