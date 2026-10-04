@@ -1,13 +1,27 @@
+import atexit
+import logging
+import os
 import sys
 from fman.impl.product import APP_NAME
 
 def main():
 	if sys.platform != 'win32':
 		raise RuntimeError('%s is supported on Windows only.' % APP_NAME)
+	# Registered first, so it runs after every other exit handler:
+	atexit.register(_skip_interpreter_teardown)
 	from fman.impl.application_context import get_application_context
 	appctxt = get_application_context()
 	exit_code = appctxt.run()
+	_skip_interpreter_teardown.exit_code = exit_code
 	sys.exit(exit_code)
+
+def _skip_interpreter_teardown():
+	# Destroying PyQt objects during interpreter teardown intermittently crashes in sip.
+	logging.shutdown()
+	sys.stdout.flush()
+	sys.stderr.flush()
+	os._exit(_skip_interpreter_teardown.exit_code)
+_skip_interpreter_teardown.exit_code = 1
 
 def profile_main():
 	# Import late to only incur the .0n sec time cost when necessary:

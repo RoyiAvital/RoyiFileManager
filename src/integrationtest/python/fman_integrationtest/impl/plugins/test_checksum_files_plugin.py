@@ -186,6 +186,9 @@ _started = False
 class ChecksumProbe(DirectoryPaneListener):
     def on_path_changed(self):
         global _started
+        # The startup navigation follows null://; navigating before it starts lets it supersede the probe.
+        if not self.pane.get_path().startswith('file://'):
+            return
         with _lock:
             if _started or os.environ.get('CHECKSUM_PROBE_ACTIVE') == '1':
                 return

@@ -34,11 +34,11 @@ Results use Windows and NTFS with warm caches and three fresh processes per test
 
 [CelebA](https://mmlab.ie.cuhk.edu.hk/projects/CelebA.html) folder with about 200,000 entries. Lower is better.
 
-| Measurement                | Ver. 0.8.0  | Ver. 0.8.1  | Ver. 0.9.0  | Ver. 0.9.2  | Ver. 0.13.0 | Ver. 0.13.1 |
-|----------------------------|-------------|-------------|-------------|-------------|-------------|-------------|
-| First Populated Pane Paint | 8.949 [s]   | 5.663 [s]   | 0.583 [s]   | 0.506 [s]   | 0.257 [s]   | 0.112 [s]   |
-| Metadata Loading Complete  | 17.786 [s]  | 11.498 [s]  | 0.571 [s]   | 0.494 [s]   | 0.244 [s]   | 0.100 [s]   |
-| Post Paint Qt Commit Work  | 2.765 [s]   | 1.282 [s]   | 0 [s]       | 0 [s]       | 0 [s]       | 0 [s]       |
-| Settled Working Memory     | 771.1 [MiB] | 771.3 [MiB] | 165.6 [MiB] | 167.4 [MiB] | 160.3 [MiB] | 145.5 [MiB] |
+| Measurement                | Ver. 0.8.0  | Ver. 0.8.1  | Ver. 0.9.2  | Ver. 0.13.0 | Ver. 0.13.1 |
+|----------------------------|-------------|-------------|-------------|-------------|-------------|
+| First Populated Pane Paint | 8.949 [s]   | 5.663 [s]   | 0.506 [s]   | 0.257 [s]   | 0.112 [s]   |
+| Metadata Loading Complete  | 17.786 [s]  | 11.498 [s]  | 0.494 [s]   | 0.244 [s]   | 0.100 [s]   |
+| Post Paint Qt Commit Work  | 2.765 [s]   | 1.282 [s]   | 0 [s]       | 0 [s]       | 0 [s]       |
+| Settled Working Memory     | 771.1 [MiB] | 771.3 [MiB] | 167.4 [MiB] | 160.3 [MiB] | 145.5 [MiB] |
 
 All runs used alternating fresh processes, warm OS caches, hidden filtering enabled and QuickView and extended status disabled. Do not chain percentages across the two runs.

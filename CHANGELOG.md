@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The application could crash with an access violation when exiting, while
+  Python tore down PyQt objects. After background threads and exit handlers
+  finish, the process now exits without that teardown.
+
 ## [0.13.1] - 2026-10-04
 
 This release focuses on performance. Name sort keys are now built in native
