@@ -4,12 +4,14 @@ from io import StringIO
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
-from tempfile import TemporaryDirectory
+from tempfile import TemporaryDirectory, gettempdir
 from textwrap import dedent
 from unittest import TestCase
 from unittest.mock import Mock, patch
+from uuid import uuid4
 
 import win32gui
 import win32process
@@ -237,15 +239,18 @@ Event().wait()
 			self.assertFalse(screenshots.WORK_DIR.exists(),
 				'Parent created the capture working directory before privilege reduction')
 			return launch(command, environment, log, timeout)
-		with TemporaryDirectory() as temporary_directory, \
-				patch.object(screenshots, 'WORK_DIR', Path(temporary_directory) / 'work'), \
-				patch.object(screenshots, 'SOURCE_LOG_DIR', Path(temporary_directory) / 'logs'), \
+		# TemporaryDirectory is owner-only; an elevated owner is Administrators, which the child lacks.
+		temporary_directory = Path(gettempdir()) / ('docs-screenshots-test-' + uuid4().hex)
+		temporary_directory.mkdir()
+		self.addCleanup(shutil.rmtree, temporary_directory, ignore_errors=True)
+		with patch.object(screenshots, 'WORK_DIR', temporary_directory / 'work'), \
+				patch.object(screenshots, 'SOURCE_LOG_DIR', temporary_directory / 'logs'), \
 				patch.object(screenshots, 'SOURCE_CAPTURES', ('context-menu',)), \
 				patch.object(screenshots, '_run_restricted', side_effect=launch_child), \
 				patch.object(screenshots.ctypes.windll.shell32, 'IsUserAnAdmin', return_value=1), \
 				patch.dict(os.environ, {'QT_QPA_PLATFORM': 'windows'}):
 			args = screenshots._parse_args(['--mode', 'source', '--timeout', '10',
-				'--output-dir', str(Path(temporary_directory) / 'output')])
+				'--output-dir', str(temporary_directory / 'output')])
 			outputs = screenshots._run_source(args)
 			self.assertEqual(1, len(outputs))
 			screenshots._validate_image(outputs[0], 1280, 800)

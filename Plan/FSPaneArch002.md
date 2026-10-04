@@ -22,13 +22,27 @@ They size the opportunity; acceptance requires fresh before/after runs.
 | R04 Cooperative worker yield cadence | `LatestJobs._run` | 1 ms `sleep` every 4 ms ≈ 113 ms asleep per 300 ms projection | Yield per ~16 ms frame or `sleep(0)` |
 | R05 Per-projection row map | `project()` / `Projection.rows` | 12 ms and ~10 MB per keystroke, sort, refresh | Build only for entries the view asks about |
 | R06 Unchanged-rescan identity map | `reconcile()` fast path | 20 ms identity `dict` per unchanged rescan | Sentinel meaning "same order" |
+| R09 Native record parser (C, abi3, Python fallback) | `records()` and column building in the Windows scanner | 183 ms parse + ~85 ms list/`Listing` build of a 295 ms scan; kernel enumeration itself is 27 ms | One C call per scan returning the columns; scan ≈ 50 ms |
+| R07 Revisit from a bounded listing cache | — | — | **Refused by the developer**: no caching layer; make the simple path fast instead |
+| R08 Reuse sort keys across rescans | — | — | **Refused by the developer**: same reason; no cross-snapshot state |
+
+Cost split of a first visit at 202,603 entries (probe, warm): kernel
+enumeration 27 ms, Python record parsing 183 ms, list appends and `Listing`
+construction ~85 ms, natural keys 97 ms (`str.lower` alone is 8 ms), sort
+8 ms, hidden filter 6 ms, row map 12 ms, model reset and paint ~80 ms. Pure
+Python (R01–R06) can take 583 ms toward ~400 ms. Below that, the single
+largest removable block is Python-side record parsing, which is what R09
+addresses; natural keys are the second.
 
 ## Scope
 
 - Included: R01–R06 as independent changes to the listing pipeline, each with
-  its own gate; the loaded-input measurement protocol needed to judge R03–R05.
-- Excluded: new caches, matchers, native extensions or processes; provider
-  rewrites; API changes; memory-only changes; the environment/validation
+  its own gate; the loaded-input measurement protocol needed to judge R03–R05;
+  R09 as the one native candidate, subject to the build/fallback conditions in
+  its section.
+- Excluded: caches of any kind across snapshots or navigations (R07, R08
+  refused by the developer); new matchers or processes; provider rewrites;
+  API changes; memory-only changes; persisted indexes; the environment/validation
   backlog listed under "Open Adoption Gates" in
   [Done/FSPaneArch001](../Done/FSPaneArch001.md) (not duplicated here).
 - Related work kept elsewhere: Python 3.15 `take_bytes()` for the identity
@@ -118,6 +132,59 @@ object whose `get`/`__getitem__` return the key when the entry has a known
 identity; the view only calls `remap.get(entry)`. Gate: identical restoration;
 20 ms and the dict allocation removed at 202k.
 
+### R07 and R08: Refused
+
+R07 (revisit from a bounded listing cache) and R08 (reuse sort keys across
+rescans) were proposed in review and **refused by the developer**: no caching
+mechanism and no cross-snapshot state. The preferred direction is a simple
+path fast enough that no such edge-case logic is needed; see R09.
+
+### R09: Native Record Parser
+
+Owner: `records()` and the column-building loop in `scan()` of the
+[Windows scanner](../src/main/resources/base/Plugins/Core/core/fs/local/windows/listing.py).
+Of the 295 ms scan at 202,603 entries, the kernel's
+`GetFileInformationByHandleEx` batches take 27 ms; everything else is Python
+per-record work: `Struct.unpack_from`, bounds checks, UTF-16 name decode, a
+yielded tuple, seven list appends and a `bytearray.extend`.
+
+Design: one C function, `parse_records(buffers) -> (names, is_dir, sizes,
+mtimes_ns, attributes, created_ns, identities, reparse_tags)`, that walks the
+64 KiB buffers already collected by `NativeDirectory.batches`, performs the
+same bounds checks, skips `.`/`..`, decodes names with
+`PyUnicode_DecodeUTF16(..., "surrogatepass")`, and fills tuples plus one
+`bytes` of packed IDs. Follow-up of reparse links (`os.stat`) stays in Python
+using the returned tags, as today. Expected scan ≈ kernel 27 ms + C parse
+~15–20 ms + Python link follow-ups; first visit ≈ 300 ms before R01–R06,
+~250 ms after. The function releases the GIL while parsing, so the Qt thread
+is never blocked by it.
+
+Conditions that keep the risk low:
+
+- Hand-written C against the **limited API** (`Py_LIMITED_API = 0x030C0000`,
+  `abi3`): one `.pyd` works across Python 3.12+ minor versions; no Cython, no
+  generated code, no new Python dependency.
+- **Pure-Python fallback**: `records()` stays; the scanner imports the
+  extension and falls back when the import fails or the module version does
+  not match. Behaviour is identical either way, only speed differs.
+- **Parity gate**: on every batch of the reference folder and of the seeded
+  fixtures, the C result must equal the Python result field by field; fuzzed
+  malformed buffers (bad offsets/lengths, truncation) must raise `ValueError`
+  in both.
+- **Build**: compiled by `build.py` with the conda-forge MSVC toolchain
+  (`vs2022_win-64` added to `environment.yml`; user installs), committed
+  source under `src/main/c/`, output collected by
+  [RoyiFileManager.spec](../RoyiFileManager.spec) as a binary. If the
+  toolchain is absent the build proceeds without the extension and the
+  fallback is used.
+
+Second candidate for the same treatment, only if R09 proves the toolchain:
+`natural_key` over a tuple of names (97 ms → ~10 ms). Not proposed now.
+
+Gate: scan ≤ 70 ms on the reference folder with the extension, identical
+`Listing` to the Python path, fallback exercised in CI by forcing the import to
+fail, packaged artifact loads the `.pyd`.
+
 ### Measurement Protocol
 
 Use the existing [pane benchmark](../src/integrationtest/python/fman_integrationtest/pane_rendering_benchmark.py)
@@ -162,6 +229,9 @@ unchanged. No settings, persistence or new failure paths.
   GIL at least once per frame.
 - R05 adds the cursor/marks capture (already available on Qt) to the projection
   request; saves ~12 ms and ~10 MB per projection in the common case.
+- R09 adds one native module load at first scan (sub-millisecond); parsing
+  runs without the GIL; no new threads, timers or state. With the extension
+  absent the Python path runs unchanged.
 - Disabled paths and startup are unaffected; diagnostics remain opt-in.
 
 ## Tests
@@ -187,6 +257,10 @@ python src/performancetest/run.py suite --test 'filter.*' --test 'fuzzy.*' --tes
   or better.
 - R05/R06: cursor/marks/scroll restoration identical for none, few, all marked
   and after a rename; `preferred` behaviour unchanged.
+- R09: field-by-field parity of C and Python parsers on reference-folder and
+  fixture buffers; fuzzed malformed buffers raise in both; forced import
+  failure exercises the fallback; packaged artifact loads the extension;
+  scan timing gate.
 - Manual: ascending/descending Name sort, hidden-file toggle, refresh with
   none/one/all marked, held navigation keys during sort/filter/refresh,
   navigation away and window close while work is pending.
@@ -201,7 +275,9 @@ python src/performancetest/run.py suite --test 'filter.*' --test 'fuzzy.*' --tes
 4. Define and add the fixed-rate input protocol; take the R03/R04 baseline.
 5. R04, then R03 against the CodeReview099 N05 checklist; run the Qt gates and
    the interaction benchmark after each.
-6. Record results, rejected candidates and unrun checks; update the changelog
+6. R09 after developer approval of the toolchain addition: C source, parity
+   and fuzz tests, fallback test, build integration, packaged load check.
+7. Record results, rejected candidates and unrun checks; update the changelog
    for retained changes and move this document to `Done/`.
 
 ## Acceptance Criteria
@@ -269,3 +345,46 @@ python src/performancetest/run.py suite --test 'filter.*' --test 'fuzzy.*' --tes
   parity plus non-regression, pointed the validation backlog back to
   Done/FSPaneArch001 and the N05 checklist to CodeReview099 instead of
   duplicating them, and corrected the fixture reference. Planning only.
+
+### 2026_10_04 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Claude Fable 5.1
+- Effort: High
+- Context Window: 1M
+- Outcome: Reviewed the candidate list against the question "is there a
+  low-risk way to greatly improve large-folder rendering and navigation".
+  Finding: R01–R06 are sound but incremental; the pure-Python first-visit
+  floor (scan 180–290 ms + reset/paint ~80 ms) limits them to roughly
+  583 → 400 ms. The large, low-risk gains are on the frequent paths: revisits
+  and refreshes. Added R07 (per-window bounded LRU of immutable listings,
+  painted immediately on revisit while the normal scan runs and R03 converges;
+  reuses the existing `listing=` start path, so correctness never depends on
+  the cache) and R08 (copy sort keys for entries `reconcile` already matched,
+  compute only the remainder). Expected: revisits 583 → ~80 ms, changed-folder
+  refresh −130 to −545 ms of key work. Both depend on R03 and are sequenced
+  after it. Explicitly not recommended as "low risk": C/Cython record parsing,
+  dropping identities on first scan, painting in enumeration order before
+  sorting, persisted indexes. Planning only.
+
+### 2026_10_04 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Claude Fable 5.1
+- Effort: High
+- Context Window: 1M
+- Outcome: Developer refused R07 and R08 (no caching, no cross-snapshot
+  state); recorded as refused and removed from scope. Answered the native
+  question with a measured cost split of the first visit (kernel enumeration
+  27 ms, Python record parsing 183 ms, list/`Listing` build ~85 ms, natural
+  keys 97 ms, reset/paint ~80 ms): the single largest removable block is the
+  Python record parser. Added R09: one hand-written limited-API (`abi3`) C
+  function `parse_records(buffers)` returning the columns, GIL released,
+  pure-Python fallback kept, parity/fuzz gate, conda-forge MSVC toolchain in
+  the build. Expected scan 295 → ~50 ms, first visit ~250 ms with R01–R06.
+  `natural_key` is the second candidate for the same treatment, deferred until
+  R09 proves the toolchain. Planning only.
