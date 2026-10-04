@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-04
+
 This release focuses on performance. It replaces a Python code with native code
 for parsing the file system chucked data. It greatly improves the rendering 
 time of large folders and the UI responsivity while parsing the data.
