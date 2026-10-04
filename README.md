@@ -27,30 +27,30 @@ Each release is validated by hundreds of correctness tests and accompanied by a 
 3. Extract the ZIP file to a folder of your choice.
 4. Run `RoyiFileManager.exe` from the extracted folder.
 
-RoyiFileManager is portable. Keep the extracted files together and move the
-folder whenever needed.
-
 Session state is saved under `UserSettings/Local`. A failed save reports an error
 once per application session; linked session settings are left untouched.
 
 Install trusted plug-ins under `UserSettings/Plugins/Third-party/<PluginName>/`,
 then run **Reload plugins**. See [manual plug-in installation](docs/plugins/index.md#manual-installation).
 
+> [!TIP]
+> _RoyiFileManager_ is portable. Keep the extracted files together and move the folder whenever needed.
+
 ## Features
 
 Significant additions compared with `fman`:
 
-- **Data Safety**: Additional safeguards protect data integrity during file copies and moves, archive operations and work with file system links.
-- **Performance**: Newly written file system abstraction with an order of magnitude faster performance to deliver **reactive experience**. The system utilizes bulk NTFS/ReFS listing for a snapshot model, virtual rows and background filter/find projections. See [measured gains and remaining limits](CHANGELOG.md#performance-compared-with-081).
-- **Fuzzy Find Files**: Open the Quicksearch dialog with <kbd>Ctrl</kbd>+<kbd>F</kbd> or search recursively with <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>. Supports [`fzf`](https://github.com/junegunn/fzf) style exact terms, anchors, negation, `AND` / `OR` and match highlights, separately from the substring/glob Filter Bar. Using **Toggle find result metadata** adds metadata to results. See [Usage, Syntax and Performance](src/main/resources/base/Plugins/SearchFileFuzzy/README.md).
-- **Search Files**: Press <kbd>Alt</kbd>+<kbd>F7</kbd> for [`ripgrep`](https://github.com/burntsushi/ripgrep) based filename and content search in Glob, Literal or RegEx mode. Leave content empty to list files by name. **Extended** mode adds Size and Date Modified columns with header filters. See [Search Files Usage](src/main/resources/base/Plugins/SearchFiles/README.md).
+- **Data Safety**: Safeguards protect data integrity during file copies and moves, archive operations and work with file system links.
+- **Performance**: A file system abstraction with an order of magnitude faster performance to deliver **reactive experience**. The system utilizes bulk `NTFS`/`ReFS` listing for a snapshot model, virtual rows and background filter/find projections. See [measured gains and remaining limits](CHANGELOG.md#performance-compared-with-081).
+- **Fuzzy Find Files**: Open the _Quicksearch_ dialog with <kbd>Ctrl</kbd>+<kbd>F</kbd> or search recursively with <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>. Supports [`fzf`](https://github.com/junegunn/fzf) style exact terms, anchors, negation, `AND` / `OR` and match highlights, separately from the substring/glob Filter Bar. Using **Toggle find result metadata** adds metadata to results. See [Usage, Syntax and Performance](src/main/resources/base/Plugins/SearchFileFuzzy/README.md).
+- **Search Files**: Press <kbd>Alt</kbd>+<kbd>F7</kbd> for [`ripgrep`](https://github.com/burntsushi/ripgrep) based filename and content search in _Glob_, _Literal_ or _RegEx_ mode. **Extended** mode adds _Size_ and _Date Modified_ columns with header filters. See [Search Files Usage](src/main/resources/base/Plugins/SearchFiles/README.md).
 - **Find Files with `fd`**: Press <kbd>Shift</kbd>+<kbd>F7</kbd> for [`fd`](https://github.com/sharkdp/fd) based filename search with date, size, type and traversal filters. See [Find Files Usage](src/main/resources/base/Plugins/FindFiles/README.md).
 - **Search Files with Everything**: Built in [_Everything_](https://www.voidtools.com) search engine for an instant file and content search based on pre built database. Add indexed folders with **Add folder to Everything database**, then press <kbd>Ctrl</kbd>+<kbd>E</kbd> to search them with [Everything syntax](https://www.voidtools.com/support/everything/search_syntax), highlights and metadata. Use **Manage Everything database folders** for a fully featured bookmarks manager. See [Everything Usage](src/main/resources/base/Plugins/Everything/README.md).
 - **Pane Filter / Files Filter**: Type to filter file names with globs, anchors and negation with [`fzf`](https://github.com/junegunn/fzf) inspired syntax. See [Pane Filter Usage](src/main/resources/base/Plugins/Core/README.md#pane-filter).
 - **Hidden Files**: Windows panes reuse entry attributes to reduce repeated visibility checks. Press <kbd>Ctrl</kbd>+<kbd>R</kbd> after external hidden-attribute changes. See [Hidden Files](src/main/resources/base/Plugins/Core/README.md#hidden-files).
-- **QuickView Layer**: Press <kbd>Ctrl</kbd>+<kbd>Q</kbd> to preview the cursor file over the other pane: images, plain text, Markdown and highlighted source code. See [QuickView Usage](src/main/resources/base/Plugins/Core/README.md#quickview).
+- **QuickView Layer**: Press <kbd>Ctrl</kbd>+<kbd>Q</kbd> to preview the cursor file over the other pane: images, plain text, MarkDown and highlighted source code. See [QuickView Usage](src/main/resources/base/Plugins/Core/README.md#quickview).
 - **UI Components**: New building blocks that expand what plug-ins can do. [Plug-in UI guide](PlugIn.md#ui-extension).
-- **Docked Panel**: Allows controlling states and operations. Exposed to be used by Plug-In's.
+- **Docked Panel**: Controlling states and operations. Exposed to be used by Plug-In's.
 - **Favorites**: Press <kbd>Ctrl</kbd>+<kbd>B</kbd> for a fully featured Favorites Manager, built entirely with the plug-in APIs.
 - **Recent Commands**: <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> pins the last three commands run from the palette.
 - **Process Pane**: Run **Show the OS' processes** for a flat Name/PID list of the system running processes. Press <kbd>F8</kbd> to force terminate it. See [Process Pane Usage](src/main/resources/base/Plugins/ProcessPane/README.md).
