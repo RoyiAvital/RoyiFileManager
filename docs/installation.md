@@ -13,3 +13,7 @@
 !!! tip "Portable Application"
     Keep all extracted files together. You can move the entire {{ app_name }} folder
     to another location whenever needed.
+
+Settings are saved in `UserSettings` beside the application. See
+[Configuration](configuration.md). To add plug-ins, see
+[Manual installation](plugins/index.md#manual-installation).

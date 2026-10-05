@@ -27,12 +27,6 @@ Each release is validated by hundreds of correctness tests and accompanied by a 
 3. Extract the ZIP file to a folder of your choice.
 4. Run `RoyiFileManager.exe` from the extracted folder.
 
-Session state is saved under `UserSettings/Local`. A failed save reports an error
-once per application session; linked session settings are left untouched.
-
-Install trusted plug-ins under `UserSettings/Plugins/Third-party/<PluginName>/`,
-then run **Reload plugins**. See [manual plug-in installation](docs/plugins/index.md#manual-installation).
-
 > [!TIP]
 > _RoyiFileManager_ is portable. Keep the extracted files together and move the folder whenever needed.
 

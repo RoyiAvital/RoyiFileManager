@@ -27,6 +27,14 @@ UserSettings\Plugins\User\Settings
 
 Leave `Local`, `Panes`, `Sort Settings` and `Visited Paths` to the application.
 
+### Session State
+
+The window size and each pane's folder and column widths are saved in
+`UserSettings\Local` when you exit.
+
+- If saving fails, an error appears once per session.
+- Session files that are links are never overwritten.
+
 ## Know Where Plug-in Settings Go
 
 Bundled plug-ins load first, followed by third-party and user plug-ins. The user `Settings` plug-in loads last, so its configuration can override bundled defaults. Put custom key bindings and menu files under `UserSettings\Plugins\User\Settings` rather than editing shipped plug-ins. A `(Windows)` variant takes precedence over the corresponding generic filename.
