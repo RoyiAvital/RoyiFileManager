@@ -135,7 +135,8 @@ class BuildNamingTest(TestCase):
 			(distribution / 'RfmRenameProbe.exe').write_bytes(b'fixture')
 			with patch.dict(build['package'].__globals__, {
 				'_require_windows': Mock(), '_copy_dependency_manifests': Mock(),
-				'_verify_everything': Mock(), '_verify_native_parser_packaged': Mock()
+				'_verify_everything': Mock(), '_verify_native_parser_packaged': Mock(),
+				'_verify_pdf_helper_packaged': Mock()
 			}), patch('builtins.print') as output:
 				build['package']()
 			archive = root / 'target/RfmRenameProbe-9.8.7-windows-x86_64.zip'
@@ -189,6 +190,161 @@ class NativeParserPackagingTest(TestCase):
 				patch.object(build, '_sha256') as digest, self.assertRaises(SystemExit):
 			build._verify_native_parser_packaged()
 		digest.assert_not_called()
+
+
+class PdfHelperPackagingTest(TestCase):
+	def _replies(self):
+		identity = dict(epoch=1, generation=1, revision=0, fingerprint=[1, 2, 3, 4])
+		frames = [({'type': 'ready'}, b''),
+			(dict(identity, type='document', operation=1, sizes=[[200, 200], [300, 150]]), b'')]
+		for page, (width, height, color) in enumerate(((200, 200, b'\x00\x00\xff\xff'),
+			(300, 150, b'\x00\xff\x00\xff'))):
+			frames.append((dict(identity, type='page', operation=page + 2, page=page,
+				width=width, height=height, stride=width * 4), color * width * height))
+		return frames
+
+	def test_packaged_command_environment_and_protocol(self):
+		import build
+		from _quick_view_pdf_worker import FrameDecoder, encode_frame
+		with TemporaryDirectory() as temporary:
+			distribution = Path(temporary)
+			executable = distribution / 'PdfRenameProbe.exe'
+			executable.touch()
+			frames = self._replies()
+			response = b''.join(encode_frame(header, pixels) for header, pixels in frames)
+			seen = []
+			def run(command, **options):
+				self.assertEqual([str(executable), '--quick-view-pdf-worker'], command)
+				self.assertEqual(distribution, options['cwd'])
+				self.assertEqual(30, options['timeout'])
+				self.assertTrue(options['capture_output'])
+				self.assertTrue(options['check'])
+				decoder = FrameDecoder()
+				requests = decoder.feed(options['input'])
+				decoder.finish()
+				self.assertEqual(['open', 'render', 'render', 'close'], [header['type'] for header, data in requests])
+				self.assertTrue(all(not data for header, data in requests))
+				for operation, (header, data) in enumerate(requests, 1):
+					self.assertEqual((1, 1, operation, 0), tuple(header[name]
+						for name in ('epoch', 'generation', 'operation', 'revision')))
+				path = Path(requests[0][0]['path'])
+				self.assertTrue(path.is_absolute())
+				self.assertEqual(build._pdf_smoke_fixture(), path.read_bytes())
+				seen.append(path)
+				environment = options['env']
+				self.assertFalse(any(name.upper().startswith(('PYTHON', 'CONDA', '_PYI', 'PYINSTALLER'))
+					for name in environment))
+				windows = Path(build.os.environ['SYSTEMROOT'])
+				self.assertEqual([str(windows / 'System32'), str(windows)], environment['PATH'].split(build.os.pathsep))
+				return build.subprocess.CompletedProcess(command, 0, response, b'')
+			with patch.object(build, 'DIST_DIR', distribution), patch.object(build, 'APP_NAME', 'PdfRenameProbe'), \
+					patch.dict(build.os.environ, {'PYTHONPATH': 'source', 'PYTHONHOME': 'development',
+						'CONDA_PREFIX': 'environment', '_PYI_APPLICATION_HOME_DIR': 'old-bundle'}), \
+					patch.object(build.subprocess, 'run', side_effect=run), patch('builtins.print') as output:
+				build._verify_pdf_helper_packaged()
+			output.assert_called_once()
+			self.assertEqual(1, len(seen))
+			self.assertFalse(seen[0].exists())
+
+	def test_bad_replies_block_packaging(self):
+		import build
+		from _quick_view_pdf_worker import encode_frame
+		cases = []
+		for index, field, value in ((0, 'type', 'other'), (1, 'sizes', [[200, 200]]),
+			(1, 'fingerprint', [1]), (1, 'operation', 2), (2, 'generation', 2),
+			(2, 'revision', 1), (2, 'page', 1), (2, 'width', 201), (2, 'stride', 4),
+			(2, 'fingerprint', [4, 3, 2, 1]), (3, 'height', 149)):
+			frames = self._replies()
+			frames[index][0][field] = value
+			cases.append(b''.join(encode_frame(header, pixels) for header, pixels in frames))
+		for index, pixels in ((0, b'extra'), (1, b'extra'), (2, b'short'),
+			(2, b'\x00\xff\x00\xff' * 200 * 200), (3, b'\x00\x00\xff\xff' * 300 * 150)):
+			frames = self._replies()
+			frames[index] = (frames[index][0], pixels)
+			cases.append(b''.join(encode_frame(header, payload) for header, payload in frames))
+		valid = b''.join(encode_frame(header, pixels) for header, pixels in self._replies())
+		cases.extend((b'', b'not a frame', valid[:-1], valid + encode_frame({'type': 'ready'}),
+			encode_frame({'type': 'ready'}) + encode_frame({'type': 'error', 'message': 'Backend unavailable'})))
+		with TemporaryDirectory() as temporary, patch.object(build, 'DIST_DIR', Path(temporary)):
+			(build.DIST_DIR / (build.APP_NAME + '.exe')).touch()
+			for index, response in enumerate(cases):
+				with self.subTest(case=index), patch.object(build.subprocess, 'run',
+						return_value=build.subprocess.CompletedProcess([], 0, response, b'')), \
+						self.assertRaisesRegex(SystemExit, 'Packaged PDF helper smoke failed'):
+					build._verify_pdf_helper_packaged()
+
+	def test_missing_executable_launch_crash_and_timeout(self):
+		import build
+		with TemporaryDirectory() as temporary, patch.object(build, 'DIST_DIR', Path(temporary)):
+			with patch.object(build.subprocess, 'run') as execute, self.assertRaisesRegex(SystemExit, 'missing'):
+				build._verify_pdf_helper_packaged()
+			execute.assert_not_called()
+			(build.DIST_DIR / (build.APP_NAME + '.exe')).touch()
+			for error in (OSError('launch failed'), build.subprocess.CalledProcessError(1, ['helper']),
+				build.subprocess.TimeoutExpired(['helper'], 30)):
+				seen = []
+				def run(command, **options):
+					from _quick_view_pdf_worker import FrameDecoder
+					seen.append(Path(FrameDecoder().feed(options['input'])[0][0]['path']))
+					raise error
+				with self.subTest(error=type(error).__name__), patch.object(build.subprocess, 'run', side_effect=run), \
+						self.assertRaisesRegex(SystemExit, 'Packaged PDF helper smoke failed'):
+					build._verify_pdf_helper_packaged()
+				self.assertFalse(seen[0].exists())
+
+	def test_timeout_kills_child_and_cleans_fixture(self):
+		import build
+		from _quick_view_pdf_worker import FrameDecoder
+		run, popen = build.subprocess.run, build.subprocess.Popen
+		children, paths = [], []
+		def start(*args, **options):
+			child = popen(*args, **options)
+			children.append(child)
+			return child
+		def hang(command, **options):
+			paths.append(Path(FrameDecoder().feed(options['input'])[0][0]['path']))
+			options['timeout'] = .2
+			return run([sys.executable, '-B', '-c', 'from threading import Event; Event().wait()'], **options)
+		with TemporaryDirectory() as temporary, patch.object(build, 'DIST_DIR', Path(temporary)):
+			(build.DIST_DIR / (build.APP_NAME + '.exe')).touch()
+			with patch.object(build.subprocess, 'Popen', side_effect=start), \
+					patch.object(build.subprocess, 'run', side_effect=hang), \
+					self.assertRaisesRegex(SystemExit, 'timed out'):
+				build._verify_pdf_helper_packaged()
+			self.assertEqual(1, len(children))
+			self.assertIsNotNone(children[0].poll())
+			self.assertFalse(paths[0].exists())
+
+	def test_smoke_exchange_with_real_windowed_worker(self):
+		import build
+		executable = Path(sys.executable).with_name('pythonw.exe')
+		self.assertTrue(executable.is_file())
+		worker = build.ROOT / 'src/main/python/_quick_view_pdf_worker.py'
+		code = 'import runpy, sys; sys.exit(runpy.run_path(sys.argv[1])["main"]())'
+		run = build.subprocess.run
+		def launch(command, **options):
+			return run([str(executable), '-B', '-c', code, str(worker)], **options)
+		with TemporaryDirectory() as temporary, patch.object(build, 'DIST_DIR', Path(temporary)):
+			(build.DIST_DIR / (build.APP_NAME + '.exe')).touch()
+			with patch.object(build.subprocess, 'run', side_effect=launch), patch('builtins.print'):
+				build._verify_pdf_helper_packaged()
+
+	def test_package_stops_before_archive_on_pdf_smoke_failure(self):
+		import build
+		with TemporaryDirectory() as temporary, \
+				patch.object(build, 'DIST_DIR', Path(temporary)), \
+				patch.object(build, '_require_windows'), \
+				patch.object(build, '_verify_everything'), \
+				patch.object(build, '_verify_native_parser_packaged'), \
+				patch.object(build, '_verify_pdf_helper_packaged',
+					side_effect=SystemExit('Packaged PDF helper failed')) as verify, \
+				patch.object(build, '_copy_dependency_manifests') as manifests, \
+				patch.object(build, 'ZipFile') as archive, patch('builtins.print'):
+			with self.assertRaisesRegex(SystemExit, 'Packaged PDF helper failed'):
+				build.package()
+			verify.assert_called_once_with()
+			manifests.assert_not_called()
+			archive.assert_not_called()
 
 
 class RuntimeNamingTest(TestCase):

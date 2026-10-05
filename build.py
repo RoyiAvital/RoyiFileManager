@@ -491,6 +491,7 @@ def package():
 		raise SystemExit('Run `python build.py freeze` first.')
 	_verify_everything(DIST_DIR / '_internal/resources/Plugins/Everything/bin')
 	_verify_native_parser_packaged()
+	_verify_pdf_helper_packaged()
 	_copy_dependency_manifests()
 	version = BUILD_SETTINGS['version']
 	archive = TARGET_DIR / f'{APP_NAME}-{version}-windows-x86_64.zip'
@@ -517,6 +518,84 @@ def _verify_native_parser_packaged():
 	expected = _sha256(NATIVE_PARSER_BINARY)
 	if expected is None or _sha256(packaged) != expected:
 		raise SystemExit(f'{packaged} is missing or differs from {NATIVE_PARSER_BINARY}.')
+
+
+def _pdf_smoke_fixture(sizes=((200, 200), (300, 150)), rotation=0):
+	objects = [b'<< /Type /Catalog /Pages 2 0 R >>', b'']
+	pages = []
+	for index, (width, height) in enumerate(sizes):
+		page_id = len(objects) + 1
+		pages.append('%d 0 R' % page_id)
+		color = '1 0 0' if index % 2 == 0 else '0 1 0'
+		content = ('%s rg 0 0 %d %d re f\n' % (color, width, height)).encode('ascii')
+		objects.append(('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 %d %d] '
+			'/Rotate %d /Resources << >> /Contents %d 0 R >>' %
+			(width, height, rotation, page_id + 1)).encode('ascii'))
+		objects.append(b'<< /Length ' + str(len(content)).encode('ascii') + b' >>\nstream\n' + content + b'endstream')
+	objects[1] = ('<< /Type /Pages /Kids [%s] /Count %d >>' % (' '.join(pages), len(pages))).encode('ascii')
+	output = bytearray(b'%PDF-1.4\n')
+	offsets = [0]
+	for number, content in enumerate(objects, 1):
+		offsets.append(len(output))
+		output.extend(('%d 0 obj\n' % number).encode('ascii') + content + b'\nendobj\n')
+	xref = len(output)
+	output.extend(('xref\n0 %d\n0000000000 65535 f \n' % len(offsets)).encode('ascii'))
+	for offset in offsets[1:]:
+		output.extend(('%010d 00000 n \n' % offset).encode('ascii'))
+	output.extend(('trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n' % (len(offsets), xref)).encode('ascii'))
+	return bytes(output)
+
+
+def _verify_pdf_helper_packaged():
+	from src.main.python._quick_view_pdf_worker import FrameDecoder, PdfError, encode_frame
+	executable = DIST_DIR / (APP_NAME + '.exe')
+	if not executable.is_file():
+		raise SystemExit(f'Packaged PDF helper is missing: {executable}')
+	environment = {name: value for name, value in os.environ.items()
+		if not name.upper().startswith(('PYTHON', 'CONDA', '_PYI', 'PYINSTALLER'))
+		and name.upper() != 'PATH'}
+	windows = Path(os.environ['SYSTEMROOT'])
+	environment['PATH'] = os.pathsep.join((str(windows / 'System32'), str(windows)))
+	try:
+		with TemporaryDirectory(prefix='PdfSmoke-') as temporary:
+			path = Path(temporary) / 'preview.pdf'
+			path.write_bytes(_pdf_smoke_fixture())
+			commands = [dict(type='open', path=str(path)),
+				dict(type='render', page=0, width=200, height=200),
+				dict(type='render', page=1, width=300, height=150), dict(type='close')]
+			request = b''.join(encode_frame(dict(command, epoch=1, generation=1,
+				operation=operation, revision=0)) for operation, command in enumerate(commands, 1))
+			result = subprocess.run([str(executable), '--quick-view-pdf-worker'],
+				input=request, capture_output=True, check=True, cwd=DIST_DIR,
+				env=environment, timeout=30)
+		decoder = FrameDecoder()
+		frames = decoder.feed(result.stdout)
+		decoder.finish()
+		if [header.get('type') for header, payload in frames] != ['ready', 'document', 'page', 'page']:
+			raise ValueError('Expected ready, document and two page replies')
+		document = frames[1][0]
+		if frames[0][1] or frames[1][1] or document.get('sizes') != [[200, 200], [300, 150]]:
+			raise ValueError('Invalid two-page PDF metadata')
+		fingerprint = document.get('fingerprint')
+		if not isinstance(fingerprint, list) or len(fingerprint) != 4 or any(type(value) is not int for value in fingerprint):
+			raise ValueError('Invalid PDF snapshot fingerprint')
+		for operation, (header, payload) in enumerate(frames[1:], 1):
+			expected = dict(epoch=1, generation=1, operation=operation, revision=0)
+			if any(type(header.get(name)) is not int or header[name] != value for name, value in expected.items()):
+				raise ValueError('PDF reply identity mismatch')
+		for page, ((header, pixels), (width, height), color) in enumerate(zip(
+			frames[2:], ((200, 200), (300, 150)), (b'\x00\x00\xff\xff', b'\x00\xff\x00\xff'))):
+			expected = dict(page=page, width=width, height=height, stride=width * 4)
+			if any(type(header.get(name)) is not int or header[name] != value for name, value in expected.items()):
+				raise ValueError('PDF raster geometry mismatch')
+			if header.get('fingerprint') != fingerprint or len(pixels) != width * height * 4:
+				raise ValueError('PDF raster fingerprint or byte length mismatch')
+			offset = (height // 2 * width + width // 2) * 4
+			if pixels[offset:offset + 4] != color:
+				raise ValueError('PDF page center pixel mismatch')
+	except (OSError, subprocess.SubprocessError, PdfError, ValueError) as error:
+		raise SystemExit(f'Packaged PDF helper smoke failed: {error}') from error
+	print('Packaged PDF helper smoke passed (two pages, red/green pixels).')
 
 
 COMMANDS = {

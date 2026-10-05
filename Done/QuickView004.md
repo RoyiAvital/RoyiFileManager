@@ -6,12 +6,16 @@ Add basic, read-only PDF preview to QuickView: scroll through pages, fit a page
 or its width, and navigate or zoom without opening another application. Use
 `pypdfium2` with a bundled matching PDFium library as the sole PDF backend.
 
-Status: source implementation is in place; the focused unit/native module
-passes (20 tests). The recorded Qt gate did **not** pass: `QuickViewPdfIT` does
-not exist (see Implementation Review, IR1). Keep this task Pending: Windows 10,
-Windows CI and frozen-artifact delivery gates, the Qt integration tests and the
-remaining manual cases have not been verified. The document belongs under
-`Plan/` until they are (IR2).
+Status: Implemented. Filed under Done at the user's direction on 2026-10-05.
+The restored `QuickViewPdfIT` and scrolling/callback regressions pass: 49 focused
+QuickView unit/native tests and 25 Qt integration tests. Windows 10, Windows CI,
+frozen-artifact delivery and remaining manual checks are still unverified;
+implementation completion does not certify those delivery gates. See Restoration
+Validation and Review Resolution for evidence. Earlier checkpoints and reviewer
+findings are preserved below.
+
+IR7 adds an automatic packaged-helper gate; see Packaged Helper Validation for
+its focused checks and the remaining frozen-artifact validation limitation.
 
 ## Scope
 
@@ -95,10 +99,12 @@ versioned JSON header and optional raw pixel payload; never pickle. Commands are
 `open`, `render` and `close`; replies are `ready`, `document`, `page` or `error`.
 Bind initial `ready` to the current QProcess identity and protocol version.
 Subsequent commands/replies carry a controller epoch, document generation,
-operation ID and viewport revision; document/page replies also carry the snapshot
+operation ID and layout revision; document/page replies also carry the snapshot
 fingerprint. Require exact reply/operation matching before caching or displaying
 anything. Reject obsolete revisions even when native rendering could not be
-canceled cooperatively.
+canceled cooperatively. Advance the revision on layout/zoom/DPI changes or clear,
+not scrolling: scrolling only reprioritizes targets, so an in-flight raster for
+the unchanged layout remains useful and can enter the cache.
 
 Cap headers at 512 KiB, pixel payloads at 32 MiB and retained stderr at 64 KiB.
 Validate message types, finite numbers, page indices, dimensions, stride and exact
@@ -144,6 +150,23 @@ Keep [conda-lock.yml](../conda-lock.yml) reproducible and test package/binary up
 together. Ship the applicable pypdfium2/PDFium third-party licenses and track
 PDFium security updates. No installation or lock refresh occurs during this
 design task. Runtime loss of the package/DLL must affect PDF preview only.
+
+`build.py package` calls `_verify_pdf_helper_packaged()` before copying manifests
+or creating the ZIP. It launches the bundled executable with
+`--quick-view-pdf-worker` from the distribution directory, exchanges binary
+open/render/close frames for a generated two-page fixture, and requires ready,
+document and two matching page replies with red/green center pixels. The smoke
+uses the worker's framing decoder and the same fixture generator as the PDF
+tests; the build host does not import PDFium or Qt.
+
+The helper environment excludes Python, conda and inherited PyInstaller bootstrap
+settings; PATH contains only Windows system directories. One 30-second timeout
+bounds the exchange. Launch errors, nonzero exit, malformed/stale replies,
+wrong geometry or pixels, and timeout stop packaging. `subprocess.run` kills and
+reaps a timed-out child; the fixture is removed on success or failure. This is
+build-time work only, with no new application work or dependency installation.
+Existing unrelated packaging checks remain in force. A passing automated smoke
+does not replace license, missing-DLL UI, DPI or platform/manual delivery checks.
 
 ### File And Render Bounds
 
@@ -240,6 +263,14 @@ and leaves a short inline timeout error. Viewport changes only replace pending
 work; they neither extend the active deadline nor restart the process. Disarm
 all operation timers while idle. No heartbeat or automatic restart loop.
 
+Retain immediate retirement on non-PDF selection (IR5): a warm idle helper would
+keep feature-specific process/native memory alive on the non-PDF path. Measure
+frozen first-page latency before considering a separate lifecycle change. Retain
+the document-fatal five-second render timeout (IR6): it bounds a hung native call
+and avoids repeatedly parsing the same slow document. A false timeout requires
+manual retry by selection or toggle; do not automatically reopen or raise the
+deadline without slow-machine/complex-document measurements.
+
 Missing package/DLL, launch failure, unreadable/oversized/invalid PDF and required
 password produce document-level errors. Try only the empty password; documents
 that open with it may preview normally. Ordinary returned page errors remain
@@ -305,6 +336,9 @@ ownership; do not depend on a user's PDF collection or install fixture generator
   frames, invalid stride/dimensions, wrong epochs/revisions, malformed headers and
   payload ownership. Fake helpers cover failed starts, all deadline stages,
   cancellation, EOF, unavailable DLL/import, late replies and unexpected exit.
+  Start a real render, scroll before its reply and assert the unchanged-layout
+  page is cached. Keep genuine layout/clear stale-result rejection and exercise
+  startup/stdout/stderr callbacks queued after process retirement.
 - Native integration: execute the feasibility probe in a child process using
   actual one/two-page, mixed-size and rotated/cropped PDF fixtures. Assert page
   count and known colored pixel regions, including RGB channel order and opacity.
@@ -328,13 +362,19 @@ ownership; do not depend on a user's PDF collection or install fixture generator
   maximum Qt heartbeat gap during parsing, rendering and the largest pixel copy.
   On the reference machine, require no PDF-induced heartbeat gap above 100 ms;
   record its configuration and separate environment noise with a no-PDF baseline.
+- Packaged helper: `python build.py package` must exercise the frozen executable
+  pipes and two-page pixel output before archive creation, without development
+  import/DLL paths. Regression tests cover the gate ordering, renamed executable,
+  framing and metadata failures, incorrect pixels, missing executable, launch
+  failure, crash, timeout and child/fixture cleanup. A real `pythonw` exchange
+  validates the source smoke driver, not the frozen artifact.
 - Manual: ordinary text/scanned PDFs, portrait/landscape mixtures, narrow panes,
   100%/150%/200% Windows scaling, splitter resize, trackpad/wheel, keyboard-only
   navigation and a PDF requiring a password. Check readable nonblank pages and
   unclipped controls. Test supported Windows 10 and Windows 11 x64 baselines.
-  Portable smoke uses the windowed artifact with Python/conda/PDF-reader locations
-  absent from PATH: verify helper pipes, correct pixels, bundled DLL resolution,
-  no console/second window, and all licenses. In a disposable artifact copy,
+  Supplement the automated packaged helper check with verification of actual
+  bundled DLL resolution, no console/second window, and all licenses. In a
+  disposable artifact copy,
   remove its PDFium DLL and verify only PDF preview fails. Record package-size
   growth. A source-only or console-build result does not satisfy this gate.
 
@@ -370,8 +410,10 @@ or clean/freeze automatically for this task.
    application behavior is implemented; record actual results and completion
    provenance before moving this task to Done.
 
-Steps 1-4 are implemented and source-validated. Step 5 remains open for release
-environment and manual checks; usage documentation and the changelog are updated.
+Steps 1-4 are implemented and source-validated; usage documentation and the
+changelog are updated. The user directed that implementation be marked complete
+and filed under Done. Step 5's release-environment and manual checks remain
+outstanding delivery work, not claimed validation results.
 
 ## Acceptance Criteria
 
@@ -424,6 +466,19 @@ environment and manual checks; usage documentation and the changelog are updated
   with pythonw during source work and retain frozen/Windows 10 checks as delivery
   gates without automatically running a freeze. Acceptance criteria remain in force.
 
+### 2026_10_05 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: High
+- Context Window: 272K
+- Outcome: Updated revision semantics and explicitly retained immediate helper
+  retirement and document-fatal render deadlines after IR5/IR6. Source fixes and
+  restored integration coverage are ready for another review, not release approval.
+  Windows/portable/manual acceptance gates remain open.
+
 ## Implementer
 
 ### 2026_10_05 - GitHub Copilot
@@ -440,10 +495,40 @@ environment and manual checks; usage documentation and the changelog are updated
   Source rendering, preview switching, crash/hang handling and 100-cycle resource
   checks pass. Delivery gates remain open; this is not a release-completion record.
 
+### 2026_10_05 - GitHub Copilot
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: High
+- Context Window: 272K
+- Outcome: After explicit restoration approval, fixed scroll-only invalidation
+  and retired-process callbacks, restored three PDF session integration tests,
+  and moved the canonical task back to Plan. The 49 focused unit/native and 25 Qt
+  integration tests pass. IR1-IR4 are addressed; IR5/IR6 retain documented policy.
+  No global theme, packaging or public API changes were made in this restoration.
+
+### 2026_10_05 - GitHub Copilot
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: High
+- Context Window: 272K
+- Outcome: Addressed IR7 with an automatic packaged PDF helper smoke before ZIP
+  creation, reusing the protocol and generated fixture. Added six packaging
+  regressions, including real windowed pipes and timeout cleanup. The 34 focused
+  unit/native and three PDF Qt tests pass. The current artifact lacks the
+  expected bundled PDFium DLL; no frozen smoke, package, clean or freeze was run.
+
 ## Validation Results
 
 Existing Windows 11 x64 environment: Python 3.14.7, PyQt5 5.15.11 / Qt 5.15.15,
 pypdfium2 5.13.0, PDFium 151.0.7913.0. No environments or packages were created.
+
+### Initial Implementation Checkpoint
 
 Commands use the existing environment's Python executable:
 
@@ -481,7 +566,8 @@ python -B -c "import build, subprocess, sys, os; env=build._environment(); env['
   excludes optional Pillow/NumPy. This is not a frozen-artifact smoke result.
 - Task structure/local links, changed-file editor diagnostics and scoped
   `git diff --check` passed. The UI theming suggestion and HTML reproduction
-  are separate in [UIDesign001](UIDesign001.md); no global theme was changed.
+  were recorded separately as `UIDesign001`; that task is absent from the
+  current tree. No global theme was changed.
 - Not run: Windows 10 and Windows CI; frozen windowed launch/DLL resolution,
   missing-DLL artifact test, artifact-size delta; manual scanned/password-required
   PDFs, UNC/symlink/long-path cases, physical 150%/200% DPI and trackpad checks.
@@ -610,3 +696,155 @@ python -B -c "import build, subprocess, sys; sys.exit(subprocess.run([sys.execut
 20 tests OK in 13.2 s; resource line `cycles=100 first_ms=98.4 median_ms=95.3
 handles=192->192 commit_MiB=26.6->25.6 max_heartbeat_ms=16.0 large_copy_ms=3.1`.
 The recorded Qt command: 22 OK, `QuickViewPdfIT` loader error (IR1).
+
+## Restoration Validation
+
+2026-10-05, same existing Windows 11 environment. These results supersede the
+missing-class state observed during the implementation review. `python` below
+denotes the existing environment's executable; no installation was performed.
+
+```powershell
+python -B -c "import build, subprocess, sys; sys.exit(subprocess.run([sys.executable, '-B', '-m', 'unittest', 'fman_unittest.test_quick_view_pdf.PdfControllerTest.test_scrolling_preserves_inflight_raster'], env=build._environment()).returncode)"
+python -B -c "import build, subprocess, sys; sys.exit(subprocess.run([sys.executable, '-B', '-m', 'unittest', 'fman_unittest.test_quick_view_pdf.PdfControllerTest.test_late_callbacks_after_process_retirement'], env=build._environment()).returncode)"
+python -B -c "import build, subprocess, sys, os; env=build._environment(); env['QT_QPA_PLATFORM']='offscreen'; env['QT_QPA_FONTDIR']=os.path.join(os.environ['WINDIR'],'Fonts'); sys.exit(subprocess.run([sys.executable, '-B', '-X', 'faulthandler', '-m', 'unittest', 'fman_integrationtest.test_qt.QuickViewPdfIT'], env=env).returncode)"
+python -B -c "import build, subprocess, sys; sys.exit(subprocess.run([sys.executable, '-B', '-m', 'unittest', 'discover', '-s', 'src/unittest/python', '-p', '*quick_view*.py'], env=build._environment()).returncode)"
+python -B -c "import build, subprocess, sys, os; env=build._environment(); env['QT_QPA_PLATFORM']='offscreen'; env['QT_QPA_FONTDIR']=os.path.join(os.environ['WINDIR'],'Fonts'); sys.exit(subprocess.run([sys.executable, '-B', '-X', 'faulthandler', '-m', 'unittest', 'fman_integrationtest.test_qt.QuickViewIT', 'fman_integrationtest.test_qt.QuickViewPdfIT', 'fman_integrationtest.test_qt.QuickViewImagesIT', 'fman_integrationtest.test_qt.QuickViewTextIT'], env=env).returncode)"
+```
+
+- Each new controller regression passed immediately after its code change.
+- Restored session test passed individually after correcting fixture assertions
+  to the existing `fit_width`/`fit_page` mode identifiers; no application change
+  was needed for that test failure. All three `QuickViewPdfIT` tests then passed.
+- QuickView unit discovery: 49 passed in 13.757 s, including all 22 PDF tests.
+  The malformed-PNG fixture printed its expected libpng diagnostic; no skips.
+- Qt overlay/PDF/image/text integration: 25 passed in 3.772 s; no loader error
+  or skips. Covers real loader-bridge switching, known PDF pixels, Qt-thread
+  delivery, focus/shortcuts, splitter geometry, controller reuse, fake-helper
+  open errors/render timeouts, active close/shutdown, stale generations and
+  signal disconnection.
+- Resource fixture: 100 cycles, first page 96.3 ms, median 94.9 ms; parent handles
+  192 to 192, commit 26.2 to 25.4 MiB; maximum large-raster heartbeat gap 12.2 ms
+  and owned-image copy 3.1 ms. These are local fixture results, not frozen-build
+  latency or complex-document/native-memory measurements.
+- Editor diagnostics: no errors in the two changed application modules or the
+  two changed test modules.
+- Document checks passed: required sections, relative links, unique Pending
+  index/location, and unchanged historical review/provenance compared with HEAD
+  using explicit UTF-8 decoding. `git diff --check` and the unstaged task's
+  no-index whitespace check passed. The separate missing UI task was not recreated.
+- Outstanding: Windows 10/CI, frozen launch/DLL/license/missing-DLL/size checks,
+  and the manual/path/DPI/complex-document/native-memory gates listed above.
+  No full test suite, clean or freeze was run. At this restoration checkpoint,
+  the task remained Pending; the later filing decision is recorded below.
+
+## Review Resolution
+
+- IR1: restored `QuickViewPdfIT` with three tests using generated PDF pixels,
+  real loader dispatch and injected fake helpers. The complete recorded Qt
+  command now passes 25 actual tests. Historical checkpoints are not rewritten.
+- IR2: initially returned the canonical document to Plan. On 2026-10-05 the user
+  directed that it be marked implemented and moved to Done. The index now lists
+  it under Completed; reviewer history and unverified delivery checks are retained.
+- IR3: scrolling no longer advances the layout revision. Exact command identity
+  and raster validation remain enforced; a reply for the unchanged layout is
+  cached even after viewport movement. Layout/clear revisions still reject stale
+  results. A real in-flight render regression covers the reported failure.
+- IR4: startup and stderr callbacks return when the process has already retired;
+  the queued-callback regression covers these and the existing stdout guard.
+- IR5: retained immediate helper retirement on non-PDF selection. This preserves
+  the no-background-work policy; frozen latency is still an explicit open gate.
+- IR6: retained five-second, document-fatal render timeouts and manual retry.
+  Session integration verifies one inline failure and teardown without a restart
+  loop. Revisit only with complex-document/slow-machine measurements.
+
+## Completion Status
+
+2026-10-05: implementation marked complete and the canonical task filed under
+Done at the user's explicit direction. This changes task status and location,
+not application code or recorded test outcomes. The remaining delivery checks
+are neither passed nor waived by this filing; no additional tests were run.
+
+## Implementation Review 2 (2026_10_05)
+
+### 2026_10_05 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Claude Fable 5.1
+- Effort: High
+- Context Window: 1M
+- Outcome: Approved at source level. IR1-IR4 are resolved and independently
+  reproduced: `QuickViewPdfIT` exists with three session-integration tests
+  (real helper and PDFium pixels, fake-helper open error and render timeout,
+  active close/reopen/shutdown with stale and late signals); `_scrolled` no
+  longer bumps the layout revision; `_started`/`_read_error` guard a retired
+  process. Re-ran the recorded commands: QuickView unit discovery 49 OK (resource
+  line `first_ms=106.2 median_ms=105.7 handles=192->192 max_heartbeat_ms=15.2`),
+  Qt QuickView/PDF/Images/Text 25 OK. IR5/IR6 are recorded policy decisions.
+  The delivery gates stay open as the document states; one of them can be
+  automated cheaply (IR7). No application code edited.
+
+- **IR7 [P3]: Add a packaged helper smoke to `build.py`.** `package()` and
+  `smoke_everything()` verify the frozen native parser and Everything binary,
+  but nothing exercises the frozen PDF helper, which is the gate most likely to
+  break (windowed executable pipes, `pypdfium2_raw` DLL resolution, hidden
+  imports). A `_verify_pdf_helper_packaged()` step that launches
+  `RoyiFileManager.exe --quick-view-pdf-worker` from `DIST_DIR` with piped
+  stdio, exchanges `ready` / `open` (generated two-page PDF) / `document` /
+  `render` / `page` frames and checks the red center pixel would turn the
+  "frozen windowed launch/DLL resolution" item from manual into an automatic
+  `package` check, mirroring `_verify_native_parser_packaged()`. Windows 10,
+  CI and the manual DPI/password/UNC cases remain manual.
+
+Verified in this pass: the IR3 change keeps layout/clear revisions as the
+staleness boundary (`_refresh`, `clear`, `set_document` still increment);
+controller `request_pages` replaces targets with the latest viewport at the
+unchanged revision; `test_scrolling_preserves_inflight_raster` and
+`test_late_callbacks_after_process_retirement` cover IR3/IR4;
+[Plan.md](../Plan.md) lists the task under Completed with the `Done/` path;
+CHANGELOG and README carry the feature.
+
+## Packaged Helper Validation
+
+2026-10-05: IR7 addressed. `package()` now invokes
+`_verify_pdf_helper_packaged()` before manifest copies and archive creation.
+Publish/release inherit the gate through `package()`; the independent Everything
+smoke is unchanged. The task remains Implemented under Done.
+
+The selected design uses a generated two-page PDF and the existing framing codec,
+not file-presence checks or a source-renderer substitute for the frozen worker.
+The fixture generator moved to the build helper and is reused by the PDF tests;
+there is no new package, helper file or application runtime work. A failed gate
+does not create or overwrite the ZIP. Actual artifact execution remains required
+before recording the frozen gate as passed.
+
+Commands run with the existing environment's Python:
+
+```powershell
+python -B -c "import build, subprocess, sys; sys.exit(subprocess.run([sys.executable, '-B', '-m', 'unittest', 'fman_unittest.test_app_name.PdfHelperPackagingTest', 'fman_unittest.test_app_name.BuildNamingTest', 'fman_unittest.test_app_name.NativeParserPackagingTest', 'fman_unittest.test_everything.EverythingBuildTest.test_build_entry_points_provision_and_package_only_verifies', 'fman_unittest.test_quick_view_pdf'], env=build._environment()).returncode)"
+python -B -c "import build, subprocess, sys, os; env=build._environment(); env['QT_QPA_PLATFORM']='offscreen'; env['QT_QPA_FONTDIR']=os.path.join(os.environ['WINDIR'],'Fonts'); sys.exit(subprocess.run([sys.executable, '-B', '-X', 'faulthandler', '-m', 'unittest', 'fman_integrationtest.test_qt.QuickViewPdfIT'], env=env).returncode)"
+```
+
+- Initial regression reproduced the missing gate: PDF smoke failure did not stop
+  packaging. The same regression passed after adding the call.
+- Focused unit/native tests: 34 passed in 13.657 s, no skips. Six packaging tests
+  cover command/name/environment isolation, request ordering, temporary fixture
+  cleanup, malformed/truncated/extra replies, identity/fingerprint/geometry
+  mismatches, wrong pixels, missing executable, launch failure, nonzero exit,
+  and timeout. A real hung child was reaped and its fixture removed. The real
+  `pythonw` source helper passed the complete binary exchange and both pixel checks.
+- PDF Qt session integration: three passed in 1.639 s, no skips. Shared fixture
+  reuse preserves actual rendering, preview switching and session cleanup.
+- Existing 100-cycle resource fixture: first page 93.8 ms, median 90.6 ms;
+  handles 205 to 205, commit 30.6 to 30.9 MiB; maximum large-raster heartbeat gap
+  11.7 ms, image copy 3.0 ms. These are source fixture measurements.
+- Editor diagnostics: no errors in the changed build/test/documentation files.
+- Frozen validation not run: the current distribution has an executable but
+  lacks the expected `_internal/pypdfium2_raw/pdfium.dll`. It is not evidence of
+  a working PDF-enabled artifact. No automatic freeze, clean, package, dependency
+  installation or full suite was run. The new gate runs on the next prepared
+  artifact's `python build.py package` invocation.
+- Windows 10/CI, actual DLL-resolution inspection, missing-DLL UI behavior,
+  redistribution notices, artifact size and the remaining manual checks retain
+  their previously documented unverified status.

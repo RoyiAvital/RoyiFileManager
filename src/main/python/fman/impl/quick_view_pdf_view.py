@@ -183,7 +183,6 @@ class PdfCanvas(QAbstractScrollArea):
 		top = self._offset()[1]
 		self._direction = 1 if top >= self._last_top else -1
 		self._last_top = top
-		self.revision += 1
 		self._update_current()
 		self.viewport().update()
 		if not self.timer.isActive():

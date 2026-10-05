@@ -148,6 +148,9 @@ conda-lock lock -f environment.yml -p win-64
 
 See [`DEVELOPMENT.md`](DEVELOPMENT.md) for more details.
 
+`python build.py package` checks the frozen PDF helper's binary pipes and rendered
+page pixels before creating the ZIP. A failed or timed-out check stops packaging.
+
 ### Documentation
 
 Build the documentation:

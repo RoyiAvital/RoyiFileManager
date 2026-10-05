@@ -52,14 +52,14 @@ API compatibility or feature-negotiation guarantee. Consult
 - Use explicit imports. Imported implementation dependencies visible in a module
   are not additional public exports. Pane/window objects are supplied by the
   host; their constructors are not plug-in construction APIs.
-- `fman.ui` currently exposes Qt-derived components. Its documented methods are
-  the intended integration surface, but inherited Qt methods remain technically
-  accessible. This is not a sandbox or a toolkit-independent wrapper API. The
-  stricter abstraction in [TODO.md](TODO.md) is not implemented yet.
+- `fman.ui` still exposes Qt-derived hosting (`ToolWindow`, `PaneToolWindow`,
+  `OutputTextBox`). Their documented methods are the intended integration
+  surface, but inherited Qt methods remain technically accessible. This is not
+  a sandbox. Lists, tables and Panels are Qt-free services; prefer them.
 - Raw parent widgets and Qt closure signals are not exposed through the general
   `Window`/`DirectoryPane` API. Use `pane.on_closed(callback)` and UI hosting.
 - The unshipped `BottomPanel` and public `set_bottom_panel` aliases were removed.
-  Use `Panel` and `PaneToolWindow.set_panel(panel)`.
+  Dock controls with `show_panel`.
 - Treat plug-ins as trusted Python code. Keep mutable data under `UserSettings`
   and do not write to the Windows Registry.
 
@@ -237,8 +237,8 @@ Unsubscribe when the owning tool closes. No polling or new worker is created.
 | `set_extended_status_bar(settings)` | RoyiFileManager host entry point for extended status-bar settings; use the settings contract documented below. |
 
 The removed methods `tool_parent`, `get_quicklist_item_css`, `set_panel`,
-`set_bottom_panel`, and `remove_bottom_panel` are not general Window APIs. Mount
-plug-in panels through `PaneToolWindow.set_panel()`.
+`set_bottom_panel`, and `remove_bottom_panel` are not general Window APIs. Dock
+plug-in controls with `show_panel`.
 
 ## Directory Listeners
 
@@ -884,11 +884,11 @@ receive a `PaneToolWindow` in `UiController.build` instead of constructing eithe
 | `prompt` | Current prompt object or `None`; Qt-specific, not a portable dialog handle. Prefer public prompt methods. |
 | `pane` | Invoking public pane, on PaneToolWindow. |
 | `item_css` | Host theme data for list items, on PaneToolWindow. Treat it as host-owned. |
-| `bottom_panel` | Currently mounted Panel or `None`, on PaneToolWindow; use `set_panel`, do not assign it directly. This attribute is not the removed BottomPanel class alias. |
+| `bottom_panel` | Host-mounted panel or `None`, on PaneToolWindow. Read-only for plug-ins. |
 
 | Method/signal | Contract |
 | --- | --- |
-| `set_panel(panel)` | PaneToolWindow: mount one Panel across the main window above the status bar, with host-owned close control. `None` removes this session's panel without closing the tool. Reject a closed/inactive session. |
+| `set_panel(panel)` | Host use: the panel widget is no longer exported, so plug-ins dock controls with `show_panel` instead. |
 | `close()` | UI-thread session dismissal; closes paired surfaces and prompts and emits disposal. |
 | `invalidate()` | Clear lifetime immediately and queue closure; safe for owner invalidation from workers. |
 | `post(callback, *args)` | Queue a short callback to Qt; discard delivery if session/owner is no longer active. |
@@ -956,7 +956,8 @@ titles ≤512 and hints ≤2048 characters.
 `metadata` maps up to 8 unique labels (≤32 characters, distinct from
 `title_label`/`hint_label`) to `()` (empty), a string, an `int` or finite `float`,
 or `(sort_key, text)`; texts are ≤128 characters. All items share the same labels
-in the same order and the same key kind per label. At most 10,000 items.
+in the same order (an item without a value lists the label with `()`) and the
+same key kind per label. At most 10,000 items.
 
 The call blocks: workers wait on an event, Qt callers run a nested loop. The
 window is built hidden, `on_open(handle)` runs, then the window is shown unless

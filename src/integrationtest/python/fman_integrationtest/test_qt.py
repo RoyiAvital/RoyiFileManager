@@ -569,6 +569,214 @@ class QuickViewIT(QtIT):
 		self.run_in_app(check)
 
 
+class QuickViewPdfIT(QtIT):
+	setUp = QuickViewIT.setUp
+	close_window = QuickViewIT.close_window
+	navigate = QuickViewIT.navigate
+	drain = QuickViewIT.drain
+
+	def until(self, predicate):
+		from PyQt5.QtCore import QEventLoop, QTimer
+		loop = QEventLoop()
+		poll = QTimer(loop)
+		poll.timeout.connect(lambda: loop.quit() if predicate() else None)
+		deadline = QTimer(loop)
+		deadline.setSingleShot(True)
+		deadline.timeout.connect(loop.quit)
+		poll.start(5)
+		deadline.start(5000)
+		try:
+			if not predicate():
+				loop.exec_()
+		finally:
+			poll.stop()
+			deadline.stop()
+		self.assertTrue(predicate(), 'PDF preview did not settle')
+
+	def start_session(self, session_type=None):
+		from fman.impl.quick_view import QuickViewSession
+		from fman.impl.quick_view_images import load_preview
+		from unittest.mock import patch
+		def load(request, canceled):
+			return load_preview(request, canceled, self.filesystem.resolve)
+		with patch('fman.load_json', return_value={}):
+			return (session_type or QuickViewSession)(self.window, *self.panes, load=load)
+
+	def fake_controller(self, mode):
+		from fman.impl.quick_view_pdf import PdfController
+		script = '''
+from _quick_view_pdf_worker import encode_frame, read_command
+from threading import Event
+import sys
+output = sys.stdout.buffer
+output.write(encode_frame({'type': 'ready'}))
+output.flush()
+request = read_command(sys.stdin.buffer)
+if sys.argv[1] == 'error':
+	response = dict(request, type='error', stage='open', message='Fixture rejected PDF')
+else:
+	response = dict(request, type='document', sizes=[[200, 400], [200, 400]], fingerprint=[1, 2, 3, 4])
+output.write(encode_frame(response))
+output.flush()
+Event().wait()
+'''
+		controller = PdfController(self.window, command=[sys.executable, '-B', '-c', script, mode])
+		self.window._quick_view_pdf_controller = controller
+		return controller
+
+	def test_pdf_session_render_switch_focus_and_reopen(self):
+		from fman.impl.quick_view import QuickViewSession
+		from fman.url import as_url
+		from fman_unittest.test_quick_view_pdf import pdf_bytes
+		from PyQt5.QtCore import QPoint, QRect, QThread
+		from PyQt5.QtTest import QTest
+		pdf = self.root / 'preview.pdf'
+		pdf.write_bytes(pdf_bytes())
+		text = self.root / 'preview.txt'
+		text.write_text('PDF switching fixture', encoding='utf-8')
+		image = QuickViewImagesIT.make_image(self, 'preview.png', 8, 8)
+		self.panes[0].reload()
+		self.drain(self.panes[0])
+		self.panes[0].place_cursor_at(as_url(pdf))
+		def check():
+			kinds, threads = [], []
+			class RecordingSession(QuickViewSession):
+				def show_result(self, result):
+					kinds.append(result.kind)
+					threads.append(QThread.currentThread())
+					super().show_result(result)
+				def _pdf_page(self, *args):
+					threads.append(QThread.currentThread())
+					super()._pdf_page(*args)
+			session = self.start_session(RecordingSession)
+			controller = None
+			try:
+				self.until(lambda: session.overlay.pdf_view is not None and bool(session.overlay.pdf_view.canvas.cache))
+				controller = session._pdf_controller
+				view = session.overlay.pdf_view
+				canvas = view.canvas
+				self.assertEqual([(200, 200), (300, 150)], [tuple(size) for size in canvas.sizes])
+				pixels = next(pixels for key, pixels in canvas.cache.items() if key[0] == 0)
+				self.assertEqual('#ff0000', pixels.pixelColor(pixels.width() // 2, pixels.height() // 2).name())
+				self.assertIs(session.overlay.content.currentWidget(), view)
+				self.assertFalse(session.overlay.buttons['copy_image'].isVisible())
+				session.overlay.focus_canvas()
+				QTest.keyClick(canvas, Qt.Key_W)
+				self.assertEqual('fit_width', canvas.mode)
+				for key, modifiers in ((Qt.Key_Tab, Qt.NoModifier), (Qt.Key_Backtab, Qt.ShiftModifier), (Qt.Key_Escape, Qt.NoModifier)):
+					session.overlay.focus_canvas()
+					QTest.keyClick(canvas, key, modifiers)
+					self.assertTrue(session.source.hasFocus())
+				self.controller.handle_shortcut.reset_mock()
+				session.overlay.focus_canvas()
+				QTest.keyClick(canvas, Qt.Key_F9)
+				self.controller.handle_shortcut.assert_called_once()
+				self.window._splitter.moveSplitter(390, 1)
+				QApplication.processEvents()
+				target = self.panes[1]
+				self.assertEqual(QRect(target.mapTo(session.overlay.parentWidget(), QPoint()), target.size()), session.overlay.geometry())
+				session.source.place_cursor_at(as_url(text))
+				self.until(lambda: kinds == ['pdf', 'text'])
+				self.assertIs(session.overlay.content.currentWidget(), session.overlay.text_view)
+				self.assertEqual('PDF switching fixture', session.overlay.text_view.browser.toPlainText())
+				self.assertFalse(canvas.cache)
+				self.until(lambda: controller.process is None)
+				session.source.place_cursor_at(as_url(image))
+				self.until(lambda: kinds == ['pdf', 'text', 'image'])
+				self.assertIs(session.overlay.content.currentWidget(), session.overlay.canvas)
+				self.assertTrue(session.overlay.buttons['copy_image'].isVisible())
+				session.source.place_cursor_at(as_url(pdf))
+				self.until(lambda: bool(canvas.cache))
+				self.assertEqual(['pdf', 'text', 'image', 'pdf'], kinds)
+				self.assertEqual('fit_page', canvas.mode)
+				self.assertEqual(0, canvas.current_page)
+				self.assertIs(session._pdf_controller, controller)
+				session.close()
+				self.assertFalse(session._connections)
+				session = self.start_session(RecordingSession)
+				self.until(lambda: session.overlay.pdf_view is not None and bool(session.overlay.pdf_view.canvas.cache))
+				self.assertIs(session._pdf_controller, controller)
+				self.assertTrue(all(thread == QApplication.instance().thread() for thread in threads))
+			finally:
+				session.shutdown()
+				if controller is not None:
+					self.until(lambda: controller.process is None)
+		self.run_in_app(check)
+
+	def test_helper_errors_and_render_timeouts_stay_inline(self):
+		from fman.url import as_url
+		from unittest.mock import patch
+		self.panes[0].place_cursor_at(as_url(self.root / 'Annual Report.pdf'))
+		for mode, message in (('error', 'Fixture rejected PDF'), ('render', 'timed out')):
+			with self.subTest(mode=mode):
+				def check():
+					controller = self.fake_controller(mode)
+					errors = []
+					controller.failed.connect(lambda *args: errors.append(args))
+					with patch('fman.impl.quick_view_pdf.RENDER_TIMEOUT', 100):
+						session = self.start_session()
+						try:
+							self.until(lambda: session.overlay.pdf_view is not None and
+								message in session.overlay.pdf_view.canvas.message and controller.process is None)
+							view = session.overlay.pdf_view
+							self.assertIs(session.overlay.content.currentWidget(), view)
+							self.assertFalse(view.canvas.sizes)
+							self.assertFalse(view.canvas.cache)
+							self.assertFalse(session.overlay.buttons['copy_image'].isVisible())
+							self.assertEqual(1, len(errors))
+							self.assertFalse(controller.deadline.isActive())
+							self.assertFalse(controller.drain.isActive())
+						finally:
+							session.shutdown()
+							controller.shutdown()
+							self.until(lambda: controller.process is None)
+							self.window._quick_view_pdf_controller = None
+				self.run_in_app(check)
+
+	def test_active_close_reopen_and_shutdown_disconnect_results(self):
+		from fman.url import as_url
+		self.panes[0].place_cursor_at(as_url(self.root / 'Annual Report.pdf'))
+		def check():
+			controller = self.fake_controller('render')
+			session = self.start_session()
+			def rendering():
+				return controller._active is not None and controller._active['type'] == 'render'
+			try:
+				self.until(rendering)
+				generation = session.generation
+				session.close()
+				self.assertFalse(session._connections)
+				self.assertIsNone(self.window._quick_view_session)
+				for signal in (controller.document_ready, controller.page_ready, controller.page_failed, controller.failed):
+					self.assertEqual(0, controller.receivers(signal))
+				controller.document_ready.emit(generation, [(1, 1)], (1, 2, 3, 4))
+				controller.page_ready.emit(generation, 0, {}, None)
+				controller.failed.emit(generation, 'Late closed-session failure')
+				session = self.start_session()
+				self.until(lambda: session._pdf_controller is controller and rendering())
+				canvas = session.overlay.pdf_view.canvas
+				sizes = list(canvas.sizes)
+				controller.document_ready.emit(session.generation - 1, [(1, 1)], (1, 2, 3, 4))
+				controller.page_ready.emit(session.generation - 1, canvas.revision, {}, None)
+				controller.page_failed.emit(session.generation - 1, 0, 'Stale page error')
+				controller.failed.emit(session.generation - 1, 'Stale document failure')
+				self.assertEqual(sizes, list(canvas.sizes))
+				self.assertFalse(canvas.errors)
+				self.assertFalse(canvas.cache)
+				session.shutdown()
+				self.assertTrue(session.bridge.closed)
+				self.assertFalse(session._connections)
+				self.until(lambda: controller.process is None)
+				self.assertIsNone(controller.job)
+				self.assertFalse(controller.deadline.isActive())
+				self.assertFalse(controller.drain.isActive())
+			finally:
+				session.shutdown()
+				controller.shutdown()
+				self.until(lambda: controller.process is None)
+		self.run_in_app(check)
+
+
 class QuickViewTextIT(QtIT):
 	setUp = QuickViewIT.setUp
 	close_window = QuickViewIT.close_window

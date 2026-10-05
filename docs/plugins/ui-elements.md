@@ -92,11 +92,13 @@ show_quick_list(*, items, title='', summary='', modal=True, filter='fuzzy', quer
     on_open=None) -> tuple | None
 ```
 
-- `ListItem` is a frozen record. Use a unique string `id`; `hint` is the second line.
+- `ListItem` is a frozen record. Use a unique string `id` (up to 512
+  characters); `hint` is the second line. Titles hold up to 512 characters,
+  hints up to 2048.
 - `metadata` maps up to 8 labels to values shown on a third line: a string, an
   `int` or finite `float`, `(sort_key, text)`, or `()` for empty. Every item
-  uses the same labels in the same order. Labels are up to 32 characters; texts
-  up to 128.
+  lists the same labels in the same order; an item without a value still lists
+  the label, with `()`. Labels are up to 32 characters; texts up to 128.
 - Enter returns the chosen IDs: the selection, or the current item when nothing
   is selected. Escape returns `None`.
 - The call blocks. On a worker it waits; on the Qt thread it runs a nested loop.

@@ -9,7 +9,7 @@ Plug-ins use the public `fman` modules.
 | `fman.listing` | Immutable directory snapshots |
 | `fman.url` | Application URLs |
 | `fman.clipboard` | Text and file clipboard access |
-| `fman.ui` | Panels, controls and navigation |
+| `fman.ui` | Lists, tables, panels and navigation |
 
 ## Commands
 

@@ -1,6 +1,7 @@
 from _quick_view_pdf_worker import (
 	FrameDecoder, MAX_HEADER, PdfError, encode_frame, valid_geometry, valid_raster
 )
+from build import _pdf_smoke_fixture as pdf_bytes
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
@@ -9,32 +10,6 @@ import os
 import struct
 import subprocess
 import sys
-
-
-def pdf_bytes(sizes=((200, 200), (300, 150)), rotation=0):
-	objects = [b'<< /Type /Catalog /Pages 2 0 R >>', b'']
-	pages = []
-	for index, (width, height) in enumerate(sizes):
-		page_id = len(objects) + 1
-		pages.append('%d 0 R' % page_id)
-		color = '1 0 0' if index % 2 == 0 else '0 1 0'
-		content = ('%s rg 0 0 %d %d re f\n' % (color, width, height)).encode('ascii')
-		objects.append(('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 %d %d] '
-			'/Rotate %d /Resources << >> /Contents %d 0 R >>' %
-			(width, height, rotation, page_id + 1)).encode('ascii'))
-		objects.append(b'<< /Length ' + str(len(content)).encode('ascii') + b' >>\nstream\n' + content + b'endstream')
-	objects[1] = ('<< /Type /Pages /Kids [%s] /Count %d >>' % (' '.join(pages), len(pages))).encode('ascii')
-	output = bytearray(b'%PDF-1.4\n')
-	offsets = [0]
-	for number, content in enumerate(objects, 1):
-		offsets.append(len(output))
-		output.extend(('%d 0 obj\n' % number).encode('ascii') + content + b'\nendobj\n')
-	xref = len(output)
-	output.extend(('xref\n0 %d\n0000000000 65535 f \n' % len(offsets)).encode('ascii'))
-	for offset in offsets[1:]:
-		output.extend(('%010d 00000 n \n' % offset).encode('ascii'))
-	output.extend(('trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n' % (len(offsets), xref)).encode('ascii'))
-	return bytes(output)
 
 
 def worker_command(executable=None):
@@ -245,6 +220,75 @@ with TemporaryDirectory() as directory:
 	until(lambda: controller.process is None)
 	assert controller.job is None and not controller.deadline.isActive()
 	controller.shutdown()
+''')
+
+	def test_scrolling_preserves_inflight_raster(self):
+		self.run_qt('''
+from fman.impl.quick_view_pdf_view import PdfPreview
+from PyQt5.QtWidgets import QWidget
+source = QWidget()
+view = PdfPreview(source)
+view.resize(620, 740)
+view.show()
+app.processEvents()
+canvas = view.canvas
+controller = PdfController()
+requests, errors = [], []
+canvas.requested.connect(lambda revision, targets: controller.request_pages(1, revision, targets))
+controller.page_ready.connect(lambda generation, revision, request, result: canvas.set_page(revision, request, result))
+controller.failed.connect(lambda *args: errors.append(args))
+def loaded(generation, sizes, fingerprint):
+	canvas.set_document(sizes)
+	request = dict(controller._active)
+	assert request['type'] == 'render'
+	requests.append(request)
+	canvas.verticalScrollBar().setValue(40)
+	assert canvas.revision == request['revision']
+	assert controller._revision == request['revision']
+controller.document_ready.connect(loaded)
+with TemporaryDirectory() as directory:
+	path = Path(directory) / 'report.pdf'
+	path.write_bytes(pdf_bytes(((200, 400), (200, 400))))
+	try:
+		controller.open(1, str(path))
+		until(lambda: bool(canvas.cache) or errors)
+		assert not errors, errors
+		request = requests[0]
+		assert (request['page'], request['width'], request['height']) in canvas.cache
+		revision = canvas.revision
+		canvas.zoom_by(1)
+		assert canvas.revision > revision
+		canvas.clear()
+		pixels = bytes(request['width'] * request['height'] * 4)
+		canvas.set_page(revision, request, ({'width': request['width'], 'height': request['height'], 'stride': request['width'] * 4}, pixels))
+		assert not canvas.cache
+	finally:
+		controller.invalidate()
+		until(lambda: controller.process is None)
+		controller.shutdown()
+		view.close()
+''')
+
+	def test_late_callbacks_after_process_retirement(self):
+		self.run_qt('''
+from PyQt5.QtCore import QProcess
+controller = PdfController()
+errors, drained = [], []
+controller.failed.connect(lambda *args: errors.append(args))
+controller._generation = 7
+controller.process = QProcess(controller)
+controller._retiring = True
+QTimer.singleShot(0, controller._read_error)
+QTimer.singleShot(0, controller._started)
+QTimer.singleShot(0, controller._read)
+QTimer.singleShot(0, lambda: drained.append(True))
+controller._finished()
+assert controller.process is None
+until(lambda: bool(drained))
+assert not errors
+assert controller.process is None and controller.job is None
+assert not controller.deadline.isActive() and not controller.drain.isActive()
+controller.shutdown()
 ''')
 
 	def test_startup_hang_and_crash_stay_local(self):

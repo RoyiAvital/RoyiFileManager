@@ -7,11 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-10-05
+
+This release focuses on user facing features:
+ - The `QuickList` UI Element which drives a revised _Favorites Manager_.
+ - support for PDF files in `QuickView` mode.
+
 ### Added
 
 - QuickView PDF preview with continuous page scrolling, page navigation, Fit
   Page, Fit Width and zoom. A bundled pypdfium2/PDFium helper isolates rendering
-  failures and timeouts; page rendering and caching are bounded.
+  failures and timeouts; page rendering and caching are bounded. Packaging
+  verifies the frozen helper's binary pipes and rendered page pixels before
+  creating the ZIP.
 - Plug-in API: `fman.ui.show_quick_list`, a Qt-free blocking multi-select list.
   Items can carry a metadata line; title, hint and metadata are sortable with
   `Ctrl+F1`…`Ctrl+F10`, and the sort can be saved. `Ctrl+I` inverts and

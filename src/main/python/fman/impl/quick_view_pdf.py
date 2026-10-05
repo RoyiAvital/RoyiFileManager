@@ -130,11 +130,14 @@ class PdfController(QObject):
 		process.start(program, arguments)
 
 	def _started(self):
+		process = self.process
+		if process is None:
+			return
 		if self._retiring:
 			self._kill()
 			return
 		try:
-			self.job = ProcessJob(int(self.process.processId()))
+			self.job = ProcessJob(int(process.processId()))
 		except Exception:
 			self._fail('Cannot safely start PDF renderer')
 
@@ -232,10 +235,13 @@ class PdfController(QObject):
 		self._pump()
 
 	def _read_error(self):
-		self.process.setReadChannel(QProcess.StandardError)
-		data = bytes(self.process.read(65537))
-		remaining = self.process.bytesAvailable()
-		self.process.setReadChannel(QProcess.StandardOutput)
+		process = self.process
+		if process is None:
+			return
+		process.setReadChannel(QProcess.StandardError)
+		data = bytes(process.read(65537))
+		remaining = process.bytesAvailable()
+		process.setReadChannel(QProcess.StandardOutput)
 		allowance = max(0, 65536 - len(self.stderr))
 		self.stderr.extend(data[:allowance])
 		if len(data) > allowance or remaining:

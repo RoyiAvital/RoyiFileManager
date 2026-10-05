@@ -11,7 +11,6 @@
 - [Flat View](Plan/FlatView.md)
 - [PyQt6 Migration](Plan/PyQt6Migration.md)
 - [QuickView 002: Videos and Animated Images](Plan/QuickView002.md)
-- [QuickView 004: PDF Preview](Plan/QuickView004.md)
 - [UI Design 001: Application Theme](Plan/UIDesign001.md)
 
 ## Completed
@@ -52,6 +51,7 @@
 - [Process Pane](Done/ProcessPane.md)
 - [QuickView 001: Initial Design and Images](Done/QuickView001.md)
 - [QuickView 003: Text-Based Files](Done/QuickView003.md)
+- [QuickView 004: PDF Preview](Done/QuickView004.md)
 - [Recent Commands in Command Palette](Done/RecentCommandsInPalette.md)
 - [Release Workflow Hardening](Done/ReleaseWorkflowHardening.md)
 - [Search Files 001](Done/SearchFiles001.md)
