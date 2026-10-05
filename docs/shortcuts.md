@@ -79,6 +79,18 @@ See the [search guide](search.md).
 | ++ctrl+b++ | Open favorites manager |
 | ++ctrl+h++ | Calculate file hash |
 
+## Favorites Manager
+
+| Key | Action |
+| --- | --- |
+| ++ctrl+f1++ … ++ctrl+f5++ | Sort by Name, Path, Added, Last opened, Opened: ascending, descending, then original order |
+| ++ctrl+i++ / ++ctrl+shift+a++ | Invert / clear the selection |
+| ++enter++ | Go To the chosen favorite |
+| ++tab++ | Move between the list and the buttons |
+| ++esc++ | Close |
+
+See [Sorting Favorites](tools.md#sorting-favorites).
+
 ## Commander Style Shortcuts
 
 For a Norton Commander or Total Commander style workflow.

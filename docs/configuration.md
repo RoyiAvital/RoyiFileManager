@@ -6,6 +6,10 @@ Settings live in `UserSettings` beside the application.
 
 Copy this folder to back up or move your configuration.
 
+Application and plug-in JSON files are written with two-space indentation and a
+final newline. Existing files keep their format until rewritten; unchanged
+plug-in settings are not rewritten.
+
 ## Application Settings
 
 Most preferences save automatically as you use the application:

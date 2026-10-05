@@ -537,30 +537,30 @@ class BuildIndexTest(TestCase):
 		self.assertEqual(2, len(result.entries))
 		self.assertTrue(result.truncated)
 
-	def test_can_exclude_dot_prefixed_entries(self):
+	def test_keeps_visible_dot_prefixed_entries(self):
 		with TemporaryDirectory() as root:
-			(Path(root) / '.hidden').touch()
+			(Path(root) / '.gitignore').touch()
 			(Path(root) / 'visible').touch()
 			result = build_index(as_url(root), include_hidden=False)
 
-		self.assertEqual(['visible'], [entry.name for entry in result.entries])
+		self.assertCountEqual(['.gitignore', 'visible'], [entry.name for entry in result.entries])
 
-	def test_excluding_hidden_entries_prunes_hidden_directories(self):
+	def test_keeps_visible_dot_prefixed_directories(self):
 		with TemporaryDirectory() as root:
 			root_path = Path(root)
-			(root_path / '.hidden').mkdir()
-			(root_path / '.hidden' / 'nested.txt').touch()
+			(root_path / '.visible').mkdir()
+			(root_path / '.visible' / 'nested.txt').touch()
 			(root_path / 'visible.txt').touch()
 
 			result = build_index(
 				as_url(root), recursive=True, include_hidden=False
 			)
 
-		self.assertEqual(
-			['visible.txt'], [entry.relative_path for entry in result.entries]
+		self.assertCountEqual(
+			['visible.txt', '.visible/nested.txt'], [entry.relative_path for entry in result.entries]
 		)
 
-	def test_can_exclude_windows_hidden_file(self):
+	def test_can_exclude_windows_hidden_file_and_directory_tree(self):
 		import ctypes
 
 		get_attributes = ctypes.windll.kernel32.GetFileAttributesW
@@ -572,16 +572,22 @@ class BuildIndexTest(TestCase):
 		with TemporaryDirectory() as root:
 			hidden = Path(root) / 'hidden.txt'
 			hidden.touch()
-			attributes = get_attributes(str(hidden))
-			self.assertTrue(
-				set_attributes(str(hidden), attributes | FILE_ATTRIBUTE_HIDDEN)
-			)
+			hidden_directory = Path(root) / 'hidden-directory'
+			hidden_directory.mkdir()
+			(hidden_directory / 'nested.txt').touch()
+			attributes = [(path, get_attributes(str(path))) for path in (hidden, hidden_directory)]
 			try:
-				result = build_index(as_url(root), include_hidden=False)
+				for path, value in attributes:
+					self.assertTrue(set_attributes(str(path), value | FILE_ATTRIBUTE_HIDDEN))
+				for metadata in (False, True):
+					self.assertEqual([], build_index(as_url(root), recursive=True,
+						include_hidden=False, collect_metadata=metadata).entries)
+					self.assertCountEqual(['hidden.txt', 'hidden-directory/nested.txt'],
+						[entry.relative_path for entry in build_index(as_url(root), recursive=True,
+							include_hidden=True, collect_metadata=metadata).entries])
 			finally:
-				set_attributes(str(hidden), attributes)
-
-		self.assertEqual([], result.entries)
+				for path, value in attributes:
+					set_attributes(str(path), value)
 
 	@skipUnless(hasattr(os, 'symlink'), 'symbolic links are unavailable')
 	def test_does_not_follow_directory_symlink(self):
@@ -634,6 +640,15 @@ class BuildIndexTest(TestCase):
 		result = build_index('example://root')
 
 		self.assertEqual(['remote.txt'], [entry.name for entry in result.entries])
+
+	def test_non_local_scheme_keeps_visible_dot_entries_and_directories(self):
+		names = {'example://root': ['.config', '.gitignore'],
+			'example://root/.config': ['nested.txt']}
+		with patch('search_file_fuzzy.indexer.iterdir', side_effect=names.__getitem__), \
+				patch('search_file_fuzzy.indexer.is_dir', side_effect=lambda url: url.endswith('/.config')):
+			result = build_index('example://root', recursive=True, include_hidden=False)
+		self.assertCountEqual(['.gitignore', '.config/nested.txt'],
+			[entry.relative_path for entry in result.entries])
 
 	def test_detects_junction(self):
 		entry = Mock()
@@ -1001,7 +1016,7 @@ class SettingsTest(TestCase):
 		self.assertEqual('fuzzy', settings['mode'])
 		self.assertEqual(50_000, settings['max_recursive_entries'])
 		self.assertEqual(100, settings['max_results'])
-		self.assertIs(True, settings['include_hidden'])
+		self.assertNotIn('include_hidden', settings)
 
 	@patch('search_file_fuzzy.load_json', return_value={'mode': 'fuzzy'})
 	def test_command_argument_overrides_configured_mode(self, load_json):
@@ -1013,6 +1028,62 @@ class SearchCommandTest(TestCase):
 		from search_file_fuzzy import SearchFilesInCurrentFolder, SearchFilesRecursively
 		self.assertEqual(('Find files in current folder',), SearchFilesInCurrentFolder.aliases)
 		self.assertEqual(('Find files recursively', 'Find files in subfolders'), SearchFilesRecursively.aliases)
+
+	def test_missing_or_invalid_pane_preferences_default_to_hidden_off(self):
+		from search_file_fuzzy import _pane_shows_hidden_files
+		pane = Mock()
+		pane.window.get_panes.return_value = [Mock(), pane]
+		for configured in ([], [{}], [{}, {}], [{}, None], {},
+				[{}, {'show_hidden_files': 'true'}], [{}, {'show_hidden_files': 1}]):
+			with self.subTest(configured=configured), \
+					patch('search_file_fuzzy.load_json', return_value=configured):
+				self.assertIs(False, _pane_shows_hidden_files(pane))
+
+	def test_commands_use_invoking_pane_hidden_preference(self):
+		panes = [Mock(), Mock()]
+		for pane in panes:
+			pane.window.get_panes.return_value = panes
+			pane.get_path.return_value = 'test://root'
+			pane.get_listing.return_value = None
+		for pane, hidden in zip(panes, (True, False)):
+			for command in (SearchFilesInCurrentFolder, SearchFilesRecursively):
+				for metadata in (False, True):
+					with self.subTest(hidden=hidden, command=command.__name__, metadata=metadata):
+						def settings(name, default=None):
+							return ([{'show_hidden_files': True}, {'show_hidden_files': False}]
+								if name == 'Panes.json' else {'include_hidden': not hidden})
+						with patch('search_file_fuzzy.load_json', side_effect=settings), \
+								patch('search_file_fuzzy.build_index', return_value=IndexResult([], False)) as build, \
+								patch('search_file_fuzzy.submit_task', side_effect=lambda task: task()), \
+								patch('search_file_fuzzy.show_status_message'), \
+								patch('search_file_fuzzy.clear_status_message'):
+							command(pane)(metadata=metadata)
+						self.assertIs(hidden, build.call_args.kwargs['include_hidden'])
+
+	def test_snapshot_search_uses_pane_hidden_preference(self):
+		from fman.listing import Listing
+		pane = Mock()
+		pane.window.get_panes.return_value = [pane]
+		pane.get_path.return_value = 'test://root'
+		pane.get_listing.return_value = Listing.create('test://root',
+			('visible.txt', 'hidden.txt', '.gitignore'), attributes=(0, 2, 0))
+		for hidden in (False, True):
+			for metadata in (False, True):
+				with self.subTest(hidden=hidden, metadata=metadata):
+					shown = []
+					def settings(name, default=None):
+						return ([{'show_hidden_files': hidden}] if name == 'Panes.json'
+							else {'include_hidden': not hidden})
+					def show(get_items, query=''):
+						shown.extend(item.title for item in get_items(''))
+					with patch('search_file_fuzzy.load_json', side_effect=settings), \
+							patch('search_file_fuzzy.build_index', side_effect=AssertionError('Rescan')), \
+							patch('search_file_fuzzy.show_quicksearch', side_effect=show), \
+							patch('search_file_fuzzy.show_status_message'), \
+							patch('search_file_fuzzy.clear_status_message'):
+						SearchFilesInCurrentFolder(pane)(metadata=metadata)
+					self.assertCountEqual(['visible.txt', 'hidden.txt', '.gitignore'] if hidden
+						else ['visible.txt', '.gitignore'], shown)
 
 	@patch('search_file_fuzzy.load_json', return_value={})
 	@patch('search_file_fuzzy.clear_status_message')
@@ -1042,7 +1113,7 @@ class SearchCommandTest(TestCase):
 				pane.get_path.return_value = 'file:///root'
 				command(pane)()
 				build_index_mock.assert_called_once_with('file:///root', recursive=recursive,
-					max_entries=50000, include_hidden=True)
+					max_entries=50000, include_hidden=False)
 				pane.run_command.assert_not_called()
 
 	@patch('search_file_fuzzy.clear_status_message')

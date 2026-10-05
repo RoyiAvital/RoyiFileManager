@@ -17,6 +17,8 @@ from PyQt5.QtWidgets import QApplication, QLabel, QVBoxLayout, QWidget
 
 # Lists are plain data, independent of plug-in lifetimes; drivers attach handle.close to their owner.
 _list_owner = UiOwner()
+# Sentinels: no sort save pending; no usable saved sort.
+_IDLE, _MISSING = object(), object()
 # Main window -> open modeless lists, most recently active last (global Tab).
 _open_lists = WeakKeyDictionary()
 
@@ -86,7 +88,7 @@ class QuickListWindow(ToolWindow):
 		self.main, self.session, self.modal, self.settings = main, session, modal, settings
 		self.result = None
 		self.saving = Lock()
-		self.pending_sort = None
+		self.pending_sort = _IDLE
 		try:
 			css = main._theme.get_quicksearch_item_css()
 		except AttributeError:
@@ -160,9 +162,9 @@ class QuickListWindow(ToolWindow):
 
 	def sort_changed(self):
 		self.publish()
-		if self.settings is not None and self.list.effective_sort is not None:
+		if self.settings is not None:
 			with self.saving:
-				start = self.pending_sort is None
+				start = self.pending_sort is _IDLE
 				self.pending_sort = self.list.effective_sort
 			if start:
 				Thread(target=self._save_sort, daemon=True).start()
@@ -173,14 +175,15 @@ class QuickListWindow(ToolWindow):
 		while True:
 			with self.saving:
 				sort = self.pending_sort
-				if sort is None:
+				if sort is _IDLE:
 					return
 			try:
 				with settings.lock:
 					values = deepcopy(load_json(self.settings, default={}))
 					if not isinstance(values, dict):
 						raise ValueError('Settings must be a JSON object: ' + self.settings)
-					values['sort'], values['ascending'] = sort
+					# A null sort records the original item order.
+					values['sort'], values['ascending'] = sort or (None, True)
 					save_json(self.settings, values)
 					notification = settings.committed(values)
 				settings.publish(notification)
@@ -191,7 +194,7 @@ class QuickListWindow(ToolWindow):
 					pass
 			with self.saving:
 				if self.pending_sort == sort:
-					self.pending_sort = None
+					self.pending_sort = _IDLE
 					return
 
 	def focusNextPrevChild(self, next):
@@ -264,18 +267,21 @@ def recent_list(main):
 
 
 def _load_sort(settings):
+	"""The saved sort, None for a saved original order, or _MISSING when nothing usable is saved."""
 	from fman import load_json
 	try:
 		values = load_json(settings, default={})
 	except Exception:
-		return None
-	if not isinstance(values, dict) or not isinstance(values.get('sort'), str):
+		return _MISSING
+	if not isinstance(values, dict) or 'sort' not in values:
+		return _MISSING
+	if values['sort'] is None:
 		return None
 	ascending = values.get('ascending', True)
 	try:
 		return sort_label(values['sort'], 'Saved sort'), ascending if type(ascending) is bool else True
 	except (TypeError, ValueError):
-		return None
+		return _MISSING
 
 
 @run_in_main_thread
@@ -303,7 +309,9 @@ def show_quick_list(*, items, title='', summary='', modal=True, filter='fuzzy', 
 	prepared = prepare_items(items, title_label, hint_label)
 	selected = selected_ids(selected, prepared)
 	if settings is not None:
-		sort = _load_sort(settings) or sort
+		saved = _load_sort(settings)
+		if saved is not _MISSING:
+			sort = saved
 	session = _Session(title_label, hint_label)
 	_build(session, prepared, dict(title=title, summary=summary, modal=modal, fuzzy=filter == 'fuzzy',
 		query=query, selected=selected, sort=sort, settings=settings))

@@ -6,8 +6,26 @@ from fman.impl.util.settings import Settings
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+import json
+
 
 class SettingsSafetyTest(TestCase):
+	def test_pretty_nested_settings_round_trip(self):
+		value = {'window': {'size': [1280, 800], 'title': 'caf\u00e9'},
+			'panes': [{'location': 'file://C:/Work', 'hidden': False}], 'optional': None}
+		with TemporaryDirectory() as directory:
+			path = Path(directory, 'Session.json')
+			path.write_text(json.dumps(value), encoding='utf-8')
+			settings = Settings(path)
+			settings.flush()
+			self.assertEqual(json.dumps(value, indent=2) + '\n', path.read_text(encoding='utf-8'))
+			restarted = Settings(path)
+			for key, expected in value.items():
+				self.assertEqual(expected, restarted.get(key, None))
+			restarted.flush()
+			self.assertEqual(json.dumps(value, indent=2) + '\n', path.read_text(encoding='utf-8'))
+			self.assertEqual([path], list(Path(directory).iterdir()))
+
 	def test_unknown_link_count_allows_settings_save(self):
 		from types import SimpleNamespace
 		with TemporaryDirectory() as directory:

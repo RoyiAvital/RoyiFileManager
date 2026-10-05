@@ -27,7 +27,7 @@ to move the window.
 | --- | --- |
 | Space, Insert, Shift+navigation, Ctrl+A | Select in the list |
 | Ctrl+I / Ctrl+Shift+A | Invert / clear the selection |
-| Ctrl+F1 … Ctrl+F5 | Sort by Name / Path / Added / Last opened / Opened; again reverses |
+| Ctrl+F1 … Ctrl+F5 | Sort by Name / Path / Added / Last opened / Opened: ascending, descending, then back to the original order |
 | Tab | Move between the list and the Panel |
 | Enter | Go To the chosen favorite |
 | Escape or the dock's `x` | Close the manager |

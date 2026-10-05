@@ -24,8 +24,10 @@ file. Directories are traversed but are not included in the results. Unreadable
 directories are skipped. Recursive local searches do not follow directory
 symbolic links or junctions.
 
-Searches are case-insensitive. When hidden entries are disabled, hidden
-directories are pruned together with all of their descendants.
+Searches are case-insensitive. Both commands inherit hidden-file visibility from
+the invoking pane when the search starts. When hidden entries are disabled,
+hidden directories are pruned together with all of their descendants. On Windows,
+dot-prefixed names remain visible unless the entry has the hidden attribute.
 
 ## Result Metadata
 
@@ -199,7 +201,6 @@ The defaults are stored in `SearchFileFuzzy.json`:
 	"mode": "fuzzy",
 	"max_recursive_entries": 50000,
 	"max_results": 100,
-	"include_hidden": true,
 	"show_metadata": false
 }
 ```
@@ -210,8 +211,9 @@ values without changing the bundled plug-in. Set `mode` to `fuzzy` for
 subsequence matching or `regular` for normalized, case-insensitive substring
 matching. `max_recursive_entries` bounds the number of files and directories
 inspected during either find command. `max_results` bounds the quicksearch
-results. When `include_hidden` is false, dot-prefixed and Windows-hidden entries
-are excluded, including entire hidden directory trees.
+results. Hidden-file visibility follows the pane's **Toggle hidden files**
+setting. The former `include_hidden` search setting is ignored; existing saved
+settings do not need to be edited.
 
 The commands also accept an optional `mode` argument from custom key bindings,
 which overrides the configured mode for that invocation. A boolean `metadata`

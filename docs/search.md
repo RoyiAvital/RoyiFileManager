@@ -24,6 +24,8 @@ Press ++ctrl+f++ for the current folder.
 
 Press ++ctrl+shift+f++ to include subfolders.
 
+Both commands use the active pane's hidden-file visibility when the search starts.
+
 Results use fuzzy matching. Try `rpt pdf` to find `annual report.pdf`.
 
 | Query | Meaning |

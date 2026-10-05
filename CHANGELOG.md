@@ -16,10 +16,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- QuickList: the sort bar is replaced by a footer listing the `Ctrl+F` keys and
-  the current sort; metadata fields are separated by a thin line and dates are
-  no longer cut off; the window is frameless like QuickSearch, with the title as
-  a header that moves the window when dragged (no `?` button).
+- QuickList: the sort bar is replaced by a footer listing the `Ctrl+F` keys with
+  the current sort; a third press of a sort key restores the original order.
+  Sort arrows have reserved space, so no text moves. Metadata fields are
+  separated by a thin line and dates are no longer cut off; the window is
+  frameless like QuickSearch, with the title as a header that moves the window
+  when dragged (no `?` button).
+- Fuzzy Find (`Ctrl+F` and `Ctrl+Shift+F`) follows the invoking pane's hidden-file
+  visibility, pruning hidden directory trees while keeping visible Windows
+  dotfiles. The former `SearchFileFuzzy.json` `include_hidden` override is ignored.
+- Saved application and plug-in JSON uses two-space indentation and a final
+  newline. Formatting is applied on writes; unchanged plug-in settings still
+  avoid rewrites.
 
 ## [0.14.0] - 2026-10-05
 

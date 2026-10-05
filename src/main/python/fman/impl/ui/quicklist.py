@@ -3,8 +3,8 @@ from heapq import nlargest
 from fman.impl.ui import match_positions, utf16_span
 from PyQt5.QtCore import QAbstractListModel, QEvent, QModelIndex, QSize, Qt, \
 	QItemSelectionModel, pyqtSignal
-from PyQt5.QtGui import QColor, QFont, QFontMetrics, QTextLayout, QTextCharFormat, QPalette, QKeySequence
-from PyQt5.QtWidgets import QApplication, QAbstractItemView, QLabel, \
+from PyQt5.QtGui import QColor, QFont, QFontMetrics, QPainter, QTextLayout, QTextCharFormat, QPalette, QKeySequence
+from PyQt5.QtWidgets import QApplication, QAbstractItemView, QHBoxLayout, QLabel, \
 	QLineEdit, QListView, QShortcut, QSizePolicy, QStyle, QStyledItemDelegate, \
 	QVBoxLayout, QWidget
 
@@ -14,6 +14,62 @@ MAX_SORT_KEYS = 10
 # Values longer than this many average characters elide inside their cell.
 MAX_CELL_CHARACTERS = 24
 CELL_GAP = 16
+
+
+def label_slot(metrics, label):
+	"""Width of a label plus its sort-arrow slot and gap, whether or not it is sorted."""
+	return metrics.horizontalAdvance(label + ' ') + max(map(metrics.horizontalAdvance, ARROWS.values())) + 8
+
+
+class SortKeys(QLabel):
+	"""'Sort (Ctrl+F1…F5): Name ▲ | Path | …', painted with a fixed arrow slot per field."""
+
+	def __init__(self, owner):
+		super().__init__(owner)
+		self.owner = owner
+		self.setTextFormat(Qt.PlainText)
+		self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+
+	def labels(self):
+		return self.owner.sort_labels[:MAX_SORT_KEYS]
+
+	def update_text(self):
+		labels, sort = self.labels(), self.owner.effective_sort
+		fields = ' | '.join(label + (' ' + ARROWS[sort[1]] if sort and sort[0] == label else '') for label in labels)
+		self.setText('%s%s' % (self.prefix(len(labels)), fields) if labels else '')
+		self.setToolTip(self.text())
+		self.setVisible(bool(labels))
+		self.update()
+
+	@staticmethod
+	def prefix(count):
+		return 'Sort (Ctrl+F1): ' if count == 1 else 'Sort (Ctrl+F1\u2026F%d): ' % count
+
+	def paintEvent(self, event):
+		labels, sort = self.labels(), self.owner.effective_sort
+		painter = QPainter(self)
+		color = self.palette().color(self.foregroundRole())
+		muted = QColor(color)
+		muted.setAlphaF(0.5)
+		metrics = self.fontMetrics()
+		arrow = max(map(metrics.horizontalAdvance, ARROWS.values()))
+		gap = metrics.horizontalAdvance('  ')
+		y = (self.height() - metrics.height()) // 2 + metrics.ascent()
+		x = 0
+		for index, label in enumerate(labels):
+			if index:
+				# A drawn line: a thin glyph gets colored subpixel fringes.
+				painter.setPen(muted)
+				painter.drawLine(x, y - metrics.ascent() + 1, x, y + metrics.descent())
+				x += gap
+			part = (self.prefix(len(labels)) if index == 0 else '') + label + ' '
+			painter.setPen(color)
+			painter.drawText(x, y, part)
+			x += metrics.horizontalAdvance(part)
+			if sort and sort[0] == label:
+				painter.drawText(x, y, ARROWS[sort[1]])
+			x += arrow + gap
+		painter.end()
 
 
 class ItemModel(QAbstractListModel):
@@ -136,9 +192,7 @@ class ItemDelegate(QStyledItemDelegate):
 
 	def paint_metadata(self, painter, option, item, selected):
 		font = self.font(option, 'hint')
-		bold = QFont(font)
-		bold.setBold(True)
-		metrics, bold_metrics = QFontMetrics(font), QFontMetrics(bold)
+		metrics = QFontMetrics(font)
 		columns = self.owner.metadata_columns(font) if self.owner is not None else None
 		sort = self.owner.effective_sort if self.owner is not None else None
 		settings = self.css.get('hint', {})
@@ -146,20 +200,20 @@ class ItemDelegate(QStyledItemDelegate):
 		if not selected and 'color' in settings:
 			color = settings['color']
 		painter.setPen(color)
+		painter.setFont(font)
 		y = option.rect.y() + 6 + QFontMetrics(self.font(option, 'title')).height() + metrics.height() + metrics.ascent()
 		x = option.rect.x() + 10
 		right = option.rect.right() - 10
 		for index, (label, key, text) in enumerate(item.metadata):
 			if x >= right:
 				break
-			active = sort is not None and sort[0] == label
-			caption = label + (' ' + ARROWS[sort[1]] if active else '')
-			painter.setFont(bold if active else font)
-			painter.drawText(x, y, caption)
-			label_width = bold_metrics.horizontalAdvance(label + ' ' + ARROWS[True]) + 6
+			painter.drawText(x, y, label)
+			# The arrow has a reserved slot, so sorting never moves any text.
+			if sort is not None and sort[0] == label:
+				painter.drawText(x + metrics.horizontalAdvance(label + ' '), y, ARROWS[sort[1]])
+			label_width = label_slot(metrics, label)
 			width = columns[index] if columns is not None else label_width + metrics.horizontalAdvance(text)
 			value_width = max(0, min(width, right - x) - label_width)
-			painter.setFont(font)
 			painter.drawText(x + label_width, y, metrics.elidedText(text, Qt.ElideRight, value_width))
 			x += width + CELL_GAP
 			if index + 1 < len(item.metadata) and x < right:
@@ -266,15 +320,21 @@ class QuickList(QWidget):
 		self.view.setModel(self.model)
 		self.counts = QLabel(self)
 		self.counts.setTextFormat(Qt.PlainText)
-		# The footer must not widen the window when many sort keys are listed.
-		self.counts.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+		self.counts.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+		self.sort_keys_label = SortKeys(self)
+		self.sort_keys_label.setVisible(False)
 		self.empty = QLabel('No items', self)
 		layout = QVBoxLayout(self)
 		layout.setContentsMargins(10, 10, 10, 6)
 		layout.addWidget(self.query)
 		layout.addWidget(self.empty)
 		layout.addWidget(self.view, 1)
-		layout.addWidget(self.counts)
+		# Keys on the left and counts on the right keep both in place as numbers change.
+		footer = QHBoxLayout()
+		footer.setContentsMargins(0, 0, 0, 0)
+		footer.addWidget(self.sort_keys_label, 1)
+		footer.addWidget(self.counts)
+		layout.addLayout(footer)
 		shortcuts = [('Ctrl+I', self.invert_selection), ('Ctrl+Shift+A', self.clear_selection)]
 		shortcuts += [('Ctrl+F%d' % (index + 1), lambda position=index: self.sort_by(position))
 			for index in range(MAX_SORT_KEYS)]
@@ -328,11 +388,17 @@ class QuickList(QWidget):
 		return sort if sort is not None and sort[0] in self.sort_labels else None
 
 	def sort_by(self, position):
+		"""Ascending, then descending, then the original item order."""
 		if position >= len(self.sort_labels):
 			return
 		label = self.sort_labels[position]
 		current = self.effective_sort
-		self.requested_sort = (label, not current[1] if current is not None and current[0] == label else True)
+		if current is None or current[0] != label:
+			self.requested_sort = (label, True)
+		elif current[1]:
+			self.requested_sort = (label, False)
+		else:
+			self.requested_sort = None
 		self._ordered = None
 		self.refresh()
 		self.view.scrollTo(self.view.currentIndex())
@@ -356,9 +422,6 @@ class QuickList(QWidget):
 	def metadata_columns(self, font):
 		if self._columns is None or self._columns[0] != font.key():
 			metrics = QFontMetrics(font)
-			bold = QFont(font)
-			bold.setBold(True)
-			bold_metrics = QFontMetrics(bold)
 			cap = metrics.horizontalAdvance('0') * MAX_CELL_CHARACTERS
 			labels = self.items[0].metadata if self.items else ()
 			widths = []
@@ -367,7 +430,7 @@ class QuickList(QWidget):
 				longest = nlargest(16, {item.metadata[index][2] for item in self.items}, key=len)
 				value = max((metrics.horizontalAdvance(text) for text in longest), default=0)
 				# +4: integer advances can round below the real text width and elide it.
-				widths.append(bold_metrics.horizontalAdvance(label + ' ' + ARROWS[True]) + 6 + min(cap, value) + 4)
+				widths.append(label_slot(metrics, label) + min(cap, value) + 4)
 			self._columns = (font.key(), tuple(widths))
 		return self._columns[1]
 
@@ -427,19 +490,9 @@ class QuickList(QWidget):
 
 	def _state_changed(self, *_):
 		if not self._updating:
-			self.counts.setText(self.footer_text())
-			self.counts.setToolTip(self.counts.text())
+			self.counts.setText('%d selected (%d hidden)' % (len(self.selected_ids), self.hidden_selected_count))
+			self.sort_keys_label.update_text()
 			self.state_changed.emit()
-
-	def footer_text(self):
-		parts = ['%d selected (%d hidden)' % (len(self.selected_ids), self.hidden_selected_count)]
-		sort = self.effective_sort
-		if sort is not None:
-			parts.append('Sorted by %s %s' % (sort[0], ARROWS[sort[1]]))
-		if self.sort_labels:
-			parts.append(' \u00b7 '.join('Ctrl+F%d %s' % (index + 1, label)
-				for index, label in enumerate(self.sort_labels[:MAX_SORT_KEYS])))
-		return '    '.join(parts)
 
 	def eventFilter(self, watched, event):
 		if watched is self.query and event.type() == QEvent.KeyPress and \

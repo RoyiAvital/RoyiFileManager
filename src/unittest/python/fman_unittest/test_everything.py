@@ -295,6 +295,32 @@ class EverythingInstanceTest(TestCase):
 				finally:
 					manager.close()
 
+	def test_owned_process_record_is_pretty_json(self):
+		with TemporaryDirectory() as temporary, patch('everything_search.instance.Native') as native, \
+				patch('everything_search.instance.subprocess.Popen') as spawn:
+			directory = Path(temporary).resolve()
+			executable = directory / 'Everything.exe'
+			executable.touch()
+			settings = Settings(folders=('C:\\Data',))
+			identity = (42, 1, str(executable).casefold())
+			native.return_value.find_instance.side_effect = (0, 42)
+			native.return_value.identity_for_pid.return_value = identity
+			native.return_value.identity.return_value = identity
+			spawn.return_value.poll.return_value = None
+			runtime = ProcessRuntime(directory, executable)
+			try:
+				with patch.object(runtime, '_ready', return_value=True):
+					self.assertEqual(identity, runtime.apply(settings, Event()))
+				text = (directory / 'owner.json').read_text(encoding='utf-8')
+				record = json.loads(text)
+				self.assertEqual({'instance': settings.instance, 'identity': list(identity),
+					'config_hash': hashlib.sha256(make_ini(settings, directory).encode('utf-8')).hexdigest()},
+					record)
+				self.assertEqual(json.dumps(record, indent=2) + '\n', text)
+				self.assertFalse((directory / 'owner.json.tmp').exists())
+			finally:
+				runtime.close(False)
+
 	def test_adopts_only_matching_owned_configuration_without_restart(self):
 		with TemporaryDirectory() as temporary, patch('everything_search.instance.Native') as native:
 			directory = Path(temporary).resolve()

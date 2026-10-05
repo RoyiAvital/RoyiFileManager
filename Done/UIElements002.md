@@ -703,6 +703,10 @@ Native Favorites smoke passed.
   24 digits.
 - The window is frameless like QuickSearch; a nonempty title is a header that
   moves the window when dragged. No API change.
+- Follow-up: sort arrows get a reserved slot in metadata labels and in the
+  footer (`Sort (Ctrl+F1…F5): Name ▲ · Path · …`, counts right-aligned), so no
+  text moves. A sort key cycles ascending, descending, original order; the
+  original order is saved as `sort: null` and restored over the `sort` argument.
 
 Validation: `QuickListServiceIT` (footer, frameless header drag) and the focused
 set offscreen and native; native Favorites smoke.

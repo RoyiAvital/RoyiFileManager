@@ -131,7 +131,8 @@ def write_differential_json(obj, paths, dest_path):
 		makedirs(dirname(tmp_file), exist_ok=True)
 		try:
 			with open(tmp_file, 'w') as f:
-				json.dump(difference, f)
+				json.dump(difference, f, indent=2)
+				f.write('\n')
 			replace(tmp_file, dest_path)
 		finally:
 			try:

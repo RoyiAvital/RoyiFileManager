@@ -16,7 +16,6 @@ _DEFAULT_SETTINGS = {
 	'mode': 'fuzzy',
 	'max_recursive_entries': 50_000,
 	'max_results': 100,
-	'include_hidden': True,
 	'show_metadata': False,
 }
 
@@ -88,7 +87,7 @@ def _search(pane, recursive, mode=None, query='', metadata=None):
 			subscriptions.callback(pane.on_closed(stale.set))
 		root_url = pane.get_path()
 		options = dict(recursive=recursive, max_entries=settings['max_recursive_entries'],
-			include_hidden=settings['include_hidden'])
+			include_hidden=_pane_shows_hidden_files(pane))
 		show_status_message('Indexing files...')
 		index = None
 		indexing_error = None
@@ -124,6 +123,16 @@ def _search(pane, recursive, mode=None, query='', metadata=None):
 			show_status_message('Find files canceled.', timeout_secs=3)
 			return
 		_show_results(pane, index, settings, query, stale)
+
+
+def _pane_shows_hidden_files(pane):
+	settings = load_json('Panes.json', default=[])
+	if not isinstance(settings, list) or not settings:
+		return False
+	pane_index = pane.window.get_panes().index(pane)
+	if pane_index >= len(settings) or not isinstance(settings[pane_index], dict):
+		return False
+	return settings[pane_index].get('show_hidden_files', False) is True
 
 
 def _show_results(pane, index, settings, query, stale):
@@ -180,6 +189,7 @@ def _get_settings(mode=None, metadata=None):
 	result = _DEFAULT_SETTINGS.copy()
 	if isinstance(configured, dict):
 		result.update(configured)
+	result.pop('include_hidden', None)
 	if mode is not None:
 		result['mode'] = mode
 	if result['mode'] not in ('fuzzy', 'regular'):
@@ -191,8 +201,6 @@ def _get_settings(mode=None, metadata=None):
 	result['max_results'] = _positive_int(
 		result['max_results'], _DEFAULT_SETTINGS['max_results']
 	)
-	if not isinstance(result['include_hidden'], bool):
-		result['include_hidden'] = _DEFAULT_SETTINGS['include_hidden']
 	if metadata is not None:
 		result['show_metadata'] = metadata
 	if not isinstance(result['show_metadata'], bool):

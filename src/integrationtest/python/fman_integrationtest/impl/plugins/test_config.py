@@ -257,6 +257,9 @@ class WriteDifferentialJsonTest(TestCase):
 		self._check_write({'a': 1})
 	def test_list(self):
 		self._check_write([1, 2])
+	def test_pretty_nested_values_and_unicode(self):
+		self._check_write({'title': 'caf\u00e9',
+			'items': [{'enabled': True, 'values': [1, None]}, {}]})
 	def test_string(self):
 		self._check_write("hello!")
 	def test_int(self):
@@ -315,6 +318,17 @@ class WriteDifferentialJsonTest(TestCase):
 		json2 = self._json_file(1)
 		write_differential_json(l, [json1], json2)
 		self.assertFalse(exists(json2))
+	def test_unchanged_compact_file_is_not_reformatted(self):
+		path = self._json_file()
+		value = {'nested': {'items': [1, 2]}}
+		compact = json.dumps(value)
+		with open(path, 'w') as output:
+			output.write(compact)
+		with patch('fman.impl.plugins.config.replace') as replaced:
+			write_differential_json(value, [], path)
+			replaced.assert_not_called()
+		with open(path, 'r') as source:
+			self.assertEqual(compact, source.read())
 	def test_delete_dict_key_same_file_ok(self):
 		json1 = self._json_file(0)
 		json2 = self._json_file(1)
@@ -335,7 +349,10 @@ class WriteDifferentialJsonTest(TestCase):
 		updated = {'a': {'x': 1, 'y': 2, 'z': 3}}
 		write_differential_json(updated, [base_path], override_path)
 		with open(override_path, 'r') as file:
-			self.assertEqual({'a': {'y': 2, 'z': 3}}, json.load(file))
+			text = file.read()
+			delta = {'a': {'y': 2, 'z': 3}}
+			self.assertEqual(delta, json.loads(text))
+			self.assertEqual(json.dumps(delta, indent=2) + '\n', text)
 		self.assertEqual(updated, load_json([base_path, override_path]))
 	def test_delete_nested_dict_key_same_file_ok(self):
 		base_path = self._json_file(0)
@@ -376,5 +393,7 @@ class WriteDifferentialJsonTest(TestCase):
 	def _check_write(self, obj):
 		write_differential_json(obj, [], self._json_file())
 		self.assertEqual(obj, load_json([self._json_file()]))
+		with open(self._json_file(), 'r') as output:
+			self.assertEqual(json.dumps(obj, indent=2) + '\n', output.read())
 	def _json_file(self, i=0):
 		return join(self.temp_dir, '%d.json' % i)

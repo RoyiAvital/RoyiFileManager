@@ -115,7 +115,7 @@ show_quick_list(*, items, title='', summary='', modal=True, filter='fuzzy', quer
 | --- | --- |
 | ++space++, ++insert++, ++shift++ + navigation, ++ctrl+a++ | Select in the list |
 | ++ctrl+i++ / ++ctrl+shift+a++ | Invert / clear the selection |
-| ++ctrl+f1++ … ++ctrl+f10++ | Sort by the n-th field; again reverses. The footer lists the keys and the current sort |
+| ++ctrl+f1++ … ++ctrl+f10++ | Sort by the n-th field: ascending, descending, then the original order. The footer lists the keys and marks the current sort |
 | ++tab++ | Moves to the docked Panel of a modeless list and back |
 | ++enter++ / ++esc++ | Accept / cancel |
 

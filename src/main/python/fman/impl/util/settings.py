@@ -25,7 +25,7 @@ class Settings:
 	def setdefault(self, key, value):
 		return self._json_dict.setdefault(key, value)
 	def flush(self):
-		serialized = json.dumps(self._json_dict)
+		serialized = json.dumps(self._json_dict, indent=2) + '\n'
 		directory = dirname(self._json_path) or '.'
 		makedirs(directory, exist_ok=True)
 		self._check_destination()

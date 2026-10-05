@@ -51,7 +51,7 @@ def index_listing(listing, max_entries=50_000, include_hidden=True,
 			check_canceled()
 		if listing.is_dir[index] or listing.attributes[index] & FILE_ATTRIBUTE_REPARSE_POINT:
 			continue
-		if not include_hidden and (name.startswith('.') or listing.attributes[index] & FILE_ATTRIBUTE_HIDDEN):
+		if not include_hidden and listing.attributes[index] & FILE_ATTRIBUTE_HIDDEN:
 			continue
 		metadata = (listing.sizes[index], listing.mtimes_ns[index]) if collect_metadata else ()
 		label = listing.display_names[index]
@@ -99,7 +99,7 @@ def _build_local_index(
 					inspected += 1
 					stat_result = None
 					try:
-						if collect_metadata and not include_hidden and not child.name.startswith('.'):
+						if collect_metadata and not include_hidden:
 							stat_result = child.stat(follow_symlinks=False)
 						if not include_hidden and _is_local_hidden(child, stat_result):
 							continue
@@ -155,7 +155,7 @@ def _build_fman_index(
 				return IndexResult(entries, True)
 			inspected += 1
 			url = join(directory_url, name)
-			if not include_hidden and _is_hidden(url, name):
+			if not include_hidden and _is_hidden(url):
 				continue
 			relative_path = _join_relative(relative_directory, name)
 			try:
@@ -206,8 +206,6 @@ def _provider_metadata(url, check_canceled):
 
 
 def _is_local_hidden(entry, stat_result=None):
-	if entry.name.startswith('.'):
-		return True
 	if stat_result is None:
 		stat_result = entry.stat(follow_symlinks=False)
 	attributes = getattr(
@@ -228,8 +226,6 @@ def _join_relative(directory, name):
 	return name
 
 
-def _is_hidden(url, name):
-	if name.startswith('.'):
-		return True
+def _is_hidden(url):
 	scheme, _ = splitscheme(url)
 	return scheme == 'file://' and QFileInfo(as_human_readable(url)).isHidden()

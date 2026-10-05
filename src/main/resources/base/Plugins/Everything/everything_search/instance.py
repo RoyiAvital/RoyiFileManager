@@ -188,7 +188,7 @@ class ProcessRuntime:
 			self._config_hash = config_hash
 			temporary = self.directory / 'owner.json.tmp'
 			temporary.write_text(json.dumps({'instance': self.name, 'identity': self.identity,
-				'config_hash': config_hash}), encoding='utf-8')
+				'config_hash': config_hash}, indent=2) + '\n', encoding='utf-8')
 			temporary.replace(self.directory / 'owner.json')
 			deadline = monotonic() + 30
 			while not canceled.is_set():

@@ -52,8 +52,10 @@ class LoadSaveJsonTest(PluginTest):
 		d = self._plugin_support.load_json('Test.json')
 		self.assertIs(d, self._plugin_support.load_json('Test.json'))
 	def test_save_json(self):
-		d = {'test_save_json': 1}
+		d = {'test_save_json': {'title': 'caf\u00e9', 'items': [1, True, None]}}
 		self._plugin_support.save_json('Test.json', d)
 		json_platform = join(self._settings_plugin, 'Test (%s).json' % PLATFORM)
 		with open(json_platform, 'r') as f:
-			self.assertEqual(d, json.load(f))
+			text = f.read()
+			self.assertEqual(d, json.loads(text))
+			self.assertEqual(json.dumps(d, indent=2) + '\n', text)

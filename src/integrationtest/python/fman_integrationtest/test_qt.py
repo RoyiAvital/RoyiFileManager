@@ -4320,7 +4320,7 @@ class SearchFileMetadataIT(QtIT):
 		class PaneWidget(QWidget):
 			location_changed = pyqtSignal(str)
 			def get_location(self):
-				return 'test://root'
+				return getattr(self, 'location', 'test://root')
 			def get_listing(self):
 				return getattr(self, 'listing', None)
 		self.widget = self.run_in_app(PaneWidget)
@@ -4352,6 +4352,69 @@ class SearchFileMetadataIT(QtIT):
 
 	def assert_unsubscribed(self):
 		self.assertEqual(0, self.run_in_app(self.widget.receivers, self.widget.location_changed))
+
+	def test_two_panes_capture_hidden_visibility_before_snapshot_or_recursive_search(self):
+		import ctypes
+		from fman import DirectoryPane, Window
+		from fman.listing import Listing
+		from fman.url import as_url
+		from search_file_fuzzy import SearchFilesInCurrentFolder, SearchFilesRecursively
+		from PyQt5 import sip
+		from PyQt5.QtCore import QThread
+		from pathlib import Path
+		from stat import FILE_ATTRIBUTE_HIDDEN
+		from tempfile import TemporaryDirectory
+		from unittest.mock import patch
+		other_widget = self.run_in_app(type(self.widget))
+		self.addCleanup(self.run_in_app, sip.delete, other_widget)
+		window = Window(None, self.registry)
+		self.pane.window = window
+		other_pane = DirectoryPane(window, other_widget, self.registry)
+		window.get_panes().extend((self.pane, other_pane))
+		loads = []
+		def settings(name, default=None):
+			self.assertNotEqual(QApplication.instance().thread(), QThread.currentThread())
+			loads.append(name)
+			return ([{'show_hidden_files': True}, {'show_hidden_files': False}]
+				if name == 'Panes.json' else {'include_hidden': not hidden})
+		def show(get_items, query=''):
+			def inspect():
+				self.assertEqual(QApplication.instance().thread(), QThread.currentThread())
+				with patch('search_file_fuzzy.load_json', side_effect=AssertionError('Query settings I/O')), \
+						patch('search_file_fuzzy.indexer.os.scandir', side_effect=AssertionError('Query scan')):
+					self.assertCountEqual(expected, [item.title for item in get_items('')])
+					self.assertEqual(['.gitignore'], [item.title for item in get_items('gitignore')])
+			self.run_in_app(inspect)
+		set_attributes = ctypes.windll.kernel32.SetFileAttributesW
+		set_attributes.argtypes = [ctypes.c_wchar_p, ctypes.c_uint32]
+		set_attributes.restype = ctypes.c_bool
+		with TemporaryDirectory() as temporary:
+			root = Path(temporary)
+			names = ('visible.txt', 'hidden.txt', '.gitignore')
+			for name in names:
+				(root / name).touch()
+			hidden_path = root / 'hidden.txt'
+			attributes = hidden_path.stat().st_file_attributes
+			try:
+				self.assertTrue(set_attributes(str(hidden_path), attributes | FILE_ATTRIBUTE_HIDDEN))
+				for widget in (self.widget, other_widget):
+					self.run_in_app(setattr, widget, 'location', as_url(root))
+					self.run_in_app(setattr, widget, 'listing', Listing.create(as_url(root),
+						names, attributes=(0, FILE_ATTRIBUTE_HIDDEN, 0)))
+				with patch('search_file_fuzzy.load_json', side_effect=settings), \
+						patch('search_file_fuzzy.show_quicksearch', side_effect=show):
+					for pane, hidden in zip(window.get_panes(), (True, False)):
+						expected = list(names) if hidden else ['visible.txt', '.gitignore']
+						for command in (SearchFilesInCurrentFolder, SearchFilesRecursively):
+							for metadata in (False, True):
+								with self.subTest(hidden=hidden, command=command.__name__, metadata=metadata):
+									loads.clear()
+									command(pane)(metadata=metadata)
+									self.assertEqual(['SearchFileFuzzy.json', 'Panes.json'], loads)
+									self.assertEqual(0, self.run_in_app(pane._widget.receivers,
+										pane._widget.location_changed))
+			finally:
+				set_attributes(str(hidden_path), attributes)
 
 	def test_reserved_rows_reorder_filter_accept_and_cancel(self):
 		from fman.impl.quicksearch import Quicksearch
@@ -7761,18 +7824,34 @@ class QuickListServiceIT(QtIT):
 			self.assertEqual(['alpha', 'Zulu', 'Mike'], self.run_in_app(titles))
 			self.assertEqual(('Added', False), handle.snapshot().sort)
 			self.assertIn('Added 2', self.run_in_app(lambda: window.list.model.index(0, 0).data()))
-			footer = lambda: window.list.counts.text()
-			self.assertEqual('0 selected (0 hidden)    Sorted by Added \u25bc    '
-				'Ctrl+F1 Name \u00b7 Ctrl+F2 Path \u00b7 Ctrl+F3 Added', self.run_in_app(footer))
+			keys = lambda: window.list.sort_keys_label.text()
+			self.assertEqual('Sort (Ctrl+F1\u2026F3): Name | Path | Added \u25bc', self.run_in_app(keys))
+			self.assertEqual('0 selected (0 hidden)', self.run_in_app(window.list.counts.text))
 			self.run_in_app(QTest.keyClick, window.list.query, Qt.Key_F1, Qt.ControlModifier)
-			self.assertIn('Sorted by Name \u25b2', self.run_in_app(footer))
+			self.assertEqual('Sort (Ctrl+F1\u2026F3): Name \u25b2 | Path | Added', self.run_in_app(keys))
 			self.assertEqual(['alpha', 'Mike', 'Zulu'], self.run_in_app(titles))
 			self.assertTrue(saved.wait(5))
 			self.assertEqual({'sort': 'Name', 'ascending': True, 'other': 1}, stored)
 			self.run_in_app(QTest.keyClick, window.list.query, Qt.Key_F1, Qt.ControlModifier)
 			self.assertEqual(['Zulu', 'Mike', 'alpha'], self.run_in_app(titles))
+			saved.clear()
+			self.run_in_app(QTest.keyClick, window.list.query, Qt.Key_F1, Qt.ControlModifier)
+			self.assertEqual(['Zulu', 'alpha', 'Mike'], self.run_in_app(titles))
+			self.assertIsNone(handle.snapshot().sort)
+			self.assertEqual('Sort (Ctrl+F1\u2026F3): Name | Path | Added', self.run_in_app(keys))
+			self.assertTrue(saved.wait(5))
+			from time import monotonic, sleep
+			deadline = monotonic() + 5
+			while stored.get('sort') is not None and monotonic() < deadline:
+				sleep(.01)
+			self.assertIsNone(stored['sort'])
 			self.run_in_app(window.list.query.setText, 'a')
 			self.assertEqual(['Zulu', 'alpha'], self.run_in_app(titles))
+			handle.close()
+			self.finish(thread, results)
+			handle, window, results, thread = self.open(title_label='Name', sort=('Name', True),
+				settings='QuickList Test.json')
+			self.assertIsNone(handle.snapshot().sort, 'A saved original order must win over the argument')
 			handle.close()
 			self.finish(thread, results)
 

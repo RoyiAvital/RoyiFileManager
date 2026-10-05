@@ -48,6 +48,8 @@
 - [ ] CHANGE: Candidates for presets as text viewer / editor: [Editpad](https://github.com/imluyg/editpad), [Dan](https://github.com/dfallman/dan), [FastPad](https://github.com/coccor/Fastpad), [Lite Anvil](https://github.com/danpozmanter/lite-anvil), [Noter](https://github.com/blisspixel/noter), [Token](https://github.com/HelgeSverre/token), [Fulgur](https://github.com/fulgur-app/Fulgur).
 - [x] CHANGE: Remove the extended status bar for 2 panes. Leave only the option for a single pane (Active pane).
 - [x] BUG: Resetting the geometry of the application does not make it move to the default position on next run.
+- [x] CHANGE: Using _Fuzzy Find File_ should respect the active pane settings for hidden files.
+- [x] CHANGE: The saved `json` files of the application and plug ins should be saved in a `pretty` mode.
 
 ## Performance
 
