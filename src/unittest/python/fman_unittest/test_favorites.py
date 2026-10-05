@@ -118,6 +118,37 @@ class FavoritesStoreTest(TestCase):
 			store.to_json(), FavoritesStore.load(store.to_json(), windows=True).to_json()
 		)
 
+	def test_usage_is_recorded_kept_and_round_tripped(self):
+		from favorites.store import NO_USAGE, Usage
+		store = FavoritesStore.load({'favorites': [
+			{'name': 'Old', 'url': 'file:///C:/Old'},
+			{'name': 'Bad', 'url': 'file:///C:/Bad', 'added': 'yesterday', 'count': -2},
+		]}, windows=True)
+		self.assertEqual(0, store.invalid_count)
+		self.assertEqual((NO_USAGE, NO_USAGE), store.usages)
+		store.add('file:///C:/New', when='2026-10-05T10:00:00+03:00')
+		self.assertTrue(store.record_open('file:///c:/new', when='2026-10-05T11:00:00+03:00'))
+		self.assertTrue(store.record_open('file:///C:/New', when='2026-10-05T12:00:00+03:00'))
+		self.assertFalse(store.record_open('file:///C:/Missing'))
+		store.rename('file:///C:/New', 'Renamed')
+		usage = Usage('2026-10-05T10:00:00+03:00', '2026-10-05T12:00:00+03:00', 2)
+		self.assertEqual(usage, store.usages[0])
+		store.add('file:///C:/Old', when='2026-10-06T09:00:00+03:00')
+		self.assertEqual(Usage('2026-10-06T09:00:00+03:00', None, 0), store.usages[0])
+		reloaded = FavoritesStore.load(store.to_json(), windows=True)
+		self.assertEqual(store.usages, reloaded.usages)
+		self.assertNotIn('count', store.to_json()['favorites'][2])
+		reloaded.remove('file:///C:/New')
+		self.assertEqual(2, len(reloaded.usages))
+
+	def test_eviction_drops_usage(self):
+		store = FavoritesStore(max_favorites=1, windows=True)
+		store.add('file:///C:/A', when='2026-10-05T10:00:00')
+		store.record_open('file:///C:/A')
+		store.add('file:///C:/B', when='2026-10-05T11:00:00')
+		store.add('file:///C:/A', when='2026-10-05T12:00:00')
+		self.assertEqual(0, store.usages[0].count)
+
 
 class FavoriteItemsTest(TestCase):
 	def setUp(self):
@@ -244,10 +275,9 @@ class FavoriteCommandTest(TestCase):
 		AddCurrentFolderToFavorites(pane)()
 
 		show_alert_mock.assert_called_once()
-		self.assertEqual(
-			[{'name': 'New', 'url': 'file:///C:/New'}],
-			save_json_mock.call_args.args[1]['favorites']
-		)
+		saved = save_json_mock.call_args.args[1]['favorites']
+		self.assertEqual([('New', 'file:///C:/New')], [(entry['name'], entry['url']) for entry in saved])
+		self.assertIn('added', saved[0])
 
 	@patch('favorites.show_status_message')
 	@patch('favorites.show_alert', return_value=YES)
@@ -413,12 +443,19 @@ class FavoriteCommandTest(TestCase):
 
 
 class FavoritesManagerLogicTest(TestCase):
-	def test_projection_keeps_added_order_as_metadata(self):
+	def test_projection_shows_usage_and_keeps_added_order(self):
+		from datetime import datetime
+		from favorites.store import NO_USAGE, Usage
 		from favorites.ui import project
 		records = (Favorite('Zulu', 'file:///C:/A'), Favorite('Alpha', 'file:///C:/Z'))
-		items = project(records)
+		usages = (Usage('2026-10-05T10:00:00', '2026-10-05T11:30:00', 3), NO_USAGE)
+		items = project(records, usages)
 		self.assertEqual(['Zulu', 'Alpha'], [item.title for item in items])
-		self.assertEqual([(('Added', 1, '1'),), (('Added', 2, '2'),)], [item.metadata for item in items])
+		opened = datetime.fromisoformat('2026-10-05T11:30:00').timestamp()
+		self.assertEqual((('Added', 2, '2026-10-05 10:00'), ('Last opened', opened, '2026-10-05 11:30'),
+			('Opened', 3, '3')), items[0].metadata)
+		self.assertEqual((('Added', 1, ''), ('Last opened', None, ''), ('Opened', 0, '0')), items[1].metadata)
+		self.assertEqual(items[1].metadata, project(records)[1].metadata)
 		self.assertEqual('Zulu', records[0].name)
 
 	def test_mutation_revalidates_captured_records_and_publishes_once(self):

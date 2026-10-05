@@ -102,6 +102,9 @@ show_quick_list(*, items, title='', summary='', modal=True, filter='fuzzy', quer
 - Enter returns the chosen IDs: the selection, or the current item when nothing
   is selected. Escape returns `None`.
 - The call blocks. On a worker it waits; on the Qt thread it runs a nested loop.
+- The window is frameless, like QuickSearch. A nonempty `title` is shown as a
+  header; dragging it moves the window. Metadata fields are aligned in columns
+  separated by `│`.
 - `filter=None` hides the filter box. `selected` preselects IDs.
 - `title_label` / `hint_label` make the title / hint sortable under that label.
   Metadata labels are always sortable. `sort=(label, ascending)` is the initial
@@ -112,7 +115,7 @@ show_quick_list(*, items, title='', summary='', modal=True, filter='fuzzy', quer
 | --- | --- |
 | ++space++, ++insert++, ++shift++ + navigation, ++ctrl+a++ | Select in the list |
 | ++ctrl+i++ / ++ctrl+shift+a++ | Invert / clear the selection |
-| ++ctrl+f1++ … ++ctrl+f10++ | Sort by the n-th field; again reverses |
+| ++ctrl+f1++ … ++ctrl+f10++ | Sort by the n-th field; again reverses. The footer lists the keys and the current sort |
 | ++tab++ | Moves to the docked Panel of a modeless list and back |
 | ++enter++ / ++esc++ | Accept / cancel |
 

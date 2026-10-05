@@ -192,12 +192,16 @@ def _seed_settings(settings, capture):
 	root, windows = _public_paths()
 	if capture == 'favorites':
 		favorites = (
-			('Windows', windows), ('System32', windows / 'System32'),
-			('Fonts', windows / 'Fonts'), ('Wallpapers', windows / 'Web' / 'Wallpaper'),
-			('Drive C', root),
+			('Windows', windows, '2026-09-28T09:15:00', '2026-10-04T18:40:00', 14),
+			('System32', windows / 'System32', '2026-09-21T14:02:00', '2026-10-03T11:25:00', 6),
+			('Fonts', windows / 'Fonts', '2026-09-14T10:30:00', '2026-09-30T16:05:00', 3),
+			('Wallpapers', windows / 'Web' / 'Wallpaper', '2026-09-07T20:45:00', None, 0),
+			('Drive C', root, '2026-08-31T08:00:00', '2026-10-05T08:10:00', 27),
 		)
 		documents = {'Favorites (Windows).json': {'favorites': [
-			{'name': name, 'url': _file_url(path)} for name, path in favorites
+			dict({'name': name, 'url': _file_url(path), 'added': added, 'count': count},
+				**({'opened': opened} if opened else {}))
+			for name, path, added, opened, count in favorites
 		]}}
 	elif capture == 'directory-size':
 		documents = {'DirectorySize (Windows).json': {'enabled': True}}

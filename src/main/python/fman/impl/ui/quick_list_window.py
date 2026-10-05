@@ -12,7 +12,7 @@ from fman.impl.ui.table_data import text
 from fman.impl.util.qt.thread import is_in_main_thread, run_in_main_thread
 from PyQt5 import sip
 from PyQt5.QtCore import QEvent, QEventLoop, Qt
-from PyQt5.QtWidgets import QApplication, QVBoxLayout, QWidget
+from PyQt5.QtWidgets import QApplication, QLabel, QVBoxLayout, QWidget
 
 
 # Lists are plain data, independent of plug-in lifetimes; drivers attach handle.close to their owner.
@@ -78,7 +78,7 @@ class QuickListHandle:
 class QuickListWindow(ToolWindow):
 	def __init__(self, main, session, prepared, title, summary, modal, fuzzy, query, selected, sort, settings):
 		super().__init__(main, _list_owner)
-		self.setWindowFlags(Qt.Dialog)
+		self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
 		self.setWindowModality(Qt.WindowModal if modal else Qt.NonModal)
 		self.setWindowTitle(title or 'QuickList')
 		self.resize(680, 430)
@@ -101,6 +101,18 @@ class QuickListWindow(ToolWindow):
 		self.focus_widget = self.list
 		layout = QVBoxLayout(self)
 		layout.setContentsMargins(4, 6, 4, 4)
+		self.drag = None
+		self.header = QLabel(title, self)
+		self.header.setObjectName('quick-list-title')
+		self.header.setTextFormat(Qt.PlainText)
+		font = self.header.font()
+		font.setBold(True)
+		self.header.setFont(font)
+		self.header.setContentsMargins(10, 2, 10, 0)
+		self.header.setCursor(Qt.SizeAllCursor)
+		self.header.setVisible(bool(title))
+		self.header.installEventFilter(self)
+		layout.addWidget(self.header)
 		self.summary = ElidedLabel(summary, self)
 		self.summary.setContentsMargins(10, 0, 10, 0)
 		self.summary.setVisible(bool(summary))
@@ -220,6 +232,14 @@ class QuickListWindow(ToolWindow):
 	def eventFilter(self, watched, event):
 		if watched is self.main and event.type() == QEvent.Close:
 			self.close()
+		elif watched is self.header:
+			# The frameless window moves by dragging its title.
+			if event.type() == QEvent.MouseButtonPress and event.button() == Qt.LeftButton:
+				self.drag = event.globalPos() - self.frameGeometry().topLeft()
+			elif event.type() == QEvent.MouseMove and self.drag is not None:
+				self.move(event.globalPos() - self.drag)
+			elif event.type() == QEvent.MouseButtonRelease:
+				self.drag = None
 		return False
 
 	def cleanup(self):

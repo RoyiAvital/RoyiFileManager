@@ -828,9 +828,12 @@ class EverythingBuildTest(TestCase):
 		import ast
 		import build
 		tree = ast.parse((build.ROOT / 'application.spec').read_text(encoding='utf-8'))
-		hidden_imports = next(node.value.left for node in tree.body
+		hidden_imports = next(node.value for node in tree.body
 			if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and
-				target.id == 'hidden_imports' for target in node.targets)).left
+				target.id == 'hidden_imports' for target in node.targets))
+		# The literal list is the leftmost operand of `[...] + collected + ...`.
+		while isinstance(hidden_imports, ast.BinOp):
+			hidden_imports = hidden_imports.left
 		self.assertIn('uuid', ast.literal_eval(hidden_imports))
 		pairs = [ast.literal_eval(node) for node in ast.walk(tree)
 			if isinstance(node, ast.Tuple) and all(isinstance(item, ast.Constant) for item in node.elts)]

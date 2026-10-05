@@ -203,7 +203,7 @@ def _load_store():
 
 def _commit(store):
 	save_json(_SETTINGS_NAME, store.to_json())
-	return _resource.committed(store.favorites)
+	return _resource.committed((store.favorites, store.usages))
 
 
 def _report_invalid_entries(count):

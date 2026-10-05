@@ -15,16 +15,19 @@ can also be found by the aliases **Favorites Manager**, **Favorites**, and
 
 ## Manager
 
-The manager is a modeless QuickList (Name, Path and an `Added` position) with a
-fuzzy filter, plus a Panel docked above the status bar with **Rename**,
-**Delete** and **Go To**. Both file panes shrink to make room and recover it
-when the manager closes.
+The manager is a modeless QuickList with a fuzzy filter, plus a Panel docked
+above the status bar with **Rename**, **Delete** and **Go To**. Both file panes
+shrink to make room and recover it when the manager closes. Each favorite shows
+its name, path and a line with **Added** (date), **Last opened** (date) and
+**Opened** (how often Go To opened it). Favorites saved before this version show
+empty dates and keep their order. The footer lists the sort keys; drag the title
+to move the window.
 
 | Key | Action |
 | --- | --- |
 | Space, Insert, Shift+navigation, Ctrl+A | Select in the list |
 | Ctrl+I / Ctrl+Shift+A | Invert / clear the selection |
-| Ctrl+F1 / Ctrl+F2 / Ctrl+F3 | Sort by Name / Path / Added; again reverses |
+| Ctrl+F1 … Ctrl+F5 | Sort by Name / Path / Added / Last opened / Opened; again reverses |
 | Tab | Move between the list and the Panel |
 | Enter | Go To the chosen favorite |
 | Escape or the dock's `x` | Close the manager |
@@ -34,10 +37,12 @@ when the manager closes.
   Delete key does not delete.
 - **Rename** renames the highlighted bookmark.
 - **Go To** opens the chosen favorite in the invoking pane and closes the manager
-  once the pane has loaded it. It needs exactly one chosen favorite. Missing
-  locations, files and failed navigation show an alert and keep the manager open.
+  once the pane has loaded it, counting it as opened. It needs exactly one chosen
+  favorite. Missing locations, files and failed navigation show an alert and keep
+  the manager open.
 - The sort is saved in `Favorites UI.json` and restored next time. Sorting never
   changes the stored order, which drives `Added` and capacity eviction.
+  Re-adding a favorite updates its Added date and keeps its Opened count.
 
 One manager is open per main window. Opening it for another pane, or with a
 query, replaces it; plain Ctrl+B focuses it. Changes from other commands or

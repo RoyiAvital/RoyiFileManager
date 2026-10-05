@@ -974,7 +974,8 @@ current item); Escape, the close button, owner invalidation through an attached
 | `is_open` | `False` once closed. |
 
 Sorting: fields are `title_label`, `hint_label` (when given) and the metadata
-labels; `Ctrl+F1`…`Ctrl+F10` or the sort bar sort by a field, again to reverse.
+labels; `Ctrl+F1`…`Ctrl+F10` sort by a field, again to reverse. The footer lists
+the keys and the current sort.
 Empty values stay last. `sort=(label, ascending)` applies whenever its label
 exists. With `settings='Name.json'` the user's choice is saved on a worker under
 keys `sort` and `ascending`, and a saved sort overrides `sort`.

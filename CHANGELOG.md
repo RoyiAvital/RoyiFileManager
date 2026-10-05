@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Favorites Manager shows when each favorite was added and last opened, and how
+  often Go To opened it. The values are saved in `Favorites.json`;
+  `Ctrl+F1`–`Ctrl+F5` sort by Name, Path, Added, Last opened or Opened.
+  Favorites saved earlier show empty dates and keep their order.
+
+### Changed
+
+- QuickList: the sort bar is replaced by a footer listing the `Ctrl+F` keys and
+  the current sort; metadata fields are separated by a thin line and dates are
+  no longer cut off; the window is frameless like QuickSearch, with the title as
+  a header that moves the window when dragged (no `?` button).
+
 ## [0.14.0] - 2026-10-05
 
 This release focuses on user facing features:

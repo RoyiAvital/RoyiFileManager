@@ -1,4 +1,5 @@
 from collections import namedtuple
+from datetime import datetime
 
 from fman.url import as_human_readable, basename, normalize, splitscheme
 
@@ -6,6 +7,13 @@ from fman.url import as_human_readable, basename, normalize, splitscheme
 DEFAULT_MAX_FAVORITES = 200
 Favorite = namedtuple('Favorite', 'name url')
 AddResult = namedtuple('AddResult', 'favorite evicted')
+# added / opened are ISO 8601 local times or None (entries saved before usage tracking).
+Usage = namedtuple('Usage', 'added opened count')
+NO_USAGE = Usage(None, None, 0)
+
+
+def now():
+	return datetime.now().astimezone().isoformat(timespec='seconds')
 
 
 class FavoritesStore:
@@ -17,6 +25,7 @@ class FavoritesStore:
 		self._favorites = list(favorites)
 		self._keys = [self.key(favorite.url, self._windows)
 					  for favorite in self._favorites]
+		self._usage = {}
 		self.max_favorites = max_favorites
 		self.invalid_count = invalid_count
 
@@ -52,11 +61,19 @@ class FavoritesStore:
 				continue
 			store._favorites.append(favorite)
 			store._keys.append(key)
+			usage = _parse_usage(entry)
+			if usage != NO_USAGE:
+				store._usage[key] = usage
 		return store
 
 	@property
 	def favorites(self):
 		return tuple(self._favorites)
+
+	@property
+	def usages(self):
+		"""Usage records aligned with favorites."""
+		return tuple(self._usage.get(key, NO_USAGE) for key in self._keys)
 
 	def contains(self, url):
 		return self.find(url) is not None
@@ -72,9 +89,10 @@ class FavoritesStore:
 		return not self.contains(url) and \
 			len(self._favorites) >= self.max_favorites
 
-	def add(self, url, name=None):
+	def add(self, url, name=None, when=None):
 		url = self._normalize_url(url)
 		key = self.key(url, self._windows)
+		when = when or now()
 		try:
 			index = self._keys.index(key)
 		except ValueError:
@@ -83,6 +101,7 @@ class FavoritesStore:
 			favorite = self._favorites.pop(index)
 			self._favorites.insert(0, favorite)
 			self._keys.insert(0, self._keys.pop(index))
+			self._usage[key] = self._usage.get(key, NO_USAGE)._replace(added=when)
 			return AddResult(favorite, None)
 		if name is None:
 			name = self._default_name(url)
@@ -90,10 +109,11 @@ class FavoritesStore:
 		favorite = Favorite(name, url)
 		self._favorites.insert(0, favorite)
 		self._keys.insert(0, key)
+		self._usage[key] = NO_USAGE._replace(added=when)
 		evicted = None
 		if len(self._favorites) > self.max_favorites:
 			evicted = self._favorites.pop()
-			self._keys.pop()
+			self._usage.pop(self._keys.pop(), None)
 		return AddResult(favorite, evicted)
 
 	def remove(self, url):
@@ -103,7 +123,16 @@ class FavoritesStore:
 		except ValueError:
 			return
 		self._keys.pop(index)
+		self._usage.pop(key, None)
 		return self._favorites.pop(index)
+
+	def record_open(self, url, when=None):
+		key = self.key(url, self._windows)
+		if key not in self._keys:
+			return False
+		usage = self._usage.get(key, NO_USAGE)
+		self._usage[key] = usage._replace(opened=when or now(), count=usage.count + 1)
+		return True
 
 	def rename(self, url, name):
 		name = self._normalize_name(name)
@@ -117,10 +146,17 @@ class FavoritesStore:
 		return True
 
 	def to_json(self):
-		return {
-			'favorites': [favorite._asdict() for favorite in self._favorites],
-			'max_favorites': self.max_favorites
-		}
+		entries = []
+		for favorite, usage in zip(self._favorites, self.usages):
+			entry = favorite._asdict()
+			if usage.added:
+				entry['added'] = usage.added
+			if usage.opened:
+				entry['opened'] = usage.opened
+			if usage.count:
+				entry['count'] = usage.count
+			entries.append(entry)
+		return {'favorites': entries, 'max_favorites': self.max_favorites}
 
 	def _parse_entry(self, entry):
 		if not isinstance(entry, dict):
@@ -168,3 +204,21 @@ class FavoritesStore:
 				return name + '\\'
 			return name
 		return as_human_readable(url)
+
+
+def _parse_time(value):
+	if not isinstance(value, str):
+		return None
+	try:
+		datetime.fromisoformat(value)
+	except ValueError:
+		return None
+	return value
+
+
+def _parse_usage(entry):
+	"""Invalid usage values are dropped; the favorite itself stays valid."""
+	count = entry.get('count', 0)
+	if type(count) is not int or count < 0:
+		count = 0
+	return Usage(_parse_time(entry.get('added')), _parse_time(entry.get('opened')), count)

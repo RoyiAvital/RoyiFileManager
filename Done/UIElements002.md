@@ -684,3 +684,25 @@ Validation: `fman_unittest.test_ui_elements`, `test_favorites`,
 `HashResultIT`, `SearchFilesIT`, `FindFilesIT`: 192 tests OK offscreen and on
 native `windows` (the opt-in gate skipped in that run, run separately natively).
 Native Favorites smoke passed.
+
+## User Review Changes (2026_10_05)
+
+### 2026_10_05 - GitHub Copilot
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: High
+- Context Window: 272K
+- Outcome: User decisions after seeing the window, chosen from rendered options.
+
+- The sort bar is removed. The footer reads
+  `0 selected (0 hidden)    Sorted by Name ▲    Ctrl+F1 Name · Ctrl+F2 Path · …`.
+- Metadata fields stay aligned in columns, separated by `│`; cells fit at least
+  24 digits.
+- The window is frameless like QuickSearch; a nonempty title is a header that
+  moves the window when dragged. No API change.
+
+Validation: `QuickListServiceIT` (footer, frameless header drag) and the focused
+set offscreen and native; native Favorites smoke.

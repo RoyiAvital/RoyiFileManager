@@ -348,3 +348,28 @@ failure alerts once, save failure alerts and retry works, rename after close,
 long names and URLs, rename across the 512-character title limit and reopen,
 Rename write failure keeps the name, open from another pane. Validation commands and results:
 see [UI Elements 002](UIElements002.md#review-resolution-2026_10_05).
+
+## User Review Changes (2026_10_05)
+
+### 2026_10_05 - GitHub Copilot
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: High
+- Context Window: 272K
+- Outcome: User decision: show Added (date), Last opened (date) and Opened (count).
+
+- `FavoritesStore` keeps `Usage(added, opened, count)` per favorite and writes
+  optional `added`, `opened` and `count` keys to `Favorites.json`. Invalid values
+  are dropped without invalidating the favorite. Add and re-add set `added`;
+  eviction and removal drop the usage.
+- A successful Go To (Panel or Enter) records `opened` and increments `count` on
+  a worker under the store lock.
+- The Added sort key is the store position, so favorites saved earlier (no date)
+  keep their order; Last opened sorts by time; Opened by count.
+- Commit notifications carry `(favorites, usages)`.
+
+Validation: `test_favorites` (usage round trip, eviction, projection) and
+`FavoritesManagerIT` (Go To records the use) offscreen and native; native smoke.

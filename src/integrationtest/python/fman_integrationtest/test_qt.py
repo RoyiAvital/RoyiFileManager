@@ -7672,6 +7672,23 @@ class QuickListServiceIT(QtIT):
 		handle, window, results, thread = self.open(title='Pick')
 		self.assertEqual('Pick', self.run_in_app(window.windowTitle))
 		self.assertTrue(self.run_in_app(window.isVisible))
+		self.assertTrue(self.run_in_app(lambda: window.windowFlags() & Qt.FramelessWindowHint))
+		self.assertEqual('Pick', self.run_in_app(window.header.text))
+		def drag():
+			from PyQt5.QtCore import QEvent, QPointF
+			from PyQt5.QtGui import QMouseEvent
+			start = window.pos()
+			point = window.header.rect().center()
+			def send(kind, local, buttons):
+				global_point = QPointF(window.header.mapToGlobal(local))
+				QApplication.sendEvent(window.header, QMouseEvent(kind, QPointF(local), global_point,
+					Qt.LeftButton, buttons, Qt.NoModifier))
+			send(QEvent.MouseButtonPress, point, Qt.LeftButton)
+			send(QEvent.MouseMove, point + QPoint(30, 20), Qt.LeftButton)
+			send(QEvent.MouseButtonRelease, point + QPoint(30, 20), Qt.NoButton)
+			return window.pos() - start
+		from PyQt5.QtCore import QPoint
+		self.assertEqual(QPoint(30, 20), self.run_in_app(drag))
 		self.run_in_app(QTest.keyClick, window.list.query, Qt.Key_Return)
 		self.assertEqual(('a',), self.finish(thread, results))
 		self.assertFalse(handle.is_open)
@@ -7744,10 +7761,11 @@ class QuickListServiceIT(QtIT):
 			self.assertEqual(['alpha', 'Zulu', 'Mike'], self.run_in_app(titles))
 			self.assertEqual(('Added', False), handle.snapshot().sort)
 			self.assertIn('Added 2', self.run_in_app(lambda: window.list.model.index(0, 0).data()))
-			def buttons():
-				return [button.property('sortLabel') for button in window.list.sort_bar.buttons]
-			self.assertEqual(['Name', 'Path', 'Added'], self.run_in_app(buttons))
+			footer = lambda: window.list.counts.text()
+			self.assertEqual('0 selected (0 hidden)    Sorted by Added \u25bc    '
+				'Ctrl+F1 Name \u00b7 Ctrl+F2 Path \u00b7 Ctrl+F3 Added', self.run_in_app(footer))
 			self.run_in_app(QTest.keyClick, window.list.query, Qt.Key_F1, Qt.ControlModifier)
+			self.assertIn('Sorted by Name \u25b2', self.run_in_app(footer))
 			self.assertEqual(['alpha', 'Mike', 'Zulu'], self.run_in_app(titles))
 			self.assertTrue(saved.wait(5))
 			self.assertEqual({'sort': 'Name', 'ascending': True, 'other': 1}, stored)
@@ -8249,7 +8267,8 @@ class FavoritesManagerIT(QtIT):
 		self.assertIs(QuickListWindow, type(self.window))
 		self.assertIs(FavoritesSession, type(self.session))
 		self.assertEqual(['Zulu', 'Alpha', 'Other'], self.titles())
-		self.assertEqual(('Name', 'Path', 'Added'), self.run_in_app(lambda: self.window.list.sort_labels))
+		self.assertEqual(('Name', 'Path', 'Added', 'Last opened', 'Opened'),
+			self.run_in_app(lambda: self.window.list.sort_labels))
 		self.assertEqual('Favorites UI.json', self.window.settings)
 		self.assertFalse(self.window.modal)
 		self.assertIs(self.host.panel, self.run_in_app(lambda: self.main._panel_dock.panel))
@@ -8296,6 +8315,10 @@ class FavoritesManagerIT(QtIT):
 			self.click('go_to')
 			self.closed()
 		self.assertEqual('file:///C:/A', self.pane.set_path.call_args.args[0])
+		self.wait_until(lambda: self.data['favorites'][0].get('count') == 1, 'Use not recorded')
+		self.assertIn('opened', self.data['favorites'][0])
+		self.open()
+		self.assertIn('Opened 1', self.run_in_app(lambda: self.window.list.model.index(0, 0).data()))
 
 	def test_enter_goes_to_single_chosen(self):
 		from unittest.mock import patch

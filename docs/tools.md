@@ -195,8 +195,9 @@ Favorites keeps a list of frequently used locations.
 </figure>
 
 - Run **Add current folder to favorites** to save the active pane's folder.
-- Type to filter by name or path. ++ctrl+f1++, ++ctrl+f2++ and ++ctrl+f3++ sort
-  by Name, Path and Added; the sort is remembered.
+- Each favorite shows when it was added, when it was last opened and how often.
+- Type to filter by name or path. ++ctrl+f1++ to ++ctrl+f5++ sort by Name, Path,
+  Added, Last opened and Opened; the footer lists them and the sort is remembered.
 - Press ++enter++ or **Go To** to open the chosen favorite.
 - **Rename** changes only the display name. **Delete** removes the chosen
   favorites, never files.

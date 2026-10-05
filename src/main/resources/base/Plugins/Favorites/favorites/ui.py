@@ -3,7 +3,8 @@ from fman.fs import exists, is_dir
 from fman.ui import Action, ListItem, UiController, settings_resource as resource, show_panel, \
 	show_quick_list
 from fman.url import as_human_readable
-from favorites.store import FavoritesStore
+from favorites.store import FavoritesStore, NO_USAGE
+from datetime import datetime
 from hashlib import sha1
 from threading import Lock, Thread
 
@@ -29,12 +30,41 @@ def _bounded(text, limit):
 	return text if len(text) <= limit else text[:limit - 1] + '\u2026'
 
 
-def project(records):
-	return tuple(
-		ListItem(item_id(record.url), _bounded(record.name, _MAX_TITLE),
-			_bounded(as_human_readable(record.url), _MAX_HINT), metadata={'Added': position})
-		for position, record in enumerate(records, 1)
-	)
+def _moment(value):
+	if not value:
+		return None
+	moment = datetime.fromisoformat(value)
+	return moment.timestamp(), moment.strftime('%Y-%m-%d %H:%M')
+
+
+def project(records, usages=()):
+	usages = usages or (NO_USAGE,) * len(records)
+	items = []
+	for index, (record, usage) in enumerate(zip(records, usages)):
+		added, opened = _moment(usage.added), _moment(usage.opened)
+		metadata = {
+			# Store order is the add order, also for entries saved before dates were recorded.
+			'Added': (len(records) - index, added[1] if added else ''),
+			'Last opened': opened or (),
+			'Opened': usage.count
+		}
+		items.append(ListItem(item_id(record.url), _bounded(record.name, _MAX_TITLE),
+			_bounded(as_human_readable(record.url), _MAX_HINT), metadata=metadata))
+	return tuple(items)
+
+
+def record_open(url, owner):
+	try:
+		with favorites._LOCK:
+			if not owner.active:
+				return
+			store = favorites._load_store()
+			if not store.record_open(url):
+				return
+			notification = favorites._commit(store)
+		favorites._resource.publish(notification)
+	except Exception as error:
+		show_status_message('Could not record the favorite use: %s' % error, timeout_secs=5)
 
 
 def mutate(records, name, owner, allowed=lambda: True):
@@ -81,6 +111,7 @@ class FavoritesSession:
 		self.pane, self.owner = pane, owner
 		self.handle = self.panel = None
 		self.records = ()
+		self.usages = ()
 		self.revision = -1
 		self.navigation = 0
 		self.state_lock = Lock()
@@ -91,12 +122,13 @@ class FavoritesSession:
 		return self.handle is not None and self.handle.is_open
 
 	def run(self, query):
-		records, invalid_count = favorites._snapshot()
-		favorites._report_invalid_entries(invalid_count)
-		self.records = records
+		with favorites._LOCK:
+			store = favorites._load_store()
+		favorites._report_invalid_entries(store.invalid_count)
+		self.records, self.usages = store.favorites, store.usages
 		try:
-			result = show_quick_list(items=project(records), title='Favorites Manager', modal=False,
-				query=query, title_label='Name', hint_label='Path', settings='Favorites UI.json',
+			result = show_quick_list(items=project(self.records, self.usages), title='Favorites Manager',
+				modal=False, query=query, title_label='Name', hint_label='Path', settings='Favorites UI.json',
 				on_open=self.attach)
 		finally:
 			self.dispose()
@@ -113,16 +145,17 @@ class FavoritesSession:
 			on_action=self.on_action, on_closed=handle.close)
 		def snapshot():
 			store = favorites._load_store()
-			return store.favorites, store.invalid_count
-		revision, (records, invalid_count) = favorites._resource.subscribe(self.receive, snapshot)
-		self.receive(revision, records)
+			return (store.favorites, store.usages), store.invalid_count
+		revision, (payload, invalid_count) = favorites._resource.subscribe(self.receive, snapshot)
+		self.receive(revision, payload)
 
-	def receive(self, revision, records):
+	def receive(self, revision, payload):
+		records, usages = payload
 		with self.state_lock:
 			if revision <= self.revision or not self.is_open:
 				return
-			self.revision, self.records = revision, records
-			self.handle.set_items(project(records))
+			self.revision, self.records, self.usages = revision, records, usages
+			self.handle.set_items(project(records, usages))
 
 	def dispose(self):
 		if self.handle is not None:
@@ -206,6 +239,8 @@ class FavoritesSession:
 		def current():
 			return navigation == self.navigation and self.owner.active and (self.is_open or not close)
 		def succeeded():
+			if navigation == self.navigation and self.owner.active:
+				Thread(target=record_open, args=(url, self.owner), daemon=True).start()
 			if close and current():
 				self.handle.close()
 		def failed(error, failed_url):
