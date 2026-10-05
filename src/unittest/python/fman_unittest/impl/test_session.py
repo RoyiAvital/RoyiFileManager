@@ -190,6 +190,43 @@ class SessionManagerWindowTest(TestCase):
 		self.assertEqual(1, settings.flush_calls)
 		self.assertEqual([(1280, 800)], window.reset_geometry_calls)
 
+	def test_reset_window_geometry_survives_close_and_restart(self):
+		settings = _Settings({
+			'window_geometry': _encode(b'previous position'),
+			'window_state': _encode(b'previous state'),
+			'panes': [{}, {}]
+		})
+		manager = SessionManager(settings, None, None, 'test', True)
+		window = Mock()
+		window._widget.saveGeometry.return_value = b'previous position'
+		window._widget.saveState.return_value = b'previous state'
+		window._widget.get_panes.return_value = []
+
+		manager.reset_window_geometry(window)
+		manager.on_close(window._widget)
+
+		self.assertNotIn('window_geometry', settings)
+		self.assertNotIn('window_state', settings)
+		self.assertEqual('test', settings['app_version'])
+		self.assertEqual(2, settings.flush_calls)
+		restarted = _Window()
+		with patch('fman.impl.session.Thread'):
+			SessionManager(settings, None, None, 'test', True).show_main_window(restarted)
+		self.assertEqual([], restarted._widget.restored_geometries)
+		self.assertEqual([], restarted._widget.restored_states)
+		self.assertEqual([(1280, 800)], restarted._widget.resize_calls)
+
+	def test_existing_session_without_geometry_uses_default_size(self):
+		window = _Window()
+		manager = SessionManager({'panes': [{}, {}]}, None, None, 'test', True)
+
+		with patch('fman.impl.session.Thread'):
+			manager.show_main_window(window)
+
+		self.assertEqual([(1280, 800)], window._widget.resize_calls)
+		self.assertEqual([], window._widget.restored_geometries)
+		self.assertEqual(1, window._widget.show_calls)
+
 
 class _Window:
 	def __init__(self):

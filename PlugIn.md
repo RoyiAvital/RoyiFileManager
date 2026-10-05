@@ -32,7 +32,7 @@ contracts whose details matter when extending the application.
 | [fman.listing](src/main/python/fman/listing.py) | Immutable display snapshots | New provider contract |
 | [fman.url](src/main/python/fman/url.py) | Application URL manipulation | Legacy API |
 | [fman.clipboard](src/main/python/fman/clipboard.py) | Text and file clipboard operations | Legacy API |
-| [fman.ui](src/main/python/fman/ui.py) | QuickList, Panel, controls, hosting, settings binding, navigation | Provisional RoyiFileManager extension |
+| [fman.ui](src/main/python/fman/ui.py) | QuickList, QuickTable, Panel services, hosting, navigation | Provisional RoyiFileManager extension |
 
 The upstream fman 1.7.5 listing/column contracts are not preserved. Implement
 the snapshot methods below; old per-row display methods are not an adapter.
@@ -287,7 +287,7 @@ Copy loaded data before editing when save failure must leave the cache intact.
 Use a shared `settings_resource(name).lock` for multi-step read/modify/write
 transactions shared by commands and UI. `save_on_quit=True` schedules cached
 values for persistence at shutdown; explicit saving is preferable for completed
-user actions. `JsonSettings` supplies asynchronous control bindings.
+user actions.
 
 `preserve_on_reload=True` is an opt-in RoyiFileManager extension for session-owned
 data such as command history. It retains both the cached object's identity and
@@ -590,17 +590,18 @@ Clipboard functions do not themselves copy, move, delete, or paste files.
 Import from `fman.ui`. The complete explicit export list is:
 
 ```python
-ListItem, QuickList, Panel, IconButton, TextButton, DropDown, JsonSettings,
-UiController, UiOwner, Resource, settings_resource, matchers,
-ToolWindow, PaneToolWindow, NavigationHandle, navigate, OutputTextBox
+ListItem, UiController, UiOwner, Resource, settings_resource, matchers,
+ToolWindow, PaneToolWindow, NavigationHandle, navigate, OutputTextBox,
 QuickTableRow, QuickTableColumn, TextField, Toggle, Choice, Select, DateField, IntegerField, Separator, Label, Action,
-PanelHandle, show_quick_table, show_panel
+PanelHandle, show_quick_table, show_panel, show_quick_list, QuickListHandle, QuickListState
 ```
 
 This is an additive **provisional** API, not upstream fman 1.7.5. Public names
 do not imply permission to change host widget parenting, lifetime or internal
-model state arbitrarily. The legacy widget components use Qt for composition.
-New QuickTable/Panel consumers can use the plain services below without importing Qt.
+model state arbitrarily. QuickList, QuickTable and Panel are plain services;
+plug-ins need no Qt import for them. The widget exports `QuickList`, `Panel`,
+`IconButton`, `TextButton`, `DropDown` and `JsonSettings` were removed: use
+`show_quick_list`, `show_panel` controls and `load_json`/`save_json` instead.
 
 ### Qt-Free QuickTable and Panel
 
@@ -879,10 +880,10 @@ receive a `PaneToolWindow` in `UiController.build` instead of constructing eithe
 | `owner` | Session owner. |
 | `alive` | Thread-safe Event; `alive.is_set()` is a cooperative lifetime check. |
 | `busy` | Host operation/prompt busy state. |
-| `focus_widget` | Assign the primary control, normally QuickList, for focus and query seeding. |
+| `focus_widget` | Assign the primary control for focus and query seeding. |
 | `prompt` | Current prompt object or `None`; Qt-specific, not a portable dialog handle. Prefer public prompt methods. |
 | `pane` | Invoking public pane, on PaneToolWindow. |
-| `item_css` | Host theme data passed to `QuickList(css=...)`, on PaneToolWindow. Treat it as host-owned. |
+| `item_css` | Host theme data for list items, on PaneToolWindow. Treat it as host-owned. |
 | `bottom_panel` | Currently mounted Panel or `None`, on PaneToolWindow; use `set_panel`, do not assign it directly. This attribute is not the removed BottomPanel class alias. |
 
 | Method/signal | Contract |
@@ -905,7 +906,7 @@ Qt widget APIs are available, but are outside the stable host-service contract.
 Dock ownership is **one session per main window**, not one per controller.
 Mounting another session's panel closes the previous docked session, even when
 it belongs to a different pane. Different main windows are independent.
-QuickList stays in its frameless tool window while Panel is docked; Tab/Shift+Tab
+A modeless `show_quick_list` stays in its own window while a Panel is docked; Tab/Shift+Tab
 bridge both surfaces. The dock's close icon and Escape end the UI session, not
 the plug-in package. Prompts consume Escape first. Pane destruction and owner
 invalidation close the hosted session. Do not reparent these surfaces yourself.
@@ -941,86 +942,49 @@ the acceptance callback to choose different targets. The bounded preview does
 not reduce the full operation target set. Favorites deliberately bypasses
 confirmation for bookmark deletion; the shared `confirm` API is unchanged.
 
-### ListItem and QuickList
+### QuickList
 
 ```python
-ListItem(id, title, hint='', title_matches=(), hint_matches=())
-QuickList(parent=None, matcher=None, css=None, preserve_sort=False, fuzzy=False)
+ListItem(id, title, hint='', metadata={})
+show_quick_list(*, items, title='', summary='', modal=True, filter='fuzzy', query='',
+  selected=(), title_label=None, hint_label=None, sort=None, settings=None,
+  on_open=None) -> tuple | None
 ```
 
-`ListItem` is a frozen dataclass. Supply unique stable string IDs and string
-title/hint fields; these caller requirements are not a comprehensive runtime
-schema validator. Match tuples contain Python character positions, not UTF-16
-offsets. The renderer maps them for Qt, including non-BMP text.
+`ListItem` is a frozen dataclass with unique string IDs (≤512 characters),
+titles ≤512 and hints ≤2048 characters.
+`metadata` maps up to 8 unique labels (≤32 characters, distinct from
+`title_label`/`hint_label`) to `()` (empty), a string, an `int` or finite `float`,
+or `(sort_key, text)`; texts are ≤128 characters. All items share the same labels
+in the same order and the same key kind per label. At most 10,000 items.
 
-QuickList is an embeddable widget, not a dialog. It supplies no operation buttons,
-window close controls or filesystem behavior.
+The call blocks: workers wait on an event, Qt callers run a nested loop. The
+window is built hidden, `on_open(handle)` runs, then the window is shown unless
+already closed. Enter returns the chosen IDs (selection in item order, else the
+current item); Escape, the close button, owner invalidation through an attached
+`handle.close` and main-window close return `None`.
 
-| Member | Contract |
+| `QuickListHandle` member | Contract |
 | --- | --- |
-| `set_items(items)` | Materialize ListItems; prune selections whose IDs disappeared and refresh the projection. |
-| `refresh()` | Rebuild filtered/sorted view, restoring current/selection by ID where possible. |
-| `items` | Full input tuple. Replace through `set_items`. |
-| `current_id` / `current_item` | Highlighted visible ID/record or `None`. |
-| `selected_ids` | Selected ID set, including filtered-out records. If changing it programmatically, call `refresh()` to synchronize the view. |
-| `selected_items` | Selected records in original input order, including hidden selections. |
-| `hidden_selected_count` | Number of selected IDs not in the current visible projection. |
-| `query` | Current Qt line edit: e.g. `setText`, `text`, `clear`, `setFocus`. Hidden if no matcher. |
-| `view` | Underlying Qt item view for focus/accessibility; do not replace its model or selection rules. |
-| `model` | Host-owned projection; do not mutate it instead of using `set_items`. |
-| `matcher`, `preserve_sort` | Filtering policy and input-order preservation; changing either requires refresh. |
-| `activated()` | No-argument signal for Enter/double-click activation; caller decides the action and whether to close. |
-| `delete_requested()` | No-argument signal from list Delete; caller decides deletion policy. |
-| `state_changed()` | No-argument signal for current, selection and refreshed projection state. |
+| `snapshot()` | Thread-safe `QuickListState(selected, chosen, current, query, sort)`. |
+| `set_items(items)` | Validate, then replace; returns once applied. Removed selections are dropped. No-op after close. |
+| `focus()` | Show and raise the open list. |
+| `close(result=None)` | `None` or a tuple of current IDs; unknown IDs raise `ValueError`. |
+| `is_open` | `False` once closed. |
 
-Filtering is optional: `QuickList()` or `QuickList(fuzzy=False)` without a custom
-matcher hides the filter and focuses the list. `fuzzy=True` chooses the built-in
-subsequence matcher if no matcher was supplied; a supplied matcher enables the
-filter regardless of the default fuzzy flag. Empty queries bypass matching.
-Both title and hint are matched with Unicode casefolding and original-position
-mapping. With `preserve_sort=True`, filtering retains input order. Otherwise
-matches are ordered by title preference, tighter match span and earlier position.
+Sorting: fields are `title_label`, `hint_label` (when given) and the metadata
+labels; `Ctrl+F1`…`Ctrl+F10` or the sort bar sort by a field, again to reverse.
+Empty values stay last. `sort=(label, ascending)` applies whenever its label
+exists. With `settings='Name.json'` the user's choice is saved on a worker under
+keys `sort` and `ascending`, and a saved sort overrides `sort`.
 
-A matcher has shape `matcher(text, query) -> positions | None`: return `None`
-for no match, or valid matched character positions. It receives casefolded text
-and query from QuickList. For a nonempty query, successful matches used in default
-ranking must contain positions. Matchers run on Qt and must be fast and pure.
+Keys: Space, Insert, Shift+navigation and Ctrl+A select in the list. Ctrl+I
+inverts, Ctrl+Shift+A clears, Enter accepts and Escape cancels in both the list
+and the filter. Tab moves between a modeless list and the docked Panel.
 
-Interaction contract:
-
-- Current highlight and multi-selection are independent; plain left-click moves
-  current without selecting or activating. Right-click/Ctrl-click toggle rows;
-  Shift-click toggles a range. Right-clicking empty space leaves selection alone.
-- Space toggles current; Insert toggles then advances. Shift navigation follows
-  file-pane toggling semantics; Ctrl+A selects visible rows.
-- Up/Down and Page Up/Down in the filter transfer focus to the list and navigate.
-  Subsequent Space toggles selection. Deliberately refocusing the filter restores
-  text editing, including spaces and Delete.
-- Filtering retains hidden selections and displays their count. Empty/no-match
-  projections have no current item. Consumers must decide whether actions apply
-  to current, selected, hidden-selected, or fallback targets.
-
-### Panel and Controls
-
-`Panel(parent=None)` provides a themed horizontal layout.
-`add(widget, stretch=None)` adds and returns the widget; default stretch is 1
-for TextButton and 0 otherwise. `add_stretch()` inserts expanding space.
-Use `window.set_panel(panel)` to mount it; adding it to a list layout does not
-create the host dock. `window.set_panel(None)` removes the tool's own panel and
-keeps the result window alive. Detached controls are disposed by the host;
-create a new Panel when mounting again. Unrelated docks are not removed.
-
-| Component | Construction and behavior |
-| --- | --- |
-| `IconButton(icon, label, parent=None)` | Requires a non-null `QIcon` and accessible label; compact checkable boolean control, with label as tooltip. |
-| `TextButton(text, parent=None, checkable=False, max_width=160)` | Action button by default; optional boolean toggle. Positive integer width cap in Qt logical pixels; label minimum width can exceed the cap to prevent clipping. |
-| `DropDown(choices, label, parent=None)` | Nonempty sequence of `(title, value)` pairs. Values must be distinct typed JSON scalars: str, int, float or bool; `None` is not accepted. |
-
-All three provide `accepts(value)`, `value()`, `set_value(value)`, and the Qt
-signal `value_changed(value)`. Invalid values raise `ValueError` from set_value.
-Only checkable TextButtons accept boolean settings. DropDown distinguishes values
-by exact type as well as equality. Use normal button `clicked` signals for
-commands; a clicked signal may supply a boolean argument.
+A driver attaches `handle.close` to its owner in `on_open` and detaches it in a
+`finally`. Callbacks such as Panel actions should start their own thread for
+blocking work (prompts, I/O), since the list keeps the Qt thread responsive.
 
 ### OutputTextBox
 
@@ -1051,36 +1015,6 @@ bundles its own theme-tinted SVG icon; callers do not access the private editor
 or button. Both hash commands embed it beneath a file-path window heading, with
 `Hash Algorithm: <Algorithm>` as its title. Calculate File Hash By selects the
 algorithm through QuickSearch first; neither command mounts a Panel.
-
-### JsonSettings
-
-```python
-JsonSettings(filename, parent, owner=None)
-```
-
-Use a plug-in-specific `.json` filename without slash/backslash, not a path.
-Construct on Qt with an owning QObject parent, normally the Panel. Supply the
-controller's owner for unload handling.
-
-| Member | Contract |
-| --- | --- |
-| `bind(key, control, default)` | Bind a unique nonempty string key before load begins. Default must satisfy control.accepts. Initializes the control and disables it until loaded. |
-| `load()` | Start asynchronous snapshot/subscription using the shared worker slots. No synchronous data-return contract. |
-| `loaded` | Whether an initial revision has been received. |
-| `busy` | Whether a load/save is in progress. |
-| `filename` | Bound configuration filename. |
-| `dispose()` | Stop accepting results and unsubscribe; safe for lifecycle cleanup. |
-| `changed(values)` | Qt signal carrying a copy of the settings dictionary when applied, including rollback/error paths; not proof of a disk write. |
-| `failed(message)` | Qt signal on validation, load/save or saturation errors. |
-| `busy_changed(busy)` | Qt signal for binding busy state. |
-
-Control changes save asynchronously under the shared resource lock. Unrelated
-keys are retained, other bindings to the same resource receive committed changes,
-and controls roll back to the last known values on failure. Invalid stored values
-display the control default; loading does not silently rewrite them on disk.
-Binding controls are disabled during load/save. A plain action button does not
-save a setting. Dispose on session closure even if the parent will later be
-destroyed. There is no polling or filesystem watcher for external JSON edits.
 
 ### Resource and settings_resource
 
@@ -1166,8 +1100,8 @@ Quicksearch rendering also reads `.quicksearch-item-title`,
 `.quicksearch-item-title-highlight`, `.quicksearch-item-hint`, and
 `.quicksearch-item-description` properties for text styling. This is the host's
 restricted CSS mapping, not a browser DOM/CSS engine. Unknown widget selectors
-are not automatically exposed as theme APIs. Pass `window.item_css` to QuickList;
-do not read private theme objects or add Favorites-specific host styles.
+are not automatically exposed as theme APIs. QuickList uses the quicksearch item
+styles; do not read private theme objects or add Favorites-specific host styles.
 
 ## Threading and Failure Handling
 
@@ -1176,7 +1110,8 @@ do not read private theme objects or add Favorites-specific host styles.
 | Ordinary command body | Worker execution through registry; perform bounded I/O and call public host services. |
 | Listener notification | Worker thread; no Qt widget access. |
 | Listener rewrite/visibility | Synchronous caller context; short, nonblocking and free of long I/O. |
-| Quicksearch callbacks and QuickList matchers | UI thread; fast in-memory work only. |
+| Quicksearch callbacks | UI thread; fast in-memory work only. |
+| `show_quick_list` / `show_quick_table` | Blocking; call from a command or another worker. `on_open` runs on the calling thread. |
 | UiController.build and widget signals | UI thread; construct controls and queue operations. |
 | ToolWindow.work operation / navigate check | Worker; immutable/captured plain data only. |
 | ToolWindow.work completion / navigate outcome | Qt delivery guarded by session lifetime. |
@@ -1242,62 +1177,47 @@ class PickChild(DirectoryPaneCommand):
         self.pane.place_cursor_at(selected_url)
 ```
 
-### Hosted QuickList and Panel
+### QuickList and Panel
 
-This is the currently supported Qt-component API, not the future Qt-free facade.
-The controller is discoverable from the package namespace; no owner assignment,
-host subclass or private import is needed. QuickList supports selection but does
-not assign application meaning to it; this example acts on the current item.
+A Qt-free driver: a modeless list with a docked Panel, tied to the plug-in
+owner. The controller only carries the owner.
 
 ```python
-from fman import DirectoryPaneCommand
-from fman.ui import (
-  DropDown, JsonSettings, ListItem, Panel, QuickList, TextButton, UiController
-)
-from PyQt5.QtWidgets import QVBoxLayout
+from threading import Thread
+
+from fman import DirectoryPaneCommand, show_alert
+from fman.ui import Action, ListItem, UiController, show_panel, show_quick_list
 
 
 class ExampleUI(UiController):
-  @classmethod
-  def build(cls, window, pane):
-    rows = (ListItem('alpha', 'Alpha'), ListItem('beta', 'Beta'))
-    view = QuickList(window, fuzzy=True, css=window.item_css,
-             preserve_sort=True)
-    window.focus_widget = view
-    QVBoxLayout(window).addWidget(view)
-
-    panel = Panel(window)
-    order = panel.add(DropDown(
-      (('Name ascending', 'ascending'), ('Name descending', 'descending')),
-      'Order'
-    ))
-    panel.add_stretch()
-    inspect = panel.add(TextButton('Inspect'))
-    window.set_panel(panel)
-
-    def project(*args):
-      view.set_items(sorted(rows, key=lambda row: row.title,
-                  reverse=order.value() == 'descending'))
-
-    def inspect_current():
-      if not window.busy and view.current_item is not None:
-        window.alert(view.current_item.title)
-
-    settings = JsonSettings('Example UI.json', panel, cls.owner)
-    settings.bind('order', order, 'ascending')
-    settings.changed.connect(project)
-    settings.failed.connect(window.alert)
-    window.disposed.connect(settings.dispose)
-    order.value_changed.connect(project)
-    inspect.clicked.connect(lambda checked=False: inspect_current())
-    view.activated.connect(inspect_current)
-    project()
-    settings.load()
+  pass
 
 
 class ShowExample(DirectoryPaneCommand):
   def __call__(self, query=''):
-    ExampleUI.show(self.pane, query)
+    owner = ExampleUI.require_owner()
+    items = (ListItem('alpha', 'Alpha', metadata={'Size': 3}),
+      ListItem('beta', 'Beta', metadata={'Size': 1}))
+    handles = []
+
+    def inspect(name, values):
+      current = handles[0].snapshot().current
+      Thread(target=show_alert, args=(current or 'Nothing',), daemon=True).start()
+
+    def on_open(handle):
+      handles.append(handle)
+      owner.attach(handle.close)
+      show_panel(owner=owner, pane=self.pane, rows=((Action('inspect', 'Inspect'),),),
+        on_action=inspect, on_closed=handle.close)
+
+    try:
+      result = show_quick_list(items=items, modal=False, query=query,
+        title_label='Name', settings='Example UI.json', on_open=on_open)
+    finally:
+      for handle in handles:
+        owner.detach(handle.close)
+    if result:
+      show_alert(', '.join(result))
 ```
 
 For the complete reference consumer, see the

@@ -217,6 +217,7 @@ class QuickViewOverlay(QWidget):
 		self._disposed = False
 		self._title = 'QuickView'
 		self.image_format = ''
+		self.pdf_view = None
 		self.setAutoFillBackground(True)
 		self.setAcceptDrops(False)
 		self.setObjectName('QuickView')
@@ -278,10 +279,38 @@ class QuickViewOverlay(QWidget):
 
 	def focus_canvas(self):
 		self.source.setFocus()
-		if self.text_view is not None and self.content.currentWidget() is self.text_view:
+		if self.pdf_view is not None and self.content.currentWidget() is self.pdf_view:
+			self.pdf_view.canvas.setFocus()
+		elif self.text_view is not None and self.content.currentWidget() is self.text_view:
 			self.text_view.browser.setFocus()
 		else:
 			self.canvas.setFocus()
+
+	def show_pdf(self):
+		if self.pdf_view is None:
+			from fman.impl.quick_view_pdf_view import PdfPreview
+			self.pdf_view = PdfPreview(self.source, self)
+			self.content.addWidget(self.pdf_view)
+		focused = self.isAncestorOf(QApplication.focusWidget())
+		self.content.setCurrentWidget(self.pdf_view)
+		for widget in (*self.buttons.values(), self.metadata):
+			widget.hide()
+		if focused:
+			self.pdf_view.canvas.setFocus()
+		return self.pdf_view
+
+	def clear_pdf(self):
+		if self.pdf_view is None or self.content.currentWidget() is not self.pdf_view:
+			return
+		if self.pdf_view is not None:
+			focused = self.pdf_view.isAncestorOf(QApplication.focusWidget())
+			self.pdf_view.canvas.clear()
+			if self.content.currentWidget() is self.pdf_view:
+				self.content.setCurrentWidget(self.canvas)
+			if focused:
+				self.canvas.setFocus()
+		for widget in (*self.buttons.values(), self.metadata):
+			widget.show()
 
 	def show_text(self, result):
 		if self.text_view is None:
@@ -360,6 +389,8 @@ class QuickViewOverlay(QWidget):
 		self.canvas.set_image(None)
 		if self.text_view is not None:
 			self.text_view.clear()
+		if self.pdf_view is not None:
+			self.pdf_view.canvas.clear()
 		self.hide()
 		self.deleteLater()
 
@@ -415,6 +446,7 @@ class QuickViewSession(QObject):
 		self._content_token = None
 		self._url = None
 		self._text_content = None
+		self._pdf_controller = None
 		settings = load_json('QuickView.json', default={})
 		self.preferred_mode = settings.get('image_mode', 'fit') if isinstance(settings, dict) else 'fit'
 		if self.preferred_mode not in ('fit', 'actual_size'):
@@ -484,6 +516,7 @@ class QuickViewSession(QObject):
 		self.timer.stop()
 		self.generation = self.bridge.loader.invalidate()
 		self._text_content = None
+		self._clear_pdf()
 		self.overlay.clear_text()
 		self.overlay.image_format = ''
 		self.overlay.canvas.set_image(None, self.preferred_mode, message)
@@ -522,6 +555,10 @@ class QuickViewSession(QObject):
 			self._text_colors(), self._text_content))
 
 	def show_result(self, result):
+		if result.kind == 'pdf':
+			self._show_pdf(result.path)
+			return
+		self._clear_pdf()
 		if result.kind == 'text':
 			self._text_content = result.content
 			self.overlay.canvas.set_image(None)
@@ -531,6 +568,51 @@ class QuickViewSession(QObject):
 		self.overlay.clear_text()
 		self.overlay.image_format = result.format
 		self.overlay.canvas.set_image(result.image, self.preferred_mode, result.message)
+
+	def _clear_pdf(self):
+		if self._pdf_controller is not None:
+			self._pdf_controller.invalidate()
+		self.overlay.clear_pdf()
+
+	def _show_pdf(self, path):
+		self._text_content = None
+		self.overlay.clear_text()
+		self.overlay.canvas.set_image(None)
+		view = self.overlay.show_pdf()
+		view.canvas.clear()
+		if self._pdf_controller is None:
+			from fman.impl.quick_view_pdf import PdfController
+			controller = getattr(self.window, '_quick_view_pdf_controller', None)
+			if controller is None:
+				controller = PdfController(self.window)
+				self.window._quick_view_pdf_controller = controller
+			self._pdf_controller = controller
+			self._connect(controller.document_ready, self._pdf_document)
+			self._connect(controller.page_ready, self._pdf_page)
+			self._connect(controller.page_failed, self._pdf_page_error)
+			self._connect(controller.failed, self._pdf_error)
+			self._connect(view.canvas.requested, self._pdf_request)
+		self._pdf_controller.open(self.generation, path)
+
+	def _pdf_request(self, revision, targets):
+		if not self.closed:
+			self._pdf_controller.request_pages(self.generation, revision, targets)
+
+	def _pdf_document(self, generation, sizes, fingerprint):
+		if not self.closed and generation == self.generation:
+			self.overlay.pdf_view.canvas.set_document(sizes)
+
+	def _pdf_page(self, generation, revision, request, result):
+		if not self.closed and generation == self.generation:
+			self.overlay.pdf_view.canvas.set_page(revision, request, result)
+
+	def _pdf_page_error(self, generation, page, message):
+		if not self.closed and generation == self.generation:
+			self.overlay.pdf_view.canvas.set_error(page, message)
+
+	def _pdf_error(self, generation, message):
+		if not self.closed and generation == self.generation:
+			self.overlay.pdf_view.canvas.clear(message)
 
 	def switch_focus(self, pane_index=None):
 		if self.closed:
@@ -573,6 +655,8 @@ class QuickViewSession(QObject):
 			return
 		self.closed = True
 		self._text_content = None
+		if self._pdf_controller is not None:
+			self._pdf_controller.invalidate()
 		self.timer.stop()
 		self.bridge.loader.invalidate()
 		for signal, callback in self._connections:

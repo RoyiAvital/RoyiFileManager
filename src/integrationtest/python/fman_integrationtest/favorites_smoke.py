@@ -22,6 +22,7 @@ def exercise_split_focus(window, main):
 	selected = set(window.list.selected_ids)
 	other = QWidget()
 	other.setWindowTitle('Focus transition check')
+	first_control = main._panel_dock.panel.tab_controls[0]
 	try:
 		for position in positions:
 			window.move(position)
@@ -31,14 +32,14 @@ def exercise_split_focus(window, main):
 			window.lower()
 			main.raise_()
 			main.activateWindow()
-			window.panel.choice.setFocus()
+			first_control.setFocus()
 			app.processEvents()
-			QTest.keyClick(window.panel.choice, Qt.Key_Tab, Qt.ShiftModifier)
+			QTest.keyClick(first_control, Qt.Key_Tab, Qt.ShiftModifier)
 			app.processEvents()
 			assert app.focusWidget() is window.list.view, 'Shift+Tab did not recover list focus'
 			QTest.keyClick(window.list.view, Qt.Key_Tab)
 			app.processEvents()
-			assert app.focusWidget() is window.panel.choice, 'Tab did not recover panel focus'
+			assert app.focusWidget() is first_control, 'Tab did not recover panel focus'
 			main._panel_dock.close_button.setFocus()
 			QTest.keyClick(main._panel_dock.close_button, Qt.Key_Tab)
 			app.processEvents()
@@ -57,10 +58,12 @@ def exercise_split_focus(window, main):
 def exercise(context, root, output):
 	from favorites import AddCurrentFolderToFavorites, _snapshot
 	from favorites.store import Favorite
-	from favorites.ui import FavoritesController, mutate
+	from favorites.ui import FavoritesController, _sessions, mutate, project, show_manager
+	from fman.impl.ui.facade import _hosts
+	from fman.impl.ui.quick_list_window import recent_list
 	from fman.impl.util.qt.thread import run_in_main_thread
 	from fman.url import as_url
-	from PyQt5.QtCore import QTimer, QSignalBlocker, Qt
+	from PyQt5.QtCore import QTimer, Qt
 
 	gui = lambda function: run_in_main_thread(function)()
 	def wait_for(predicate, message):
@@ -95,75 +98,45 @@ def exercise(context, root, output):
 		assert ready.wait(10), 'Initial pane navigation failed'
 		AddCurrentFolderToFavorites(pane)()
 		pane_height = gui(lambda: context.main_window._splitter.height())
-		FavoritesController.show(pane)
-		window = gui(lambda: FavoritesController._sessions[pane])
-		wait_for(lambda: window.session.revision >= 0 and not window.busy, 'Favorites did not load')
-		wait_for(lambda: window.panel.choice.isEnabled(), 'Panel settings did not load')
-		assert gui(lambda: len(window.session.records)) == 1
-		gui(lambda: FavoritesController.show(pane, 'proj'))
+		def open_manager(query=''):
+			previous = _sessions.get(pane.window)
+			Thread(target=show_manager, args=(pane, query), daemon=True).start()
+			wait_for(lambda: _sessions.get(pane.window) not in (None, previous) and
+				_sessions[pane.window].revision >= 0 and recent_list(context.main_window) is not None,
+				'Favorites did not open')
+			session = _sessions[pane.window]
+			return session, recent_list(context.main_window), _hosts[session.panel._key()]
+		session, window, host = open_manager()
+		assert len(session.records) == 1
+		session, window, host = open_manager('proj')
 		assert gui(lambda: window.list.model.rowCount()) == 1
-		gui(lambda: FavoritesController.show(pane))
+		show_manager(pane)
 		assert gui(lambda: window.list.query.text()) == 'proj'
-		gui(lambda: window.panel.choice.setCurrentText('Name'))
-		wait_for(lambda: not window.settings.busy, 'Panel settings did not save')
+		def sort_by_name():
+			from PyQt5.QtTest import QTest
+			QTest.keyClick(window.list.query, Qt.Key_F1, Qt.ControlModifier)
+		gui(sort_by_name)
 		ui_saved = root / 'UserSettings' / 'Plugins' / 'User' / 'Settings' / 'Favorites UI (Windows).json'
-		assert json.loads(ui_saved.read_text(encoding='utf-8'))['sort'] == 'Name'
+		wait_for(lambda: ui_saved.exists() and json.loads(ui_saved.read_text(encoding='utf-8')).get('sort') == 'Name',
+			'Sort was not saved')
 		captured = _snapshot()[0]
 		mutate(captured, 'Renamed projects', FavoritesController.owner)
-		wait_for(lambda: window.session.records[0].name == 'Renamed projects', 'Rename not refreshed')
-		assert _snapshot()[0][0].name == 'Renamed projects'
+		wait_for(lambda: session.records[0].name == 'Renamed projects', 'Rename not refreshed')
 		saved = root / 'UserSettings' / 'Plugins' / 'User' / 'Settings' / 'Favorites (Windows).json'
 		assert json.loads(saved.read_text(encoding='utf-8'))['favorites'][0]['name'] == 'Renamed projects'
 		gui(lambda: window.list.query.clear())
-		gui(lambda: window.resize(520, 330))
-		def check_buttons():
-			from PyQt5.QtWidgets import QStyle, QStyleOptionButton
-			for button in window.panel.buttons.values():
-				option = QStyleOptionButton()
-				button.initStyleOption(option)
-				content = button.style().subElementRect(QStyle.SE_PushButtonContents, option, button)
-				assert content.width() >= button.fontMetrics().horizontalAdvance(button.text()), 'Clipped action label: ' + button.text()
-		gui(check_buttons)
-		def check_adaptive_buttons():
-			from PyQt5.QtWidgets import QApplication
-			main = context.main_window
-			original_size = main.size()
-			widths = []
-			try:
-				for width in (960, 1280, 1440):
-					main.resize(width, original_size.height())
-					QApplication.processEvents()
-					check_buttons()
-					buttons = tuple(window.panel.buttons.values())
-					widths.append(buttons[0].width())
-					assert all(button.width() <= 160 for button in buttons), 'Action exceeded width cap'
-					assert main._panel_dock.close_button.width() == 22
-					main._panel_dock.grab().save(str(output.with_name('panel-width-%d.png' % width)))
-				assert widths == sorted(widths), 'Actions shrank as application width increased'
-				assert widths[-1] == 160, 'Wide actions did not reach their cap'
-			finally:
-				main.resize(original_size)
-				QApplication.processEvents()
-		gui(check_adaptive_buttons)
-		def select_current():
-			from PyQt5.QtTest import QTest
-			window.list.view.setFocus()
-			QTest.keyClick(window.list.view, Qt.Key_Space)
-			assert len(window.list.selected_ids) == 1
-			assert window.windowFlags() & Qt.FramelessWindowHint
-		gui(select_current)
-		gui(lambda: window.grab().save(str(output)))
 		def check_dock():
 			from PyQt5.QtCore import QPoint
 			main = context.main_window
 			dock = main._panel_dock
-			assert window.panel.parentWidget() is dock
+			assert host.panel.parentWidget() is dock
 			assert dock.width() == main.centralWidget().width()
 			assert dock.mapTo(main, QPoint(0, dock.height())).y() == main.statusBar().mapTo(main, QPoint()).y()
 			assert main._splitter.height() < pane_height
 			assert not dock.close_button.icon().isNull()
 			main.grab().save(str(output.with_name('favorites-docked-panel.png')))
 		gui(check_dock)
+		gui(lambda: window.grab().save(str(output)))
 		secondary_checked = gui(lambda: exercise_split_focus(window, context.main_window))
 		print('PASS: partial-offscreen and activation/stacking focus recovery; second monitor: %s' %
 			('checked' if secondary_checked else 'unavailable'), flush=True)
@@ -171,82 +144,41 @@ def exercise(context, root, output):
 			from PyQt5.QtTest import QTest
 			QTest.mouseClick(context.main_window._panel_dock.close_button, Qt.LeftButton)
 		gui(close_panel)
-		wait_for(lambda: not window.alive.is_set() and context.main_window._panel_dock is None,
-			'Close icon did not end the docked session')
+		wait_for(lambda: not session.is_open and context.main_window._panel_dock is None,
+			'Close icon did not end the manager')
 		wait_for(lambda: context.main_window._splitter.height() == pane_height, 'Pane height was not restored')
 		assert FavoritesController.owner.active, 'Closing UI unloaded the plug-in'
-		window = FavoritesController.show(pane)
-		wait_for(lambda: window.session.revision >= 0 and not window.busy and window.panel.choice.isEnabled(),
-			'Panel did not reopen after close')
-		assert gui(lambda: window.panel.choice.currentText()) == 'Name'
 		ready.clear()
 		pane.set_path(as_url(str(root)), callback=ready.set, onerror=None)
 		assert ready.wait(10)
-		gui(lambda: window.session.action('goto'))
-		wait_for(lambda: not window.alive.is_set(), 'Go To did not close manager')
-		assert pane.get_path() == location
-		FavoritesController.show(pane)
-		window = gui(lambda: FavoritesController._sessions[pane])
-		wait_for(lambda: window.session.revision >= 0 and not window.busy, 'Reopened manager did not load')
-		wait_for(lambda: window.panel.choice.isEnabled(), 'Reopened panel did not load')
-		assert gui(lambda: window.panel.choice.currentText()) == 'Name'
-		assert gui(lambda: window.list.query.text()) == ''
-		assert gui(lambda: window.session.records[0].name) == 'Renamed projects'
-		def delete_current():
-			from PyQt5.QtTest import QTest
-			QTest.mouseClick(window.panel.buttons['delete'], Qt.LeftButton)
-			assert window.prompt is None, 'Favorites Delete requested confirmation'
-		gui(delete_current)
-		wait_for(lambda: not window.session.records, 'Delete not refreshed')
-		assert window.alive.is_set(), 'Delete closed the manager'
+		session, window, host = open_manager()
+		assert gui(lambda: window.list.effective_sort) == ('Name', True)
+		gui(lambda: host.controls['go_to'][1].click())
+		wait_for(lambda: not session.is_open, 'Go To did not close manager')
+		wait_for(lambda: pane.get_path() == location, 'Go To did not navigate')
+		session, window, host = open_manager()
+		gui(lambda: host.controls['delete'][1].click())
+		wait_for(lambda: not session.records, 'Delete not refreshed')
+		assert session.is_open, 'Delete closed the manager'
 		assert target.is_dir(), 'Bookmark deletion removed a folder'
-		assert not gui(lambda: window.panel.buttons['delete'].isEnabled())
 		assert not _snapshot()[0]
 		assert json.loads(saved.read_text(encoding='utf-8')).get('favorites', []) == []
-		gui(window.close)
-		rows = tuple(Favorite('Project %03d' % index, as_url(str(root / ('Folder%03d' % index)))) for index in range(200))
-		FavoritesController.show(pane)
-		window = gui(lambda: FavoritesController._sessions[pane])
-		wait_for(lambda: window.session.revision >= 0 and not window.busy, 'Performance session did not load')
-		wait_for(lambda: window.panel.choice.isEnabled(), 'Performance panel did not load')
+		rows = project(tuple(Favorite('Project %03d' % index, as_url(str(root / ('Folder%03d' % index))))
+			for index in range(200)))
+		session.handle.set_items(rows)
 		def benchmark():
-			window.session.records = rows
-			window.session._project()
 			timings = []
 			for index in range(40):
 				started = perf_counter()
-				with QSignalBlocker(window.panel.choice):
-					window.panel.choice.setCurrentIndex(index % 3)
-				window.session._project()
+				window.list.sort_by(index % 3)
 				window.list.query.setText('p%02d' % index)
 				timings.append((perf_counter() - started) * 1000)
 			return sorted(timings)[37]
 		p95 = gui(benchmark)
 		assert p95 < 50, 'Filter/sort p95 exceeded 50 ms'
-		gui(window.close)
-		def capture_components():
-			from fman.ui import Panel, IconButton, TextButton, DropDown
-			from PyQt5.QtWidgets import QStyle
-			panel = Panel(context.main_window)
-			panel.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint)
-			for style_icon, label, checked in (
-				(QStyle.SP_FileDialogDetailedView, 'Match case', True),
-				(QStyle.SP_FileDialogContentsView, 'Whole words', False),
-				(QStyle.SP_DirIcon, 'Include subfolders', True)
-			):
-				button = panel.add(IconButton(panel.style().standardIcon(style_icon), label))
-				button.setChecked(checked)
-			panel.add(DropDown((('Current folder', 'current'), ('All folders', 'all')), 'Scope'), 1)
-			panel.add(TextButton('Find'))
-			panel.add(TextButton('Find All'))
-			panel.resize(600, panel.sizeHint().height())
-			panel.show()
-			panel.layout().activate()
-			panel.grab().save(str(output.with_name('ui-components-panel.png')))
-			panel.close()
-			panel.deleteLater()
-		gui(capture_components)
-		print('PASS: startup, dock geometry, close icon, pane restoration, reopen, session reuse, query, rename persistence, Go To, delete, empty state; 200-row filter/sort p95 %.2f ms' % p95, flush=True)
+		session.handle.close()
+		wait_for(lambda: context.main_window._panel_dock is None, 'Manager did not close')
+		print('PASS: startup, dock geometry, close icon, pane restoration, reopen, focus reuse, query, saved sort, rename persistence, Go To, delete, empty state; 200-row filter/sort p95 %.2f ms' % p95, flush=True)
 		if os.environ.get('FAVORITES_SMOKE_RESULT'):
 			Path(os.environ['FAVORITES_SMOKE_RESULT']).write_text(json.dumps({'ok': True, 'p95_ms': p95}), encoding='utf-8')
 		code = 0

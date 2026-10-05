@@ -5,7 +5,7 @@ from fman.url import as_human_readable, normalize
 from itertools import chain
 
 from favorites.store import FavoritesStore
-from favorites.ui import FavoritesController, settings_resource
+from favorites.ui import FavoritesController, settings_resource, show_manager
 
 
 _SETTINGS_NAME = 'Favorites.json'
@@ -60,7 +60,7 @@ class ShowFavorites(DirectoryPaneCommand):
 	aliases = ('Open favorites manager', 'Favorites Manager', 'Favorites', 'Show favorites')
 
 	def __call__(self, query=''):
-		FavoritesController.show(self.pane, query)
+		show_manager(self.pane, query)
 
 
 class RemoveFromFavorites(DirectoryPaneCommand):

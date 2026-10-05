@@ -46,7 +46,8 @@
 - [ ] CHANGE: Update to Everything 1.5 when released. It supports tags on Windows files.
 - [ ] FEATURE: _Folder Diff_ based on names, dates and hash.
 - [ ] CHANGE: Candidates for presets as text viewer / editor: [Editpad](https://github.com/imluyg/editpad), [Dan](https://github.com/dfallman/dan), [FastPad](https://github.com/coccor/Fastpad), [Lite Anvil](https://github.com/danpozmanter/lite-anvil), [Noter](https://github.com/blisspixel/noter), [Token](https://github.com/HelgeSverre/token), [Fulgur](https://github.com/fulgur-app/Fulgur).
-- [ ] CHANGE: Remove the extended status bar for 2 panes. Leave only the option for a single pane (Active pane).
+- [x] CHANGE: Remove the extended status bar for 2 panes. Leave only the option for a single pane (Active pane).
+- [x] BUG: Resetting the geometry of the application does not make it move to the default position on next run.
 
 ## Performance
 

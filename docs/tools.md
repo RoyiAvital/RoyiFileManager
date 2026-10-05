@@ -195,10 +195,12 @@ Favorites keeps a list of frequently used locations.
 </figure>
 
 - Run **Add current folder to favorites** to save the active pane's folder.
-- Type to filter by name or path. Sort by Recent, Name or Path.
-- Press ++enter++ or **Go To** to open the highlighted favorite.
-- **Rename** changes only the display name. **Delete** removes favorites, never files.
-- Press ++esc++ to close.
+- Type to filter by name or path. ++ctrl+f1++, ++ctrl+f2++ and ++ctrl+f3++ sort
+  by Name, Path and Added; the sort is remembered.
+- Press ++enter++ or **Go To** to open the chosen favorite.
+- **Rename** changes only the display name. **Delete** removes the chosen
+  favorites, never files.
+- ++tab++ moves between the list and the buttons. Press ++esc++ to close.
 
 See [Favorites usage](https://github.com/RoyiAvital/RoyiFileManager/blob/main/src/main/resources/base/Plugins/Favorites/README.md).
 

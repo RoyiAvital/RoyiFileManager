@@ -32,6 +32,7 @@ class ImageResult:
 	format: str = ''
 	fingerprint: tuple = ()
 	kind: str = 'image'
+	path: str = ''
 
 
 def load_preview(request, canceled, resolve=None):
@@ -40,6 +41,20 @@ def load_preview(request, canceled, resolve=None):
 	if request.content is not None:
 		from fman.impl.quick_view_text import convert_text
 		return convert_text(request.content, request.mode, request.colors, canceled)
+	if PureWindowsPath(request.url).suffix.lower() == '.pdf':
+		try:
+			if splitscheme(request.url)[0] != 'file://':
+				return ImageResult(message='Only local files can be previewed', kind='error')
+			if resolve is None:
+				from fman.fs import resolve
+			url = resolve(request.url)
+			if canceled():
+				return None
+			if splitscheme(url)[0] != 'file://':
+				return ImageResult(message='Only local files can be previewed', kind='error')
+			return ImageResult(kind='pdf', path=as_human_readable(url))
+		except (OSError, ValueError) as error:
+			return ImageResult(message='Cannot preview PDF: ' + str(error), kind='error')
 	if PureWindowsPath(request.url).suffix.lower() in (
 		'.jpg', '.jpeg', '.png', '.bmp', '.gif', '.ico', '.tif', '.tiff', '.webp', '.avif', '.heic'
 	):

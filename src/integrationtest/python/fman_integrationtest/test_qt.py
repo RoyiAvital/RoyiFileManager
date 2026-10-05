@@ -431,6 +431,70 @@ class MainWindowIT(QtIT):
 				window.deleteLater()
 		self.run_in_app(check)
 
+	def test_geometry_reset_survives_saved_session_restart(self):
+		from fman.impl.session import SessionManager, _encode
+		from fman.impl.util.settings import Settings
+		from fman.impl.widgets import MainWindow
+		from pathlib import Path
+		from PyQt5.QtCore import QSize
+		from tempfile import TemporaryDirectory
+		from unittest.mock import Mock, patch
+		def check():
+			for maximized in (False, True):
+				with self.subTest(maximized=maximized), TemporaryDirectory() as directory:
+					path = Path(directory, 'Session.json')
+					settings = Settings(path)
+					pane = Mock()
+					pane.get_location.return_value = 'file://C:/Work'
+					pane.get_default_column_widths.return_value = [600, 200, 200]
+					pane.get_column_widths_by_name.return_value = {'core.Name': 600}
+					window = MainWindow(Mock(), Mock(), Mock(), Mock(), 'null://')
+					restarted = MainWindow(Mock(), Mock(), Mock(), Mock(), 'null://')
+					window._panes = [pane]
+					restarted._panes = [pane]
+					try:
+						window.resize(1100, 700)
+						window.move(220, 150)
+						window.showMaximized() if maximized else window.show()
+						QApplication.processEvents()
+						settings['window_geometry'] = _encode(bytes(window.saveGeometry()))
+						settings['window_state'] = _encode(bytes(window.saveState(1)))
+						manager = SessionManager(settings, None, Mock(), 'test', True)
+						window.closed.connect(lambda: manager.on_close(window))
+						public_window = Mock()
+						public_window.reset_geometry.side_effect = window.reset_geometry
+
+						manager.reset_window_geometry(public_window)
+						QApplication.processEvents()
+						self.assertFalse(window.isMaximized())
+						self.assertEqual(QSize(1280, 800), window.size())
+						window.close()
+						reloaded = Settings(path)
+						self.assertIsNone(reloaded.get('window_geometry', None))
+						self.assertIsNone(reloaded.get('window_state', None))
+						self.assertEqual('file://C:/Work', reloaded.get('panes', [])[0]['location'])
+
+						fresh_manager = SessionManager(reloaded, None, Mock(), 'test', True)
+						public_window._widget = restarted
+						with patch('fman.impl.session.Thread'), \
+								patch.object(restarted, 'restoreGeometry', wraps=restarted.restoreGeometry) as restore:
+							fresh_manager.show_main_window(public_window)
+							restore.assert_not_called()
+						QApplication.processEvents()
+						self.assertEqual(QSize(1280, 800), restarted.size())
+						self.assertFalse(restarted.isMaximized() or restarted.isMinimized())
+						restarted.move(123, 91)
+						expected = _encode(bytes(restarted.saveGeometry()))
+						restarted.closed.connect(lambda: fresh_manager.on_close(restarted))
+						restarted.close()
+						self.assertEqual(expected, Settings(path).get('window_geometry', None))
+					finally:
+						window.close()
+						restarted.close()
+						window.deleteLater()
+						restarted.deleteLater()
+		self.run_in_app(check)
+
 class QuickViewIT(QtIT):
 	def setUp(self):
 		FilterBarIT.setUp(self)
@@ -6756,7 +6820,7 @@ class HashResultIT(QtIT):
 
 	def test_hash_commands_preserve_unrelated_dock(self):
 		from calculate_file_hash import CalculateFileHash, CalculateFileHashBy
-		from fman.ui import Panel
+		from fman.impl.ui.panel import Panel
 		from unittest.mock import Mock, patch
 		def prepare():
 			panel = Panel()
@@ -6821,7 +6885,9 @@ class HashResultIT(QtIT):
 
 class PublicUiIT(QtIT):
 	def setUp(self):
-		from fman.ui import UiController, UiOwner, QuickList, Panel
+		from fman.ui import UiController, UiOwner
+		from fman.impl.ui.panel import Panel
+		from fman.impl.ui.quicklist import QuickList
 		from PyQt5.QtCore import QThread
 		from PyQt5.QtWidgets import QWidget, QVBoxLayout
 		from unittest.mock import Mock
@@ -6891,7 +6957,8 @@ class PublicUiIT(QtIT):
 			pane.on_closed(None)
 
 	def test_widget_constructors_reject_command_thread(self):
-		from fman.ui import QuickList, Panel, TextButton, IconButton, DropDown, JsonSettings
+		from fman.impl.ui.panel import Panel, TextButton, IconButton, DropDown, JsonSettings
+		from fman.impl.ui.quicklist import QuickList
 		constructors = (QuickList, Panel, lambda: TextButton('Run'),
 			lambda: IconButton(None, 'Mode'), lambda: DropDown((('One', 1),), 'Choice'),
 			lambda: JsonSettings('Test.json', None))
@@ -6975,7 +7042,9 @@ class PublicUiIT(QtIT):
 class DockedPanelIT(QtIT):
 	def test_public_controller_dock_unload_and_late_result(self):
 		from fman import DirectoryPane, Window
-		from fman.ui import UiController, UiOwner, Panel, QuickList, TextButton
+		from fman.ui import UiController, UiOwner
+		from fman.impl.ui.panel import Panel, TextButton
+		from fman.impl.ui.quicklist import QuickList
 		from fman.impl.widgets import MainWindow
 		from PyQt5.QtWidgets import QWidget, QVBoxLayout
 		from unittest.mock import Mock
@@ -7040,7 +7109,7 @@ class DockedPanelIT(QtIT):
 	def test_main_window_panel_geometry_close_and_replacement(self):
 		def check():
 			from fman.impl.widgets import MainWindow
-			from fman.ui import Panel, TextButton
+			from fman.impl.ui.panel import Panel, TextButton
 			from PyQt5.QtCore import QPoint
 			from PyQt5.QtTest import QTest
 			from PyQt5.QtWidgets import QWidget
@@ -7087,7 +7156,8 @@ class DockedPanelIT(QtIT):
 class QuickListIT(QtIT):
 	def test_filter_arrows_transfer_focus_before_space_selection(self):
 		def check():
-			from fman.ui import QuickList, ListItem
+			from fman.ui import ListItem
+			from fman.impl.ui.quicklist import QuickList
 			from PyQt5.QtTest import QTest
 			widget = QuickList(fuzzy=True)
 			try:
@@ -7122,7 +7192,8 @@ class QuickListIT(QtIT):
 
 	def test_right_click_toggles_rows_with_optional_filter(self):
 		def check():
-			from fman.ui import QuickList, ListItem
+			from fman.ui import ListItem
+			from fman.impl.ui.quicklist import QuickList
 			from PyQt5.QtCore import QPoint
 			from PyQt5.QtTest import QTest
 			from unittest.mock import Mock
@@ -7155,9 +7226,10 @@ class QuickListIT(QtIT):
 					widget.deleteLater()
 		self.run_in_app(check)
 
-	def test_public_embedded_view_mouse_selection_and_optional_filter(self):
+	def test_embedded_view_mouse_selection_and_optional_filter(self):
 		def check():
-			from fman.ui import QuickList, ListItem
+			from fman.ui import ListItem
+			from fman.impl.ui.quicklist import QuickList
 			from PyQt5.QtTest import QTest
 			from PyQt5.QtWidgets import QWidget
 			parent = QWidget()
@@ -7254,7 +7326,8 @@ class QuickListIT(QtIT):
 	def test_delegate_without_widget_and_custom_panel_label(self):
 		def check():
 			from fman.impl.ui import ListItem
-			from fman.ui import QuickList, Panel, DropDown, TextButton
+			from fman.impl.ui.panel import Panel, DropDown, TextButton
+			from fman.impl.ui.quicklist import QuickList
 			from PyQt5.QtWidgets import QStyleOptionViewItem
 			from PyQt5.QtGui import QPixmap, QPainter
 			from PyQt5.QtCore import QRect
@@ -7336,6 +7409,362 @@ class QuickListIT(QtIT):
 				widget.deleteLater()
 		self.run_in_app(check)
 
+class QuickListServiceIT(QtIT):
+	def setUp(self):
+		from unittest.mock import Mock, patch
+		from fman.impl.widgets import MainWindow
+		def create():
+			main = MainWindow(Mock(), Mock(), Mock(), Mock(), 'null://')
+			main._theme.get_quicksearch_item_css.return_value = None
+			main.resize(960, 600)
+			main.show()
+			return main
+		self.main = self.run_in_app(create)
+		window_patch = patch('fman.impl.ui.quick_list_window._main_window', return_value=self.main)
+		window_patch.start()
+		self.addCleanup(window_patch.stop)
+
+	def tearDown(self):
+		def dispose():
+			self.main.close()
+			self.main.deleteLater()
+		self.run_in_app(dispose)
+
+	def items(self):
+		from fman.ui import ListItem
+		return (ListItem('a', 'Zulu', 'C:\\A', metadata={'Added': 1}),
+			ListItem('b', 'alpha', 'C:\\B', metadata={'Added': 2}),
+			ListItem('c', 'Mike', 'C:\\C', metadata={'Added': ()}))
+
+	def open(self, **arguments):
+		"""Run show_quick_list on its own worker; return (handle, window, results, thread)."""
+		from fman.ui import show_quick_list
+		from threading import Thread
+		opened, results = Event(), []
+		handles = []
+		def on_open(handle):
+			handles.append(handle)
+			opened.set()
+		arguments.setdefault('items', self.items())
+		thread = Thread(target=lambda: results.append(show_quick_list(on_open=on_open, **arguments)), daemon=True)
+		thread.start()
+		self.assertTrue(opened.wait(5))
+		handle = handles[0]
+		window = handle._QuickListHandle__session.window
+		self.run_in_app(lambda: None)
+		return handle, window, results, thread
+
+	def finish(self, thread, results):
+		thread.join(5)
+		self.assertFalse(thread.is_alive())
+		return results[0]
+
+	def test_enter_returns_chosen_and_escape_returns_none(self):
+		from PyQt5.QtTest import QTest
+		handle, window, results, thread = self.open(title='Pick')
+		self.assertEqual('Pick', self.run_in_app(window.windowTitle))
+		self.assertTrue(self.run_in_app(window.isVisible))
+		self.run_in_app(QTest.keyClick, window.list.query, Qt.Key_Return)
+		self.assertEqual(('a',), self.finish(thread, results))
+		self.assertFalse(handle.is_open)
+		handle, window, results, thread = self.open(selected=('c', 'b'))
+		self.assertEqual(('b', 'c'), handle.snapshot().chosen)
+		self.run_in_app(QTest.keyClick, window.list.query, Qt.Key_Return)
+		self.assertEqual(('b', 'c'), self.finish(thread, results))
+		handle, window, results, thread = self.open()
+		self.run_in_app(QTest.keyClick, window.list.query, Qt.Key_Escape)
+		self.assertIsNone(self.finish(thread, results))
+
+	def test_close_inside_on_open_never_presents(self):
+		from fman.ui import show_quick_list
+		windows = []
+		def on_open(handle):
+			windows.append(handle._QuickListHandle__session.window)
+			handle.close(('b',))
+		self.assertEqual(('b',), show_quick_list(items=self.items(), on_open=on_open))
+		self.run_in_app(lambda: None)
+		from PyQt5 import sip
+		self.assertTrue(self.run_in_app(lambda: windows[0] is None or sip.isdeleted(windows[0]) or not windows[0].isVisible()))
+		def failing(handle):
+			raise KeyError('driver')
+		with self.assertRaises(KeyError):
+			show_quick_list(items=self.items(), on_open=failing)
+
+	def test_qt_thread_caller_runs_nested_loop(self):
+		from fman.ui import show_quick_list
+		from PyQt5.QtCore import QTimer
+		def call():
+			def on_open(handle):
+				QTimer.singleShot(20, lambda: handle.close(('c',)))
+			return show_quick_list(items=self.items(), modal=False, on_open=on_open)
+		self.assertEqual(('c',), self.run_in_app(call))
+
+	def test_snapshot_set_items_and_close_validation(self):
+		from fman.ui import ListItem
+		handle, window, results, thread = self.open(selected=('a', 'b'), query='')
+		state = handle.snapshot()
+		self.assertEqual(('a', 'b'), state.selected)
+		self.assertEqual('a', state.current)
+		handle.set_items(self.items()[1:])
+		state = handle.snapshot()
+		self.assertEqual(('b',), state.selected)
+		with self.assertRaises(ValueError):
+			handle.set_items((ListItem('x', 'X'), ListItem('x', 'Y')))
+		with self.assertRaises(ValueError):
+			handle.close(('a',))
+		self.assertTrue(handle.is_open)
+		handle.close(('b', 'c'))
+		self.assertEqual(('b', 'c'), self.finish(thread, results))
+		handle.set_items(())
+		handle.focus()
+		handle.close()
+
+	def test_metadata_line_sort_keys_and_saved_sort(self):
+		from unittest.mock import patch
+		from PyQt5.QtTest import QTest
+		saved = Event()
+		stored = {'sort': 'Added', 'ascending': False, 'other': 1}
+		def save(name, values):
+			stored.update(values)
+			saved.set()
+		with patch('fman.load_json', side_effect=lambda *args, **kwargs: dict(stored)), \
+				patch('fman.save_json', side_effect=save):
+			handle, window, results, thread = self.open(title_label='Name', hint_label='Path',
+				sort=('Name', True), settings='QuickList Test.json')
+			def titles():
+				return [item.title for item in window.list.model.items]
+			self.assertEqual(['alpha', 'Zulu', 'Mike'], self.run_in_app(titles))
+			self.assertEqual(('Added', False), handle.snapshot().sort)
+			self.assertIn('Added 2', self.run_in_app(lambda: window.list.model.index(0, 0).data()))
+			def buttons():
+				return [button.property('sortLabel') for button in window.list.sort_bar.buttons]
+			self.assertEqual(['Name', 'Path', 'Added'], self.run_in_app(buttons))
+			self.run_in_app(QTest.keyClick, window.list.query, Qt.Key_F1, Qt.ControlModifier)
+			self.assertEqual(['alpha', 'Mike', 'Zulu'], self.run_in_app(titles))
+			self.assertTrue(saved.wait(5))
+			self.assertEqual({'sort': 'Name', 'ascending': True, 'other': 1}, stored)
+			self.run_in_app(QTest.keyClick, window.list.query, Qt.Key_F1, Qt.ControlModifier)
+			self.assertEqual(['Zulu', 'Mike', 'alpha'], self.run_in_app(titles))
+			self.run_in_app(window.list.query.setText, 'a')
+			self.assertEqual(['Zulu', 'alpha'], self.run_in_app(titles))
+			handle.close()
+			self.finish(thread, results)
+
+	def test_selection_keys(self):
+		from PyQt5.QtTest import QTest
+		handle, window, results, thread = self.open(selected=('a',))
+		self.run_in_app(QTest.keyClick, window.list.query, Qt.Key_I, Qt.ControlModifier)
+		self.assertEqual(('b', 'c'), handle.snapshot().selected)
+		self.run_in_app(QTest.keyClick, window.list.query, Qt.Key_A, Qt.ControlModifier | Qt.ShiftModifier)
+		self.assertEqual((), handle.snapshot().selected)
+		def space():
+			window.list.view.setFocus()
+			QTest.keyClick(window.list.view, Qt.Key_Space)
+		self.run_in_app(space)
+		self.assertEqual(('a',), handle.snapshot().selected)
+		handle.close()
+		self.finish(thread, results)
+
+	def test_global_tab_between_modeless_list_and_panel(self):
+		from fman import DirectoryPane, Window
+		from fman.ui import Action, UiOwner, show_panel
+		from PyQt5.QtTest import QTest
+		from PyQt5.QtWidgets import QWidget
+		from unittest.mock import Mock
+		owner = UiOwner()
+		pane = self.run_in_app(lambda: DirectoryPane(Window(self.main, Mock()), QWidget(self.main), Mock()))
+		def opened(handle):
+			show_panel(owner=owner, pane=pane, rows=((Action('run', 'Run'), Action('stop', 'Stop')),),
+				on_closed=handle.close)
+		from fman.ui import show_quick_list
+		from threading import Thread
+		results, handles = [], []
+		def on_open(handle):
+			handles.append(handle)
+			opened(handle)
+		thread = Thread(target=lambda: results.append(show_quick_list(items=self.items(), modal=False,
+			on_open=on_open)), daemon=True)
+		thread.start()
+		try:
+			from time import monotonic, sleep
+			deadline = monotonic() + 5
+			while not handles and monotonic() < deadline:
+				sleep(.01)
+			window = handles[0]._QuickListHandle__session.window
+			def check():
+				dock = self.main._panel_dock
+				window.activateWindow()
+				window.list.view.setFocus()
+				QApplication.processEvents()
+				QTest.keyClick(window.list.view, Qt.Key_Tab)
+				QApplication.processEvents()
+				first = QApplication.focusWidget()
+				self.assertTrue(dock.isAncestorOf(first))
+				self.main.activateWindow()
+				dock.close_button.setFocus()
+				QApplication.processEvents()
+				QTest.keyClick(dock.close_button, Qt.Key_Tab)
+				QApplication.processEvents()
+				self.assertIs(window.list.query, QApplication.focusWidget())
+				QTest.mouseClick(dock.close_button, Qt.LeftButton)
+			self.run_in_app(check)
+			self.assertIsNone(self.finish(thread, results))
+		finally:
+			owner.invalidate()
+
+	def test_slow_on_open_keeps_window_hidden(self):
+		from fman.ui import show_quick_list
+		from threading import Thread
+		from PyQt5.QtTest import QTest
+		entered, release, results, handles = Event(), Event(), [], []
+		def on_open(handle):
+			handles.append(handle)
+			entered.set()
+			release.wait(5)
+		thread = Thread(target=lambda: results.append(show_quick_list(items=self.items(), on_open=on_open)), daemon=True)
+		thread.start()
+		self.assertTrue(entered.wait(5))
+		window = handles[0]._QuickListHandle__session.window
+		self.assertFalse(self.run_in_app(window.isVisible))
+		self.assertTrue(handles[0].is_open)
+		release.set()
+		from time import monotonic, sleep
+		deadline = monotonic() + 5
+		while not self.run_in_app(window.isVisible) and monotonic() < deadline:
+			sleep(.01)
+		self.run_in_app(QTest.keyClick, window.list.query, Qt.Key_Escape)
+		self.assertIsNone(self.finish(thread, results))
+
+	def test_invalid_set_items_and_requested_sort_after_refill(self):
+		from fman.ui import ListItem
+		handle, window, results, thread = self.open(items=(), sort=('Added', False))
+		self.assertIsNone(handle.snapshot().sort)
+		with self.assertRaises((TypeError, ValueError)):
+			handle.set_items((ListItem('x', 'X', metadata=(('Added', float('nan'), 'x'),)),))
+		self.assertEqual((), self.run_in_app(lambda: window.list.items))
+		handle.set_items(self.items())
+		self.assertEqual(('Added', False), handle.snapshot().sort)
+		self.assertEqual(['alpha', 'Zulu', 'Mike'],
+			self.run_in_app(lambda: [item.title for item in window.list.model.items]))
+		handle.close()
+		self.finish(thread, results)
+
+	def test_failed_sort_save_does_not_block_qt(self):
+		from unittest.mock import Mock, patch
+		from time import perf_counter
+		from PyQt5.QtTest import QTest
+		release, reported = Event(), Event()
+		def save(name, values):
+			release.wait(5)
+			raise PermissionError('read-only')
+		status = Mock(side_effect=lambda *args, **kwargs: reported.set())
+		with patch('fman.load_json', return_value={}), patch('fman.save_json', side_effect=save), \
+				patch('fman.show_status_message', status):
+			handle, window, results, thread = self.open(title_label='Name', settings='QuickList ReadOnly.json')
+			started = perf_counter()
+			self.run_in_app(QTest.keyClick, window.list.query, Qt.Key_F1, Qt.ControlModifier)
+			self.assertLess(perf_counter() - started, 1)
+			self.assertEqual(('Name', True), handle.snapshot().sort)
+			release.set()
+			self.assertTrue(reported.wait(5))
+			self.assertIn('read-only', status.call_args.args[0])
+			handle.close()
+			self.finish(thread, results)
+
+	def test_global_tab_two_lists_and_panel_alone(self):
+		from fman import DirectoryPane, Window
+		from fman.impl.ui.quick_list_window import recent_list
+		from fman.ui import Action, UiOwner, show_panel
+		from PyQt5.QtCore import QEvent
+		from PyQt5.QtTest import QTest
+		from PyQt5.QtWidgets import QWidget
+		from unittest.mock import Mock
+		owner = UiOwner()
+		pane = self.run_in_app(lambda: DirectoryPane(Window(self.main, Mock()), QWidget(self.main), Mock()))
+		try:
+			show_panel(owner=owner, pane=pane, rows=((Action('run', 'Run'),),))
+			def panel_alone():
+				dock = self.main._panel_dock
+				self.main.activateWindow()
+				dock.close_button.setFocus()
+				QApplication.processEvents()
+				QTest.keyClick(dock.close_button, Qt.Key_Tab)
+				QApplication.processEvents()
+				self.assertTrue(dock.isAncestorOf(QApplication.focusWidget()))
+			self.run_in_app(panel_alone)
+			first = self.open(modal=False)
+			second = self.open(modal=False)
+			self.assertIs(second[1], self.run_in_app(recent_list, self.main))
+			self.run_in_app(lambda: QApplication.sendEvent(first[1], QEvent(QEvent.WindowActivate)))
+			self.assertIs(first[1], self.run_in_app(recent_list, self.main))
+			first[0].close()
+			self.finish(first[3], first[2])
+			self.assertIs(second[1], self.run_in_app(recent_list, self.main))
+			second[0].close()
+			self.finish(second[3], second[2])
+			self.assertIsNone(self.run_in_app(recent_list, self.main))
+		finally:
+			owner.invalidate()
+
+	def test_owner_invalidation_and_main_window_close(self):
+		from fman.ui import UiOwner
+		owner = UiOwner()
+		handle, window, results, thread = self.open(modal=False)
+		self.assertTrue(owner.attach(handle.close))
+		owner.invalidate()
+		self.assertIsNone(self.finish(thread, results))
+		handle, window, results, thread = self.open(modal=False)
+		self.run_in_app(self.main.close)
+		self.assertIsNone(self.finish(thread, results))
+
+class QuickListLimitIT(QtIT):
+	"""Opt-in: set QUICKLIST_BENCHMARK=1. Limits are ~4x the first native measurement (68/24/23 ms)."""
+
+	def test_filter_and_sort_at_item_limit(self):
+		import os
+		if os.environ.get('QUICKLIST_BENCHMARK') != '1':
+			self.skipTest('Set QUICKLIST_BENCHMARK=1 to run the 10,000-item QuickList gate.')
+		def measure():
+			from statistics import median
+			from time import perf_counter
+			from fman.impl.ui import ListItem
+			from fman.impl.ui.quick_list_data import MAX_ITEMS, prepare_items
+			from fman.impl.ui.quicklist import QuickList
+			labels = ['Field%d' % index for index in range(8)]
+			items = tuple(ListItem('id%05d' % row, 'Title %05d ' % row + 't' * 200, 'C:\\Folder\\' + 'h' * 300 + str(row),
+				metadata={label: (row * 7919 % 10007 + column, 'v%05d ' % row + 'x' * 121)
+					for column, label in enumerate(labels)}) for row in range(MAX_ITEMS))
+			prepared = prepare_items(items, 'Name', 'Path')
+			widget = QuickList(fuzzy=True)
+			try:
+				widget.resize(680, 430)
+				widget.show()
+				QApplication.processEvents()
+				started = perf_counter()
+				widget.set_sortable_items(prepared.items, prepared.labels, prepared.keys)
+				QApplication.processEvents()
+				applied = perf_counter() - started
+				filters, sorts = [], []
+				for query in ('t', 'ti', 'tit', '123', '9', '', 'h12', 'x'):
+					started = perf_counter()
+					widget.query.setText(query)
+					QApplication.processEvents()
+					filters.append(perf_counter() - started)
+				widget.query.clear()
+				for position in (0, 1, 2, 3, 9, 0, 5, 2):
+					started = perf_counter()
+					widget.sort_by(position)
+					QApplication.processEvents()
+					sorts.append(perf_counter() - started)
+				return applied * 1000, median(filters) * 1000, median(sorts) * 1000
+			finally:
+				widget.deleteLater()
+		applied, filtered, sorted_ = self.run_in_app(measure)
+		print('QuickList 10,000 items: apply %.1f ms, filter median %.1f ms, sort median %.1f ms' % (applied, filtered, sorted_))
+		self.assertLess(applied, 300)
+		self.assertLess(filtered, 100)
+		self.assertLess(sorted_, 100)
+
 class PanelIT(QtIT):
 	def test_textfield_tooltip_is_on_label_and_input(self):
 		def check():
@@ -7364,7 +7793,7 @@ class PanelIT(QtIT):
 
 	def test_action_widths_adapt_and_stop_at_cap(self):
 		def check():
-			from fman.ui import Panel, TextButton, DropDown
+			from fman.impl.ui.panel import Panel, TextButton, DropDown
 			from PyQt5.QtWidgets import QStyle, QStyleOptionButton
 			panel = Panel()
 			panel.add(DropDown((('Recent', 'recent'),), 'Sort'))
@@ -7399,7 +7828,8 @@ class PanelIT(QtIT):
 	def test_two_bindings_save_failure_and_disposal(self):
 		from copy import deepcopy
 		from unittest.mock import patch
-		from fman.ui import Panel, DropDown, TextButton, JsonSettings, UiOwner
+		from fman.ui import UiOwner
+		from fman.impl.ui.panel import Panel, DropDown, TextButton, JsonSettings
 		from fman.impl.ui import resource
 		from fman.impl.util.qt.thread import is_in_main_thread
 		data = {'mode': 'first', 'enabled': False, 'other': 42}
@@ -7451,7 +7881,7 @@ class PanelIT(QtIT):
 
 	def test_invalid_stored_values_default_without_writing(self):
 		from unittest.mock import patch
-		from fman.ui import Panel, DropDown, TextButton, JsonSettings
+		from fman.impl.ui.panel import Panel, DropDown, TextButton, JsonSettings
 		ready = Event()
 		def create():
 			panel = Panel()
@@ -7477,7 +7907,7 @@ class PanelIT(QtIT):
 	def test_public_controls_and_json_roundtrip(self):
 		from copy import deepcopy
 		from unittest.mock import patch
-		from fman.ui import Panel, IconButton, TextButton, DropDown, JsonSettings
+		from fman.impl.ui.panel import Panel, IconButton, TextButton, DropDown, JsonSettings
 		from fman.impl.util.qt.thread import is_in_main_thread
 		from PyQt5.QtWidgets import QStyle
 		data = {'case_sensitive': True, 'scope': 'all', 'unrelated': {'keep': 1}}
@@ -7522,442 +7952,347 @@ class PanelIT(QtIT):
 
 
 class FavoritesManagerIT(QtIT):
-	def test_split_focus_recovers_after_geometry_and_activation_changes(self):
-		from fman_integrationtest.favorites_smoke import exercise_split_focus
-		self.run_in_app(exercise_split_focus, self.window, self.parent)
-
-	def test_controller_builds_plain_session_in_shared_host(self):
-		from favorites.ui import FavoritesController, FavoritesSession
-		from fman.ui import PaneToolWindow
-		from PyQt5.QtCore import QObject
-		self.assertIs(type(self.window), PaneToolWindow)
-		self.assertIsNone(FavoritesController.window_type)
-		self.assertIs(type(self.window.session), FavoritesSession)
-		self.assertNotIsInstance(self.window.session, QObject)
-
-	def test_view_panel_and_frameless_host_are_separate(self):
-		def check():
-			from PyQt5.QtWidgets import QPushButton, QToolButton
-			self.assertTrue(self.window.windowFlags() & Qt.FramelessWindowHint)
-			self.assertFalse(self.window.list.isWindow())
-			self.assertIs(self.window.list.parentWidget(), self.window)
-			self.assertIs(self.window.panel.parentWidget(), self.parent._panel_dock)
-			self.assertIs(self.window.panel.window(), self.parent)
-			self.assertFalse(self.window.list.findChildren(QPushButton))
-			self.assertFalse(self.window.list.findChildren(QToolButton))
-			self.assertFalse(self.window.panel.findChildren(QToolButton))
-		self.run_in_app(check)
-
-	def test_shared_confirmation_defaults_to_no_and_escape_keeps_manager(self):
-		def check():
-			from unittest.mock import Mock
-			from PyQt5.QtTest import QTest
-			from PyQt5.QtWidgets import QDialogButtonBox
-			accepted = Mock()
-			self.window.confirm('Confirm operation', (('Item', 'Path'),), 0, 'Details', accepted)
-			prompt = self.window.prompt
-			buttons = prompt.findChild(QDialogButtonBox)
-			self.assertTrue(buttons.button(QDialogButtonBox.No).isDefault())
-			self.assertEqual(Qt.WindowModal, prompt.windowModality())
-			self.assertTrue(QTest.qWaitForWindowExposed(prompt))
-			QTest.keyClick(prompt, Qt.Key_Escape)
-			self.assertIsNone(self.window.prompt)
-			self.assertTrue(self.window.alive.is_set())
-			self.assertFalse(self.window.busy)
-			accepted.assert_not_called()
-		self.run_in_app(check)
-
-	def test_pane_destruction_closes_hosted_manager(self):
-		def check():
-			from PyQt5 import sip
-			sip.delete(self.pane._widget)
-			self.assertFalse(self.window.alive.is_set())
-		self.run_in_app(check)
-
 	def setUp(self):
+		from copy import deepcopy
 		from unittest.mock import Mock, patch
-		from favorites.store import Favorite
 		from favorites.ui import FavoritesController
-		from fman.ui import PaneToolWindow
-		from fman.impl.ui import UiOwner
 		from fman.impl.widgets import MainWindow
+		from fman.ui import UiOwner
 		from PyQt5.QtWidgets import QWidget
-		settings_patch = patch('favorites.ui.JsonSettings')
-		settings_patch.start()
-		self.addCleanup(settings_patch.stop)
+		self.data = {'favorites': [{'name': 'Zulu', 'url': 'file:///C:/A'},
+			{'name': 'Alpha', 'url': 'file:///C:/Z'}, {'name': 'Other', 'url': 'example://Other'}]}
+		def save(name, values):
+			self.data = deepcopy(values)
 		def create():
 			from fman import DirectoryPane
-			self.parent = MainWindow(Mock(), Mock(), Mock(), Mock(), 'null://')
-			self.parent._theme.get_quicksearch_item_css.return_value = None
-			self.parent.resize(960, 600)
-			self.parent.show()
-			self.pane = Mock()
-			self.pane._widget = QWidget(self.parent)
-			self.pane.window._widget = self.parent
-			self.pane.on_closed = DirectoryPane.on_closed.__get__(self.pane)
-			self.owner = UiOwner()
-			with patch.object(PaneToolWindow, 'work', return_value=True):
-				self.window = PaneToolWindow(self.pane, self.owner)
-				FavoritesController.build(self.window, self.pane)
-			self.window.session._apply_snapshot((0, (
-				Favorite('Zulu', 'file:///C:/A'),
-				Favorite('Alpha', 'file:///C:/Z'),
-				Favorite('Other', 'example://Other')
-			)))
-			self.window.show()
-		self.run_in_app(create)
+			main = MainWindow(Mock(), Mock(), Mock(), Mock(), 'null://')
+			main._theme.get_quicksearch_item_css.return_value = None
+			main.resize(960, 600)
+			main.show()
+			pane = Mock()
+			pane._widget = QWidget(main)
+			pane.window._widget = main
+			pane.on_closed = DirectoryPane.on_closed.__get__(pane)
+			return main, pane
+		self.main, self.pane = self.run_in_app(create)
+		self.owner = UiOwner()
+		self.alert, self.status = Mock(), Mock()
+		for patcher in (patch('fman.impl.ui.quick_list_window._main_window', return_value=self.main),
+				patch('fman.impl.ui.quick_list_window._load_sort', return_value=None),
+				patch('favorites.load_json', side_effect=lambda *args, **kwargs: deepcopy(self.data)),
+				patch('favorites.save_json', side_effect=save),
+				patch('favorites.ui.show_alert', self.alert),
+				patch('favorites.ui.show_status_message', self.status),
+				patch.object(FavoritesController, 'owner', self.owner)):
+			patcher.start()
+			self.addCleanup(patcher.stop)
 
 	def tearDown(self):
+		self.owner.invalidate()
 		def dispose():
-			from PyQt5 import sip
-			if not sip.isdeleted(self.window):
-				self.window.close()
-			self.parent.close()
-			self.parent.deleteLater()
+			self.main.close()
+			self.main.deleteLater()
 		self.run_in_app(dispose)
 
-	def test_dock_close_ends_session_and_cancels_navigation(self):
-		def check():
-			from fman.impl.navigation import NavigationRequest
-			from PyQt5.QtTest import QTest
-			request = NavigationRequest(lambda *args: None)
-			self.window.session.navigation = request
-			QTest.mouseClick(self.parent._panel_dock.close_button, Qt.LeftButton)
-			self.assertFalse(self.window.alive.is_set())
-			self.assertTrue(request.done)
-			self.assertIsNone(self.parent._panel_dock)
-			self.window.settings.dispose.assert_called_once()
-		self.run_in_app(check)
+	def wait_until(self, predicate, message):
+		from time import monotonic, sleep
+		deadline = monotonic() + 5
+		while monotonic() < deadline:
+			if self.run_in_app(predicate):
+				return
+			sleep(.01)
+		self.fail(message)
 
-	def test_escape_in_panel_closes_session(self):
-		def check():
-			from PyQt5.QtTest import QTest
-			self.parent.activateWindow()
-			self.window.panel.choice.setFocus()
-			QApplication.processEvents()
-			QTest.keyClick(self.window.panel.choice, Qt.Key_Escape)
-			self.assertFalse(self.window.alive.is_set())
-			self.assertIsNone(self.parent._panel_dock)
-		self.run_in_app(check)
+	def open(self, query=''):
+		from favorites.ui import _sessions, show_manager
+		from fman.impl.ui.facade import _hosts
+		from threading import Thread
+		previous = _sessions.get(self.pane.window)
+		thread = Thread(target=show_manager, args=(self.pane, query), daemon=True)
+		thread.start()
+		self.wait_until(lambda: _sessions.get(self.pane.window) not in (None, previous) and
+			_sessions[self.pane.window].panel is not None, 'Manager did not open')
+		session = _sessions[self.pane.window]
+		self.wait_until(lambda: session.revision >= 0, 'Manager did not load')
+		self.session, self.thread = session, thread
+		self.window = session.handle._QuickListHandle__session.window
+		self.host = _hosts[session.panel._key()]
+		return session
 
-	def test_tab_moves_between_list_and_docked_controls(self):
-		def check():
-			from PyQt5.QtTest import QTest
-			self.window.activateWindow()
+	def titles(self):
+		return self.run_in_app(lambda: [item.title for item in self.window.list.model.items])
+
+	def click(self, action):
+		from PyQt5.QtTest import QTest
+		self.run_in_app(QTest.mouseClick, self.host.controls[action][1], Qt.LeftButton)
+
+	def closed(self):
+		self.thread.join(5)
+		self.assertFalse(self.thread.is_alive())
+		self.assertFalse(self.session.is_open)
+		self.assertIsNone(self.run_in_app(lambda: self.main._panel_dock))
+
+	def test_manager_uses_public_services_only(self):
+		from favorites.ui import FavoritesSession
+		from fman.impl.ui.quick_list_window import QuickListWindow
+		from PyQt5.QtCore import QObject
+		self.open()
+		self.assertNotIsInstance(self.session, QObject)
+		self.assertIs(QuickListWindow, type(self.window))
+		self.assertIs(FavoritesSession, type(self.session))
+		self.assertEqual(['Zulu', 'Alpha', 'Other'], self.titles())
+		self.assertEqual(('Name', 'Path', 'Added'), self.run_in_app(lambda: self.window.list.sort_labels))
+		self.assertEqual('Favorites UI.json', self.window.settings)
+		self.assertFalse(self.window.modal)
+		self.assertIs(self.host.panel, self.run_in_app(lambda: self.main._panel_dock.panel))
+
+	def test_delete_removes_chosen_without_confirmation(self):
+		from favorites.ui import item_id
+		self.open()
+		def select():
+			self.window.list.selected_ids = {item_id('file:///C:/Z'), item_id('example://Other')}
+			self.window.list.refresh()
+		self.run_in_app(select)
+		self.click('delete')
+		self.wait_until(lambda: [item.title for item in self.window.list.model.items] == ['Zulu'], 'Delete not shown')
+		self.assertEqual(['Zulu'], [entry['name'] for entry in self.data['favorites']])
+		self.assertTrue(self.session.is_open)
+		self.alert.assert_not_called()
+
+	def test_delete_key_does_nothing(self):
+		from PyQt5.QtTest import QTest
+		self.open()
+		def press():
 			self.window.list.view.setFocus()
-			QApplication.processEvents()
-			QTest.keyClick(self.window.list.view, Qt.Key_Tab)
-			QApplication.processEvents()
-			self.assertIs(self.window.panel.choice, QApplication.focusWidget())
-			QTest.keyClick(self.window.panel.choice, Qt.Key_Tab, Qt.ShiftModifier)
-			QApplication.processEvents()
-			self.assertIs(self.window.list.view, QApplication.focusWidget())
-			self.parent.activateWindow()
-			self.parent._panel_dock.close_button.setFocus()
-			QApplication.processEvents()
-			QTest.keyClick(self.parent._panel_dock.close_button, Qt.Key_Tab)
-			QApplication.processEvents()
-			self.assertIs(self.window.list.query, QApplication.focusWidget())
-		self.run_in_app(check)
+			QTest.keyClick(self.window.list.view, Qt.Key_Delete)
+		self.run_in_app(press)
+		self.assertEqual(3, len(self.data['favorites']))
 
-	def test_panel_close_rejects_prompt_without_mutating(self):
-		def check():
-			from unittest.mock import Mock
-			self.window.session._mutate = Mock()
-			self.window.session.action('rename')
-			self.parent._panel_dock.close_button.click()
-			self.assertFalse(self.window.alive.is_set())
-			self.assertIsNone(self.parent._panel_dock)
-			self.window.session._mutate.assert_not_called()
-		self.run_in_app(check)
-
-	def test_new_docked_session_disposes_previous_session(self):
-		def check():
-			from favorites.ui import FavoritesController
-			from fman.ui import PaneToolWindow
-			from unittest.mock import patch
-			with patch.object(FavoritesController, 'owner', self.owner), \
-					patch.object(PaneToolWindow, 'work', return_value=True):
-				new = FavoritesController.show(self.pane)
-				self.assertFalse(self.window.alive.is_set())
-				self.assertIs(new.panel, self.parent._panel_dock.panel)
-				self.parent.close()
-				self.assertFalse(new.alive.is_set())
-				self.assertIsNone(self.parent._panel_dock)
-		self.run_in_app(check)
-
-	def test_sort_is_a_projection_and_keeps_selection(self):
-		def check():
-			from PyQt5.QtCore import QItemSelectionModel
-			window = self.window
-			self.assertEqual('Recent', window.panel.choice.currentText())
-			window.list.view.selectionModel().select(window.list.model.index(0, 0), QItemSelectionModel.Select)
-			window.panel.choice.setCurrentText('Name')
-			self.assertEqual(['Alpha', 'Other', 'Zulu'], [item.title for item in window.list.model.items])
-			window.list.query.setText('a')
-			self.assertEqual(['Alpha', 'Other', 'Zulu'], [item.title for item in window.list.model.items])
-			self.assertEqual({'file:///c:/a'}, window.list.selected_ids)
-			self.assertEqual('Zulu', window.session.records[0].name)
-		self.run_in_app(check)
-
-	def test_delete_button_captures_hidden_selection_without_confirmation(self):
-		def check():
-			from unittest.mock import Mock
-			from PyQt5.QtTest import QTest
-			window = self.window
-			window.session._mutate = Mock()
-			window.list.selected_ids = {'file:///c:/z'}
-			window.list.query.setText('Zulu')
-			QTest.mouseClick(window.panel.buttons['delete'], Qt.LeftButton)
-			self.assertIsNone(window.prompt)
-			window.session._mutate.assert_called_once_with((window.session.records[1],), None)
-			window.list.selected_ids.clear()
-			captured, name = window.session._mutate.call_args.args
-			self.assertEqual('Alpha', captured[0].name)
-			self.assertIsNone(name)
-			self.assertTrue(window.alive.is_set())
-		self.run_in_app(check)
-
-	def test_delete_button_current_fallback_and_empty_list(self):
-		def check():
-			from unittest.mock import Mock
-			from PyQt5.QtTest import QTest
-			window = self.window
-			window.session._mutate = Mock()
-			QTest.mouseClick(window.panel.buttons['delete'], Qt.LeftButton)
-			window.session._mutate.assert_called_once_with((window.session.records[0],), None)
-			self.assertIsNone(window.prompt)
-			window.session._mutate.reset_mock()
-			window.set_busy(True)
-			window.session.action('delete')
-			window.session._mutate.assert_not_called()
-			window.set_busy(False)
-			window.session._apply_snapshot((1, ()))
-			self.assertFalse(window.panel.buttons['delete'].isEnabled())
-			window.session.action('delete')
-			window.session._mutate.assert_not_called()
-		self.run_in_app(check)
-
-	def test_rename_targets_current_and_escape_keeps_manager(self):
-		def check():
-			from unittest.mock import Mock
-			from PyQt5.QtTest import QTest
-			window = self.window
-			window.session._mutate = Mock()
-			window.list.selected_ids = {'file:///c:/z'}
-			window.session.action('rename')
-			window.prompt.setTextValue('Renamed')
-			window.prompt.accept()
-			self.assertEqual('Zulu', window.session._mutate.call_args.args[0][0].name)
-			self.assertEqual('Renamed', window.session._mutate.call_args.args[1])
-			window.session._mutate.reset_mock()
-			window.session.action('rename')
-			self.assertTrue(QTest.qWaitForWindowExposed(window.prompt))
-			QTest.keyClick(window.prompt, Qt.Key_Escape)
-			window.session._mutate.assert_not_called()
-			self.assertTrue(window.alive.is_set())
-			self.assertFalse(window.busy)
-		self.run_in_app(check)
-
-	def test_query_delete_does_not_invoke_delete_action(self):
-		def check():
-			from unittest.mock import Mock
-			from PyQt5.QtTest import QTest
-			window = self.window
-			window.session.action = Mock()
-			window.list.query.setText('abc')
-			window.list.query.selectAll()
-			QTest.keyClick(window.list.query, Qt.Key_Delete)
-			self.assertEqual('', window.list.query.text())
-			window.session.action.assert_not_called()
-			QTest.keyClick(window.list.view, Qt.Key_Delete)
-			window.session.action.assert_called_once_with('delete')
-		self.run_in_app(check)
-
-	def test_stale_snapshot_is_rejected_and_removed_selection_pruned(self):
-		def check():
-			window = self.window
-			window.list.selected_ids = {'file:///c:/z'}
-			window.session._apply_snapshot((2, window.session.records[:1]))
-			window.session._apply_snapshot((1, ()))
-			self.assertEqual(2, window.session.revision)
-			self.assertEqual(1, len(window.session.records))
-			self.assertEqual(set(), window.list.selected_ids)
-			self.assertFalse(window.grab().isNull())
-		self.run_in_app(check)
-
-	def test_missing_navigation_keeps_manager_and_prompt_busy(self):
+	def test_rename_targets_current(self):
 		from unittest.mock import patch
-		finished = Event()
-		original = self.window.session._navigated
-		def navigated(*args):
-			original(*args)
-			finished.set()
-		self.run_in_app(setattr, self.window.session, '_navigated', navigated)
-		with patch('favorites.ui.exists', return_value=False):
-			self.run_in_app(self.window.session.action, 'goto')
-			self.assertTrue(finished.wait(2), 'No navigation failure delivered')
-		self.run_in_app(lambda: None)
-		def check():
-			self.assertTrue(self.window.alive.is_set())
-			self.assertIsNotNone(self.window.prompt)
-			self.assertTrue(self.window.busy)
-			self.pane.run_command.assert_not_called()
-		self.run_in_app(check)
+		self.open()
+		with patch('favorites.ui.show_prompt', return_value=(' Renamed ', True)) as prompt:
+			self.click('rename')
+			self.wait_until(lambda: 'Renamed' in [item.title for item in self.window.list.model.items], 'Rename not shown')
+		self.assertEqual('Zulu', prompt.call_args.args[1])
+		self.assertEqual('Renamed', self.data['favorites'][0]['name'])
 
-	def test_successful_navigation_closes_manager(self):
+	def navigate_succeeds(self):
+		self.pane.set_path.side_effect = lambda url, callback=None, onerror=None: callback()
+
+	def test_go_to_success_closes_manager_and_panel(self):
 		from unittest.mock import patch
-		from fman.impl.navigation import current_request
-		finished = Event()
-		def navigate(*args):
-			request = current_request()
-			request.started = True
-			request.finish('success')
-			request.settled.set()
-		self.pane.run_command.side_effect = navigate
-		self.run_in_app(lambda: self.window.finished.connect(finished.set))
-		with patch('favorites.ui.exists', return_value=True), \
-				patch('favorites.ui.is_dir', return_value=True):
-			self.run_in_app(self.window.session.action, 'goto')
-			self.assertTrue(finished.wait(2), 'Manager did not close')
+		self.open()
+		self.navigate_succeeds()
+		with patch('favorites.ui.exists', return_value=True), patch('favorites.ui.is_dir', return_value=True):
+			self.click('go_to')
+			self.closed()
+		self.assertEqual('file:///C:/A', self.pane.set_path.call_args.args[0])
 
-	def test_file_favorite_is_rejected_without_changing_pane(self):
+	def test_enter_goes_to_single_chosen(self):
 		from unittest.mock import patch
-		from fman.impl.util.qt.thread import is_in_main_thread
-		finished = Event()
-		original = self.window.session._navigated
-		def navigated(*args):
-			original(*args)
-			finished.set()
-		def file_target(url):
-			self.assertFalse(is_in_main_thread())
-			return False
-		self.run_in_app(setattr, self.window.session, '_navigated', navigated)
-		with patch('favorites.ui.exists', return_value=True), \
-				patch('favorites.ui.is_dir', side_effect=file_target):
-			self.run_in_app(self.window.session.action, 'goto')
-			self.assertTrue(finished.wait(2), 'No folder-only failure delivered')
-		def check():
-			self.assertTrue(self.window.alive.is_set())
-			self.assertIn('Favorites must point to folders', self.window.prompt.text())
-			self.pane.run_command.assert_not_called()
-		self.run_in_app(check)
+		from PyQt5.QtTest import QTest
+		self.open('Alp')
+		self.navigate_succeeds()
+		with patch('favorites.ui.exists', return_value=True), patch('favorites.ui.is_dir', return_value=True):
+			self.run_in_app(QTest.keyClick, self.window.list.query, Qt.Key_Return)
+			self.closed()
+		self.assertEqual('file:///C:/Z', self.pane.set_path.call_args.args[0])
 
-	def test_two_managers_receive_commits_without_resetting_query(self):
-		from unittest.mock import Mock, patch
-		from favorites.ui import FavoritesController
-		from fman.ui import PaneToolWindow
-		from PyQt5.QtWidgets import QWidget
-		import favorites
+	def test_go_to_closes_only_after_navigation_succeeds(self):
+		from unittest.mock import patch
+		calls = []
+		self.pane.set_path.side_effect = lambda url, callback=None, onerror=None: calls.append((callback, onerror))
+		self.open()
+		with patch('favorites.ui.exists', return_value=True), patch('favorites.ui.is_dir', return_value=True):
+			self.click('go_to')
+			self.wait_until(lambda: len(calls) == 1, 'Navigation not started')
+			self.assertEqual('file:///C:/A', calls[0][1](PermissionError('denied'), 'file:///C:/A'))
+			self.wait_until(lambda: self.alert.called, 'No navigation failure alert')
+			self.assertIn('denied', self.alert.call_args.args[0])
+			self.assertTrue(self.session.is_open)
+			idle = lambda: not self.session.action_lock.locked()
+			self.wait_until(idle, 'Action lock not released')
+			self.click('go_to')
+			self.wait_until(lambda: len(calls) == 2, 'Second navigation not started')
+			self.wait_until(idle, 'Action lock not released')
+			self.click('go_to')
+			self.wait_until(lambda: len(calls) == 3, 'Third navigation not started')
+			self.run_in_app(calls[1][0])
+			self.assertTrue(self.session.is_open, 'A superseded navigation closed the manager')
+			self.run_in_app(calls[2][0])
+			self.closed()
+			calls[2][1](PermissionError('late'), 'file:///C:/A')
+		self.assertEqual(1, self.alert.call_count)
+
+	def test_go_to_synchronous_failure_alerts(self):
+		from unittest.mock import patch
+		def fail(url, callback=None, onerror=None):
+			error = PermissionError('denied')
+			if onerror(error, url) == url:
+				raise error
+		self.pane.set_path.side_effect = fail
+		self.open()
+		with patch('favorites.ui.exists', return_value=True), patch('favorites.ui.is_dir', return_value=True):
+			self.click('go_to')
+			self.wait_until(lambda: self.alert.called, 'No navigation failure alert')
+		self.assertEqual(1, self.alert.call_count)
+		self.assertTrue(self.session.is_open)
+
+	def test_action_failure_alerts_and_releases_lock(self):
+		from unittest.mock import patch
+		self.open()
+		with patch('favorites.save_json', side_effect=OSError('disk full')):
+			self.click('delete')
+			self.wait_until(lambda: self.alert.called, 'No failure alert')
+		self.assertIn('disk full', self.alert.call_args.args[0])
+		self.assertEqual(3, len(self.data['favorites']))
+		self.assertEqual(['Zulu', 'Alpha', 'Other'], self.titles())
+		self.wait_until(lambda: not self.session.action_lock.locked(), 'Action lock not released')
+		self.click('delete')
+		self.wait_until(lambda: len(self.data['favorites']) == 2, 'Retry did not delete')
+
+	def test_rename_prompt_after_close_changes_nothing(self):
+		from unittest.mock import patch
+		asked, answer = Event(), Event()
+		def prompt(*args):
+			asked.set()
+			answer.wait(5)
+			return 'Renamed', True
+		self.open()
+		with patch('favorites.ui.show_prompt', side_effect=prompt):
+			self.click('rename')
+			self.assertTrue(asked.wait(5))
+			self.session.handle.close()
+			self.closed()
+			answer.set()
+			self.wait_until(lambda: not self.session.action_lock.locked(), 'Rename did not finish')
+		self.assertEqual('Zulu', self.data['favorites'][0]['name'])
+
+	def test_long_names_and_urls_open_and_act(self):
+		from favorites.ui import item_id
+		long_url = 'file:///C:/' + '/'.join(['folder%03d' % index for index in range(60)])
+		self.data = {'favorites': [{'name': 'N' * 600, 'url': long_url}, {'name': 'Short', 'url': 'file:///C:/A'}]}
+		self.open()
+		titles = self.titles()
+		self.assertEqual(512, len(titles[0]))
+		self.assertEqual(40, len(item_id(long_url)))
+		self.run_in_app(lambda: (self.window.list.selected_ids.add(item_id(long_url)), self.window.list.refresh()))
+		self.click('delete')
+		self.wait_until(lambda: self.titles() == ['Short'], 'Long favorite not deleted')
+
+	def test_rename_across_title_limit_and_reopen(self):
+		from unittest.mock import patch
+		self.open()
+		with patch('favorites.ui.show_prompt', return_value=('R' * 600, True)):
+			self.click('rename')
+			self.wait_until(lambda: self.titles()[0].startswith('RRR'), 'Long rename not shown')
+		self.assertEqual('R' * 600, self.data['favorites'][0]['name'])
+		self.assertEqual(512, len(self.titles()[0]))
+		self.session.handle.close()
+		self.closed()
+		self.open()
+		self.assertEqual(512, len(self.titles()[0]))
+		with patch('favorites.ui.show_prompt', return_value=('Short again', True)):
+			self.wait_until(lambda: not self.session.action_lock.locked(), 'Action lock busy')
+			self.click('rename')
+			self.wait_until(lambda: self.titles()[0] == 'Short again', 'Rename back not shown')
+
+	def test_rename_write_failure_alerts_and_keeps_name(self):
+		from unittest.mock import patch
+		self.open()
+		with patch('favorites.ui.show_prompt', return_value=('Renamed', True)), \
+				patch('favorites.save_json', side_effect=PermissionError('read-only')):
+			self.click('rename')
+			self.wait_until(lambda: self.alert.called, 'No rename failure alert')
+		self.assertIn('read-only', self.alert.call_args.args[0])
+		self.assertEqual('Zulu', self.data['favorites'][0]['name'])
+		self.assertEqual('Zulu', self.titles()[0])
+		self.assertTrue(self.session.is_open)
+
+	def test_open_from_other_pane_keeps_one_list_and_panel(self):
+		from unittest.mock import Mock
+		from fman import DirectoryPane
+		from fman.impl.ui.quick_list_window import QuickListWindow
+		first = self.open()
+		first_thread = self.thread
+		other = Mock()
 		def create():
-			from fman import DirectoryPane
-			from fman.impl.widgets import MainWindow
-			parent = MainWindow(Mock(), Mock(), Mock(), Mock(), 'null://')
-			parent._theme.get_quicksearch_item_css.return_value = None
-			pane = Mock()
-			pane._widget = QWidget(parent)
-			pane.window._widget = parent
-			pane.on_closed = DirectoryPane.on_closed.__get__(pane)
-			with patch.object(PaneToolWindow, 'work', return_value=True):
-				window = PaneToolWindow(pane, self.owner)
-				FavoritesController.build(window, pane)
-				return parent, window
-		other_parent, other = self.run_in_app(create)
+			from PyQt5.QtWidgets import QWidget
+			other._widget = QWidget(self.main)
+			other.window = self.pane.window
+			other.on_closed = DirectoryPane.on_closed.__get__(other)
+		self.run_in_app(create)
+		pane, self.pane = self.pane, other
 		try:
-			with patch('favorites.load_json', return_value={'favorites': []}):
-				self.window.session._subscribe()
-				other.session._subscribe()
-			self.run_in_app(self.window.list.query.setText, 'Alpha')
-			with favorites._LOCK:
-				notification = favorites._resource.committed(self.window.session.records)
-			favorites._resource.publish(notification)
-			def check():
-				self.assertEqual(self.window.session.records, other.session.records)
-				self.assertEqual('Alpha', self.window.list.query.text())
-				self.assertEqual(3, len(other.session.records))
-			self.run_in_app(check)
+			self.open()
 		finally:
-			self.run_in_app(other.close)
-			self.run_in_app(other_parent.close)
-			self.run_in_app(other_parent.deleteLater)
+			self.pane = pane
+		first_thread.join(5)
+		self.assertFalse(first.is_open)
+		def surfaces():
+			QApplication.processEvents()
+			lists = [widget for widget in QApplication.topLevelWidgets()
+				if isinstance(widget, QuickListWindow) and widget.isVisible()]
+			return len(lists), self.main._panel_dock.panel is self.host.panel
+		self.assertEqual((1, True), self.run_in_app(surfaces))
+		self.assertTrue(self.session.is_open)
 
-	def test_controller_reuses_session_and_explicit_query(self):
-		from favorites.ui import FavoritesController
-		from fman.ui import PaneToolWindow
+	def test_go_to_failures_alert_and_keep_manager(self):
 		from unittest.mock import patch
-		def check():
-			with patch.object(FavoritesController, 'owner', self.owner), \
-					patch.object(PaneToolWindow, 'work', return_value=True):
-				FavoritesController.show(self.pane, 'Alpha')
-				window = FavoritesController._sessions[self.pane]
-				try:
-					FavoritesController.show(self.pane)
-					self.assertIs(window, FavoritesController._sessions[self.pane])
-					self.assertEqual('Alpha', window.list.query.text())
-					FavoritesController.show(self.pane, 'Zulu')
-					self.assertEqual('Zulu', window.list.query.text())
-				finally:
-					window.close()
-		self.run_in_app(check)
+		self.open()
+		with patch('favorites.ui.exists', return_value=False):
+			self.click('go_to')
+			self.wait_until(lambda: self.alert.called, 'No missing-location alert')
+		self.assertIn('Favorite location not found', self.alert.call_args.args[0])
+		with patch('favorites.ui.exists', return_value=True), patch('favorites.ui.is_dir', return_value=False):
+			self.click('go_to')
+			self.wait_until(lambda: self.alert.call_count == 2, 'No folder-only alert')
+		self.assertIn('Favorites must point to folders', self.alert.call_args.args[0])
+		def select():
+			from favorites.ui import item_id
+			self.window.list.selected_ids = {item_id('file:///C:/A'), item_id('file:///C:/Z')}
+			self.window.list.refresh()
+		self.run_in_app(select)
+		self.click('go_to')
+		self.wait_until(lambda: self.status.called, 'No single-choice message')
+		self.assertTrue(self.session.is_open)
+		self.pane.set_path.assert_not_called()
 
-	def test_unload_rejects_prompt_and_disposes_session(self):
-		finished = Event()
-		def prepare():
-			self.window.finished.connect(finished.set)
-			self.window.session.action('rename')
-		self.run_in_app(prepare)
+	def test_dock_close_and_escape_end_both(self):
+		from PyQt5.QtTest import QTest
+		self.open()
+		self.run_in_app(QTest.mouseClick, self.main._panel_dock.close_button, Qt.LeftButton)
+		self.closed()
+		self.open()
+		self.run_in_app(QTest.keyClick, self.window.list.query, Qt.Key_Escape)
+		self.closed()
+
+	def test_show_again_focuses_or_replaces_with_query(self):
+		from favorites.ui import show_manager
+		first = self.open()
+		show_manager(self.pane)
+		self.assertTrue(first.is_open)
+		first_thread = self.thread
+		self.open('Zul')
+		first_thread.join(5)
+		self.assertFalse(first.is_open)
+		self.assertEqual('Zul', self.run_in_app(self.window.list.query.text))
+		self.assertEqual(['Zulu'], self.titles())
+
+	def test_external_commit_refreshes_and_keeps_query(self):
+		import favorites
+		from favorites.ui import mutate
+		self.open()
+		self.run_in_app(self.window.list.query.setText, 'l')
+		mutate((favorites._snapshot()[0][1],), 'Lima', self.owner)
+		self.wait_until(lambda: 'Lima' in [item.title for item in self.window.list.model.items], 'Commit not shown')
+		self.assertEqual('l', self.run_in_app(self.window.list.query.text))
+
+	def test_unload_closes_manager(self):
+		self.open()
 		self.owner.invalidate()
-		self.assertTrue(finished.wait(2), 'Unload did not close manager')
-		self.assertFalse(self.window.alive.is_set())
-
-	def test_escape_invalidates_session_before_deferred_destruction(self):
-		def check():
-			from fman.impl.navigation import NavigationRequest
-			from PyQt5.QtTest import QTest
-			request = NavigationRequest(lambda *args: None)
-			request.started = True
-			self.window.session.navigation = request
-			QTest.keyClick(self.window.list.query, Qt.Key_Escape)
-			self.assertFalse(self.window.alive.is_set())
-			self.assertTrue(request.settled.is_set())
-		self.run_in_app(check)
-
-	def test_old_worker_completion_cannot_clear_new_busy_state(self):
-		def check():
-			from unittest.mock import Mock
-			completed = Mock()
-			self.window._operation_generation = 2
-			self.window.set_busy(True)
-			self.window._work_finished(1, completed, None, None)
-			self.assertTrue(self.window.busy)
-			completed.assert_not_called()
-		self.run_in_app(check)
-
-	def test_close_during_check_never_starts_navigation(self):
-		from unittest.mock import patch
-		from fman.impl.navigation import NavigationRequest
-		started, release, dispatched = Event(), Event(), Event()
-		def exists(url):
-			started.set()
-			release.wait(2)
-			return True
-		original = NavigationRequest.dispatch
-		def dispatch(request, *args):
-			try:
-				return original(request, *args)
-			finally:
-				dispatched.set()
-		with patch('favorites.ui.exists', side_effect=exists), \
-				patch('favorites.ui.is_dir', return_value=True), \
-				patch.object(NavigationRequest, 'dispatch', dispatch):
-			try:
-				self.run_in_app(self.window.session.action, 'goto')
-				self.assertTrue(started.wait(2))
-				self.run_in_app(self.window.close)
-			finally:
-				release.set()
-			self.assertTrue(dispatched.wait(2))
-		self.pane.run_command.assert_not_called()
+		self.closed()
 
 
 def setUpModule():

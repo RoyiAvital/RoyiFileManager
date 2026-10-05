@@ -1,5 +1,13 @@
+from collections.abc import Mapping
 from dataclasses import dataclass
 from threading import BoundedSemaphore, RLock, Thread
+
+import math
+
+
+MAX_METADATA_FIELDS = 8
+MAX_LABEL_LENGTH = 32
+MAX_METADATA_TEXT = 128
 
 
 @dataclass(frozen=True)
@@ -9,9 +17,72 @@ class ListItem:
 	hint: str = ''
 	title_matches: tuple = ()
 	hint_matches: tuple = ()
+	# Label -> value; stored as ((label, sort_key or None, text), ...).
+	metadata: tuple = ()
+
+	def __post_init__(self):
+		if isinstance(self.metadata, Mapping):
+			object.__setattr__(self, 'metadata', _normalize_metadata(self.metadata))
+		elif not isinstance(self.metadata, tuple) or not all(
+				isinstance(entry, tuple) and len(entry) == 3 for entry in self.metadata):
+			raise TypeError('ListItem metadata must be a mapping of label to value.')
+
+
+def _metadata_text(value, name):
+	if not isinstance(value, str):
+		raise TypeError('%s must be a string.' % name)
+	if '\x00' in value or len(value) > MAX_METADATA_TEXT:
+		raise ValueError('%s contains NUL or exceeds %d characters.' % (name, MAX_METADATA_TEXT))
+	return value
+
+
+def _metadata_key(value, name):
+	if isinstance(value, str):
+		return _metadata_text(value, name)
+	if type(value) is int or type(value) is float and math.isfinite(value):
+		return value
+	raise TypeError('%s must be a string, an int or a finite float.' % name)
+
+
+def _metadata_label(label):
+	if not isinstance(label, str) or not label or '\x00' in label or len(label) > MAX_LABEL_LENGTH:
+		raise ValueError('Metadata labels must be nonempty strings of at most %d characters.' % MAX_LABEL_LENGTH)
+	return 'Metadata value of %r' % label
+
+
+def validate_metadata(metadata):
+	"""Full check of the canonical ((label, sort_key or None, text), ...) form."""
+	if len(metadata) > MAX_METADATA_FIELDS:
+		raise ValueError('ListItem metadata has more than %d labels.' % MAX_METADATA_FIELDS)
+	for label, key, display in metadata:
+		name = _metadata_label(label)
+		if key is not None:
+			_metadata_key(key, name)
+		_metadata_text(display, name)
+
+
+def _normalize_metadata(metadata):
+	if len(metadata) > MAX_METADATA_FIELDS:
+		raise ValueError('ListItem metadata has more than %d labels.' % MAX_METADATA_FIELDS)
+	result = []
+	for label, value in metadata.items():
+		name = _metadata_label(label)
+		if isinstance(value, (tuple, list)) and not value:
+			result.append((label, None, ''))
+		elif isinstance(value, (tuple, list)):
+			if len(value) != 2:
+				raise ValueError('%s must be (), a value or a (sort_key, text) pair.' % name)
+			result.append((label, _metadata_key(value[0], name), _metadata_text(value[1], name)))
+		else:
+			key = _metadata_key(value, name)
+			result.append((label, key, key if isinstance(key, str) else _metadata_text(str(key), name)))
+	return tuple(result)
 
 
 def match_positions(matcher, text, query):
+	if text.isascii():
+		result = matcher(text.lower(), query.casefold())
+		return tuple(dict.fromkeys(result)) if result is not None else None
 	folded = []
 	offsets = []
 	for index, char in enumerate(text):

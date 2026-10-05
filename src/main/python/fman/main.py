@@ -2,6 +2,11 @@ import atexit
 import logging
 import os
 import sys
+
+if __name__ == '__main__' and sys.argv[1:] == ['--quick-view-pdf-worker']:
+	from _quick_view_pdf_worker import main as pdf_worker_main
+	sys.exit(pdf_worker_main())
+
 from fman.impl.product import APP_NAME
 
 def main():

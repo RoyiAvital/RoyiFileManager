@@ -11,64 +11,40 @@ Favorites keeps a curated list of directory locations.
 
 These are the two Favorites commands shown in the Command Center. The manager
 can also be found by the aliases **Favorites Manager**, **Favorites**, and
-**Show favorites**. It displays Name and Path in QuickList, with a fuzzy filter. Its separate action panel
-spans the main window immediately above the status bar; both file panes shrink to
-make room and recover that space when it closes.
-Action buttons adapt to the application width without growing indefinitely;
-their default maximum is 160 logical pixels, with room preserved for labels.
-Recent is the initial default sort: most recently added or re-added first. The
-drop-down saves its choice in `Favorites UI.json` through the existing settings
-system and restores it when reopened. Name and Path sort alphabetically without
-changing stored recency or capacity eviction order.
-Filtering preserves the chosen sort, including Unicode name/path matches.
+**Show favorites**.
 
-Click moves the current highlight without changing selection. Space toggles the
-highlighted item; Insert toggles and advances. Right-click or Ctrl-click toggles individual rows,
-Shift-click toggles a range, and Ctrl+A selects all visible rows. Shift+Up/Down
-toggles the current row before moving, like the file pane. Current highlight and
-selection are separate. Filtering retains hidden selections and displays
-their count. Delete removes selected bookmarks, including hidden ones; with no
-selection it removes the highlighted bookmark. The Delete button and list Del
-key remove bookmarks immediately without confirmation. Files and folders are
-never deleted; the manager stays open.
+## Manager
 
-Rename changes only the highlighted name. Go To uses the highlighted location
-in the invoking pane and closes after navigation succeeds; failures keep the
-manager open. Enter in the query/list and double-click invoke Go To. Del in the
-list invokes bookmark deletion; Del in text fields edits text. Tab moves focus
-between the filter, list and bottom controls; Space in the filter inserts a space.
-Up/Down and Page Up/Down in the filter move focus to the list and navigate;
-subsequent Space toggles selection instead of editing the filter. Click the filter
-or use keyboard focus traversal to resume typing. Right-click does not activate a
-favorite, and right-clicking empty list space leaves selection unchanged.
-QuickList is frameless, like QuickSearch. Click the small `x` at the far right of
-the dock to end the UI session, closing both surfaces and canceling pending UI
-work. Escape also closes it without undoing saved changes. Prompts consume Escape
-first. Rename and Delete otherwise keep the manager open. The plug-in remains
-loaded, so Ctrl+B can reopen it.
+The manager is a modeless QuickList (Name, Path and an `Added` position) with a
+fuzzy filter, plus a Panel docked above the status bar with **Rename**,
+**Delete** and **Go To**. Both file panes shrink to make room and recover it
+when the manager closes.
 
-Each main window has one docked session. Opening a manager for another pane closes
-the previous session; reopening for the same pane focuses it. Add/re-add and changes from another window
-refresh open views without clearing query, sort or surviving selections. A fresh
-session restores the saved sort and starts with an empty query. No manager reopens automatically.
+| Key | Action |
+| --- | --- |
+| Space, Insert, Shift+navigation, Ctrl+A | Select in the list |
+| Ctrl+I / Ctrl+Shift+A | Invert / clear the selection |
+| Ctrl+F1 / Ctrl+F2 / Ctrl+F3 | Sort by Name / Path / Added; again reverses |
+| Tab | Move between the list and the Panel |
+| Enter | Go To the chosen favorite |
+| Escape or the dock's `x` | Close the manager |
 
-Favorites are saved under `UserSettings` and support every location scheme
-understood by the active pane.
+- **Delete** removes the chosen bookmarks (the selection, or the highlighted one)
+  without confirmation. Folders are never deleted; the manager stays open. The
+  Delete key does not delete.
+- **Rename** renames the highlighted bookmark.
+- **Go To** opens the chosen favorite in the invoking pane and closes the manager
+  once the pane has loaded it. It needs exactly one chosen favorite. Missing
+  locations, files and failed navigation show an alert and keep the manager open.
+- The sort is saved in `Favorites UI.json` and restored next time. Sorting never
+  changes the stored order, which drives `Added` and capacity eviction.
+
+One manager is open per main window. Opening it for another pane, or with a
+query, replaces it; plain Ctrl+B focuses it. Changes from other commands or
+windows refresh it without clearing the query or surviving selections.
 
 Re-adding a favorite moves it to the top without changing its display name.
-Missing or inaccessible locations report an error. For UNC locations, availability
-checks can wait for the network off the UI thread. Closing prevents a late check
-from starting navigation; a pane transition already started is not rolled back.
-
-Go To checks that the saved location is a folder before navigating. An old or
-manually edited entry pointing to a file reports an error and keeps the manager
-open without dispatching navigation. Such entries are not automatically deleted
-or converted; they can be removed in the manager.
-
-Navigation has a 30-second deadline, including availability checks and command
-dispatch. Cancellation releases its completion wait immediately. Filesystem calls already
-running cannot be interrupted; at most two tracked initializations run at once.
-New navigation can report that earlier checks are still finishing until they exit.
+Favorites support every location scheme understood by the active pane.
 
 Custom key bindings can prefill the search query:
 
@@ -76,11 +52,8 @@ Custom key bindings can prefill the search query:
 { "keys": ["Ctrl+Alt+B"], "command": "show_favorites", "args": {"query": "pro"} }
 ```
 
-A nonempty supplied query also replaces the query in an existing manager. Ordinary
-Ctrl+B focuses the existing manager without resetting it. The legacy command IDs
-`remove_from_favorites` and `rename_favorite` remain callable from custom bindings
-but are omitted from discovery; `show_favorites` and
-`add_current_folder_to_favorites` keep their existing IDs.
+The legacy command IDs `remove_from_favorites` and `rename_favorite` remain
+callable from custom bindings but are omitted from discovery.
 
 ## Settings
 
@@ -100,28 +73,9 @@ before replacing the oldest favorite.
 
 ## Public API
 
-Favorites is a reference plug-in, not a privileged UI feature. External plug-ins
-can compose the same panels and use QuickList alongside the existing QuickSearch
-API. All host access uses exported APIs; no fman.impl, Core imports or private
-host attributes are needed.
-
-It uses these provisional `fman.ui` exports: `UiController`,
-`QuickList`, `ListItem`, `Panel`, `TextButton`, `DropDown`, `JsonSettings`,
-`settings_resource`, `matchers` and `navigate`. Resource transactions, bounded
-workers, prompts, theme hooks and loader lifetime are host services. The controller
-calls `show()` from a command; the host calls `FavoritesController.build(window,
-pane)` on Qt. This is the single construction hook. FavoritesSession is a plain
-Python object holding records and actions; Favorites does not subclass the host
-window. It connects the host's `shown`, `busy_changed` and `disposed` notifications.
-`PaneToolWindow.set_panel(panel)` mounts the controls above the main-window
-status bar and owns the close affordance and paired lifecycle. No custom window
-layout changes are needed in a plug-in.
-Use `Panel` and `set_panel`; the pre-release BottomPanel/set_bottom_panel aliases
-have been removed. General `fman.Window`/`DirectoryPane` APIs expose no Qt host
-bridges. `pane.on_closed(callback)` calls a no-argument callback and returns an
-unsubscribe function; parenting, theme lookup and docking stay inside the host.
-The opt-in `fman.ui` component layer still uses Qt widgets and supports standard
-Qt layout/control APIs, as this plug-in demonstrates.
-IconButton is available for boolean options; Favorites currently needs only a
-sort drop-down and action buttons. See the
-[plug-in UI guide](../../../../../../PlugIn.md#ui-extension).
+Favorites is the reference third-party plug-in: it imports no Qt, no `fman.impl`
+and no Core modules. It uses `show_quick_list` with an `on_open` driver,
+`show_panel` with `Action` controls, `UiController` as an owner carrier,
+`settings_resource` for store transactions, and `load_json`/`save_json`,
+`show_prompt`, `show_alert` and `run_command('open_directory')` from `fman`.
+See the [plug-in UI guide](../../../../../../PlugIn.md#ui-extension).

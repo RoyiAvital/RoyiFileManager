@@ -7,8 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- QuickView PDF preview with continuous page scrolling, page navigation, Fit
+  Page, Fit Width and zoom. A bundled pypdfium2/PDFium helper isolates rendering
+  failures and timeouts; page rendering and caching are bounded.
+- Plug-in API: `fman.ui.show_quick_list`, a Qt-free blocking multi-select list.
+  Items can carry a metadata line; title, hint and metadata are sortable with
+  `Ctrl+F1`…`Ctrl+F10`, and the sort can be saved. `Ctrl+I` inverts and
+  `Ctrl+Shift+A` clears the selection. An `on_open` handle (`QuickListHandle`)
+  reads its state, replaces items, focuses or closes it. Tab moves between a
+  modeless list and the docked Panel.
+
+### Changed
+
+- Favorites Manager uses `show_quick_list` and `show_panel` and no longer
+  imports Qt. It shows an `Added` position and sorts by Name, Path or Added with
+  `Ctrl+F1`–`Ctrl+F3` instead of the sort drop-down. Enter or Go To opens one
+  chosen favorite; the Delete key no longer deletes (use the Delete button).
+- QuickTable text and column filters match ASCII text without per-character
+  case folding, which makes filtering large result tables faster.
+
+### Removed
+
+- Plug-in API: the Qt widget exports `QuickList`, `Panel`, `IconButton`,
+  `TextButton`, `DropDown` and `JsonSettings` were removed from `fman.ui`.
+  Migrate to `show_quick_list`, `show_panel` controls and `load_json`/`save_json`.
+
 ### Fixed
 
+- Resetting window geometry now keeps the saved placement cleared through
+  shutdown, so the next launch uses the default size and position.
 - The application could crash with an access violation when exiting, while
   Python tore down PyQt objects. After background threads and exit handlers
   finish, the process now exits without that teardown.

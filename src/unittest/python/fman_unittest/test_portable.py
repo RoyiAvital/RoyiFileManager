@@ -74,16 +74,18 @@ class PluginApiCompatibilityTest(TestCase):
 	def test_public_ui_exports(self):
 		import fman.ui
 		expected = {
-			'ListItem', 'QuickList', 'Panel', 'IconButton', 'TextButton',
-			'DropDown', 'JsonSettings', 'UiController', 'UiOwner', 'Resource',
+			'ListItem', 'UiController', 'UiOwner', 'Resource',
 			'settings_resource', 'matchers', 'ToolWindow', 'PaneToolWindow',
 			'NavigationHandle', 'navigate', 'OutputTextBox', 'QuickTableRow', 'QuickTableColumn',
 			'TextField', 'Toggle', 'Choice', 'Label', 'Action', 'PanelHandle',
 			'Select', 'DateField', 'IntegerField', 'Separator',
-			'show_quick_table', 'show_panel'
+			'show_quick_table', 'show_panel', 'show_quick_list', 'QuickListHandle', 'QuickListState'
 		}
 		self.assertEqual(expected, set(fman.ui.__all__))
 		self.assertFalse(hasattr(fman.ui, 'BottomPanel'))
+		self.assertFalse(hasattr(fman.ui.PaneToolWindow, 'set_bottom_panel'))
+		for name in ('QuickList', 'Panel', 'TextButton', 'DropDown', 'IconButton', 'JsonSettings'):
+			self.assertFalse(hasattr(fman.ui, name), name)
 		self.assertFalse(hasattr(fman.ui.PaneToolWindow, 'set_bottom_panel'))
 		for name in expected:
 			self.assertTrue(hasattr(fman.ui, name), name)

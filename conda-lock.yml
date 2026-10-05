@@ -13,7 +13,7 @@
 version: 1
 metadata:
   content_hash:
-    win-64: 9459df4c26de489c1c0ba4d21b09b71960a44cd67b1ed97afb3f4f2849298647
+    win-64: b9cbccb164e9051a75c9356cd242f33d999c1ca29d3a25b733323e6c81458517
   channels:
   - url: conda-forge
     used_env_vars: []
@@ -1680,6 +1680,22 @@ package:
   hash:
     md5: d47aaef46af29a1f2031048ec77b4199
     sha256: 279897269f16303aba8da67b836362d521d937b94d512f8fde8fbb55454cbc22
+  category: main
+  optional: false
+- name: pypdfium2
+  version: 5.13.0
+  manager: conda
+  platform: win-64
+  dependencies:
+    python: ''
+    python_abi: 3.14.*
+    ucrt: '>=10.0.20348.0'
+    vc: '>=14.3,<15'
+    vc14_runtime: '>=14.44.35208'
+  url: https://conda.anaconda.org/conda-forge/win-64/pypdfium2-5.13.0-py314hc5dbbe4_1.conda
+  hash:
+    md5: cb13736d4109e0e884ec55353bfe3c64
+    sha256: 764807862c9da5764f72aff43abac2d65749341f01d4d49a20ee182ce49a4377
   category: main
   optional: false
 - name: pyproject_hooks

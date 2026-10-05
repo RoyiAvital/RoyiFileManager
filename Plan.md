@@ -5,14 +5,14 @@
 - [Code Review 007: Measured Listing Runtime Improvements](Plan/CodeReview007.md)
 - [Code Review 099: Deferred Work and Release Gates](Plan/CodeReview099.md)
 - [Date Format: Locale or ISO](Plan/DateFormat.md)
-- [Favorites 003: Favorites as a Pane Location](Plan/Favorites003.md)
 - [Filter Files 002: Multiple Terms (AND)](Plan/FilterFiles002.md)
 - [Filesystem Link Operation Policy](Plan/LinkOperationPolicy.md)
 - [Find Files 003: Everything-Style Query Syntax](Plan/FindFiles003.md)
 - [Flat View](Plan/FlatView.md)
 - [PyQt6 Migration](Plan/PyQt6Migration.md)
 - [QuickView 002: Videos and Animated Images](Plan/QuickView002.md)
-- [UI Elements 002: QuickList for Selecting and Working With Items](Plan/UIElements002.md)
+- [QuickView 004: PDF Preview](Plan/QuickView004.md)
+- [UI Design 001: Application Theme](Plan/UIDesign001.md)
 
 ## Completed
 
@@ -33,6 +33,8 @@
 - [Everything Plug-In](Done/EverythingPlugIn.md)
 - [Favorites 001](Done/Favorites001.md)
 - [Favorites 002: Favorites Manager](Done/Favorites002.md)
+- [Favorites 003: Favorites as a Pane Location (superseded)](Done/Favorites003.md)
+- [Favorites 004: Favorites Manager on QuickList](Done/Favorites004.md)
 - [File and Folder Comparators](Done/FileAndFolderComparators.md)
 - [File System and Pane Architecture 001: Columnar Snapshots](Done/FSPaneArch001.md)
 - [File System and Pane Architecture 002: Performance](Done/FSPaneArch002.md)
@@ -63,4 +65,5 @@
 - [Sync Pane Location](Done/SyncPaneLocation.md)
 - [Text Editor and Viewer](Done/TextEditor.md)
 - [UI Elements 001: QuickTable](Done/UIElements001.md)
+- [UI Elements 002: QuickList](Done/UIElements002.md)
 - [Unpack Archive](Done/UnpackArchive.md)

@@ -637,16 +637,18 @@ def _capture_source_child(args):
 					raise RuntimeError('Opening the folder manager started Everything')
 				finish(context.main_window.grab(), outputs[0])
 			elif args._capture == 'favorites':
-				from favorites.ui import FavoritesController
+				from favorites.ui import _sessions
+				from fman.impl.ui.quick_list_window import recent_list
 				if not state['started']:
 					state['started'] = True
 					state['settled'] = 0
 					pane.focus()
 					pane.run_command('show_favorites')
 					return
-				window = FavoritesController._sessions.get(pane)
-				if window is None or window.busy or window.session.revision < 0 or \
-						not window.panel.choice.isEnabled():
+				session = _sessions.get(pane.window)
+				window = recent_list(context.main_window)
+				if session is None or session.revision < 0 or window is None or \
+						context.main_window._panel_dock is None:
 					state['settled'] = 0
 					return
 				if window.list.model.rowCount() == 0:

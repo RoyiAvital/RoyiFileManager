@@ -14,7 +14,7 @@ The elements aim for a _buttonless_ experience:
 | Element | Made for | Result |
 | --- | --- | --- |
 | [QuickSearch](#quicksearch) | Picking a **single** item from a fuzzy-searched text list | The chosen item |
-| [QuickList](#quicklist) | Navigating and selecting **multiple** items in a fuzzy-searched text list | The caller reacts to activation and selection |
+| [QuickList](#quicklist) | Navigating, sorting and selecting **multiple** items in a fuzzy-searched text list | The chosen IDs; a handle drives the open list |
 | [QuickTable](#quicktable) | Narrowing a predefined, immutable table with typed columns, per-column filters and fuzzy search | The remaining (visible) rows |
 | [Panel](#panel) | Operation controls and actions docked above the status bar | Values and actions delivered to callbacks |
 | [OutputTextBox](#outputtextbox) | Showing selectable plain-text output that is easy to copy | Nothing; Enter copies the text |
@@ -31,8 +31,8 @@ The elements aim for a _buttonless_ experience:
 - **OutputTextBox** shows a computed text, such as a hash, ready to copy.
 
 New plug-ins should prefer the Qt-free services: `show_quicksearch`,
-`show_quick_table` and `show_panel`. QuickList, the widget Panel and
-OutputTextBox are Qt widgets hosted in a tool window.
+`show_quick_list`, `show_quick_table` and `show_panel`. OutputTextBox is a Qt
+widget hosted in a tool window.
 
 ## QuickSearch
 
@@ -86,50 +86,82 @@ class PickChild(DirectoryPaneCommand):
 </figure>
 
 ```python
-ListItem(id, title, hint='', title_matches=(), hint_matches=())
-QuickList(parent=None, matcher=None, css=None, preserve_sort=False, fuzzy=False)
+ListItem(id, title, hint='', metadata={})
+show_quick_list(*, items, title='', summary='', modal=True, filter='fuzzy', query='',
+    selected=(), title_label=None, hint_label=None, sort=None, settings=None,
+    on_open=None) -> tuple | None
 ```
 
-- `ListItem` is a frozen record. Use a unique, stable string `id`; `hint` is the
-  second line.
-- `set_items(items)` replaces the items. Selections of removed IDs are dropped.
-- `current_item` is the highlighted record. `selected_items` holds the selected
-  records in input order, including those hidden by the filter.
-- `fuzzy=True` shows the filter box with the built-in fuzzy matcher. A custom
-  `matcher(text, query) -> positions | None` replaces it.
-- Signals: `activated` (Enter, double-click), `state_changed` (current,
-  selection or filter) and `delete_requested` (Delete).
+- `ListItem` is a frozen record. Use a unique string `id`; `hint` is the second line.
+- `metadata` maps up to 8 labels to values shown on a third line: a string, an
+  `int` or finite `float`, `(sort_key, text)`, or `()` for empty. Every item
+  uses the same labels in the same order. Labels are up to 32 characters; texts
+  up to 128.
+- Enter returns the chosen IDs: the selection, or the current item when nothing
+  is selected. Escape returns `None`.
+- The call blocks. On a worker it waits; on the Qt thread it runs a nested loop.
+- `filter=None` hides the filter box. `selected` preselects IDs.
+- `title_label` / `hint_label` make the title / hint sortable under that label.
+  Metadata labels are always sortable. `sort=(label, ascending)` is the initial
+  order. `settings='Name.json'` saves the user's sort (keys `sort`, `ascending`)
+  and overrides `sort` next time.
 
-Selection follows the file pane: ++space++, ++insert++, ++shift++ navigation,
-right-click and ++ctrl+a++. The caller decides what Enter and Delete mean.
+| Key | Action |
+| --- | --- |
+| ++space++, ++insert++, ++shift++ + navigation, ++ctrl+a++ | Select in the list |
+| ++ctrl+i++ / ++ctrl+shift+a++ | Invert / clear the selection |
+| ++ctrl+f1++ … ++ctrl+f10++ | Sort by the n-th field; again reverses |
+| ++tab++ | Moves to the docked Panel of a modeless list and back |
+| ++enter++ / ++esc++ | Accept / cancel |
 
-QuickList is a Qt widget. Build it in `UiController.build`, which runs on the
-Qt thread inside a host tool window:
+`on_open(handle)` runs once before the window appears. The `QuickListHandle`
+drives the open list from any thread:
+
+| Member | Effect |
+| --- | --- |
+| `snapshot()` | `QuickListState(selected, chosen, current, query, sort)` |
+| `set_items(items)` | Replaces the items; returns once applied. Removed selections are dropped. |
+| `focus()` | Raises the list. |
+| `close(result=None)` | Closes it; `result` is `None` or a tuple of current IDs. |
+| `is_open` | `False` after close. |
+
+A driver ties the list to its plug-in by `owner.attach(handle.close)` and
+detaches in a `finally`. The Favorites Manager pairs a modeless list with
+`show_panel` this way:
 
 ```python
-from fman import DirectoryPaneCommand
-from fman.ui import ListItem, QuickList, UiController
-from PyQt5.QtWidgets import QVBoxLayout
+from fman import DirectoryPaneCommand, show_status_message
+from fman.ui import Action, ListItem, UiController, show_panel, show_quick_list
 
 
 class ColorsUI(UiController):
-    @classmethod
-    def build(cls, window, pane):
-        view = QuickList(window, fuzzy=True, css=window.item_css)
-        view.set_items((ListItem('red', 'Red'), ListItem('green', 'Green')))
-        window.focus_widget = view
-        QVBoxLayout(window).addWidget(view)
-
-        def report():
-            names = [item.title for item in view.selected_items]
-            window.alert(', '.join(names) or 'Nothing selected')
-
-        view.activated.connect(report)
+    pass
 
 
 class ShowColors(DirectoryPaneCommand):
     def __call__(self):
-        ColorsUI.show(self.pane)
+        owner = ColorsUI.require_owner()
+        items = (ListItem('red', 'Red', metadata={'Wave': 700}),
+            ListItem('green', 'Green', metadata={'Wave': 530}))
+
+        handles = []
+
+        def on_open(handle):
+            handles.append(handle)
+            owner.attach(handle.close)
+            show_panel(owner=owner, pane=self.pane, rows=((Action('count', 'Count'),),),
+                on_action=lambda name, values: show_status_message(
+                    '%d chosen' % len(handle.snapshot().chosen)),
+                on_closed=handle.close)
+
+        try:
+            result = show_quick_list(items=items, title='Colors', modal=False,
+                title_label='Name', on_open=on_open)
+        finally:
+            for handle in handles:
+                owner.detach(handle.close)
+        if result:
+            show_status_message(', '.join(result))
 ```
 
 ## QuickTable
@@ -292,10 +324,6 @@ class ShowGreeter(DirectoryPaneCommand):
             rows=((TextField('name', 'Name'), Action('greet', 'Greet')),),
             on_action=on_action)
 ```
-
-Plug-ins that host Qt widgets can mount the widget `Panel` with `IconButton`,
-`TextButton` and `DropDown` controls through `window.set_panel(panel)`, as the
-Favorites Manager does.
 
 ## OutputTextBox
 

@@ -47,7 +47,7 @@ metadata or identity checks.
 
 On Windows, `Ctrl+Q` / **Toggle QuickView** previews the file under the source
 cursor over the other pane, including its address bar. Marked files do not choose
-the preview. Images, plain text, Markdown and source code are supported; loading
+the preview. Images, PDFs, plain text, Markdown and source code are supported; loading
 errors appear inline. QuickView starts off at every launch and does no preview
 work while off.
 
@@ -83,13 +83,48 @@ and **Pan** when an image is ready. Their command IDs are `quick_view_fit`,
 bindings. Only explicit Fit/100% preferences are saved to `QuickView.json` under
 UserSettings, using `image_mode` values `fit` and `actual_size`.
 
-Local and accessible UNC regular files are supported, including resolved local
-symlinks. Limits are 64 MiB encoded, 128 million pixels and 65,536 pixels per edge.
+Images support local and accessible UNC regular files, including resolved local
+symlinks. Image limits are 64 MiB encoded, 128 million pixels and 65,536 pixels per edge.
 The normalized image can use about 488 MiB; temporary decoding/conversion buffers
 can exceed that substantially. Only the first image/frame is shown. No archive
 extraction, animation, SVG rasterization, video, prefetch or image
 cache is included. Cancellation discards stale results; it cannot interrupt a
 blocked native read, but disabling QuickView and exiting do not wait for it.
+
+### PDF
+
+Local and accessible UNC `.pdf` files open read-only at page 1 in Fit Page mode.
+PDFium, accessed through `pypdfium2`, renders in a separate helper process. The
+portable application bundles this backend; no external PDF reader is needed.
+
+| Focused PDF preview | Action |
+| --- | --- |
+| Wheel / scrollbar | Scroll continuously across pages |
+| Previous / Next buttons | Align the preceding/following page to the top |
+| Page number + Enter | Go to a valid page; invalid input restores the current number |
+| Fit Page / `F` | Fit each page within the viewport |
+| Fit Width / `W` | Fit each page to the viewport width |
+| `+`, `-`, zoom buttons, `Ctrl+wheel` | Manual zoom from 25% to 400% |
+| Arrows, Page Up/Down, Home/End | Scroll or move to document ends |
+| Tab / Shift+Tab / Escape | Return to the source pane |
+
+The page indicator follows the page with the largest visible area. Fit modes
+handle mixed page sizes independently. Resize and zoom preserve the reading
+position. In the page-number field, Escape restores the number and focuses the
+PDF canvas. Other application shortcuts go to the source pane once. PDF zoom
+is not persisted and does not change image preferences.
+
+Limits are 64 MiB per file and 2,000 pages, with each raster limited to 8 million
+pixels and 8,192 pixels per edge. The page cache holds at most six pages / 64 MiB;
+native renderer memory and temporary copies are additional. Larger logical zoom
+uses a scaled bounded raster. The file handle is released after loading a snapshot.
+
+Missing backend, malformed/password-required PDFs, crashes and timeouts appear
+inline. Startup, open and page-render deadlines are 5, 15 and 5 seconds. Change
+selection or toggle QuickView off/on to retry; there is no automatic reader
+fallback. Text selection/search, password entry, forms, annotations, link actions
+and printing are not included. The helper contains native crashes/hangs but is
+not a security sandbox.
 
 ### Text, Markdown and Code
 

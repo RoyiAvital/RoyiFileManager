@@ -208,14 +208,14 @@ class FavoriteCommandTest(TestCase):
 			'Added Projects to favorites.', timeout_secs=3
 		)
 
-	@patch('favorites.FavoritesController.show')
+	@patch('favorites.show_manager')
 	def test_show_routes_to_manager_and_preserves_query(self, open_manager):
 		pane = Mock()
 		ShowFavorites(pane)('projects')
 		open_manager.assert_called_once_with(pane, 'projects')
 		pane.run_command.assert_not_called()
 
-	@patch('favorites.FavoritesController.show')
+	@patch('favorites.show_manager')
 	def test_show_opens_manager_without_requiring_bookmarks(self, open_manager):
 		pane = Mock()
 		ShowFavorites(pane)()
@@ -413,12 +413,12 @@ class FavoriteCommandTest(TestCase):
 
 
 class FavoritesManagerLogicTest(TestCase):
-	def test_projection_never_changes_recent_order(self):
+	def test_projection_keeps_added_order_as_metadata(self):
 		from favorites.ui import project
 		records = (Favorite('Zulu', 'file:///C:/A'), Favorite('Alpha', 'file:///C:/Z'))
-		self.assertEqual(['Zulu', 'Alpha'], [item.title for item in project(records, 'Recent')])
-		self.assertEqual(['Alpha', 'Zulu'], [item.title for item in project(records, 'Name')])
-		self.assertEqual(['Zulu', 'Alpha'], [item.title for item in project(records, 'Path')])
+		items = project(records)
+		self.assertEqual(['Zulu', 'Alpha'], [item.title for item in items])
+		self.assertEqual([(('Added', 1, '1'),), (('Added', 2, '2'),)], [item.metadata for item in items])
 		self.assertEqual('Zulu', records[0].name)
 
 	def test_mutation_revalidates_captured_records_and_publishes_once(self):

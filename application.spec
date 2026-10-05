@@ -14,6 +14,9 @@ app_name = load_build_settings(root / 'src/build/settings/base.json')['app_name'
 winpty_datas, winpty_binaries, winpty_imports = collect_all('winpty')
 send2trash_datas, send2trash_binaries, send2trash_imports = \
 	collect_all('send2trash')
+pdfium_datas, pdfium_binaries, pdfium_imports = collect_all(
+	'pypdfium2', filter_submodules=lambda name: '._cli' not in name and not name.endswith('.__main__'))
+pdfium_raw_datas, pdfium_raw_binaries, pdfium_raw_imports = collect_all('pypdfium2_raw')
 checksum_native_files = run_path(
 	str(root / 'src/main/resources/base/Plugins/ChecksumFiles/package.py')
 )['native_files']()
@@ -26,11 +29,11 @@ datas = [
 	('src/main/icons/Icon.ico', 'resources'),
 	('src/main/resources/base/Plugins/Everything/bin/Everything.exe', 'resources/Plugins/Everything/bin'),
 	('src/main/resources/base/Plugins/Everything/licenses/Everything.txt', 'resources/Plugins/Everything/licenses')
-] + winpty_datas + send2trash_datas + copy_metadata('Pygments') + [
+] + winpty_datas + send2trash_datas + pdfium_datas + pdfium_raw_datas + copy_metadata('pypdfium2') + copy_metadata('Pygments') + [
 	(str(path), checksum_native_destination) for path in checksum_native_files
 	if path.suffix != '.pyd'
 ]
-binaries = winpty_binaries + send2trash_binaries + [
+binaries = winpty_binaries + send2trash_binaries + pdfium_binaries + pdfium_raw_binaries + [
 	(str(Path(sys.prefix) / 'bin' / 'rg.exe'), 'resources/Plugins/SearchFiles/bin'),
 	(str(Path(sys.prefix) / 'bin' / 'fd.exe'), 'resources/Plugins/FindFiles/bin'),
 	# Native directory parser (Done/FSParser.md): verified by build.py against
@@ -47,8 +50,9 @@ hidden_imports = [
 	'fman.impl.ui.session', 'fman.impl.ui.output', 'fman.impl.navigation',
 	'fman.impl.ui.table', 'fman.impl.ui.table_data', 'fman.impl.ui.facade',
 	'fman.impl.quick_view',
+	'fman.impl.quick_view_pdf', 'fman.impl.quick_view_pdf_view', '_quick_view_pdf_worker',
 	'PyQt5.QtSvg'
-] + winpty_imports + send2trash_imports
+] + winpty_imports + send2trash_imports + pdfium_imports + pdfium_raw_imports
 
 a = Analysis(
 	['src/main/python/fman/main.py'],
@@ -56,7 +60,7 @@ a = Analysis(
 	binaries=binaries,
 	datas=datas,
 	hiddenimports=hidden_imports,
-	excludes=['boto3', 'botocore', 's3transfer']
+	excludes=['boto3', 'botocore', 's3transfer', 'PIL', 'numpy']
 )
 pyz = PYZ(a.pure)
 exe = EXE(

@@ -1,6 +1,11 @@
 # Favorites 003: Favorites as a Pane Location
 
-Status: Design complete, 2026-09-25, ready for review. Application code is
+Status: Superseded, 2026_10_05. Not implemented. The user dropped the pane
+concept; Favorites stays a manager built on QuickList and a Panel. See
+[Favorites 004](../Plan/Favorites004.md) and
+[UI Elements 002](../Plan/UIElements002.md).
+
+Previous status: Design complete, 2026-09-25, ready for review. Application code is
 unchanged. All [decisions](#decisions) are recorded; implementation requires
 review of this design and separate authorization.
 
@@ -378,3 +383,16 @@ binding. Keep `favorites/store.py` and the command-level store logic.
   Added the public-API-only requirement with accepted Core command dependencies,
   SearchFileFuzzy fallback, refresh fallback and single-provider caveat. Ready
   for independent review.
+
+### 2026_10_05 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: High
+- Context Window: 272K
+- Outcome: Superseded by user decision before implementation: no Favorites
+  pane. Favorites stays a manager on the new Qt-free QuickList
+  (`show_quick_list`) driven by a docked Panel; continued in Favorites 004.
+  Moved to Done unimplemented.

@@ -597,7 +597,12 @@ class PanelSession(ToolWindow):
 			controls[-1 if backwards else 0].setFocus(Qt.BacktabFocusReason if backwards else Qt.TabFocusReason)
 
 	def focus_from_panel(self, backwards=False):
-		self.focus_panel(backwards)
+		from fman.impl.ui.quick_list_window import recent_list
+		window = recent_list(self.main)
+		if window is not None:
+			window.focus_from_panel(backwards)
+		else:
+			self.focus_panel(backwards)
 
 	def eventFilter(self, watched, event):
 		if watched is self.main:

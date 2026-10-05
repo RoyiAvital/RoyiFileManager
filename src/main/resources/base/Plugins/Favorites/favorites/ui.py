@@ -1,26 +1,40 @@
+from fman import show_alert, show_prompt, show_status_message
 from fman.fs import exists, is_dir
-from fman.ui import ListItem, UiController, QuickList, Panel, TextButton, \
-	DropDown, JsonSettings, navigate, settings_resource as resource
+from fman.ui import Action, ListItem, UiController, settings_resource as resource, show_panel, \
+	show_quick_list
 from fman.url import as_human_readable
 from favorites.store import FavoritesStore
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QKeySequence
-from PyQt5.QtWidgets import QLabel, QShortcut, QVBoxLayout
-from threading import Lock
+from hashlib import sha1
+from threading import Lock, Thread
 
 import favorites
 
 
 settings_resource = resource('Favorites.json')
+_sessions = {}
+_sessions_lock = Lock()
+# show_quick_list bounds titles to 512 and hints to 2048 characters; stored favorites can be longer.
+_MAX_TITLE, _MAX_HINT = 512, 2048
 
 
-def project(records, order):
-	items = tuple(ListItem(FavoritesStore.key(record.url), record.name, as_human_readable(record.url)) for record in records)
-	if order == 'Name':
-		return tuple(sorted(items, key=lambda item: (item.title.casefold(), item.hint.casefold(), item.id)))
-	if order == 'Path':
-		return tuple(sorted(items, key=lambda item: (item.hint.casefold(), item.title.casefold(), item.id)))
-	return items
+class FavoritesController(UiController):
+	"""Carries the plug-in owner; Favorites builds no widgets of its own."""
+
+
+def item_id(url):
+	return sha1(FavoritesStore.key(url).encode('utf-8', 'surrogatepass')).hexdigest()
+
+
+def _bounded(text, limit):
+	return text if len(text) <= limit else text[:limit - 1] + '\u2026'
+
+
+def project(records):
+	return tuple(
+		ListItem(item_id(record.url), _bounded(record.name, _MAX_TITLE),
+			_bounded(as_human_readable(record.url), _MAX_HINT), metadata={'Added': position})
+		for position, record in enumerate(records, 1)
+	)
 
 
 def mutate(records, name, owner, allowed=lambda: True):
@@ -49,151 +63,131 @@ def mutate(records, name, owner, allowed=lambda: True):
 	return tuple(conflicts)
 
 
-class FavoritesController(UiController):
-	@classmethod
-	def build(cls, window, pane):
-		window.setWindowTitle('Favorites Manager')
-		window.list = QuickList(window, fuzzy=True, css=window.item_css, preserve_sort=True)
-		window.focus_widget = window.list
-		window.list.view.setAccessibleName('Favorites')
-		window.panel = Panel(window)
-		label = window.panel.add(QLabel('Sort By'))
-		window.panel.choice = window.panel.add(DropDown(tuple((name, name) for name in ('Recent', 'Name', 'Path')), 'Sort By'))
-		label.setBuddy(window.panel.choice)
-		window.panel.add_stretch()
-		window.panel.buttons = {}
-		for action_id, title in (('delete', 'Delete'), ('rename', 'Rename'), ('goto', 'Go To')):
-			button = window.panel.add(TextButton(title))
-			button.clicked.connect(lambda checked=False, action=action_id: window.session.action(action))
-			window.panel.buttons[action_id] = button
-		window.settings = JsonSettings('Favorites UI.json', window.panel, window.owner)
-		window.settings.bind('sort', window.panel.choice, 'Recent')
-		window.settings.failed.connect(window.alert)
-		window.panel.buttons['delete'].setToolTip('Delete selected favorites, or the highlighted favorite when none are selected')
-		window.panel.buttons['delete'].setAccessibleDescription(window.panel.buttons['delete'].toolTip())
-		layout = QVBoxLayout(window)
-		layout.setContentsMargins(1, 1, 1, 1)
-		layout.setSpacing(0)
-		layout.addWidget(window.list, 1)
-		window.set_panel(window.panel)
-		window.session = FavoritesSession(window, pane)
-		session = window.session
-		window.settings.changed.connect(session._project)
-		window.panel.choice.value_changed.connect(session._project)
-		window.list.activated.connect(lambda: session.action('goto'))
-		window.list.delete_requested.connect(lambda: session.action('delete'))
-		window.list.state_changed.connect(session._update_actions)
-		window.shortcut = QShortcut(QKeySequence('Ctrl+B'), window)
-		window.shortcut.setContext(Qt.WidgetWithChildrenShortcut)
-		window.shortcut.activated.connect(window.list.query.setFocus)
-		window.destroyed.connect(lambda: favorites._resource.unsubscribe(session._subscriber))
-		window.disposed.connect(session.dispose)
-		window.shown.connect(session.on_shown)
-		window.busy_changed.connect(session._update_actions)
-		window.work(session._subscribe, session._apply_snapshot)
-		window.settings.load()
+def show_manager(pane, query=''):
+	owner = FavoritesController.require_owner()
+	with _sessions_lock:
+		previous = _sessions.get(pane.window)
+		if previous is not None and previous.is_open:
+			if previous.pane is pane and not query:
+				previous.handle.focus()
+				return
+			previous.handle.close()
+		session = _sessions[pane.window] = FavoritesSession(pane, owner)
+	session.run(query)
 
 
 class FavoritesSession:
-	def __init__(self, window, pane):
-		self.window = window
-		self.pane = pane
-		self.list = window.list
-		self.panel = window.panel
-		self.settings = window.settings
+	def __init__(self, pane, owner):
+		self.pane, self.owner = pane, owner
+		self.handle = self.panel = None
 		self.records = ()
 		self.revision = -1
-		self.navigation = None
-		self._snapshot_lock = Lock()
-		self._pending_snapshot = None
-		self._subscriber = self._receive
+		self.navigation = 0
+		self.state_lock = Lock()
+		self.action_lock = Lock()
 
-	def on_shown(self, query):
-		if self.revision < 0 and not self.window.busy and self.window.prompt is None:
-			self.window.work(self._subscribe, self._apply_snapshot)
-		if not self.settings.loaded and not self.settings.busy and self.window.prompt is None:
-			self.settings.load()
+	@property
+	def is_open(self):
+		return self.handle is not None and self.handle.is_open
 
-	def _subscribe(self):
+	def run(self, query):
+		records, invalid_count = favorites._snapshot()
+		favorites._report_invalid_entries(invalid_count)
+		self.records = records
 		try:
-			def snapshot():
-				store = favorites._load_store()
-				return store.favorites, store.invalid_count
-			revision, (records, invalid_count) = favorites._resource.subscribe(self._subscriber, snapshot)
-			favorites._report_invalid_entries(invalid_count)
-			return revision, records
+			result = show_quick_list(items=project(records), title='Favorites Manager', modal=False,
+				query=query, title_label='Name', hint_label='Path', settings='Favorites UI.json',
+				on_open=self.attach)
 		finally:
-			if not self.window.alive.is_set():
-				favorites._resource.unsubscribe(self._subscriber)
+			self.dispose()
+		if result:
+			self.go_to(result, close=False)
 
-	def _receive(self, revision, records):
-		if not self.window.alive.is_set():
+	def attach(self, handle):
+		self.handle = handle
+		if not self.owner.attach(handle.close):
+			handle.close()
 			return
-		with self._snapshot_lock:
-			pending = self._pending_snapshot
-			if pending is None or revision > pending[0]:
-				self._pending_snapshot = (revision, records)
-		if pending is None:
-			self.window.post(self._flush_snapshot)
+		self.panel = show_panel(owner=self.owner, pane=self.pane, rows=((
+			Action('rename', 'Rename'), Action('delete', 'Delete'), Action('go_to', 'Go To')),),
+			on_action=self.on_action, on_closed=handle.close)
+		def snapshot():
+			store = favorites._load_store()
+			return store.favorites, store.invalid_count
+		revision, (records, invalid_count) = favorites._resource.subscribe(self.receive, snapshot)
+		self.receive(revision, records)
 
-	def _flush_snapshot(self):
-		with self._snapshot_lock:
-			snapshot = self._pending_snapshot
-			self._pending_snapshot = None
-		if snapshot:
-			self._apply_snapshot(snapshot)
-
-	def _apply_snapshot(self, snapshot):
-		revision, records = snapshot
-		if revision > self.revision:
-			self.revision = revision
-			self.records = records
-			self._project()
-
-	def _project(self, *_):
-		self.list.set_items(project(self.records, self.panel.choice.currentText()))
-
-	def _update_actions(self, *_):
-		current = self.list.current_id is not None
-		for action in ('rename', 'goto'):
-			self.panel.buttons[action].setEnabled(not self.window.busy and current)
-		self.panel.buttons['delete'].setEnabled(not self.window.busy and (current or bool(self.list.selected_ids)))
-
-	def action(self, action):
-		if action == 'close':
-			self.window.close()
-			return
-		if self.window.busy or not self.window.alive.is_set():
-			return
-		by_id = {FavoritesStore.key(record.url): record for record in self.records}
-		current = by_id.get(self.list.current_id)
-		if action == 'delete':
-			selected = self.list.selected_ids
-			targets = tuple(record for key, record in by_id.items() if key in selected) if selected else ((current,) if current else ())
-			if not targets:
+	def receive(self, revision, records):
+		with self.state_lock:
+			if revision <= self.revision or not self.is_open:
 				return
-			self._mutate(targets, None)
-		elif action == 'rename' and current:
-			self.window.rename_prompt('Rename favorite:', current.name, lambda name: self._rename(current, name))
-		elif action == 'goto' and current:
-			self._go_to(current)
+			self.revision, self.records = revision, records
+			self.handle.set_items(project(records))
 
-	def _rename(self, record, name):
-		if name.strip():
-			self._mutate((record,), name.strip())
+	def dispose(self):
+		if self.handle is not None:
+			self.owner.detach(self.handle.close)
+		favorites._resource.unsubscribe(self.receive)
+		if self.panel is not None:
+			self.panel.close()
+		with _sessions_lock:
+			if _sessions.get(self.pane.window) is self:
+				del _sessions[self.pane.window]
 
-	def _mutate(self, records, name):
-		def operation():
-			if not self.window.alive.is_set():
-				return ()
-			return mutate(records, name, self.window.owner, self.window.alive.is_set)
-		def completed(conflicts):
-			if conflicts:
-				self.window.alert('%d favorites changed or no longer exist; they were not modified.' % len(conflicts))
-		self.window.work(operation, completed)
+	def on_action(self, name, values):
+		Thread(target=self.action, args=(name,), daemon=True).start()
 
-	def _go_to(self, record):
-		def check(url):
+	def action(self, name):
+		if not self.action_lock.acquire(blocking=False):
+			return
+		try:
+			if not self.is_open or not self.owner.active:
+				return
+			state = self.handle.snapshot()
+			if name == 'delete':
+				self.delete(state.chosen)
+			elif name == 'rename':
+				self.rename(state.current)
+			elif name == 'go_to':
+				self.go_to(state.chosen, close=True)
+		except Exception as error:
+			if self.is_open and self.owner.active:
+				show_alert('Favorites could not %s: %s' % (name.replace('_', ' '), error))
+		finally:
+			self.action_lock.release()
+
+	def find(self, ids):
+		by_id = {item_id(record.url): record for record in self.records}
+		return tuple(by_id[value] for value in ids if value in by_id)
+
+	def delete(self, chosen):
+		targets = self.find(chosen)
+		if targets:
+			self.report(mutate(targets, None, self.owner, lambda: self.is_open))
+
+	def rename(self, current):
+		targets = self.find((current,)) if current is not None else ()
+		if not targets:
+			return
+		record = targets[0]
+		name, accepted = show_prompt('Rename favorite:', record.name, 0, len(record.name))
+		if accepted and name.strip():
+			self.report(mutate(targets, name.strip(), self.owner, lambda: self.is_open))
+
+	def report(self, conflicts):
+		if conflicts:
+			show_alert('%d favorites changed or no longer exist; they were not modified.' % len(conflicts))
+
+	def go_to(self, chosen, close):
+		"""close: close the list once the pane has loaded the location (Panel Go To)."""
+		if len(chosen) != 1:
+			show_status_message('Select one favorite for Go To.', timeout_secs=3)
+			return
+		targets = self.find(chosen)
+		if not targets:
+			return
+		url = targets[0].url
+		try:
 			try:
 				present = exists(url)
 			except NotImplementedError:
@@ -202,17 +196,27 @@ class FavoritesSession:
 				raise FileNotFoundError('Favorite location not found: ' + as_human_readable(url))
 			if not is_dir(url):
 				raise NotADirectoryError('Favorites must point to folders: ' + as_human_readable(url))
-		self.navigation = navigate(self.pane, record.url, self._navigated, window=self.window, check=check)
-
-	def _navigated(self, outcome, message):
-		self.window.set_busy(False)
-		if outcome == 'success':
-			self.window.close()
-		elif outcome == 'failure':
-			self.window.alert(message)
-
-	def dispose(self):
-		self.settings.dispose()
-		if self.navigation:
-			self.navigation.cancel()
-		favorites._resource.unsubscribe(self._subscriber)
+		except OSError as error:
+			show_alert(str(error))
+			return
+		with self.state_lock:
+			self.navigation += 1
+			navigation = self.navigation
+		reported = []
+		def current():
+			return navigation == self.navigation and self.owner.active and (self.is_open or not close)
+		def succeeded():
+			if close and current():
+				self.handle.close()
+		def failed(error, failed_url):
+			if not reported and current():
+				reported.append(error)
+				message = 'Could not open %s: %s' % (as_human_readable(url), error)
+				Thread(target=show_alert, args=(message,), daemon=True).start()
+			# Returning the same URL ends the navigation without a fallback.
+			return failed_url
+		try:
+			self.pane.set_path(url, callback=succeeded, onerror=failed)
+		except Exception as error:
+			if not reported:
+				failed(error, url)

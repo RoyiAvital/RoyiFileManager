@@ -5,6 +5,84 @@ from unittest.mock import Mock
 from fman.impl.navigation import NavigationRequest, current_request
 
 
+class QuickListDataTest(TestCase):
+	def test_metadata_value_forms_and_hashable_items(self):
+		from fman.impl.ui import ListItem
+		item = ListItem('a', 'A', metadata={'Added': 3, 'Size': 1.5, 'Used': (7, 'Monday'), 'Tag': 'x', 'None': ()})
+		self.assertEqual((('Added', 3, '3'), ('Size', 1.5, '1.5'), ('Used', 7, 'Monday'),
+			('Tag', 'x', 'x'), ('None', None, '')), item.metadata)
+		self.assertEqual(hash(item), hash(ListItem('a', 'A', metadata={'Added': 3, 'Size': 1.5,
+			'Used': [7, 'Monday'], 'Tag': 'x', 'None': []})))
+		from dataclasses import replace
+		self.assertEqual(item.metadata, replace(item, title_matches=(0,)).metadata)
+
+	def test_metadata_limits_and_refused_values(self):
+		from fman.impl.ui import ListItem
+		for metadata in ({'': 1}, {'x' * 33: 1}, {'A': True}, {'A': float('nan')}, {'A': float('inf')},
+				{'A': None}, {'A': (1, 2, 3)}, {'A': (1, 2)}, {'A': 'x' * 129}, {'A': (True, 'x')},
+				{str(index): index for index in range(9)}):
+			with self.subTest(metadata=metadata), self.assertRaises((TypeError, ValueError)):
+				ListItem('a', 'A', metadata=metadata)
+		with self.assertRaises(TypeError):
+			ListItem('a', 'A', metadata=[('A', 1)])
+		with self.assertRaises(ValueError):
+			ListItem('a', 'A', metadata={'N': 10**200})
+
+	def test_prepare_validates_canonical_metadata(self):
+		from fman.impl.ui import ListItem
+		from fman.impl.ui.quick_list_data import prepare_items
+		for metadata in ((('A', float('nan'), 'x'),), (('A', 1, object()),), (('A', 1, 'x' * 129),),
+				(('', 1, 'x'),), (('A', True, 'x'),), tuple((str(index), index, 'x') for index in range(9))):
+			with self.subTest(metadata=metadata), self.assertRaises((TypeError, ValueError)):
+				prepare_items((ListItem('a', 'A', metadata=metadata),))
+		prepare_items((ListItem('a', 'A', metadata=(('A', None, ''),)),))
+
+	def test_prepare_requires_consistent_unique_labels_and_kinds(self):
+		from fman.impl.ui import ListItem
+		from fman.impl.ui.quick_list_data import prepare_items
+		with self.assertRaises(ValueError):
+			prepare_items((ListItem('a', 'A', metadata={'X': 1}), ListItem('b', 'B', metadata={'Y': 1})))
+		with self.assertRaises(TypeError):
+			prepare_items((ListItem('a', 'A', metadata={'X': 1}), ListItem('b', 'B', metadata={'X': 'one'})))
+		with self.assertRaises(ValueError):
+			prepare_items((ListItem('a', 'A', metadata={'Name': 1}),), 'Name')
+		with self.assertRaises(ValueError):
+			prepare_items((), 'Same', 'Same')
+		with self.assertRaises(ValueError):
+			prepare_items((ListItem('a', 'A'), ListItem('a', 'B')))
+		with self.assertRaises(ValueError):
+			prepare_items((ListItem('a', 'x' * 513),))
+		with self.assertRaises(TypeError):
+			prepare_items('ab')
+		prepared = prepare_items((ListItem('a', 'file10', metadata={'X': ()}), ListItem('b', 'File2', metadata={'X': 4})), 'Name')
+		self.assertEqual(('Name', 'X'), prepared.labels)
+		self.assertLess(prepared.keys['Name'][1], prepared.keys['Name'][0])
+		self.assertEqual((None, 4), prepared.keys['X'])
+		self.assertEqual((), prepare_items(()).labels)
+
+	def test_selected_sort_settings_and_result_validation(self):
+		from fman.impl.ui import ListItem
+		from fman.impl.ui.quick_list_data import prepare_items, requested_sort, result_ids, \
+			selected_ids, settings_name
+		prepared = prepare_items((ListItem('a', 'A'),))
+		self.assertEqual({'a'}, selected_ids(('a',), prepared))
+		with self.assertRaises(ValueError):
+			selected_ids(('missing',), prepared)
+		self.assertEqual(('Name', False), requested_sort(['Name', False]))
+		for invalid in (('Name',), ('Name', 1), ('', True)):
+			with self.subTest(sort=invalid), self.assertRaises((TypeError, ValueError)):
+				requested_sort(invalid)
+		self.assertEqual('List UI.json', settings_name('List UI.json'))
+		for invalid in ('List.txt', 'a/b.json', 'a\\b.json'):
+			with self.subTest(settings=invalid), self.assertRaises(ValueError):
+				settings_name(invalid)
+		self.assertEqual(('a',), result_ids(('a',), frozenset({'a'})))
+		self.assertIsNone(result_ids(None, frozenset()))
+		for invalid in (object(), ['a'], ('b',)):
+			with self.subTest(result=invalid), self.assertRaises(ValueError):
+				result_ids(invalid, frozenset({'a'}))
+
+
 class TableDataTest(TestCase):
 	def test_structured_panel_fields(self):
 		from fman.impl.ui.table_data import DateField, IntegerField, Select, Separator, panel_records, validate_field_value

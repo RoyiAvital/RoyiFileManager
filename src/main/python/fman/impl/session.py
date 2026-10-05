@@ -28,6 +28,7 @@ class SessionManager:
 		self._app_version = app_version
 		self._is_licensed = is_licensed
 		self._save_failure_reported = False
+		self._window_geometry_reset = False
 	@property
 	def was_licensed_on_last_run(self):
 		return self._settings.get('is_licensed', False)
@@ -43,8 +44,7 @@ class SessionManager:
 			pane_infos = [{}] * self.DEFAULT_NUM_PANES
 		panes = [window.add_pane() for _ in range(len(pane_infos))]
 		self._show_startup_messages(main_window)
-		is_first_run = not self._settings
-		if is_first_run:
+		if not self._settings.get('window_geometry', None):
 			main_window.resize(*self.DEFAULT_WINDOW_SIZE)
 			main_window.show()
 		else:
@@ -156,14 +156,16 @@ class SessionManager:
 		except FileNotFoundError:
 			return False
 	def reset_window_geometry(self, window):
+		self._window_geometry_reset = True
 		self._settings.pop('window_geometry', None)
 		self._settings.pop('window_state', None)
 		self._flush_settings()
 		window.reset_geometry(*self.DEFAULT_WINDOW_SIZE)
 	def on_close(self, main_window):
-		self._settings['window_geometry'] = _encode(main_window.saveGeometry())
-		self._settings['window_state'] = \
-			_encode(main_window.saveState(self._MAIN_WINDOW_VERSION))
+		if not self._window_geometry_reset:
+			self._settings['window_geometry'] = _encode(main_window.saveGeometry())
+			self._settings['window_state'] = \
+				_encode(main_window.saveState(self._MAIN_WINDOW_VERSION))
 		self._settings['panes'] = \
 			list(map(self._read_pane_settings, main_window.get_panes()))
 		self._settings['app_version'] = self._app_version
