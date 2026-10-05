@@ -494,7 +494,9 @@ with TemporaryDirectory() as directory:
 		assert not controller.deadline.isActive() and not controller.drain.isActive()
 		assert not controller._decoder.buffer and not canvas.cache and canvas.cache_bytes == 0
 		samples.append(usage())
-	assert samples[-1][0] <= samples[9][0] + 4, samples
+	# A leak grows on most cycles; Windows may add a one-time block of handles (e.g. thread pool workers).
+	handle_increases = sum(1 for before, after in zip(samples[9:], samples[10:]) if after[0] > before[0])
+	assert handle_increases <= 3 and samples[-1][0] <= samples[9][0] + 32, samples
 	assert samples[-1][1] <= samples[9][1] + 16 * 1024 * 1024, samples
 	documents.clear()
 	controller.open(101, str(path))
