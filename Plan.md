@@ -2,6 +2,7 @@
 
 ## Pending
 
+- [Batch File Renamer](Plan/BatchFileRenamer.md)
 - [Code Review 099: Deferred Work and Release Gates](Plan/CodeReview099.md)
 - [Date Format: Locale or ISO](Plan/DateFormat.md)
 - [Filter Files 002: Multiple Terms (AND)](Plan/FilterFiles002.md)
