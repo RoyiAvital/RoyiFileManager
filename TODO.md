@@ -50,6 +50,7 @@
 - [x] BUG: Resetting the geometry of the application does not make it move to the default position on next run.
 - [x] CHANGE: Using _Fuzzy Find File_ should respect the active pane settings for hidden files.
 - [x] CHANGE: The saved `json` files of the application and plug ins should be saved in a `pretty` mode.
+- [ ] CHANGE: Use `fman.fs.rename_no_replace(source, destination)` in all rename use cases. Review its logic.
 
 ## Performance
 

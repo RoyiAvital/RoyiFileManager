@@ -1,359 +1,383 @@
 # Batch File Renamer
 
-Status: Proposed design for review. No application or plug-in implementation is
-authorized by this document. Defaults below resolve unspecified details for a
-small first version and may be revised during review.
+Status: Consolidated design for the next review cycle. No application or plug-in
+implementation is authorized yet. The public API extensions below are proposed,
+not available in the current host.
 
 ## Task
 
-Rename a captured group of files using one readable template and a live
-QuickBoard preview. Make this a public-API-only third-party plug-in and a simple
-showcase of QuickBoard, not a comprehensive renaming toolbox.
+Provide a small, independently installable third-party file renamer that
+demonstrates QuickBoard: compose a template, inspect the proposed names, filter
+and order the candidates, then rename exactly the visible files.
 
-The essential addition beyond template variables is collision protection:
-invalid or conflicting targets must never cause an overwrite. Implement this
-as an application-wide public rename capability, shared by ordinary Rename and
-third-party plug-ins, not a Batch File Renamer bypass.
+The plug-in owns template interpretation, operation scope and collision hints.
+QuickBoard owns only generic rows, their view mapping and dialog lifetime.
+The application owns a shared no-overwrite Rename operation, not a plug-in bypass.
 
 ## Scope
 
-- One Command Center command, **Batch File Renamer**, ID `batch_file_renamer`.
-  No default shortcut. Existing single-file Rename keeps its UI and workflow but
-  adopts the shared no-overwrite rename operation described below.
-- Use selected files, falling back to the cursor file via
-  `DirectoryPaneCommand.get_chosen_files()`. Capture the set once; do not infer
-  operation targets from filtered QuickBoard rows or later pane selection.
-- Windows local-drive `file://` regular files in one parent folder, at most
-  10,000. Refuse an empty set, mixed parents, directories, archive/virtual URLs,
-  UNC locations, source reparse points and unavailable metadata. No recursion.
-  Never silently drop unsupported selected entries.
-- Rename basenames only, with an owner-free, modal QuickBoard. No Panel, extra
-  operation buttons, new QuickBoard options, Qt imports or host-private imports.
-- Five variables, date formatting, zero-based indices, index padding and an
-  optional positive integer offset. No arbitrary Python, general expression
-  evaluation, subtraction, regex replacement, case transformations, presets,
-  separate counter controls, configurable step, undo or background service.
-- No overwrites, swaps, chains through occupied names, case-only renames or
-  temporary-name staging in v1. Exact unchanged names are skipped.
-- Installable independently under `UserSettings/Plugins/Third-party`; not
-  automatically bundled. Its minimum host version must include the current
-  QuickBoard API and the proposed shared public rename API below. Host changes
-  belong to the application; the plug-in must work without privileged access.
+- One Command Center command: **Batch File Renamer**, ID `batch_file_renamer`.
+  No default shortcut or new Panel/buttons; use the existing frameless, modal,
+  owner-free QuickBoard.
+- Capture selected files, falling back to the cursor through public
+  `DirectoryPaneCommand.get_chosen_files()`. Later pane selection changes do not
+  replace those candidates. Filtering inside QuickBoard determines the final set.
+- V1 accepts 1-10,000 regular, non-reparse files in one Windows local-drive folder.
+  Reject directories, mixed parents, UNC/archive/virtual sources and unreadable
+  required metadata. Never silently drop an unsupported selected item.
+- Six variables, date formatting, zero-based indices and positive constant index
+  offsets. No Python evaluation, regex replacement, transformations, presets,
+  counter controls, recursion, undo or saved session state.
+- No overwrites, swaps, rename chains through occupied names, case-only batch
+  changes or temporary-name staging. Exact unchanged names are no-ops.
+- The plug-in uses only public `fman`, `fman.fs`, `fman.url`, `fman.ui` and standard
+  library APIs. No Qt/Core imports, `fman.impl`, private attributes, private query
+  names, monkeypatching or direct native file mutation in the delivered plug-in.
 
 ## Design
 
-### Template Language
+### Template Syntax
 
-Enter the template directly, without an `f` prefix or surrounding quotes.
-Python-like replacement fields and format specifications are supported, but
-this is deliberately not Python execution.
+Enter the template without an `f` prefix or surrounding quotes.
 
-| Variable         | Meaning                                  | Default Format |
-| ---------------- | ---------------------------------------- | -------------- |
-| `{current_date}` | Local date/time captured at invocation   | `YYYY-MM-DD`   |
-| `{file_date}`    | File last-modified date/time, local time | `YYYY-MM-DD`   |
-| `{index}`        | Stable file number, starting at 0        | Decimal        |
-| `{name}`         | Original name without its final suffix   | Unchanged text |
-| `{ext}`          | Final suffix including its leading dot   | Unchanged text |
+| Variable         | Meaning                                          |
+| ---------------- | ------------------------------------------------ |
+| `{current_date}` | Local date/time captured when the command starts |
+| `{file_date}`    | Captured last-modified date/time, in local time  |
+| `{index}`        | Current visible position, starting at zero       |
+| `{file_index}`   | Fixed whole-folder natural-order position        |
+| `{name}`         | Original name without its final extension        |
+| `{ext}`          | Final extension, including its leading dot       |
 
-Decisions:
+- Default template: `{name}{ext}`. Use `os.path.splitext`: `archive.tar.gz` splits
+  into `archive.tar` and `.gz`; `.gitignore` and extensionless files have empty
+  extensions. Omitting `{ext}` deliberately removes the extension.
+- Capture current time, file timestamps and time-zone interpretation once.
+  Crossing midnight or changing the template does not change those values.
+  Dates default explicitly to `%Y-%m-%d`, never `str(datetime)`.
+- Date formats allow `%Y`, `%y`, `%m`, `%d`, `%H`, `%M`, `%S` and `%%`, with at
+  most 128 specification characters. `%H:%M` is valid syntax but produces an
+  invalid Windows name because of the colon; report that as a name problem.
+- Both indices accept an empty format, `d`, or a width of 1-32 with `d`, including
+  zero padding such as `03d`. Width is a minimum: `02d` does not truncate `149`.
+  Recommend enough padding for the largest index after its offset.
+- The only arithmetic adds one positive ASCII decimal integer to `index` or
+  `file_index`, optionally inside one pair of parentheses. Allow spaces around
+  tokens and at most 255 offset digits. Reject zero/signed offsets, subtraction,
+  repeated addition, other operators, reversed operands and nested parentheses.
+- Support literal braces through `{{` and `}}`. Reject unknown/empty/positional
+  fields, conversions, attribute/index access, nested fields and function calls.
+  Name and extension accept no format specification.
 
-- **Current Date** is captured once, not on every keystroke or file. Crossing
-  midnight while the board is open cannot change the accepted preview.
-- **File Date** means last modification time, not creation time, EXIF date or
-  a date inferred from the name. This is an explicit default to confirm in review.
-  Capture date values and the invocation's system time-zone interpretation once.
-- **File Index** starts at 0 and uses a fixed sort by
-  `(original_name.casefold(), original_name)`.
-  This is case-insensitive lexical name order, not current pane size/date order
-  or natural-number ordering. Sorting/filtering the preview never renumbers files.
-  The preview's Index column always shows this base index, even when a template
-  adds an offset to its rendered value.
-- Split names with `os.path.splitext`: `archive.tar.gz` becomes `archive.tar`
-  plus `.gz`; `.gitignore` and extensionless files have an empty extension.
-  Including the dot makes `{name}{ext}` an identity template for every file.
-  Extension preservation is explicit: omitting `{ext}` removes the extension.
-- Date fields accept `%Y`, `%y`, `%m`, `%d`, `%H`, `%M`, `%S` and `%%`, with
-  bounded literal separators. Default to `%Y-%m-%d`. Reject unsupported directives
-  rather than relying on platform-dependent `strftime` behavior.
-- Index accepts no specification, `d`, a decimal width with `d`, or zero-padded
-  width such as `03d`; width must be 1-32. Prefer `{index:03d}` in examples.
-  Name/extension accept no formatting or conversion in v1.
-- The only arithmetic form is `index + positive_integer`, optionally enclosed
-  in one pair of parentheses. Both `{index + 5:03d}` and `{(index + 5):03d}`
-  produce `005` for the first file; `{(index + 1):03d}` starts at `001`.
-  Permit spaces around the tokens, but no line breaks. The offset is an unsigned
-  ASCII decimal literal with a value greater than zero; bound its digit count
-  by the existing template/name limits before conversion. No signed literal,
-  `index + 0`, subtraction, other operator, repeated addition, reversed operands,
-  nested parentheses, variables in the offset or arbitrary expression is allowed.
-- `{{` and `}}` produce literal braces. Unknown/empty fields, positional fields,
-  attribute/index access, nested replacement fields, conversions such as `!r`,
-  expressions other than the single positive index offset, calls and unmatched
-  braces are syntax errors. No aliases or implicit filename sanitization.
+Use `string.Formatter.parse()` plus a strict field/specification allowlist and
+direct recognition of the small offset grammar. Do not use `eval`, `exec`,
+generated f-string source or unrestricted field lookup.
 
-Use the standard-library `string.Formatter.parse()` to parse once per preview,
-then validate an exact field/specification allowlist. Recognize the small index
-offset grammar directly and normalize it to a base-index field plus one constant;
-add that constant before formatting. Do not enable an expression evaluator.
-Render only captured strings, integers and date values. Never use `eval`, `exec`,
-generated f-string source, or unrestricted field lookup. Bound specification
-expansion before formatting; do not allow huge widths to allocate huge strings.
+| Template                                    | Example Output          |
+| ------------------------------------------- | ----------------------- |
+| `{name}{ext}`                               | `report.txt`            |
+| `{index:03d}_{name}{ext}`                   | `000_report.txt`        |
+| `{(index + 5):03d}_{name}{ext}`             | `005_report.txt`        |
+| `{(file_index + 1):03d}_{name}{ext}`        | `003_report.txt`        |
+| `{current_date}_{name}{ext}`                | `2026-10-06_report.txt` |
+| `{file_date:%Y%m%d}_{(index + 1):03d}{ext}` | `20260930_001.txt`      |
 
-| Template                                | Example Result             |
-| --------------------------------------- | -------------------------- |
-| `{name}{ext}`                           | `report.txt`               |
-| `{index:03d}_{name}{ext}`               | `000_report.txt`           |
-| `{(index + 1):03d}_{name}{ext}`         | `001_report.txt`           |
-| `{(index + 5):03d}_{name}{ext}`         | `005_report.txt`           |
-| `{current_date}_{name}{ext}`            | `2026-10-06_report.txt`    |
-| `{file_date:%Y%m%d}_{index:03d}{ext}`   | `20260930_000.txt`         |
-| `Trip_{index:03d}{ext}`                 | `Trip_000.txt`             |
+Examples use `report.txt`, visible index 0, file_index 2, current date 2026-10-06
+and modification date 2026-09-30.
 
-Examples assume `report.txt`, index 0, current date 2026-10-06 and file date
-2026-09-30. No additional variable is essential for v1; parent-folder names,
-creation/EXIF dates and text transformations can be considered separately later.
+### Candidate Capture and Indices
 
-### QuickBoard Workflow
+On the command worker, use a cancellable `Task` to capture immutable records:
+source URL, raw name, split name/extension, file_index, identity, size and mtime.
+Use fresh `os.lstat` on full paths for selected-file and parent identity; reject
+missing/zero identity. Do not use Windows `DirEntry.stat()` for identity.
 
-1. Capture chosen URLs on the command worker, then prepare immutable file
-   records in a cancellable `Task`: original URL/name, split name/extension,
-   index, file identity, size and modification timestamp. Enumerate occupied
-   names in the parent once for the preview, including hidden files/directories.
-2. Open `show_quick_board` with `text='{name}{ext}'`, title **Batch File Renamer**
-   and a short summary containing the captured count and variable examples.
-  Example summary: `12 files | {name}{ext} | {(index + 1):03d} | {file_date:%Y%m%d} | {current_date}`.
-   QuickBoard's existing elision/tooltip handles the summary; no syntax-help API.
-3. Show four columns: **Index** (numeric), **Original Name** (file_name),
-  **New Name** (file_name), **Valid Name** (text). Prefix advisory results with
-  `V` or `X` and a reason: `V - Ready`, `V - Unchanged`, `X - Duplicate target`,
-  `X - Target exists`, or `X - Invalid name: reserved name`. Typed sorting and
-  filtering do not change the captured operation set, indices or validation.
-4. `get_rows(text)` is pure, bounded text-to-rows work over those records and the
-   captured occupied-name set. No filesystem access, setting writes or mutation
-   on keystrokes. Use full rows, not a sample, within QuickBoard's 16 MiB budget.
-5. Syntax/specification errors raise `ValueError` for QuickBoard's error footer.
-  Per-file target problems remain visible in the Valid Name column. QuickBoard
-  displays supplied text; it does not compute filename validity or disable
-  Enter because a row contains `X`.
-6. Escape/window close returns without changes. Enter returns the exact template;
-   the command rebuilds the full rename plan from the same captured records and
-   checks every row. If any row is invalid, perform no mutation, show a concise
-   alert and reopen QuickBoard with that template. Do not apply only visible rows.
-7. If all rows are unchanged, report `No files need renaming` and stop. Otherwise
-   start a cancellable Task for fresh preflight and execution. The preview is
-   the approval step; do not add another routine confirmation dialog.
+Enumerate the parent with fresh `os.scandir`, not cached `fman.fs.iterdir`.
+Record all occupied names, including hidden entries, directories and reparse
+points. Close the iterator on every exit path. Separately identify every regular,
+non-reparse file for file_index; classification failures abort incomplete capture.
 
-The board remains modal, frameless and buttonless. It needs no public owner or
-controller subclass. Plug-in unload alone does not cancel an already active
-blocking command; it may finish its normal dialog/task lifecycle. No new unload
-service or recurring lifetime monitor is introduced by this plug-in.
+`file_index` starts at zero and includes hidden/unselected regular files, ignoring
+pane filters. Directories and reparse entries do not consume an index in this v1
+scope, but still occupy names. Sort decimal digit runs numerically and text
+case-insensitively, with exact name as the final tie-breaker: `IMG_2` precedes
+`IMG_10`. Define the pure key in the plug-in, without a private host import.
 
-### Advisory Preview Validation
+Candidate generator rows retain this captured natural order. `{index}` is their
+current visible rank supplied by QuickBoard, not their generator position.
+Sorting/filtering changes index; file_index remains fixed. Equal sort keys retain
+generator order in either direction. Neither numbering scheme changes the capture.
 
-The plug-in's pure rename planner supplies Valid Name hints through ordinary
-public `QuickTableRow` cells. QuickBoard remains generic; no new host UI API is
-needed to display these results.
+### QuickBoard Mapping Contract
 
-- Recheck all proposed names on each template edit, including duplicate targets
-  across the entire batch and collisions with the captured parent entries.
-  Mark every member of a duplicate-target group `X`, not just the later row.
-- Show concrete reasons for invalid Windows names, occupied targets and v1
-  restrictions such as case-only changes. Exact unchanged names are
-  `V - Unchanged` unless another candidate collides with them; they remain no-ops.
-- Symbols always have explanatory text, with existing cell tooltips for elided
-  reasons. Filtering out an `X` row cannot make the full batch valid.
-- `V` means only that the candidate passes checks against captured state, not
-  that a future rename must succeed. No filesystem scans or monitoring run on
-  keystrokes; external changes can make the displayed hints stale.
-- After Enter, rebuild and validate the full plan, not the displayed V/X strings.
-  Fresh preflight and native no-overwrite enforcement remain mandatory. Preview
-  hints improve usability; they do not replace either safety layer.
+The only public QuickBoard changes are:
 
-### Validation and Rename Safety
+```python
+get_rows(text, mapping)
+text, accepted, mapping = show_quick_board(...)
+```
 
-- Reject empty names, `.`/`..`, separators, absolute paths, drive/stream syntax,
-  NUL/control characters, Windows reserved names, trailing spaces/dots and names
-  exceeding 255 UTF-16 units. Preserve other characters and case exactly; never
-  trim or repair names silently. Validate the resulting full destination path.
-- Use conservative case-insensitive target comparison even in case-sensitive
-  directories. Reject duplicate target names, occupied destinations belonging
-  to any other entry (including selected entries and directories), and case-only
-  changes. Only exact original-name equality is an unchanged no-op. Do not use
-  `samefile` alone to treat a different hard-link name as an unchanged entry.
-- Before the first mutation, recheck every source's identity/type, size and
-  modification time against capture, the parent identity, and destination
-  absence. Read live metadata, not cached `fs.query` results. If anything changed,
-  abort the batch without changes and ask the user to restart with fresh inputs.
-- Immediately before each rename, check cancellation and source identity again.
-  The mutation itself must refuse an occupied destination atomically; a prior
-  existence check is not sufficient. Stop at the first execution error.
-- No whole-batch atomicity or automatic rollback is promised. On failure or
-  cancellation, already-renamed files remain renamed and unattempted files stay
-  unchanged. Show a concise summary and a read-only QuickTable report with
-  original name, last confirmed name and result; never infer success from a
-  progress counter or retry a mutation after an ambiguous failure.
-- Ordinary concurrent changes are detected where checked, and destinations
-  cannot be overwritten. Path-based identity prechecks do not eliminate every
-  source/ancestor time-of-check/time-of-use race; hostile directory replacement
-  is outside v1's guarantee. Do not claim transactional or adversarial safety.
+- `mapping` is an immutable tuple indexed by generator row position. An integer
+  is the zero-based visible position; `None` means filtered out. Generated
+  `[A, B, C, D]` displayed as `[C, A]` yields `(1, None, 0, None)`.
+- Non-None positions are unique and consecutive. Use source positions, not row
+  object identity, so equal or repeated row objects are independently mapped.
+- Each text revision begins with `get_rows(text, None)`. It returns all source
+  rows with neutral derived cells. The host projects them and calls the handler
+  again with the map. Bootstrap rows cannot be accepted as a finished preview.
+- Mapped responses keep row count, generator order and sortable/filterable source
+  cells unchanged. Only non-sortable, non-filterable derived cells may change.
+  Reject observable contract violations as preview errors, not reproject loops.
+  The caller is responsible for stable identity when source fields are identical.
+- Sort/filter changes regenerate the preview when their mapping changes. Text
+  edits bootstrap a new snapshot. Hidden rows remain in responses so filters can
+  reveal them again; return neutral derived cells for those rows.
+- Text, mapping and completed preview belong to one revision. Enter waits for it;
+  later text/sort/filter edits clear queued acceptance. Return
+  `(text, True, mapping)` only for the settled approved preview. Cancellation is
+  `(current_text, False, None)` without waiting for work. Zero rows map to `()`;
+  all hidden rows map to a tuple of `None`, distinct from bootstrap/cancellation.
+- Preserve the existing bounded worker lanes, queued Qt delivery and stale-result
+  rejection. Workers receive immutable plain data; widgets/models stay on Qt.
 
-### Shared Application Rename API
+QuickBoard does not interpret names, validity markers or operation scope. No
+public owner, mutable handle, second ordering map or operation/validity callback
+is added. Existing callers must accept the second handler argument and unpack
+the third result. Update runnable API examples and docs when this is implemented;
+until then, clearly distinguish the proposal from the current two-value API.
 
-The existing public [fman.fs.move](../src/main/python/fman/fs.py) is unsuitable
-for the no-overwrite contract: the Windows local provider's file rename uses
-`Path.replace`, which can overwrite a destination created after preflight. See
-[LocalFileSystem](../src/main/resources/base/Plugins/Core/core/fs/local/__init__.py).
-Ordinary [Rename](../src/main/resources/base/Plugins/Core/core/commands/__init__.py)
-checks destination existence but then uses `prepare_move`, exposing it to the
-same race. Correct that path in the host as well; do not hide the fix in this
-plug-in or let the plug-in call Core's private `_Rename` task.
+### User Workflow
 
-Propose one additive, application-wide public function,
-`fman.fs.rename_no_replace(src_url, dst_url)`, documented for all third-party
-consumers in [PlugIn.md](../PlugIn.md) before use:
+Open QuickBoard with title **Batch File Renamer**, text `{name}{ext}`, and a brief
+summary such as `12 candidates; visible rows only | {(index + 1):03d} | {file_index}`.
+Use the existing elided summary/tooltip, not a new syntax-help control.
 
-- Same-parent rename only; never fall back to copy/delete, replacement or merge.
-  The first provider implementation is Windows local storage. The common API
-  dispatches to capable providers; unsupported providers raise
-  `UnsupportedOperation`, with no private or replacing fallback.
-- Destination existence is rejected by the native operation, not just a Python
-  check. On Windows use the non-replacing rename operation (`os.rename`), not
-  `Path.replace`, `os.replace` or replace-existing flags.
-- Migrate ordinary Rename for supported providers to this public operation.
-  Keep progress, error reporting and cursor placement in its existing command;
-  preflight can give a friendly error but cannot substitute for native refusal.
-  Review provider compatibility before migration and report unsupported rename
-  explicitly instead of claiming an unverified no-overwrite guarantee.
-- The host API is not restricted to the plug-in's file-only subset: preserve
-  ordinary file/folder rename and existing supported link-object behavior.
-  Keep ordinary case-only rename when the native operation targets the same
-  directory entry; never use `samefile` alone to permit replacement of another
-  hard-link entry. Test this independently from the batch plug-in, which still
-  refuses case-only changes, directories and source reparse points in v1.
-- Keep rename-without-replacement distinct from an explicitly approved replacing
-  Move. Do not silently change `move` or `prepare_move` semantics application-wide
-  or remove users' overwrite choices. Those broader transfer policies need their
-  own review; this shared operation closes the ordinary Rename race first.
-- Successful renames publish the existing removed/added notifications so pane
-  refresh and caches remain coherent. Separate a committed rename from a later
-  notification failure; report the committed mapping without retrying the rename.
-- Add native regression coverage for an already occupied destination and one
-  created between validation and mutation, through both the public API and the
-  ordinary Rename command; destination contents must survive.
+| Column        | Type      | Sort/Filter | Value                      |
+| ------------- | --------- | ----------- | -------------------------- |
+| Index         | numeric   | No          | Current visible rank       |
+| File Index    | numeric   | Yes         | Captured folder position   |
+| Original Name | file_name | Yes         | Captured source name       |
+| File Date     | date      | Yes         | Captured modification time |
+| New Name      | file_name | No          | Generated destination name |
+| Valid Name    | text      | No          | Unicode marker and reason  |
 
-This host work is an independently verifiable application prerequisite, not an
-implemented API or plug-in special case. The Batch File Renamer consumes the
-same documented operation as any separately installed third-party plug-in and
-must refuse an older host missing it rather than fall back to `move`.
+Set both `sortable=False` and `filterable=False` for Index, New Name and Valid
+Name. They update when text/mapping changes, but never determine their own order
+or visibility. File Date displays the date; sorting uses the captured timestamp.
 
-### Ownership and Persistence
+`get_rows` is pure computation over capture and mapping: no I/O or mutation on
+typing/sorting/filtering. Parse once and generate only active candidates' names.
+Use `✓ Ready`, `✓ Unchanged`, `✗ Duplicate target`, `✗ Target exists` or a precise
+invalid-name reason. The Unicode markers are ordinary UTF-8 text, accompanied
+by words and existing cell tooltips, not new QuickBoard semantics.
 
-- Proposed source home: `plugins/BatchFileRenamer/batch_file_renamer/`, with a
-  root command module and one pure template/planning module; a short README
-  documents installation, variables, ordering, extension handling and limits.
-- The plug-in imports only public `fman`, `fman.fs`, `fman.url`, `fman.ui` and
-  standard-library APIs. Host internals own mutation dispatch and notifications.
-  No `fman.impl`, Core imports, private attributes, private `fs.query` method
-  names, monkeypatches or bundled-only exceptions. Standard-library reads may
-  capture local metadata; all file mutations go through the public host API,
-  not direct `os.rename`/Win32 calls from the plug-in. Test installation outside
-  the host resource tree so accidental private coupling cannot pass as support.
-- Command/Task workers capture and operate on files; QuickBoard workers render
-  immutable preview data; Qt owns widgets/models. No custom threads, timers,
-  parser processes or direct Qt objects are needed in the plug-in.
-- No saved templates, history, counter state or settings in v1. Every invocation
-  starts with the identity template. Installation lives under `UserSettings`;
-  no Registry writes or new dependencies.
+Syntax errors raise `ValueError` for the footer. Per-file problems stay visible
+in Valid Name; QuickBoard does not block Enter because of a cross. After Enter,
+rebuild the active plan from the exact returned text/map and original records.
+Validate again without reading displayed markers or shortened names.
+
+If any active candidate is invalid, change nothing, show a concise alert and
+reopen with the template. Sort/filter/scroll state resets in v1 and the user
+reviews the new preview. Empty or all-unchanged visible sets are no-ops. Otherwise
+the preview is approval: start fresh preflight and execution without another
+routine confirmation dialog. Escape never mutates files.
+
+### Validation and Bounded Preview
+
+- Check duplicate proposed targets among active rows only and flag every member.
+  Excluded rows' hypothetical destinations do not participate.
+- Check active destinations against all occupied originals: filtered-out,
+  unselected and unchanged files, directories, and other active sources. A hidden
+  `B.txt` still blocks visible `A.txt -> B.txt`. V1 rejects occupied-source chains
+  and swaps rather than assuming another rename will free a name.
+- Reject empty names, `.`/`..`, separators, drive/stream syntax, control characters,
+  reserved Windows names, trailing spaces/dots and names over 255 UTF-16 units.
+  Validate the resulting full path using the host's supported path rules. Never
+  trim or repair names silently; exact original-name equality is a no-op.
+- Use conservative `casefold` comparison, not a claim to emulate NTFS. For distinct
+  names equal under it, report `Conflicts ignoring case`, including expansions
+  such as sharp-s versus `ss`; do not mislabel them all as case-only renames.
+- Render incrementally with a bounded builder. Once a candidate exceeds 255
+  UTF-16 units, retain only a short prefix and continue counting chunk lengths;
+  never join or retain the entire oversized candidate.
+- Original Name display is escaped and capped at 768 UTF-8 bytes including any
+  shortening marker. A valid New Name stays complete, at most 765 UTF-8 bytes.
+  Invalid New Name display is capped at 384 bytes with a visible marker; Valid
+  Name is capped at 64 bytes and includes the invalid length/reason. Truncate at
+  character boundaries. Tooltips, highlights and row metadata must not restore
+  unbounded data. Raw source and valid target names stay in caller-owned records.
+- With date-only display, three typed slots and displayed indices, a conservative
+  mapped six-column budget is
+  `10,000 * (768 + 765 + 64 + 10 + 24 + 5 + 25) = 16,610,000` bytes, below 16 MiB.
+  The last two terms cover displayed Index (up to 9,999) and File Index (bounded
+  by the host's signed 64-bit numeric type), including grouping separators.
+  Validate this with unique worst-case rows in the real schema. It is a payload
+  bound, not a total Python/Qt memory guarantee.
+
+Preview hints use captured state. A check mark does not replace fresh preflight
+or the native no-overwrite rule.
+
+### Shared Rename API
+
+Use Rename for a basename change in the same parent folder; use Move when the
+parent changes, optionally changing the basename too. Existing explicitly
+approved Move replacement behavior must remain unchanged.
+
+Proposed public API in `fman.fs`:
+
+```python
+rename_no_replace(source_url, destination_url) -> RenameResult
+RenameResult(source_url, destination_url, changed, notification_warnings)
+```
+
+`RenameResult` is an immutable plain public record. A return confirms the
+operation outcome; `changed=False` is permitted only for an existing source
+with the identical destination spelling. Otherwise native/provider success
+returns `changed=True` with the confirmed destination URL.
+
+- Reject cross-parent/cross-scheme requests with `io.UnsupportedOperation` before
+  mutation. Base provider support raises `NotImplementedError`. No fallback to
+  replacing Move, merge or copy/delete is allowed inside this API.
+- The Windows local provider uses native non-replacing rename (`os.rename`), not
+  `Path.replace` or replace-existing flags. An occupied destination fails at the
+  operation itself, including one created after preflight. Case-only rename of
+  the same entry remains supported by the host; a different hard-link entry is
+  not an exemption from collision checks.
+- Native failure before commit raises its normal error. Once mutation succeeds,
+  notification-listener failures become bounded `notification_warnings`, never
+  an ambiguous rename-failed exception. Attempt both removal/addition notification
+  paths and isolate listener failures in this new path; do not globally change
+  unrelated event behavior. No caller infers commit from path existence or retries
+  a mutation because notification failed. Process termination/power loss remains
+  outside this in-process outcome guarantee.
+- Publish the existing cache/listing notifications through the host. Ordinary
+  Rename and the plug-in consume the same result and report refresh warnings
+  separately from confirmed mutation. Batch execution stops after a warning to
+  avoid accumulating operations against a potentially stale presentation.
+
+Ordinary Rename ultimately calls this one public API, with provider dispatch in
+the host, not caller-side platform branches. Do not replace the shared old
+`_rename` implementation blindly: existing Move also uses it.
+
+Before switching ordinary Rename, inventory and test every currently supported
+bundled provider, including local file/folder/link-object and archive-member
+renames. An archive implementation must reject existing member destinations and
+serialize/check its archive commit without an unsafe replacing fallback. Keep
+current case-only behavior where supported. A provider that cannot satisfy the
+contract blocks that migration until resolved; do not silently remove a working
+capability. External providers must implement the new method to support the new
+Rename contract; document this provider compatibility requirement and migration.
+Existing `move`/`prepare_move` callers are unaffected. The batch plug-in retains
+its narrower regular-local-file scope.
+
+### Execution and Results
+
+1. Take active rows in returned visible-rank order. Before any mutation, freshly
+   recheck the parent and all active sources' identity/type, size and mtime,
+   candidate validity, duplicates and target absence. Exclude unchanged no-ops
+   from destination-absence checks. Do not refresh/rebase file_index mid-command.
+   Abort stale preflight with zero changes and ask for a fresh invocation.
+2. In a cancellable `Task`, check cancellation and source identity before each
+   operation, then call the public no-overwrite API. Record each returned mapping
+   immediately. Stop at the first native error, cancellation or notification
+   warning. An OS call already in progress cannot be forcibly interrupted.
+3. No batch transaction or automatic rollback: completed renames stay completed;
+   unattempted and filtered-out files remain untouched. Show a concise summary
+   and a read-only QuickTable report of original name, last confirmed name and
+   outcome. Distinguish unchanged, renamed, failed, unattempted and refresh warning.
+4. If the invoking pane is still open at the captured folder and has not navigated
+   away, request a public same-path reload through `set_path(..., callback=...)`.
+   After loading, recheck location/lifetime, select confirmed destination URLs with
+   `pane.select` and place the cursor on the first available one. Do not change
+   pane filters, steal focus or navigate a pane the user has moved elsewhere.
+
+Normal races are checked where possible; native no-replace protects occupied
+destinations. Path-based source/ancestor prechecks do not eliminate every hostile
+replacement race. Do not claim transactional or adversarial filesystem safety.
+
+### Delivery and Test Loading
+
+Source home: `plugins/BatchFileRenamer/batch_file_renamer/`, containing the root
+command and a pure engine module. A short README covers variables, filtered
+scope, ordering, safety, installation and the minimum compatible host version.
+Install the outer plug-in folder under `UserSettings/Plugins/Third-party`.
+Do not bundle it automatically or copy host code into its package.
+
+Check the documented minimum host version/API requirements before opening the
+command. Assign that version when the mapping and rename APIs are delivered;
+older hosts receive a clear refusal, not an unsafe fallback. Standard-library
+reads may capture local metadata; every mutation uses the public host API.
+
+Keep `build._environment()` unchanged. Pure tests load the engine from its known
+source path using a test-only `importlib` fixture with temporary `sys.modules`
+registration and cleanup. Integration tests copy the whole package to a temporary
+third-party directory and use the real loader/command registry. Host inspection
+is confined to test harnesses; the installed package uses no private host API.
+
+No saved templates, numbering state, history or plug-in background service in v1.
+QuickBoard workers only compute immutable rows; the command/Task worker captures
+and renames files. Qt owns widgets/models. Mutable installed state belongs under
+`UserSettings`, never the Registry.
 
 ## Alternatives
 
-- Full Python f-strings: rejected because general expressions and arbitrary code
-  are unnecessary. Allow only the user's requested positive constant added to
-  the zero-based index, without an evaluator or configurable counter controls.
-- Extension without its dot: familiar in `{name}.{ext}`, but adds a trailing dot
-  for extensionless files. Use `{name}{ext}` consistently instead.
-- Creation/EXIF date as File Date: less portable/available and adds metadata I/O;
-  last-modified time is the explicit v1 interpretation.
-- Index tied to live preview order: rejected because filtering/sorting would
-  silently change operation results. Capture deterministic indices once.
-- Two-stage rename graphs and rollback: support swaps/case-only changes, but add
-  temporary-name recovery and partial-failure complexity. Refuse these in v1.
-- Direct `os.rename` from the plug-in: avoids overwrites on Windows but bypasses
-  host filesystem notifications/caches. Use the shared public host primitive,
-  also adopted by ordinary Rename; a plug-in-specific bypass is rejected.
-- Change all Move operations to refuse replacement: not selected here because
-  explicit overwrite is a separate, existing workflow. Add a clearly named
-  no-replacement operation and migrate callers that require that guarantee.
-- Expand QuickBoard with validity callbacks, operation buttons or variable
-  selectors: rejected. Show per-file problems in rows and validate after return.
+- General Python expressions, transformations, presets and rollback add scope
+  unrelated to this QuickBoard showcase; keep the bounded syntax and simple batch.
+- Fixed or pane-only numbering does not satisfy sorting/filtering inside the
+  board. Use the visible map plus independent captured file_index instead.
+- A second unfiltered map, validity hook or mutable QuickBoard handle is not
+  needed. Mapping remains generic; the caller defines WYSIWYG operation scope.
+- Direct plug-in `os.rename` bypasses host notifications. Replacing all Move
+  behavior would break overwrite workflows. Use a separate shared Rename API.
+- Full invalid-name strings in row metadata/tooltips defeat the preview bound;
+  preserve validity and length with a visibly shortened display instead.
 
 ## Runtime Effects
 
-- Disabled/uninvoked: no scans, metadata reads, jobs, timers, settings writes or
-  recurring subscriptions; only normal command registration/import overhead.
-- Opening: one parent-name enumeration plus metadata for the captured files;
-  no recursion/content reads. Work is cancellable between entries. Sorting costs
-  O(N log N) once; retain O(N) file records and O(D) occupied names for D entries
-  in the parent, which can be larger than the selected set.
-- Editing: parse once, render/validate N names and detect duplicates in O(N),
-  with no I/O. Respect the host's 4,096-unit input, 10,000-row and 16 MiB limits;
-  bound generated names before building large row snapshots. The optional
-  offset is one bounded integer addition per rendered index field.
-- Acceptance: O(N) fresh preflight and at most one same-folder rename per changed
-  file, plus host notifications. No content copies and no extra worker pool.
-- Cancellation: Escape prevents mutation; Task cancellation stops before the
-  next filesystem step. A single in-progress OS call cannot be forcibly stopped.
-  Partial completion is reported, not rolled back. Snapshot memory is released
-  when the command and any retiring QuickBoard preview finish.
+- Uninvoked: normal registration/import only; no scan, worker, timer or recurring
+  subscription. No new dependency, parser process or custom plug-in worker pool.
+- Capture: one fresh parent enumeration, classification and selected metadata
+  reads; no recursion/content reads. Natural ordering is O(D log D) for D folder
+  files; storage is O(D) occupied/index data plus O(N) candidate records.
+- Preview: bounded O(N) row/map handling and O(V) generation/collision checks for
+  V visible candidates, excluding template length and host sort cost. No I/O.
+  The host retains its bounded active/latest-pending work and cancellation checks.
+- Execution: O(V) fresh checks and at most one metadata rename per changed file,
+  plus notifications. Do not suppress per-entry notifications in the plug-in.
+  Reuse host dirty/queued-refresh coalescing; if insufficient, improve that host
+  path without exposing private models or adding per-file scans/timers.
+- Close/cancel: discard pending preview; reject stale results. Execution stops
+  before the next step and reports partial completion. Release captures when the
+  command and any retiring preview finish; no state persists afterward.
 
 ## Tests
 
-Planned tests below do not exist or pass merely because they are listed here.
-Reuse the existing Qt and plug-in-loader test modules; add one focused pure
-plug-in test module, `fman_unittest.test_batch_file_renamer`.
+These are implementation gates, not recorded passes. Use disposable files only.
 
-- Template units: all five fields/defaults, the examples above, zero padding,
-  fixed current date, stable zero-based indices, local modified-date formatting, braces,
-  extensionless files, dotfiles and multi-dot names. At base index 0 assert
-  `{index:03d}` -> `000`, `{(index + 1):03d}` -> `001`,
-  `{(index + 5):03d}` -> `005`, and the equivalent unparenthesized forms.
-  Cover allowed spacing and reject `index + 0`, signed/negative literals,
-  subtraction, multiplication, repeated addition, reversed operands, nested
-  parentheses and excessive offset digits. Reject all other expressions, field
-  traversal, unknown variables, conversions, nested/oversized specs and bad braces.
-- Plan units: invalid Windows names, Unicode/UTF-16 length, duplicate outputs,
-  occupied targets, unchanged names, case-only changes, chains/swaps, hard-link
-  aliases, deterministic order and preview filtering not reducing operation scope.
-  Assert V/X plus reasons, all duplicate-group members flagged, and collisions
-  against unchanged/unselected entries. Preview and acceptance share validation
-  logic without inspecting the rendered status strings.
-- Native host tests in `core.tests.fs.test_local`: no-overwrite races, ordinary
-  rename and notification success, unsupported provider/cross-parent rejection,
-  long paths and a committed rename followed by notification failure. Cover
-  files, folders, supported link objects, case-only same-entry rename and hard-link
-  destination aliases without extending the batch plug-in's supported inputs.
-- Ordinary Rename tests in `core.tests.commands.test___init__`: use the shared
-  public operation, preserve cursor/progress behavior, and reject a destination
-  created after the friendly precheck. Existing explicit-overwrite Move tests
-  must still pass; unsupported providers must not fall back to replacement.
-- `BatchFileRenamerIT` in `fman_integrationtest.test_qt`: real QuickBoard updates,
-  syntax errors, Valid Name hints, Escape/no-op, invalid acceptance/reopen,
-  filtered acceptance still covering all captured files, and slow preview/close.
-  Invalid-to-valid edits update the hints. Hiding an X row still prevents batch
-  execution, and V rows are still subject to fresh checks after external changes.
-- `BatchFileRenamerPluginIT` in the existing loader tests: install from a
-  disposable third-party directory, public-only imports, command discovery,
-  unavailable-host refusal and source-app invocation without a UI controller.
-  Audit source imports/attribute access for host-private dependencies, exercise
-  mutations through only the documented public operation, and ensure the package
-  includes no host code or direct native mutation workaround.
-- Disposable filesystem integration: source modified/replaced/removed while
-  composing, target introduced after preflight, permission denial and cancellation
-  after a completed prefix. Assert exact original/destination bytes and every
-  report mapping; never test mutations against user files.
+- Parser: six fields, braces, dates/defaults, dotfiles/multiple suffixes, positive
+  offsets on both indices, width overflow and rejection of all other expressions.
+- Pure planner: natural order (`IMG_2`/`IMG_10`), fixed folder indices, active-only
+  duplicates, excluded/unselected/unchanged occupied names, Windows validation,
+  conservative case wording, and zero mutation for an invalid active plan.
+- Bounds: 10,000 unique maximum-length Unicode/escaped names, long literal and
+  repeated-field templates. Every invalid row publishes its bounded reason;
+  no full invalid-string allocation or unbounded tooltip/metadata is permitted.
+- QuickBoard: None bootstrap, duplicate row objects, stable mapped responses,
+  both sort directions, filtering/unfiltering, empty/all-hidden maps, stale worker
+  results, exact Enter revision, cancellation and migrated current consumers.
+- Public rename/provider tests: destination races, case-only/same-entry versus
+  hard-link aliases, files/folders/links, archive-member collisions, unsupported
+  providers and unchanged Move overwrite behavior. Force notification exceptions
+  after native success: exactly one mutation, a confirmed result with warnings,
+  correct ordinary/batch reports and no mutation retry.
+- Batch integration: real filtered/sorted QuickBoard, exact accepted targets,
+  stale preflight, permission failure, cancellation after a successful prefix,
+  reload/selection restoration and a pane navigated away during completion.
+- Loader/package: source-path pure tests plus real temporary third-party install,
+  command discovery, public-only imports/access, missing-host refusal and no
+  privileged/bundled-only runtime behavior.
 
-Focused correctness launcher after implementation adds those tests:
+Focused launcher after those tests are added:
 
 ```powershell
 @'
@@ -364,138 +388,251 @@ for platform in ('windows', 'offscreen'):
     env['QT_QPA_FONTDIR'] = os.path.join(os.environ['WINDIR'], 'Fonts')
     result = subprocess.run([sys.executable, '-B', '-X', 'faulthandler', '-m', 'unittest',
         'fman_unittest.test_batch_file_renamer',
-        'core.tests.fs.test_local',
+        'fman_unittest.test_ui_elements',
+        'core.tests.fs.test_local', 'core.tests.fs.test_zip',
         'core.tests.commands.test___init__',
+        'fman_integrationtest.test_qt.QuickBoardIT',
+        'fman_integrationtest.test_qt.TableIT',
         'fman_integrationtest.test_qt.BatchFileRenamerIT',
         'fman_integrationtest.impl.plugins.test_plugin.BatchFileRenamerPluginIT',
-        '-q'], env=env, timeout=120)
+        '-q'], env=env, timeout=300)
     if result.returncode:
         sys.exit(result.returncode)
 '@ | python -B -
 ```
 
-Performance: use an opt-in case in the existing performance test area, outside
-normal discovery. Measure 100/1,000/10,000 selected records and a large unselected
-parent separately: capture time/memory, callback time, input-to-paint and Qt
-heartbeat. Assert zero filesystem calls per preview; retain QuickBoard's 150 ms
-publication-to-paint and 50 ms controlled-heartbeat gates. Report callback cost
-separately rather than promising a filesystem-independent opening time.
+Record existing symlink-privilege skips explicitly; they do not validate link
+behavior or excuse ordinary-file failures. Split slow groups rather than hide
+failures if the named gate exceeds its time budget.
 
-Manual/release checks: keyboard-only workflow, full long-name tooltips, normal
-and minimum QuickBoard sizes at 100%/150%/200%, docs screenshot using real sample
-rows, and separately authorized portable-host installation/upgrade smoke.
-Do not run a full suite, freeze, package or mutate files during this design task.
+Opt-in performance checks belong outside normal discovery. Measure 100/1,000/
+10,000 candidates, large unselected parents, mapped preview latency and peak
+memory. Assert zero I/O per preview; retain the controlled 150 ms host
+publication-to-paint and 50 ms Qt-heartbeat budgets. Separately measure 10,000
+actual renames in a disposable folder displayed in a pane: total time, heartbeat,
+notification count, scan starts/cancellations and final selection. Granular
+notifications need not imply one scan per notification; prove coalescing or fix
+it in the host before accepting the execution path.
 
-### PyQt Design Preview
+Manual/release gates: keyboard-only workflow, Unicode markers/tooltips, minimum
+and normal layouts at 100%/150%/200%, and separately authorized portable-host
+installation/upgrade smoke. No full suite, freeze, package or file mutation runs
+are authorized by this design rewrite.
 
-A disposable local mockup is available in
-[batch_file_renamer_qt.py](../target/mockups/batch_file_renamer_qt.py). It uses the
-real frameless QuickBoard and application theme with eight synthetic file records
-and one simulated occupied target, `Trip_007.JPG`. It does not install a plug-in,
-inspect user files or execute any rename operation.
+The disposable [PyQt mockup](../target/mockups/batch_file_renamer_qt.py) demonstrates
+appearance, date sorting and both indices using synthetic records. Its private
+sort bridge and older full-batch filtering are not the production contract or
+proof of public API readiness. Replace that bridge when mapping is implemented;
+do not ship it. Current reference: [date-order view](../target/mockups/batch-renamer-date-ascending.png).
 
-```powershell
-python -B -X faulthandler target/mockups/batch_file_renamer_qt.py --capture
-python -B target/mockups/batch_file_renamer_qt.py --template 'Trip_{(index + 5):03d}{ext}'
-```
-
-The capture command passed on 2026-10-06: five variables, zero-based offsets,
-rejected expressions/specifications, identity/dotfile/extensionless examples,
-duplicate and occupied targets, and actual Qt rows/error feedback. Six nonblank
-images cover normal and minimum geometry; Escape closes without mutations.
-`os.rename` and `os.replace` are forbidden during the mockup dialog. Screenshots
-include [positive offset](../target/mockups/batch-renamer-offset.png) and
-[duplicate targets](../target/mockups/batch-renamer-collisions.png).
-
-These ignored `target` artifacts are design aids, not delivered application
-code or evidence for live filesystem safety. The sample producer uses public
-`fman.ui` records and `show_quick_board`; theme setup, column resizing and capture
-inspection are host-test-harness work only. Initial screenshot column widths
-are adjusted as a user could resize them; no new public sizing option is assumed.
-The shared application rename prerequisite and installable plug-in remain
-unimplemented and require separate approval after design review.
+Next reviewers should concentrate on mapping/bootstrap convergence, exact
+accepted scope, committed outcomes, provider migration, six-column payload bounds
+and execution-phase refresh cost. No prior approval carries into this rewrite.
 
 ## Implementation Steps
 
-1. Review/confirm variable names, modified-time meaning, dot-inclusive extension,
-  fixed lexical ordering and v1 exclusions. Index zero and positive-addition-only
-  offsets are user decisions; approve implementation separately.
-2. Design/review and independently validate the application-wide public rename
-  operation and ordinary Rename migration first, including provider/case-only
-  compatibility. Publish the contract; preserve explicit Move overwrite semantics.
-3. Implement the pure bounded parser and rename-plan validation with unit tests.
-4. Add command capture and QuickBoard composition using immutable data, plus
-   public-only loader and Qt tests. No filesystem mutations in the preview.
-5. Add fresh preflight, cancellable no-overwrite execution and honest partial
-   outcome reporting; test races and failure paths with disposable files.
-6. Measure scale, capture the QuickBoard showcase, document usage/installation
-   and host prerequisite, and update the changelog only after implementation.
+1. Obtain a new independent design review and explicit implementation approval.
+2. Implement the shared Rename/result contract and provider coverage; validate
+   ordinary Rename migration separately from unchanged Move workflows.
+3. Implement QuickBoard's mapping argument/result, positional projection and
+   revision gating. Migrate callers, API docs, screenshots and compatibility notes.
+4. Build the pure template/planner and independent plug-in package with test-only
+   source loading and real third-party loader coverage.
+5. Add capture, mapped preview, fresh preflight, cancellable execution and honest
+   result/selection handling using public APIs only.
+6. Run focused correctness, scale/execution and usability gates; update usage and
+   changelog for implemented changes, then request implementation review.
 
 ## Acceptance Criteria
 
-- One QuickBoard and five documented variables cover the requested workflow;
-  no additional controls or Python-code execution are introduced.
-- The first file has index 0. Only a positive decimal integer may be added to
-  `index`, with optional parentheses; formatting follows that addition. Sorting
-  or filtering the board changes neither base indices nor offset results.
-- Default `{name}{ext}` preserves all supported filenames; indices and date
-  values remain stable across typing, sorting, filtering and midnight changes.
-- Every captured file has a preview row; hidden preview rows remain in scope.
-  Escape changes nothing, and invalid plans perform no partial subset operation.
-- Valid Name shows V/X and a reason from the captured full-batch validation.
-  The display is advisory; live preflight and OS no-overwrite checks remain
-  independent and mandatory even when every visible row says V.
-- Valid same-folder batches use the public no-overwrite primitive. Existing or
-  newly appearing destinations are never replaced, including on error paths.
-- Ordinary Rename and third-party callers share the application-level public
-  primitive for supported providers; no safety workaround is private to the
-  plug-in. Explicit-overwrite Move behavior is not silently redefined.
-- Stale preflight aborts before mutations; later failures/cancellation preserve
-  completed work and accurately report completed, unchanged and unattempted files.
-- The plug-in is independently installable and uses no Qt/Core/host-private
-  imports. It refuses missing host support without an unsafe fallback.
-- Focused tests and agreed performance/usability checks pass; any unrun portable
-  or platform checks are explicitly recorded. Design completion is not release
-  approval or evidence that this feature has been implemented.
+- One QuickBoard and six bounded variables implement the agreed workflow; no
+  arbitrary execution, private plug-in API or unrelated renamer features.
+- Only non-None mapped rows are renamed in visible order. Index follows the
+  view; file_index and captured dates stay fixed. Filters never free occupied names.
+- New Name/Valid Name/Index cannot sort/filter themselves. Returned text and map
+  exactly match the completed preview; Escape and an empty active set do nothing.
+- Invalid names remain inspectable within the real payload budget; shortened
+  display text is never an executable target. Invalid active plans change nothing.
+- Native no-replace prevents destination overwrite, and committed mutations are
+  distinguishable from notification failures without guessing or retrying.
+- Existing supported ordinary Rename capabilities are covered before migration;
+  explicit Move replacement remains available. Provider compatibility is documented.
+- Failures/cancellation preserve and accurately report completed work, without
+  rollback claims. Public reload/selection handling respects pane lifetime/location.
+- Third-party installation, focused tests and agreed performance/usability gates
+  pass; unrun artifact/platform checks are recorded. Design review alone is not
+  implementation or release approval.
 
 ## Reviewers
 
 ### 2026_10_06 - GitHub Copilot
 
 - Role: Reviewer
-- Activity: Design
+- Activity: Review
 - Agent: GitHub Copilot
 - Model: GPT-6 Astra
 - Effort: Extra High
 - Context Window: 1M
-- Outcome: Proposed a small QuickBoard-based third-party renamer with five
-  allowlisted variables, stable capture/indexing and explicit no-overwrite safety.
-  Identified the current replacing move path and a minimal additive host API
-  prerequisite. Ready for design review; no implementation authorized.
+- Outcome: Replaced accumulated drafts/history at the user's request with this
+  consolidated design. Ready for a fresh independent design review; host APIs,
+  plug-in implementation and release work remain unapproved.
 
 ### 2026_10_06 - GitHub Copilot
 
 - Role: Reviewer
 - Activity: Review
 - Agent: GitHub Copilot
-- Model: GPT-6 Astra
-- Effort: Extra High
+- Model: Claude Fable 5.1
+- Effort: High
 - Context Window: 1M
-- Outcome: Applied the user's zero-based index and positive-integer-addition-only
-  syntax decisions. Expanded no-overwrite renaming into a shared application API
-  and ordinary Rename migration, distinct from explicit replacing Move behavior.
-  Reinforced independent third-party packaging and strictly public host API use.
-  Preserved the initial design record; no implementation performed or authorized.
+- Outcome: Revisions required; the WYSIWYG mapping design is sound and the
+  earlier ordering, identity, enumeration, date-default and loading concerns
+  are resolved. Three P2 items: the reopen-after-invalid path silently widens
+  the approved scope (M1), per-keystroke bootstrap doubles work and flickers
+  (M2), and the host-side mapping/termination changes are unstated (M3).
+  M4-M8 are smaller. No code changed or run.
+
+## Design Review (2026_10_06, Fable)
+
+Checked against the current [quick_board.py](../src/main/python/fman/impl/ui/quick_board.py)
+(`get_rows(text)`, two-value result, one `LatestJobs` lane, revision-gated
+acceptance), [table.py](../src/main/python/fman/impl/ui/table.py) (`project`
+ranks row objects; `visible_positions` is `id(row)`-based; `sort_rows` uses
+stable `sorted`/`list.sort`, so equal keys keep generator order in both
+directions as the plan requires), [PlugIn.md](../PlugIn.md) (`set_path` callback
+is not a loaded guarantee; `on_path_changed` fires on load completion) and the
+Unreleased changelog (QuickBoard is not yet in a release).
+
+- **M1 [P2] Reopening after an invalid acceptance widens the approved scope.**
+  The user filters 12 candidates to 5, presses Enter, one row is invalid, and
+  the board reopens with sort/filter reset: all 12 rows are active again. A
+  second Enter after fixing the template renames 12 files although the user
+  approved 5. Because QuickBoard cannot block Enter on a cross and has no
+  initial sort/filter arguments, prefer: alert and stop (the user re-invokes and
+  re-filters), or reopen only for pure syntax failures. If reopening stays,
+  the alert must state that the scope was reset to all candidates.
+- **M2 [P2] Bootstrap on every text revision is unnecessary for this consumer
+  and costly for the host.** Source cells (File Index, Original Name, File
+  Date) are text-independent, so the mapping from the previous revision is
+  still valid. Requiring `get_rows(text, None)` per keystroke means two worker
+  rounds and two 10,000-row projections per edit, and the board visibly shows
+  blank derived cells before they fill. Specify: bootstrap only when no settled
+  snapshot/mapping exists; otherwise call `get_rows(text, current_mapping)`
+  and verify afterwards that row count and sortable/filterable cells (and
+  typed `values`) equal the current snapshot; on mismatch, re-bootstrap once,
+  then treat a second mismatch as a preview error. State in the contract
+  whether source cells may depend on `text` at all; for a generic API they
+  should not.
+- **M3 [P2] The host changes needed for positional mapping are not listed.**
+  `Table.project` carries row objects and `visible_positions` resolves by
+  `id(row)`, so a repeated row instance cannot be mapped positionally today.
+  The plan should name the host work: rank `(position, row)` through
+  `project`/`sort_rows`, expose a positional visible map when `settled`, hook
+  `state_changed` so a sort/filter settle with a changed map regenerates
+  through the existing latest-only lane, and define loop termination (a mapped
+  response whose sortable/filterable cells differ from the bootstrap is a
+  preview error, never a reprojection). Also state that acceptance returns the
+  map the accepted snapshot was generated from, re-verified after its final
+  projection.
+- **M4 [P3] API change timing.** QuickBoard exists only in Unreleased, so the
+  signature change costs nothing now: amend the Unreleased changelog entry and
+  PlugIn.md rather than writing migration notes, and land it before the next
+  release. Alternatively an opt-in keyword (for example `mapped=True`) keeps
+  the five simple use cases at `get_rows(text)` and skips their bootstrap
+  round; record which was chosen and why.
+- **M5 [P3] Stage the ordinary Rename migration.** Gating the whole migration
+  on archive-member rename design leaves the local `Path.replace` race open
+  meanwhile. Allow ordinary Rename to call `rename_no_replace` when the
+  provider implements it and keep the documented current path otherwise;
+  providers are migrated one at a time with their own tests.
+- **M6 [P3] Post-execution selection.** `set_path(url, callback=...)`'s
+  callback signals initialization, not a loaded listing. Subscribe
+  `pane.on_path_changed` (it fires on same-root load completion), call
+  `pane.reload()`, then `select`/`place_cursor_at` inside the callback,
+  tolerating `ValueError` and unsubscribing on close or navigation.
+- **M7 [P3] Wording.** A candidate that is casefold-equal only to its own
+  original is the refused case-only rename; label it as such instead of
+  `Conflicts ignoring case`, which should be reserved for two distinct entries.
+- **M8 [P3] Test fixture placement.** The `importlib` source-path fixture is
+  used by `fman_unittest.test_batch_file_renamer` and by `BatchFileRenamerIT`
+  in `test_qt`; name one shared helper location so the two roots do not
+  duplicate it. The launcher now includes `core.tests.fs.test_zip`
+  (7za-spawning); record its expected duration with the gate result.
+
+Resolved from the previous cycle: natural ordering with digit runs, `os.lstat`
+identity, fresh `os.scandir`, explicit `%Y-%m-%d` default, provider-default
+exception choices, test loading without `build._environment()` changes and
+the 300 s launcher budget.
 
 ### 2026_10_06 - GitHub Copilot
 
 - Role: Reviewer
 - Activity: Review
 - Agent: GitHub Copilot
-- Model: GPT-6 Astra
-- Effort: Extra High
-- Context Window: 1M
-- Outcome: Specified advisory Valid Name hints with V/X and reasons through
-  QuickBoard's existing public row API, independent of live/native safety checks.
-  User requested a disposable PyQt design mockup; application and plug-in
-  implementation remain unapproved, with no file renames in the mockup.
+- Model: Claude Opus 5.5
+- Effort: High
+- Context Window: 872K
+- Outcome: Revisions required. Agree with M1-M8. The WYSIWYG scope and the
+  rename API are sound. P1 proposes a simpler QuickBoard contract that removes
+  bootstrap and the contract checks (it supersedes the mechanics of M2/M3).
+  P2 closes a preflight gap that can leave a partial batch. P3-P6 are smaller.
+  No code changed or run.
+
+## Design Review 2 (2026_10_06, Opus)
+
+Checked against [quick_board.py](../src/main/python/fman/impl/ui/quick_board.py),
+`TableSchema.snapshot`/`_display`/`plain_size` in
+[table_data.py](../src/main/python/fman/impl/ui/table_data.py),
+`LocalFileSystem._rename` and `APP_VERSION` in
+[fman/\_\_init\_\_.py](../src/main/python/fman/__init__.py).
+
+- **P1 [P2] Let the host own the source rows.** The plan sends all six cells
+  every round and then checks that the caller did not change the sortable or
+  filterable cells. That needs a bootstrap round, a mismatch rule and a
+  termination rule. Alternative: an opt-in mapped mode in which the caller
+  passes the fixed source rows once (`rows=`). `get_rows(text, mapping)` then
+  returns only the derived cells for each source row, in source order. Sort and
+  filter work on cells the host already has, so the first mapping exists
+  before any callback. There is nothing to bootstrap, a caller cannot break
+  the contract, and each update carries half the payload. Existing
+  `get_rows(text)` callers stay unchanged (M4). Derived columns are exactly the
+  `sortable=False, filterable=False` ones. Record this in Alternatives if it is
+  rejected.
+- **P2 [P2] Check target absence on disk during preflight, not against the
+  captured names.** `os.scandir` lists long names only, so a target such as
+  `LONGFI~1.TXT` that matches another file's 8.3 short name shows as `✓ Ready`.
+  Native no-replace refuses it, but only during execution, after earlier
+  renames have already happened. A per-target `os.lstat` (expecting
+  `FileNotFoundError`) in the fresh preflight catches it, along with
+  entries created after capture, before any mutation. State that preflight
+  rejects any existing path, including aliases, while the preview checks only
+  the captured long names.
+- **P3 [P3] Classify folder entries without a stat per entry.** `file_index` needs
+  every entry classified. On Windows, `DirEntry.is_file(follow_symlinks=False)`,
+  `is_symlink()`, `is_junction()` and `stat(follow_symlinks=False).st_file_attributes`
+  (reparse bit) come from the directory listing without extra calls. Use them for
+  the folder, and `os.lstat` only for selected files and the parent. Otherwise
+  a 100,000-entry folder costs 100,000 metadata calls before the board opens.
+- **P4 [P3] Report filtered-out files.** The report lists unchanged, renamed,
+  failed, unattempted and refresh-warning outcomes. Add "Excluded by filter" (count,
+  or rows) so the result matches the approved scope. Also define "visible" once:
+  rows that pass the filters, not rows currently scrolled into view.
+- **P5 [P3] The payload margin is about 1%.** The 16,610,000-byte budget checks
+  out against `snapshot`: strings are counted once by object id, typed cells add
+  8 bytes, raw integers add nothing. That leaves only 167,216 bytes of headroom
+  under 16 MiB, so any added
+  `highlights` or `targets` breaks it. Keep the worst-case test and name it as
+  the gate for later column changes. Under P1 the per-update payload roughly
+  halves.
+- **P6 [P3] Minor.**
+  - **Host check:** combine `fman.APP_VERSION` with feature detection
+    (`hasattr(fman.fs, 'rename_no_replace')`) and state how versions compare.
+  - **Sort order:** the plug-in's natural key can differ from the host's
+    `natural` sort on the Original Name column (for example, Unicode digits).
+    Say that File Index order and the board's Name sort may disagree in such
+    cases.
+
+Verified: `QuickTableRow` has no tooltip or metadata field (only `highlights`,
+`values`, `targets`). `snapshot` keeps raw cells as `values`, so typed source
+cells cost 8 bytes each. `fman.APP_VERSION` is public. No code, mockup or test
+was changed or run.

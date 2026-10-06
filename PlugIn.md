@@ -681,6 +681,49 @@ operation. Accepted text is not an operation plan or proof that files are safe
 to mutate. This API requires a host containing QuickBoard; copying a consumer
 plug-in into an older portable release does not add the host service.
 
+#### Planned Row Mapping Extension
+
+This agreed extension is **not implemented yet**. The reference and runnable
+example above describe the current two-item return and one-argument callback.
+The proposed public API changes are limited to:
+
+```python
+get_rows(text, mapping)
+text, accepted, mapping = show_quick_board(...)
+```
+
+`mapping` is an immutable `tuple[int | None, ...]` indexed by generator row
+position. Each integer is that row's zero-based visible position; `None` means
+filtered out. For generated rows `[A, B, C, D]` displayed as `[C, A]`, the map
+is `(1, None, 0, None)`. Non-None positions are unique and consecutive. It is a
+single source-to-view map, not a second unfiltered-order map or a set of row IDs.
+
+The initial callback receives `mapping=None` to establish a row snapshot.
+Text edits start a new snapshot with `None`; once projected, the callback receives
+its mapping. Sorting/filtering regenerates the preview when that mapping changes.
+Mapping-aware calls retain row count and generator order, including hidden rows,
+and keep all sortable/filterable source cells stable for that text revision.
+Cells computed from view positions must use `sortable=False, filterable=False`,
+preventing their values from feeding back into the projection that defines them.
+Snapshot/order changes belong to the next `mapping=None` bootstrap, not a mapped
+response. Map rows by input position, never Python object identity.
+
+Enter waits for matching text, mapping and completed preview. A later text,
+sort or filter edit clears an earlier pending acceptance request. Successful
+return is `(text, True, mapping)` for that exact snapshot; cancellation returns
+the current draft as `(text, False, None)`, without waiting for pending work.
+An empty visible set is represented by all-None entries (or `()` for zero rows),
+not by `mapping=None`.
+
+QuickBoard only projects rows and exchanges plain data. The caller decides
+whether hidden rows are operation exclusions and owns all filename generation,
+validation and collision checks. In Batch File Renamer, only visible rows are
+renamed; hidden entries still occupy their original names. Migration requires
+adding the callback's second argument and unpacking the third return value.
+There is no new owner, mutable handle, operation callback or validity API.
+The canonical proposed consumer contract is in
+[Batch File Renamer](Plan/BatchFileRenamer.md#quickboard-mapping-contract).
+
 ### Qt-Free QuickTable and Panel
 
 Panels need an owner: expose a `UiController` subclass in the plug-in's root

@@ -275,6 +275,36 @@ its handler. No persistence or background activity exists before opening a board
 For a public-only example and the complete threading/return contract, see the
 [plug-in API reference](https://github.com/RoyiAvital/RoyiFileManager/blob/main/PlugIn.md#qt-free-quickboard).
 
+### Planned Mapping Extension
+
+**Not implemented yet:** current examples use `get_rows(text)` and return
+`(text, accepted)`. The agreed next contract adds only:
+
+```python
+get_rows(text, mapping)
+text, accepted, mapping = show_quick_board(...)
+```
+
+The immutable tuple maps each generator row to its zero-based visible position,
+or `None` if hidden. Generated `[A, B, C, D]` displayed as `[C, A]` produces
+`(1, None, 0, None)`. The first callback for a text revision receives
+`mapping=None`; projection then supplies the map. Sorting/filtering changes
+regenerate the preview, and mapped responses keep generator order and all source
+rows, including hidden ones. Sortable/filterable source cells must remain stable;
+view-dependent fields use `sortable=False, filterable=False`.
+
+Enter returns the exact settled text, mapping and preview revision. Later text
+or view edits clear queued acceptance. Cancellation preserves the draft and
+returns `(text, False, None)`. Hidden-row entries are distinct from an absent
+mapping; an all-hidden snapshot has a tuple of `None` entries.
+
+The UI does not decide operation scope or validate filenames. A renamer can use
+non-None rows as its targets, while checking their names against all occupied
+folder entries, including hidden and unselected files. These remain caller rules.
+See the [proposed API details](https://github.com/RoyiAvital/RoyiFileManager/blob/main/PlugIn.md#planned-row-mapping-extension)
+for snapshot and migration requirements. Existing callers and examples must be
+updated when this API change is implemented.
+
 ## QuickTable
 
 <figure class="product-shot" markdown>
