@@ -135,7 +135,43 @@ class DirectoryPaneWidget(QWidget):
 		self, url, sort_column='', ascending=True, callback=None, onerror=None
 	):
 		self._model.set_location(url, sort_column, ascending, callback, onerror)
-	def reload(self):
+	def reload(self, on_done=None):
+		if on_done is None:
+			self._model.reload()
+		else:
+			self._reload_with_callback(on_done)
+	@run_in_main_thread
+	def _reload_with_callback(self, on_done):
+		source = self._model.sourceModel()
+		if self._model._closed or source._shutdown:
+			return
+		revision = source._scan_revision
+		active = True
+		def cancel(*_):
+			nonlocal active
+			if not active:
+				return
+			active = False
+			for signal, callback in connections:
+				try:
+					signal.disconnect(callback)
+				except (TypeError, RuntimeError):
+					pass
+		def completed():
+			if source._shutdown or self._model.sourceModel() is not source:
+				cancel()
+			elif (source._successful_scan_revision == source._scan_revision > revision and
+					not source._scanning and not source._dirty and source._displayed is source._listing and
+					source._committed_revision == source._revision):
+				cancel()
+				on_done()
+		connections = ((source.all_rows_loaded, completed),
+			(self._model.location_changed, cancel), (self.destroyed, cancel), (source.destroyed, cancel))
+		window = QWidget.window(self)
+		if isinstance(window, MainWindow):
+			connections += ((window.closed, cancel),)
+		for signal, callback in connections:
+			signal.connect(callback)
 		self._model.reload()
 	@run_in_main_thread
 	def place_cursor_at(self, file_url):

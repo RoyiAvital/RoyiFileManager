@@ -423,7 +423,9 @@ rewrites the YAML or an existing result, and older raw records remain readable.
 
 Run `python build.py measure` for the regular sixteen-row performance report,
 including five selection patterns each for small and large folders. Add `--full`
-to include medium-folder cases for all folder-based benchmarks, with separate
+to include medium-folder cases and two Copy workloads: 10,000 flat files at 4 KiB
+and a 1,000-file tree at 8 KiB per file,
+with separate
 full-run history. Selection latency and selected-file readback are measured
 separately. See the [performance protocol](src/performancetest/README.md).
 
@@ -435,7 +437,7 @@ Version identifiers are `X.Y.Z` for clean matching release tags, or `Unreleased`
 the source version and commit are retained separately. Reruns replace the version's
 current result but preserve earlier runs. Failed runs never replace successful results.
 
-The report has sixteen overview rows, including Selections Readback, separate QuickView Images
+The regular report has sixteen overview rows, including Selections Readback, separate QuickView Images
 and Text rows, Refresh / Selection and a Navigation
 aggregate of Page Up/Down, Home/End and wheel scrolling. Previous-version comparisons, charts
 and detailed measurements use compatible results only; the first run establishes
@@ -460,19 +462,24 @@ slowest of ten selected-file readback case
 medians measured after this endpoint, not added to selection latency. QuickView
 Images and Text rows are consecutive. Text averages three paint medians, with exact text, syntax-colour and rendered
 Markdown checks. Missing or failed cases suppress their aggregate. Catalog
-revision 10 uses new v2 flat fixtures for QuickView only; v1 data is retained.
+revision 13 adds full-only `copy-flat-v1` and `copy-tree-v1`; v2 flat fixtures remain for QuickView only and
+v1 data is retained. Copy separately records Ctrl+A paint/readback, preparation,
+first-file latency, total throughput and final pane refresh. Destination files
+are isolated and removed after byte verification; shared fixtures are unchanged.
 Older composite timings and changed harnesses are incompatible.
 The last three select 64 rows in the small folder and 1,000 in the large folder.
 All five patterns share a pane per repetition: six added processes, each limited
 to 25 seconds.
 
 `python build.py measure --full` adds medium (50,000-file) pane loading, refresh,
-Filter Bar, Fuzzy Find, QuickView, navigation and selection cases. The six extra
-workloads produce nineteen workloads and twenty-two overview rows total; refresh
+Filter Bar, Fuzzy Find, QuickView, navigation and selection cases, plus Copy.
+The eight extra workloads produce twenty-one workloads and twenty-four overview rows total; refresh
 averages 24 case medians and navigation 42. Medium selections use the same five
 patterns, with 1,000 rows for each complex pattern. Full history and reports live
 separately under `UserSettings/Performance/Full`. Regular runs do not prepare or
-scan the medium fixture. Full runs take longer; no runtime has been measured yet.
+scan medium or Copy fixtures. The retained `0.14.0` versus `Unreleased` Copy
+[reference table](src/performancetest/README.md#copy-reference-results) is unchanged;
+no full-suite runtime is claimed.
 See the [protocol and result format](src/performancetest/README.md).
 
 ### Historical Performance Retesting

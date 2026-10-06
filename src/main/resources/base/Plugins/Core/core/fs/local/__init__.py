@@ -3,7 +3,7 @@ from core.util import filenotfounderror
 from datetime import datetime
 from errno import ENOENT
 from fman import Task
-from fman.fs import FileSystem, cached
+from fman.fs import FileSystem, RenameResult, cached
 from fman.url import as_url, splitscheme, as_human_readable, join, basename, \
 	dirname
 from io import UnsupportedOperation
@@ -11,7 +11,7 @@ from os import remove, rmdir
 from os.path import islink, samestat, isabs, splitdrive
 from pathlib import Path
 from shutil import copystat, SameFileError
-from stat import S_ISDIR, S_ISREG, S_IWRITE
+from stat import S_ISDIR, S_ISREG, S_ISLNK, S_IWRITE
 from tempfile import mkstemp, mkdtemp
 
 import errno
@@ -21,6 +21,7 @@ from core.fs.local.windows.drives import DrivesFileSystem, DriveName
 from core.fs.local.windows.network import NetworkFileSystem
 
 _COPY_BUFFER_SIZE = 1024 * 1024
+_REPARSE_NAME_SURROGATE = 0x20000000
 
 class LocalFileSystem(FileSystem):
 
@@ -124,6 +125,23 @@ class LocalFileSystem(FileSystem):
 		self._check_transfer_precnds(src_url, dst_url)
 		for task in self._prepare_move(src_url, dst_url):
 			task()
+	def rename_no_replace(self, source_url, destination_url):
+		source, destination = self._check_transfer_precnds(source_url, destination_url)
+		if '\\' in source or '\\' in destination:
+			raise UnsupportedOperation('Rename requires canonical file URLs with forward slashes.')
+		if os.name != 'nt' or dirname(source_url) != dirname(destination_url):
+			raise UnsupportedOperation('No-replace rename requires a Windows local parent folder.')
+		source_path, destination_path = self._url_to_os_path(source), self._url_to_os_path(destination)
+		metadata = os.lstat(source_path)
+		if (S_ISLNK(metadata.st_mode) or getattr(metadata, 'st_reparse_tag', 0) & _REPARSE_NAME_SURROGATE or
+				(S_ISREG(metadata.st_mode) and metadata.st_nlink > 1)):
+			raise UnsupportedOperation('Select actual files, not links or junctions.')
+		changed = source != destination
+		if changed:
+			if os.path.normcase(source_path) != os.path.normcase(destination_path) and os.path.lexists(destination_path):
+				raise FileExistsError(destination_path)
+			os.rename(source_path, destination_path)
+		return RenameResult(source_url, destination_url, changed)
 	def prepare_move(self, src_url, dst_url):
 		self._check_transfer_precnds(src_url, dst_url)
 		return self._prepare_move(src_url, dst_url, measure_size=True)
@@ -139,10 +157,7 @@ class LocalFileSystem(FileSystem):
 		if use_rename:
 			src_stat = os.lstat(src_os_path) if src_is_link else self.stat(src_path)
 			dst_par_path = splitscheme(dirname(dst_url))[1]
-			try:
-				dst_par_dev = expected_st_dev[dst_par_path]
-			except KeyError:
-				dst_par_dev = self.stat(dst_par_path).st_dev
+			dst_par_dev = self._get_expected_st_dev(dst_par_path, expected_st_dev)
 			if src_stat.st_dev == dst_par_dev:
 				yield Task(
 					'Moving ' + basename(src_url), size=1,
@@ -158,10 +173,7 @@ class LocalFileSystem(FileSystem):
 			)
 			dst_par_path = splitscheme(dirname(dst_url))[1]
 			# Expect `dst_path` to inherit .st_dev from its parent:
-			try:
-				expected_st_dev[dst_path] = expected_st_dev[dst_par_path]
-			except KeyError:
-				expected_st_dev[dst_path] = self.stat(dst_par_path).st_dev
+			expected_st_dev[dst_path] = self._get_expected_st_dev(dst_par_path, expected_st_dev)
 			for name in self.iterdir(src_path):
 				try:
 					yield from self._prepare_move(
@@ -181,6 +193,26 @@ class LocalFileSystem(FileSystem):
 			# a file that has not been copied!
 			# To avoid this, we "copy and delete" as a single, atomic task:
 			yield MoveByCopying(self, src_url, dst_url, size)
+	def _get_expected_st_dev(self, path, expected_st_dev):
+		missing = []
+		while path not in expected_st_dev:
+			try:
+				metadata = self.stat(path)
+			except FileNotFoundError:
+				parent = os.path.dirname(path)
+				if not parent or parent == path:
+					raise
+				missing.append(path)
+				path = parent
+			else:
+				if not S_ISDIR(metadata.st_mode):
+					raise NotADirectoryError(errno.ENOTDIR, os.strerror(errno.ENOTDIR), path)
+				expected_st_dev[path] = metadata.st_dev
+				break
+		device = expected_st_dev[path]
+		for missing_path in missing:
+			expected_st_dev[missing_path] = device
+		return device
 	def _rename(self, src_url, dst_url):
 		src_path = splitscheme(src_url)[1]
 		os_src_path = self._url_to_os_path(src_path)

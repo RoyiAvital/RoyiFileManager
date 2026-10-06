@@ -211,7 +211,12 @@ show_quick_board(*, columns, get_rows, text='', title='', summary='')
 
 - `columns`: fixed `QuickTableColumn` descriptors, using the same kinds and
   options as QuickTable.
-- `get_rows(text)`: returns `QuickTableRow` records for the current composition.
+- `get_rows(text, mapping)`: must return the two-item tuple `(rows, caller_status)`,
+  where rows is an iterable of `QuickTableRow` and status is a string or `None`.
+  Rows and source order stay fixed per dialog; generated columns must disable
+  sorting and filtering.
+  Use `(rows, None)` to leave the right side of the footer empty. Rows-only returns
+  are rejected; change `return rows` to `return rows, None` in earlier callbacks.
 - `text`: the initial string, returned without trimming.
 - `title`: the draggable window header.
 - `summary`: optional plain secondary text above the composition field; its
@@ -224,11 +229,12 @@ from fman.ui import QuickTableColumn, QuickTableRow, show_quick_board
 def compose_prefix():
     names = ('report.txt', 'notes.md', 'photo.jpg')
 
-    def get_rows(prefix):
-        return tuple(QuickTableRow((name, prefix + name)) for name in names)
+    def get_rows(prefix, mapping):
+      return tuple(QuickTableRow((name, prefix + name)) for name in names), None
 
     return show_quick_board(
-        columns=(QuickTableColumn('Original'), QuickTableColumn('Preview')),
+        columns=(QuickTableColumn('Original'),
+          QuickTableColumn('Preview', sortable=False, filterable=False)),
         get_rows=get_rows,
         text='Archive_',
         title='Compose a file-name prefix',
@@ -238,13 +244,13 @@ def compose_prefix():
 
 The screenshot uses this public-API-only example. Call `compose_prefix()`;
 no owner or controller subclass is needed. The result is the composed prefix
-and its approval flag; the example renames no files. The caller decides what
+its approval flag and source-to-view map; the example renames no files. The caller decides what
 to do with an accepted string.
 
-- ++enter++ returns `(text, True)` after the matching preview settles. During
-  work it queues approval for that input revision; another edit or error clears it.
-- ++esc++ or window close returns `(text, False)`, preserving the draft and spaces.
-- Sorting and column filters survive preview replacement and affect display only.
+- ++enter++ returns `(text, True, mapping)` after the matching preview settles.
+  During work it queues approval; another text/view edit or error clears it.
+- ++esc++ or window close returns `(text, False, None)`, preserving the draft and spaces.
+- Sorting and column filters survive preview replacement and update the map.
   Clear All Filters leaves the composed string untouched. Empty previews are valid.
 - ++ctrl+f++ focuses/selects the composition field. Up/Down/Page Up/Page Down
   focus the table; Tab/Shift+Tab move between them. ++alt+down++ opens the current
@@ -254,43 +260,34 @@ to do with an accepted string.
 - A text edit or arriving preview closes an open column filter editor, discarding
   its unapplied draft; committed filters remain active.
 
-The dialog lifetime is host-managed, like QuickTable: plug-in unload alone does
-not close it. Closing the board or main window cancels pending work and rejects
-late results. Earlier QuickBoard callers must remove their `owner` argument.
-The handler, iteration, numeric formatters and validation run off Qt, serially
-with only the latest pending input retained. Keep callbacks bounded and read-only;
-the host cannot forcibly interrupt a blocked call, but checks cancellation
-before and after each formatter. Old rows remain while the counts footer shows
-`Updating...` or a preview error. Any caller exception, including `Task.Canceled`,
-fails the preview: `ValueError` is inline feedback; other exceptions also show
-a dialog-owned alert.
+**Preview and limits**
 
-Limits are 1-64 columns, 10,000 rows, the shared 16 MiB preview budget, 4,096 UTF-16
-input units, and 512/2,048 title/summary characters. NUL and multiline initial
-input are rejected. Qt may retain pasted line breaks in a draft: Enter is blocked,
-but Escape returns that invalid draft unchanged. Two open or still-draining
-boards can exist process-wide; saturation cancels the new call without invoking
-its handler. No persistence or background activity exists before opening a board.
+- Updates after 100 ms of typing inactivity. Enter skips the delay; sorting and
+  filtering update immediately.
+- Callbacks run off Qt: keep them bounded and read-only. Closing cancels pending work.
+- Preview errors block acceptance. `ValueError` appears inline; other exceptions
+  also show an alert. Retained rows are marked `Stale preview`.
+- Optional right-side status: up to 512 characters; `None` hides it. Status is
+  informational, not validation.
+- Limits: 25,000 rows, 16 columns, 16 MiB preview; single-line input up to
+  4,096 UTF-16 units.
 
-For a public-only example and the complete threading/return contract, see the
+Full contract:
 [plug-in API reference](https://github.com/RoyiAvital/RoyiFileManager/blob/main/PlugIn.md#qt-free-quickboard).
 
-### Planned Mapping Extension
-
-**Not implemented yet:** current examples use `get_rows(text)` and return
-`(text, accepted)`. The agreed next contract adds only:
+### Row Mapping
 
 ```python
-get_rows(text, mapping)
+get_rows(text, mapping) -> (rows, caller_status)
 text, accepted, mapping = show_quick_board(...)
 ```
 
 The immutable tuple maps each generator row to its zero-based visible position,
 or `None` if hidden. Generated `[A, B, C, D]` displayed as `[C, A]` produces
-`(1, None, 0, None)`. The first callback for a text revision receives
-`mapping=None`; projection then supplies the map. Sorting/filtering changes
-regenerate the preview, and mapped responses keep generator order and all source
-rows, including hidden ones. Sortable/filterable source cells must remain stable;
+`(1, None, 0, None)`. The first callback receives `mapping=None`; projection then
+supplies the map. Later text edits reuse it. Sorting/filtering changes regenerate
+the preview. Responses keep generator order and all rows, including hidden ones.
+Sortable/filterable source cells must remain fixed for the whole dialog;
 view-dependent fields use `sortable=False, filterable=False`.
 
 Enter returns the exact settled text, mapping and preview revision. Later text
@@ -301,9 +298,9 @@ mapping; an all-hidden snapshot has a tuple of `None` entries.
 The UI does not decide operation scope or validate filenames. A renamer can use
 non-None rows as its targets, while checking their names against all occupied
 folder entries, including hidden and unselected files. These remain caller rules.
-See the [proposed API details](https://github.com/RoyiAvital/RoyiFileManager/blob/main/PlugIn.md#planned-row-mapping-extension)
-for snapshot and migration requirements. Existing callers and examples must be
-updated when this API change is implemented.
+The full preview must fit the limits; errors block approval instead of silently
+truncating rows. QuickTable retains its own 10,000-row/64-column limits.
+See the [API details](https://github.com/RoyiAvital/RoyiFileManager/blob/main/PlugIn.md#row-mapping).
 
 ## QuickTable
 

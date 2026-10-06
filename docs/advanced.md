@@ -4,6 +4,15 @@ These notes cover behavior that matters during unusual or failed operations.
 
 ## File Transfers
 
+Local Copy (`F5`) and Move (`F6`) prepare the whole transfer and ask about known
+filename conflicts before changing files. Large selections can take time to
+prepare; you can cancel while waiting.
+
+After preparation, items are processed in order. Cancelling before transfers
+start leaves files unchanged. Cancelling later does not undo completed copies
+or moves.
+Missing destination folders are created only after preparation succeeds.
+
 ### Local Copies
 
 - A copy is completed in temporary space beside the destination before it is
@@ -11,6 +20,13 @@ These notes cover behavior that matters during unusual or failed operations.
 - Overwriting links and merging folders through directory links are refused.
 - If a Windows replacement error reports a recovery file, keep it until you
   have checked the destination.
+
+### Local Moves
+
+- Within the same drive, Move normally changes the item's location without
+  copying its contents.
+- Between drives, each file is copied successfully before its original is
+  deleted. If copying fails, that original stays in place.
 
 ### Archives
 

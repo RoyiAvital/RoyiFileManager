@@ -182,12 +182,13 @@ class Action:
 	tooltip: str = ''
 
 
-def _validate_columns(columns):
+def _validate_columns(columns, max_columns=None):
 	if isinstance(columns, (str, bytes)) or not isinstance(columns, Sequence):
 		raise TypeError('columns must be a sequence of QuickTableColumn descriptors.')
 	columns = tuple(columns)
-	if not 1 <= len(columns) <= MAX_COLUMNS:
-		raise ValueError('Tables require 1-64 columns.')
+	limit = MAX_COLUMNS if max_columns is None else max_columns
+	if not 1 <= len(columns) <= limit:
+		raise ValueError('Tables require 1-%d columns.' % limit)
 	for column in columns:
 		if type(column) is not QuickTableColumn:
 			raise TypeError('columns must contain QuickTableColumn descriptors.')
@@ -232,8 +233,11 @@ def _number_text(column, value):
 
 
 class TableSchema:
-	def __init__(self, columns, base_path=None, dates=None):
-		self.columns = _validate_columns(columns)
+	def __init__(self, columns, base_path=None, dates=None, *, max_rows=None, max_columns=None):
+		self.columns = _validate_columns(columns, max_columns)
+		if max_rows is not None and (type(max_rows) is not int or max_rows < 1):
+			raise ValueError('Row limit must be a positive integer.')
+		self.max_rows = max_rows
 		self.headers = tuple(column.label for column in self.columns)
 		self.num_columns = len(self.columns)
 		self.roles = {index: column.role for index, column in enumerate(self.columns) if column.role}
@@ -298,11 +302,13 @@ class TableSchema:
 		size = 0
 		width = self.num_columns
 		typed_bytes = TYPED_SLOT_BYTES * len(self.typed)
+		max_rows = MAX_ROWS if self.max_rows is None else self.max_rows
+		max_nodes = max(500000, max_rows * (2 * width + 4)) if self.max_rows is not None else 500000
 		for row in rows:
 			if check_canceled is not None:
 				check_canceled()
-			if len(result) >= MAX_ROWS:
-				raise ValueError('Table exceeds the 10,000-row limit.')
+			if len(result) >= max_rows:
+				raise ValueError('Table exceeds the {:,}-row limit.'.format(max_rows))
 			if not isinstance(row, QuickTableRow):
 				raise TypeError('rows must contain QuickTableRow records.')
 			if len(row.cells) != width:
@@ -334,7 +340,7 @@ class TableSchema:
 							raise TypeError('Highlight spans must contain two integers.')
 						if not 0 <= span[0] <= span[1] <= len(cell):
 							raise ValueError('Highlight outside cell text.')
-			size += plain_size(row, seen) + typed_bytes
+			size += plain_size(row, seen, max_nodes=max_nodes) + typed_bytes
 			if size > MAX_TEXT_BYTES:
 				raise ValueError('Table exceeds the 16 MiB text limit.')
 			result.append(row)
@@ -354,10 +360,10 @@ def absolute_path(value):
 	return ntpath.normpath(value)
 
 
-def plain_size(value, seen=None, depth=0):
+def plain_size(value, seen=None, depth=0, max_nodes=500000):
 	if seen is None:
 		seen = set()
-	if depth > 12 or len(seen) > 500000:
+	if depth > 12 or len(seen) > max_nodes:
 		raise ValueError('Table payload is too complex.')
 	if id(value) in seen:
 		return 0
@@ -369,9 +375,9 @@ def plain_size(value, seen=None, depth=0):
 	if type(value) is bytes:
 		return len(value)
 	if isinstance(value, (tuple, frozenset)):
-		return sum(plain_size(item, seen, depth + 1) for item in value)
+		return sum(plain_size(item, seen, depth + 1, max_nodes) for item in value)
 	if is_dataclass(value) and value.__dataclass_params__.frozen:
-		return sum(plain_size(getattr(value, field.name), seen, depth + 1) for field in fields(value))
+		return sum(plain_size(getattr(value, field.name), seen, depth + 1, max_nodes) for field in fields(value))
 	raise TypeError('Table payload must contain only immutable plain data.')
 
 

@@ -11,6 +11,256 @@ from unittest.mock import Mock, patch
 
 import os
 
+class NoReplaceRenameTest(TestCase):
+	def test_ordinary_rename_uses_public_api_and_falls_back_only_when_unimplemented(self):
+		from core.commands import _Rename
+		from fman.fs import RenameResult
+		from io import UnsupportedOperation
+		pane = Mock()
+		source, target = 'file://C:/folder/a', 'file://C:/folder/b'
+		with patch('fman.fs.rename_no_replace', return_value=RenameResult(source, target, True)) as rename, \
+				patch('core.commands.prepare_move') as legacy:
+			_Rename(pane, source, target)()
+			rename.assert_called_once_with(source, target)
+			legacy.assert_not_called()
+			pane.place_cursor_at.assert_called_once_with(target)
+		with patch('fman.fs.rename_no_replace', side_effect=NotImplementedError), \
+				patch('core.commands.prepare_move', return_value=[]) as legacy:
+			_Rename(pane, source, target)()
+			legacy.assert_called_once_with(source, target)
+		with patch('fman.fs.rename_no_replace', side_effect=FileExistsError), \
+				patch('core.commands.prepare_move') as legacy, patch.object(_Rename, 'show_alert') as alert:
+			_Rename(pane, source, target)()
+			legacy.assert_not_called()
+			alert.assert_called_once()
+		message = 'Select actual files, not links or junctions.'
+		with patch('fman.fs.rename_no_replace', side_effect=UnsupportedOperation(message)), \
+				patch('core.commands.prepare_move') as legacy, patch.object(_Rename, 'show_alert') as alert:
+			_Rename(pane, source, target)()
+			legacy.assert_not_called()
+			alert.assert_called_once_with(message)
+
+	def test_public_rename_refuses_collision_and_reports_committed_warnings(self):
+		from fman.fs import rename_no_replace
+		from fman.impl.plugins.mother_fs import MotherFileSystem
+		with TemporaryDirectory() as directory:
+			root = Path(directory)
+			source, target = root / 'source.txt', root / 'target.txt'
+			source.write_bytes(b'source')
+			target.write_bytes(b'keep')
+			mother = MotherFileSystem(None)
+			provider = LocalFileSystem()
+			mother.add_child('file://', provider)
+			seen = []
+			mother.file_removed.add_callback(Mock(side_effect=RuntimeError('notification failed')))
+			mother.file_removed.add_callback(lambda url: seen.append(('removed', url)))
+			mother.file_added.add_callback(lambda url: seen.append(('added', url)))
+			with patch('fman.fs._get_mother_fs', return_value=mother):
+				with self.assertRaises(FileExistsError):
+					rename_no_replace(as_url(source), as_url(target))
+				self.assertEqual(b'keep', target.read_bytes())
+				self.assertEqual(b'source', source.read_bytes())
+				target.unlink()
+				result = rename_no_replace(as_url(source), as_url(target))
+			self.assertTrue(result.changed)
+			self.assertEqual(as_url(target), result.destination_url)
+			self.assertEqual(('notification failed',), result.notification_warnings)
+			self.assertEqual([('removed', as_url(source)), ('added', as_url(target))], seen)
+			self.assertEqual(b'source', target.read_bytes())
+			self.assertFalse(source.exists())
+
+	def test_unformattable_notification_error_keeps_committed_result(self):
+		from fman.fs import rename_no_replace
+		from fman.impl.plugins.mother_fs import MotherFileSystem
+		for formatting_error in (RuntimeError('Cannot format'), KeyboardInterrupt()):
+			class NotificationError(Exception):
+				def __str__(self):
+					raise formatting_error
+			with self.subTest(formatting_error=type(formatting_error).__name__), TemporaryDirectory() as directory:
+				source, target = Path(directory, 'source.txt'), Path(directory, 'target.txt')
+				source.write_bytes(b'keep')
+				mother, provider = MotherFileSystem(None), LocalFileSystem()
+				mother.add_child('file://', provider)
+				later = [Mock() for index in range(4)]
+				mother.file_removed.add_callback(Mock(side_effect=NotificationError()))
+				mother.file_removed.add_callback(later[0])
+				mother.file_added.add_callback(later[1])
+				provider._file_removed.add_callback(later[2])
+				provider._file_added.add_callback(later[3])
+				with patch('fman.fs._get_mother_fs', return_value=mother), \
+						patch('core.fs.local.os.rename', wraps=os.rename) as native:
+					result = rename_no_replace(as_url(source), as_url(target))
+					native.assert_called_once()
+				self.assertTrue(result.changed)
+				self.assertEqual(as_url(source), result.source_url)
+				self.assertEqual(as_url(target), result.destination_url)
+				self.assertEqual(('Notification failed (details unavailable).',), result.notification_warnings)
+				for callback, url in zip(later, (as_url(source), as_url(target), as_url(source), as_url(target))):
+					callback.assert_called_once_with(url)
+				self.assertFalse(source.exists())
+				self.assertEqual(b'keep', target.read_bytes())
+
+	def test_public_rename_refuses_existing_hard_link_alias(self):
+		from fman.fs import rename_no_replace
+		from fman.impl.plugins.mother_fs import MotherFileSystem
+		from io import UnsupportedOperation
+		with TemporaryDirectory() as directory:
+			root = Path(directory)
+			source, target = root / 'source.txt', root / 'alias.txt'
+			source.write_bytes(b'keep both names')
+			target.hardlink_to(source)
+			mother = MotherFileSystem(None)
+			mother.add_child('file://', LocalFileSystem())
+			changed = Mock()
+			mother.file_added.add_callback(changed)
+			mother.file_removed.add_callback(changed)
+			with patch('fman.fs._get_mother_fs', return_value=mother), \
+					self.assertRaisesRegex(UnsupportedOperation, 'Select actual files, not links or junctions'):
+				rename_no_replace(as_url(source), as_url(target))
+			self.assertEqual(b'keep both names', source.read_bytes())
+			self.assertEqual(b'keep both names', target.read_bytes())
+			self.assertTrue(source.samefile(target))
+			changed.assert_not_called()
+
+	def test_link_tags_are_refused_but_sparse_and_cloud_files_can_rename(self):
+		from io import UnsupportedOperation
+		from stat import S_IFREG, S_IFDIR, S_IFLNK, FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_SPARSE_FILE
+		provider = LocalFileSystem()
+		for mode, tag, links, blocked in ((S_IFLNK, 0, 1, True), (S_IFDIR, 0xa0000003, 1, True),
+				(S_IFREG, 0xa000000c, 1, True), (S_IFREG, 0, 2, True),
+				(S_IFREG, 0, 1, False), (S_IFREG, 0x9000001a, 1, False), (S_IFREG, 0x80000015, 1, False)):
+			metadata = SimpleNamespace(st_mode=mode, st_nlink=links, st_reparse_tag=tag,
+				st_file_attributes=FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_SPARSE_FILE)
+			with self.subTest(tag=tag, mode=mode, links=links), \
+					patch('core.fs.local.os.lstat', return_value=metadata), patch('core.fs.local.os.rename') as rename:
+				if blocked:
+					with self.assertRaisesRegex(UnsupportedOperation, 'Select actual files'):
+						provider.rename_no_replace('file://C:/folder/source', 'file://C:/folder/target')
+					rename.assert_not_called()
+				else:
+					self.assertTrue(provider.rename_no_replace('file://C:/folder/source', 'file://C:/folder/target').changed)
+					rename.assert_called_once()
+
+	def test_native_junction_rename_is_refused_without_touching_target(self):
+		from core.commands import RenameListener, _Rename
+		from fman.impl.plugins.mother_fs import MotherFileSystem
+		from io import UnsupportedOperation
+		from subprocess import run
+		with TemporaryDirectory() as directory:
+			target, link, destination = (Path(directory, name) for name in ('target', 'link', 'destination'))
+			target.mkdir()
+			(target / 'keep').write_bytes(b'keep')
+			result = run(['cmd', '/c', 'mklink', '/J', str(link), str(target)], capture_output=True, timeout=10)
+			self.assertEqual(0, result.returncode, result.stderr)
+			with self.assertRaisesRegex(UnsupportedOperation, 'Select actual files, not links or junctions'):
+				LocalFileSystem().rename_no_replace(as_url(link), as_url(destination))
+			mother, pane = MotherFileSystem(None), Mock()
+			mother.add_child('file://', LocalFileSystem())
+			with patch('fman.fs._get_mother_fs', return_value=mother), \
+					patch('core.commands.submit_task', side_effect=lambda task: task()), \
+					patch.object(_Rename, 'show_alert') as alert, patch('core.fs.local.os.rename') as native:
+				RenameListener(pane).on_name_edited(as_url(link), destination.name)
+				alert.assert_called_once_with('Select actual files, not links or junctions.')
+				native.assert_not_called()
+			pane.place_cursor_at.assert_not_called()
+			self.assertTrue(os.path.isjunction(link))
+			self.assertFalse(destination.exists())
+			self.assertEqual(b'keep', (target / 'keep').read_bytes())
+
+	def test_backslash_paths_are_refused_before_native_rename(self):
+		from fman.fs import rename_no_replace
+		from fman.impl.plugins.mother_fs import MotherFileSystem
+		from io import UnsupportedOperation
+		with TemporaryDirectory() as directory:
+			root = Path(directory)
+			nested = root / 'nested'
+			nested.mkdir()
+			(root / 'source.txt').write_bytes(b'root source')
+			(nested / 'source.txt').write_bytes(b'nested source')
+			(root / 'folder').mkdir()
+			mother, provider = MotherFileSystem(None), LocalFileSystem()
+			mother.add_child('file://', provider)
+			changed = Mock()
+			mother.file_added.add_callback(changed)
+			mother.file_removed.add_callback(changed)
+			pairs = ((as_url(root / 'source.txt'), as_url(root) + '/nested\\moved.txt'),
+				(as_url(root) + '/nested\\source.txt', as_url(root / 'moved.txt')),
+				(as_url(root / 'folder'), as_url(root) + '/nested\\moved-folder'))
+			with patch('fman.fs._get_mother_fs', return_value=mother), \
+					patch('core.fs.local.os.rename') as rename, \
+					patch('core.fs.local.os.lstat', side_effect=AssertionError('No metadata read for invalid URLs')):
+				for operation in (rename_no_replace, provider.rename_no_replace):
+					for source, destination in pairs:
+						with self.subTest(public=operation is rename_no_replace, source=source, destination=destination), \
+								self.assertRaisesRegex(UnsupportedOperation, 'forward slashes'):
+							operation(source, destination)
+				rename.assert_not_called()
+			changed.assert_not_called()
+			self.assertEqual(b'root source', (root / 'source.txt').read_bytes())
+			self.assertEqual(b'nested source', (nested / 'source.txt').read_bytes())
+			self.assertTrue((root / 'folder').is_dir())
+			self.assertFalse((root / 'moved.txt').exists())
+			self.assertFalse((nested / 'moved.txt').exists())
+			self.assertFalse((nested / 'moved-folder').exists())
+
+	def test_existing_short_alias_is_refused_without_false_notifications(self):
+		from core.commands import RenameListener, _Rename
+		from fman.fs import rename_no_replace
+		from fman.impl.plugins.mother_fs import MotherFileSystem
+		from win32api import GetShortPathName
+		with TemporaryDirectory() as directory:
+			root = Path(directory)
+			source = root / 'Long source file for rename.txt'
+			source.write_bytes(b'keep')
+			alias = Path(GetShortPathName(str(source))).name
+			if alias.casefold() == source.name.casefold():
+				self.skipTest('8.3 short names are disabled on this volume')
+			mother, provider = MotherFileSystem(None), LocalFileSystem()
+			mother.add_child('file://', provider)
+			changed, pane = Mock(), Mock()
+			mother.file_removed.add_callback(changed)
+			mother.file_added.add_callback(changed)
+			with patch('fman.fs._get_mother_fs', return_value=mother), \
+					patch('core.fs.local.os.rename', wraps=os.rename) as native:
+				for operation in (rename_no_replace, provider.rename_no_replace):
+					with self.assertRaises(FileExistsError):
+						operation(as_url(source), as_url(root / alias))
+				with patch('core.commands.submit_task', side_effect=lambda task: task()), \
+						patch.object(_Rename, 'show_alert') as alert:
+					RenameListener(pane).on_name_edited(as_url(source), alias)
+					alert.assert_called_once()
+				native.assert_not_called()
+			changed.assert_not_called()
+			pane.place_cursor_at.assert_not_called()
+			self.assertEqual([source.name], os.listdir(root))
+			self.assertEqual(b'keep', source.read_bytes())
+
+	def test_native_race_same_name_case_only_and_folder(self):
+		from io import UnsupportedOperation
+		with TemporaryDirectory() as directory:
+			root = Path(directory)
+			source, target = root / 'file.txt', root / 'other.txt'
+			source.write_bytes(b'source')
+			provider = LocalFileSystem()
+			self.assertFalse(provider.rename_no_replace(as_url(source), as_url(source)).changed)
+			original = os.rename
+			def race(old, new):
+				target.write_bytes(b'late')
+				return original(old, new)
+			with patch('core.fs.local.os.rename', side_effect=race), self.assertRaises(FileExistsError):
+				provider.rename_no_replace(as_url(source), as_url(target))
+			self.assertEqual(b'late', target.read_bytes())
+			case = root / 'FILE.txt'
+			self.assertTrue(provider.rename_no_replace(as_url(source), as_url(case)).changed)
+			self.assertIn('FILE.txt', os.listdir(root))
+			folder = root / 'folder'
+			folder.mkdir()
+			provider.rename_no_replace(as_url(folder), as_url(root / 'renamed'))
+			self.assertTrue((root / 'renamed').is_dir())
+			with self.assertRaises(UnsupportedOperation):
+				provider.rename_no_replace(as_url(case), as_url(root / 'renamed/FILE.txt'))
+
+
 class ListdirTest(TestCase):
 	def setUp(self):
 		self.fs = LocalFileSystem()
@@ -114,7 +364,7 @@ class NativeEntryAttributesTest(TestCase):
 		self.fs.iterdir(self.directory)
 		original = self.fs.stat(self.directory)
 		self.fs.cache.put(self.directory, 'stat',
-			SimpleNamespace(st_dev=original.st_dev + 1))
+			SimpleNamespace(st_dev=original.st_dev + 1, st_mode=original.st_mode))
 		tasks = list(self.fs.prepare_move(as_url(self.root / 'file'),
 			as_url(self.root / 'destination')))
 		self.assertEqual(1, len(tasks))
@@ -709,6 +959,40 @@ class LocalFileSystemTest(TestCase):
 			self.assertEqual(src_contents, self._jsonify_directory(dst))
 	def test_move_directory_without_rename(self):
 		self.test_move_directory(use_rename=False)
+	def test_expected_device_reuses_missing_parent_inference(self):
+		with TemporaryDirectory() as directory:
+			root = Path(directory)
+			missing = root / 'new' / 'nested'
+			expected = {}
+			with patch.object(self._fs, 'stat', wraps=self._fs.stat) as metadata:
+				self.assertEqual(root.stat().st_dev, self._fs._get_expected_st_dev(_urlpath(missing), expected))
+				self.assertEqual(3, metadata.call_count)
+				metadata.reset_mock()
+				self.assertEqual(root.stat().st_dev, self._fs._get_expected_st_dev(_urlpath(missing), expected))
+				metadata.assert_not_called()
+			self.assertFalse((root / 'new').exists())
+	def test_expected_device_rejects_non_directory_ancestors(self):
+		with TemporaryDirectory() as directory:
+			blocked = Path(directory, 'file.txt')
+			blocked.write_bytes(b'keep')
+			for path in (blocked, blocked / 'child'):
+				with self.subTest(path=path), self.assertRaises(NotADirectoryError):
+					self._fs._get_expected_st_dev(_urlpath(path), {})
+			self.assertEqual(b'keep', blocked.read_bytes())
+	def test_expected_device_preserves_lookup_errors_and_stops_at_roots(self):
+		for path, error in (
+			('C:/denied/new', PermissionError('denied')),
+			('C:/invalid/new', OSError('invalid path')),
+			('C:/', FileNotFoundError('missing drive')),
+			('//server/share', FileNotFoundError('missing share'))
+		):
+			with self.subTest(path=path), patch.object(self._fs, 'stat', side_effect=error) as metadata:
+				expected = {}
+				with self.assertRaises(type(error)) as raised:
+					self._fs._get_expected_st_dev(path, expected)
+				self.assertIs(error, raised.exception)
+				metadata.assert_called_once_with(path)
+				self.assertEqual({}, expected)
 	def _create_test_directory_structure(self, parent_dir):
 		file_1 = parent_dir / 'file.txt'
 		file_txt_contents = '12345'
@@ -785,7 +1069,7 @@ class LocalFileSystemTest(TestCase):
 				# Make file writable again. Otherwise cleaning up the temporary
 				# directory fails on Windows.
 				dst.chmod(dst.stat().st_mode | S_IWRITE)
-	def test_move_across_devices(self):
+	def test_move_across_devices(self, missing_parent=False):
 		with TemporaryDirectory() as tmp_dir:
 			src_parent = Path(tmp_dir, 'src_parent')
 			src_parent.mkdir()
@@ -801,10 +1085,11 @@ class LocalFileSystemTest(TestCase):
 			src_subfile.write_text(src_subfile_contents)
 			dst_parent = Path(tmp_dir, 'dst_parent')
 			dst_parent.mkdir()
-			dst = dst_parent / src.name
+			dst = dst_parent / 'new' / 'nested' / src.name if missing_parent else dst_parent / src.name
 			# Pretend that src_parent and dst_parent are on different devices:
 			self._fs.cache.put(
-				_urlpath(dst_parent), 'stat', fake_statresult(object(), 1)
+				_urlpath(dst_parent), 'stat',
+				SimpleNamespace(st_dev=object(), st_ino=1, st_mode=dst_parent.stat().st_mode)
 			)
 			# We don't want to just call `self._fs.move(...)` here, for the
 			# following reason: The bug which this test case prevents initially
@@ -820,6 +1105,11 @@ class LocalFileSystemTest(TestCase):
 			# *after* `dst` was created in 1), thus not triggering the error.
 			# Hence we use list(...) to force 2) to be computed before 1) runs:
 			tasks = list(self._fs.prepare_move(as_url(src), as_url(dst)))
+			self.assertFalse(dst.exists())
+			self.assertTrue(src.exists())
+			if missing_parent:
+				self.assertFalse((dst_parent / 'new').exists())
+				dst.parent.mkdir(parents=True)
 			for task in tasks:
 				task()
 			self.assertFalse(src.exists())
@@ -829,6 +1119,8 @@ class LocalFileSystemTest(TestCase):
 			dst_subfile = dst / 'subdir' / 'subfile.txt'
 			dst_subfile_contents = dst_subfile.read_text()
 			self.assertEqual(src_subfile_contents, dst_subfile_contents)
+	def test_move_to_missing_parent_across_devices(self):
+		self.test_move_across_devices(missing_parent=True)
 	def setUp(self):
 		super().setUp()
 		self._fs = LocalFileSystem()

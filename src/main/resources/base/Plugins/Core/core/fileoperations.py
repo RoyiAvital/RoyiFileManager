@@ -3,6 +3,8 @@ from fman import Task, YES, NO, YES_TO_ALL, NO_TO_ALL, ABORT, OK
 from fman.url import basename, join, dirname, splitscheme, relpath, \
 	as_human_readable
 from os.path import pardir
+from pathlib import Path
+from stat import S_ISREG
 
 import fman.fs
 import os
@@ -30,6 +32,7 @@ class FileTreeOperation(Task):
 		self._cannot_move_to_self_shown = False
 		self._override_all = None
 		self._ignore_exceptions = False
+		self._ancestor_identities = {}
 	def _transfer(self, src, dest):
 		raise NotImplementedError()
 	def _prepare_transfer(self, src, dest):
@@ -47,6 +50,8 @@ class FileTreeOperation(Task):
 		except OSError as error:
 			self.show_alert(str(error), OK, OK)
 			return
+		finally:
+			self._ancestor_identities.clear()
 		if not gathered:
 			return
 		self.set_size(sum(task.get_size() for task in self._tasks))
@@ -73,20 +78,6 @@ class FileTreeOperation(Task):
 		for i, src in enumerate(self._iter(self._files)):
 			is_last = i == len(self._files) - 1
 			dest = self._get_dest_url(src)
-			if is_parent(src, dest, self._fs):
-				if src != dest:
-					try:
-						is_samefile = self._fs.samefile(src, dest)
-					except OSError:
-						is_samefile = False
-					if is_samefile:
-						if self._can_transfer_samefile():
-							self._enqueue(self._prepare_transfer(src, dest))
-							continue
-				self.show_alert(
-					"You cannot %s a file to itself." % self._descr_verb
-				)
-				return False
 			try:
 				is_dir = self._fs.is_dir(src)
 			except OSError as e:
@@ -95,14 +86,28 @@ class FileTreeOperation(Task):
 				if self._handle_exception(error_message, is_last, e):
 					continue
 				return False
+			destination_exists = self._fs.exists(dest)
+			if self._contains_destination(src, dest, is_dir, destination_exists):
+				if src != dest and self._can_transfer_samefile():
+					try:
+						is_samefile = self._fs.samefile(src, dest)
+					except OSError:
+						is_samefile = False
+					if is_samefile:
+						self._enqueue(self._prepare_transfer(src, dest))
+						continue
+				self.show_alert(
+					"You cannot %s a file to itself." % self._descr_verb
+				)
+				return False
 			if is_dir:
-				if self._fs.exists(dest):
+				if destination_exists:
 					if not self._merge_directory(src):
 						return False
 				else:
 					self._enqueue(self._prepare_transfer(src, dest))
 			else:
-				if self._fs.exists(dest):
+				if destination_exists:
 					should_overwrite = self._should_overwrite(dest)
 					if should_overwrite == NO:
 						continue
@@ -112,6 +117,49 @@ class FileTreeOperation(Task):
 						assert should_overwrite == YES, should_overwrite
 				self._enqueue(self._prepare_transfer(src, dest))
 		return True
+	def _contains_destination(self, source, destination, is_dir, destination_exists):
+		if source == destination:
+			return True
+		if os.name == 'nt' and splitscheme(source)[0] == splitscheme(destination)[0] == 'file://':
+			try:
+				source_path, destination_path = as_human_readable(source), as_human_readable(destination)
+				metadata = os.stat(source_path) if is_dir else os.lstat(source_path)
+				identity = metadata.st_dev, metadata.st_ino
+				if not all(identity):
+					return is_parent(source, destination, self._fs)
+				if not is_dir and (not S_ISREG(metadata.st_mode) or getattr(metadata, 'st_reparse_tag', 0) & 0x20000000):
+					return is_parent(source, destination, self._fs)
+				if destination_exists:
+					target = os.stat(destination_path)
+					if not target.st_dev or not target.st_ino:
+						return is_parent(source, destination, self._fs)
+					if identity == (target.st_dev, target.st_ino):
+						return True
+				if not is_dir:
+					return False
+				parent = os.path.dirname(destination_path)
+				if parent not in self._ancestor_identities:
+					paths = set()
+					for start in (Path(parent).absolute(), Path(parent).resolve(strict=False)):
+						paths.update((start, *start.parents))
+					identities = set()
+					for path in paths:
+						self.check_canceled()
+						try:
+							ancestor = path.stat()
+						except FileNotFoundError:
+							continue
+						if not ancestor.st_dev or not ancestor.st_ino:
+							identities = None
+							break
+						identities.add((ancestor.st_dev, ancestor.st_ino))
+					self._ancestor_identities[parent] = identities
+				identities = self._ancestor_identities[parent]
+				if identities is not None:
+					return identity in identities
+			except OSError:
+				pass
+		return is_parent(source, destination, self._fs)
 	def _merge_directory(self, src):
 		for url in (src, self._get_dest_url(src)):
 			if splitscheme(url)[0] == 'file://':

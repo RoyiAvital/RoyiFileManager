@@ -114,6 +114,10 @@ class PerformanceReportTest(TestCase):
 					input_ready_ms=index * 10 + 5,
 					selected_count=marked, heartbeat_gap_ms={'max': 12})
 					for index, (pattern, marked) in enumerate(patterns, 1)]))]
+			if test['workload'] == 'copy':
+				result['samples'] = [dict(ui=dict(samples=[
+					dict(action_id='copy.selection', paint_ms=2, input_ready_ms=3, readback_ms=1, selected_count=15000),
+					dict(action_id='copy.transfer', wall_ms=100, first_file_ms=5, preparation_ms=4, throughput_mib_s=1)]))]
 			current['results'].append(result)
 		return current
 
@@ -145,8 +149,8 @@ class PerformanceReportTest(TestCase):
 		current = self.selection_record(full=True)
 		data = report.report_data(current, {})
 		self.assertEqual('full', data['suite_mode'])
-		self.assertEqual(19, data['expected_tests'])
-		self.assertEqual(22, len(data['tests']))
+		self.assertEqual(21, data['expected_tests'])
+		self.assertEqual(24, len(data['tests']))
 		self.assertTrue(data['complete'])
 		medium = next(item for item in data['tests'] if item['test_id'] == 'selection.medium')
 		self.assertEqual(35, medium['headline']['median'])
@@ -161,7 +165,7 @@ class PerformanceReportTest(TestCase):
 
 	def test_readback_and_quickview_types_have_independent_headlines(self):
 		current = self.selection_record()
-		current['results'][-1]['samples'][0]['ui']['samples'][1]['readback_ms'] = 700
+		next(result for result in current['results'] if result['test_id'] == 'selection.large')['samples'][0]['ui']['samples'][1]['readback_ms'] = 700
 		self.assertEqual(report.overview(current), report.overview(records.statistics_record(current)))
 		rows = {item['test_id']: item for item in report.overview(current)}
 		self.assertEqual(700, rows['readback']['headline']['median'])
@@ -172,6 +176,17 @@ class PerformanceReportTest(TestCase):
 		self.assertEqual(3, rows['quickview.text.large']['headline']['count'])
 		self.assertNotIn('switch.text.input_to_paint_ms', rows['quickview.large']['metrics'])
 		self.assertNotIn('enable.png.input_to_paint_ms', rows['quickview.text.large']['metrics'])
+
+	def test_copy_report_keeps_selection_startup_and_completion_separate(self):
+		current = self.selection_record(full=True)
+		row = next(item for item in report.overview(current) if item['test_id'] == 'copy.flat')
+		self.assertEqual(100, row['headline']['median'])
+		self.assertEqual(2, row['metrics']['copy.selection.paint_ms']['median'])
+		self.assertEqual(5, row['metrics']['copy.transfer.first_file_ms']['median'])
+		html = report.render_html(current, {})
+		self.assertIn('Copy / Flat (10,000 Files)', html)
+		self.assertIn('Copy / Tree (1,000 Files)', html)
+		self.assertIn("name.endsWith('_mib_s') ? 'MiB/s'", html)
 
 	def test_related_report_rows_are_consecutive(self):
 		for full in (False, True):
@@ -225,7 +240,7 @@ class PerformanceReportTest(TestCase):
 		for missing in (False, True):
 			with self.subTest(missing=missing):
 				current = self.selection_record()
-				result = current['results'][-1]
+				result = next(item for item in current['results'] if item['test_id'] == 'selection.large')
 				if missing:
 					result['samples'][0]['ui']['samples'].pop()
 				else:
@@ -645,7 +660,112 @@ class BuildMeasureCommandTest(TestCase):
 		verification.assert_not_called()
 
 
+class CopyBenchmarkTest(TestCase):
+	def test_catalog_copy_dispatch_and_metrics(self):
+		from fman_performancetest import copy
+		catalog = records.load_catalog()
+		self.assertFalse(any(test['workload'] == 'copy' for test in catalog['tests']))
+		tests = [test for test in catalog['full_tests'] if test['workload'] == 'copy']
+		self.assertEqual(['copy.flat', 'copy.tree'], [test['id'] for test in tests])
+		for test, count, size in zip(tests, (10000, 1000), (4096, 8192)):
+			self.assertEqual(count, catalog['fixtures'][test['fixture']]['files'])
+			self.assertEqual(size, catalog['fixtures'][test['fixture']]['bytes_per_file'])
+			with patch.object(copy, 'child', return_value=0) as child:
+				self.assertEqual(0, suite.child(test, catalog, Path('fixture'), False, None))
+				child.assert_called_once_with(Path('fixture'), catalog['protocol']['viewport'], count, size, None)
+		result = dict(errors=[], settings_isolated=True, verified=True, samples=[
+			dict(action_id='copy.selection', paint_ms=2, input_ready_ms=3, readback_ms=1, selected_count=15000),
+			dict(action_id='copy.transfer', wall_ms=100, first_file_ms=5, preparation_ms=4, prompt_ms=1,
+				throughput_mib_s=1, queued_task_count=15001, copied_count=15000, bytes_copied=15000 * 8192)])
+		copy.validate_result(result, 15000, 8192)
+		metrics = records.summarize(dict(samples=[dict(ui=result)]))
+		self.assertEqual(5, metrics['copy.transfer.first_file_ms']['median'])
+		for field, value in (('copied_count', 1), ('first_file_ms', 101), ('wall_ms', float('nan'))):
+			broken = deepcopy(result)
+			broken['samples'][1][field] = value
+			with self.subTest(field=field), self.assertRaises(ValueError):
+				copy.validate_result(broken, 15000, 8192)
+
+	def test_timeout_cleans_parent_owned_scratch(self):
+		from subprocess import TimeoutExpired
+		catalog = records.load_catalog()
+		test = next(test for test in catalog['full_tests'] if test['workload'] == 'copy')
+		paths = []
+		def run(command, **kwargs):
+			paths.append(Path(command[command.index('--scratch') + 1]))
+			self.assertTrue(paths[-1].is_dir())
+			raise TimeoutExpired(command, kwargs['timeout'])
+		with patch.object(suite.subprocess, 'run', side_effect=run), self.assertRaises(TimeoutExpired):
+			suite.invoke(test, 'fixture', records.CATALOG)
+		self.assertFalse(paths[0].exists())
+
+	def test_native_copy_workload_verifies_contents(self):
+		import os
+		import subprocess
+		code = """
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from fman_performancetest import fixtures, copy
+with TemporaryDirectory() as temporary:
+    fixture = fixtures.prepare(temporary, 'copy-smoke', dict(revision=1, kind='copy', files=8, seed=1732, bytes_per_file=8192))
+    raise SystemExit(copy.child(Path(fixture['directory']), [1280, 800], 8, 8192))
+"""
+		env = dict(os.environ, QT_QPA_PLATFORM='windows')
+		env['PYTHONPATH'] = os.pathsep.join((str(SCRIPT.parents[1]), env.get('PYTHONPATH', '')))
+		result = subprocess.run([sys.executable, '-B', '-X', 'faulthandler', '-c', code], env=env, capture_output=True, text=True, timeout=60)
+		self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+		payload = json.loads(next(line.removeprefix('SUITE_RESULT ') for line in result.stdout.splitlines() if line.startswith('SUITE_RESULT ')))
+		self.assertTrue(payload['verified'])
+		self.assertEqual(8, payload['samples'][0]['selected_count'])
+		self.assertEqual(8, payload['samples'][1]['copied_count'])
+
+	def test_native_copy_tree_preserves_structure_and_selected_roots(self):
+		import os
+		import subprocess
+		code = """
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from fman_performancetest import fixtures, copy
+with TemporaryDirectory() as temporary:
+    fixture = fixtures.prepare(temporary, 'tree-smoke', dict(revision=1, kind='copy', layout='tree', files=20, seed=1733, bytes_per_file=8192))
+    raise SystemExit(copy.child(Path(fixture['directory']), [1280, 800], 20, 8192))
+"""
+		env = dict(os.environ, QT_QPA_PLATFORM='windows')
+		env['PYTHONPATH'] = os.pathsep.join((str(SCRIPT.parents[1]), env.get('PYTHONPATH', '')))
+		result = subprocess.run([sys.executable, '-B', '-X', 'faulthandler', '-c', code], env=env, capture_output=True, text=True, timeout=60)
+		self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+		payload = json.loads(next(line.removeprefix('SUITE_RESULT ') for line in result.stdout.splitlines() if line.startswith('SUITE_RESULT ')))
+		self.assertTrue(payload['verified'])
+		self.assertEqual(10, payload['samples'][0]['selected_count'])
+		self.assertEqual(20, payload['samples'][1]['copied_count'])
+
+
 class SyntheticFixtureTest(TestCase):
+	def test_copy_tree_has_reproducible_breadth_depth_and_payload(self):
+		specification = dict(revision=1, kind='copy', layout='tree', files=120, seed=1733, bytes_per_file=8192)
+		entries = dict(synthetic.entries(specification, {}))
+		self.assertEqual(120, len(entries))
+		self.assertEqual(entries, dict(synthetic.entries(specification, {})))
+		self.assertEqual(10, len({name.split('/')[0] for name in entries}))
+		self.assertEqual(set(range(4, 10)), {len(name.split('/')) for name in entries})
+		self.assertTrue(all(len(payload) == 8192 for payload in entries.values()))
+		with TemporaryDirectory() as directory:
+			fixture = synthetic.prepare(directory, 'copy-tree-test', specification)
+			self.assertEqual(fixture, synthetic.prepare(directory, 'copy-tree-test', specification))
+
+	def test_copy_fixture_has_exact_reproducible_payloads_without_images(self):
+		specification = dict(revision=1, kind='copy', files=8, seed=1732, bytes_per_file=8192)
+		with TemporaryDirectory() as temporary, patch.object(synthetic, 'assets', side_effect=AssertionError('No images')):
+			first = synthetic.prepare(temporary, 'copy-test', specification)
+			self.assertEqual(first, synthetic.prepare(temporary, 'copy-test', specification))
+			paths = sorted(Path(first['directory']).iterdir())
+			self.assertEqual(8, len(paths))
+			self.assertTrue(all(path.stat().st_size == 8192 for path in paths))
+			self.assertNotEqual(paths[0].read_bytes(), paths[1].read_bytes())
+			paths[0].write_bytes(b'modified')
+			with self.assertRaisesRegex(ValueError, 'Modified fixture'):
+				synthetic.prepare(temporary, 'copy-test', specification)
+
 	def test_text_revision_adds_samples_without_changing_legacy_fixtures(self):
 		images = {name: ('test-' + name).encode('ascii') for name in synthetic.ASSETS}
 		legacy = dict(revision=1, kind='flat', files=8, seed=1729)
@@ -689,10 +809,12 @@ class PerformanceRecordTest(TestCase):
 		catalog = records.load_catalog()
 		self.assertEqual(13, len(catalog['tests']))
 		self.assertEqual(['pane.load.medium', 'refresh.medium', 'filter.medium',
-			'fuzzy.medium', 'quickview.medium', 'selection.medium'],
+			'fuzzy.medium', 'quickview.medium', 'selection.medium', 'copy.flat', 'copy.tree'],
 			[test['id'] for test in catalog['full_tests']])
 		self.assertEqual(50000, catalog['fixtures']['flat-medium-v1']['files'])
 		for test in catalog['full_tests']:
+			if test['workload'] == 'copy':
+				continue
 			reference = next(item for item in catalog['tests'] if item['id'] == test['id'].replace('.medium', '.large'))
 			self.assertEqual(dict(reference, id=test['id'], fixture=reference['fixture'].replace('large', 'medium')), test)
 		for full in (False, True):
@@ -711,8 +833,8 @@ class PerformanceRecordTest(TestCase):
 						(['--full'] if full else []), record_saved=lambda record, path: published.append(record)))
 				invoke.assert_not_called()
 				self.assertEqual(['flat-small-v1', 'flat-large-v1', 'recursive-v1', 'flat-small-v2', 'flat-large-v2'] +
-					(['flat-medium-v1', 'flat-medium-v2'] if full else []), prepared)
-				self.assertEqual(19 if full else 13, len(published[0]['catalog']['tests']))
+					(['flat-medium-v1', 'flat-medium-v2', 'copy-flat-v1', 'copy-tree-v1'] if full else []), prepared)
+				self.assertEqual(21 if full else 13, len(published[0]['catalog']['tests']))
 				self.assertEqual('full' if full else 'regular', published[0]['suite_mode'])
 				self.assertNotIn('full_tests', published[0]['catalog'])
 

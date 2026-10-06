@@ -13,7 +13,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[4]
 CATALOG = ROOT / 'src/performancetest/catalog.yaml'
-WORKLOADS = {'pane', 'refresh', 'filter', 'fuzzy', 'recursive', 'quickview', 'selection'}
+WORKLOADS = {'pane', 'refresh', 'filter', 'fuzzy', 'recursive', 'quickview', 'selection', 'copy'}
 
 
 def digest(value):
@@ -63,8 +63,11 @@ def load_catalog(path=CATALOG):
 		'middle-block', 'scattered', 'all-except-current', 'all']:
 		raise ValueError('Unsupported refresh selection protocol')
 	for fixture in catalog['fixtures'].values():
-		if fixture['revision'] not in (1, 2) or fixture['kind'] not in ('flat', 'recursive') or not positive(fixture['files']) or fixture['files'] < 8 or type(fixture['seed']) is not int:
+		if fixture['revision'] not in (1, 2) or fixture['kind'] not in ('flat', 'recursive', 'copy') or not positive(fixture['files']) or fixture['files'] < 8 or type(fixture['seed']) is not int:
 			raise ValueError('Invalid fixture definition')
+		if fixture['kind'] == 'copy' and (fixture['revision'] != 1 or not positive(fixture.get('bytes_per_file')) or
+				fixture['bytes_per_file'] > 1024 * 1024 or fixture.get('layout', 'flat') not in ('flat', 'tree')):
+			raise ValueError('Invalid copy fixture definition')
 		if fixture['revision'] == 2 and fixture['kind'] != 'flat':
 			raise ValueError('Text preview fixtures require flat folders')
 	identities = set()
@@ -81,6 +84,9 @@ def load_catalog(path=CATALOG):
 			if fixture['kind'] != 'flat' or not positive(count) or count * 2 > fixture['files'] or \
 				not positive(protocol.get('selection_timeout_seconds')):
 				raise ValueError('Invalid selection definition: ' + identity)
+		if test['workload'] == 'copy' and (catalog['fixtures'][test['fixture']]['kind'] != 'copy' or
+				not positive(protocol.get('copy_timeout_seconds'))):
+			raise ValueError('Invalid copy definition: ' + identity)
 	for workload in ('filter', 'fuzzy', 'recursive'):
 		queries = catalog['queries'][workload]
 		identities = [query['id'] for query in queries]
@@ -136,6 +142,9 @@ def measurements(result):
 		for phase in ui.get('samples', []):
 			identity = phase.get('query_id', phase.get('action_id'))
 			for name in ('paint_ms', 'input_to_paint_ms', 'input_ready_ms', 'responsive_ms', 'wall_ms', 'cpu_ms', 'qt_commit_ms',
+				'first_file_ms', 'preparation_ms', 'prompt_ms', 'progress_visible_ms', 'progress_shown_count', 'refresh_complete_ms',
+				'throughput_mib_s', 'queued_task_count', 'copied_count', 'bytes_copied', 'preparation_memory_mib',
+				'estimated_bytes_per_task', 'estimated_200000_tasks_mib',
 				'readback_started_ms',
 				'readback_ms', 'readback_cpu_ms', 'row_count', 'requested_count', 'initial_count',
 				'expected_count', 'selected_count', 'timeout_count',

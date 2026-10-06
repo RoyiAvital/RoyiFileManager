@@ -226,6 +226,16 @@ always shown. Units follow
 
 ## Local Transfers
 
+F5 Copy and F6 Move show cancellable preparation for large selections. Overwrite
+decisions are collected before transfers begin; cancelling preparation does not
+create the destination or transfer files. Once copying/moving starts, completed
+items remain completed after cancellation or an error.
+The whole selected/discovered batch is prepared before the first transfer, using
+ordinary provider metadata and directory traversal.
+
+Copy and Move can create missing destination folders, including nested folders.
+Creation waits until preparation succeeds, so cancelling preparation creates nothing.
+
 Regular-file copies write to a sibling temporary file before publishing output.
 Allow free space for the complete new file in addition to an existing destination.
 Cancellation or a data-copy error before publication leaves the source and
@@ -249,9 +259,11 @@ treated as unknown, not as proof of a hardlink. Access-time-only changes do not
 prevent publication; identity, size and nanosecond modification-time changes do.
 Symlink overwrite attempts report an explicit refusal. Both Copy and Move refuse
 merges through source or destination directory links, including nested links.
-Copy/delete move fallbacks for links are refused; standalone same-volume
-link renames remain supported. Deleting a junction removes the junction, not its
-target. Metadata-preserving overwrite is supported on Windows only.
+Copy/delete move fallbacks for links are refused; same-volume Move can still
+relocate a link object. Rename refuses symbolic links, junctions and files with
+multiple hard links; select actual files instead. Sparse files and cloud
+placeholders remain supported. Deleting a junction removes the junction, not
+its target. Metadata-preserving overwrite is supported on Windows only.
 
 Temporary `.fc-*` and `.fb-*` entries may appear during a refresh.
 They are not hidden with extra per-file attribute operations; do not edit them.

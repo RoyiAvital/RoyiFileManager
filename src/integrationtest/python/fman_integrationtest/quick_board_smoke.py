@@ -21,11 +21,11 @@ def exercise(context, root, output, outcome):
 	timers, failures = [], []
 	columns = (QuickTableColumn('Original Name', 'file_name'), QuickTableColumn('Proposed Name', 'file_name'),
 		QuickTableColumn('Size', 'numeric', unit='bytes'), QuickTableColumn('Status'))
-	def preview(text):
+	def preview(text, mapping=None):
 		if text == '{invalid':
 			raise ValueError('Expected a closing brace.')
 		return tuple(QuickTableRow(('IMG_%04d.JPG' % (2041 + index), text.format(index=index + 1),
-			(4 + index) * 1048576, 'Ready')) for index in range(12))
+			(4 + index) * 1048576, 'Ready')) for index in range(12)), None
 	def until(predicate, action):
 		def install():
 			timer = QTimer(context.main_window)
@@ -94,12 +94,13 @@ def exercise(context, root, output, outcome):
 			until(lambda: window if window.preview_error else None, error_capture)
 		until(lambda: open_window(QuickBoardWindow), board_capture)
 		assert show_quick_board(columns=columns, get_rows=preview,
-			text='Trip_{index:03d}.JPG', title='Compose names', summary=summary) == ('{invalid', False)
+			text='Trip_{index:03d}.JPG', title='Compose names', summary=summary) == ('{invalid', False, None)
 		def table_capture(window):
 			capture(window, 'quicktable-reference')
 			QTest.keyClick(window.table.query, Qt.Key_Escape)
 		until(lambda: open_window(QuickTableWindow), table_capture)
-		assert show_quick_table(columns=columns, rows=preview('Trip_{index:03d}.JPG'),
+		rows, status = preview('Trip_{index:03d}.JPG')
+		assert show_quick_table(columns=columns, rows=rows,
 			title='Names', summary=summary) is None
 		assert not failures, '\n'.join(failures)
 		assert _slots._value == 2, 'QuickBoard lease retained'

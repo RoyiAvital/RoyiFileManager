@@ -522,6 +522,7 @@ def _find_extension_start(file_name, start=0):
 		return None
 
 class _TreeCommand(DirectoryPaneCommand):
+	_defer_preparation = False
 	def __call__(self, files=None, dest_dir=None):
 		if files is None:
 			files = self.get_chosen_files()
@@ -534,7 +535,8 @@ class _TreeCommand(DirectoryPaneCommand):
 		proceed = self._confirm_tree_operation(files, dest_dir, src_dir)
 		if proceed:
 			dest_dir, dest_name = proceed
-			makedirs(dest_dir, exist_ok=True)
+			if not self._defer_preparation:
+				makedirs(dest_dir, exist_ok=True)
 			self._call(files, dest_dir, dest_name)
 	def _call(self, files, dest_dir, dest_name=None):
 		raise NotImplementedError()
@@ -609,12 +611,13 @@ class _TreeCommand(DirectoryPaneCommand):
 						# This happens when renaming a/ -> A/ on
 						# case-insensitive file systems.
 						return _split(dest_url)
-					for file_ in files:
-						if is_parent(file_, dest_url, fs):
-							ui.show_alert(
-								'You cannot %s a file to itself!' % cls._verb()
-							)
-							return
+					if not cls._defer_preparation:
+						for file_ in files:
+							if is_parent(file_, dest_url, fs):
+								ui.show_alert(
+									'You cannot %s a file to itself!' % cls._verb()
+								)
+								return
 					return dest_url, None
 				else:
 					if len(files) == 1:
@@ -688,10 +691,12 @@ def _split(url):
 	return scheme + head, tail
 
 class Copy(_TreeCommand):
+	_defer_preparation = True
 	def _call(self, files, dest_dir, dest_name=None):
 		submit_task(CopyFiles(files, dest_dir, dest_name))
 
 class Move(_TreeCommand):
+	_defer_preparation = True
 	def _call(self, files, dest_dir, dest_name=None):
 		submit_task(MoveFiles(files, dest_dir, dest_name))
 
@@ -824,12 +829,24 @@ class _Rename(Task):
 		super().__init__('Renaming ' + basename(src_url))
 	def __call__(self):
 		self.set_text('Preparing...')
-		tasks = list(prepare_move(self._src_url, self._dst_url))
-		self.set_size(sum(t.get_size() for t in tasks))
 		try:
-			for task in tasks:
-				self.check_canceled()
-				self.run(task)
+			self.check_canceled()
+			try:
+				result = fman.fs.rename_no_replace(self._src_url, self._dst_url)
+			except NotImplementedError:
+				tasks = list(prepare_move(self._src_url, self._dst_url))
+				self.set_size(sum(task.get_size() for task in tasks))
+				for task in tasks:
+					self.check_canceled()
+					self.run(task)
+			else:
+				self.set_size(1)
+				self.set_progress(1)
+				if result.notification_warnings:
+					self.show_alert('Renamed successfully, but the view may be stale:\n' +
+						'\n'.join(result.notification_warnings))
+		except UnsupportedOperation as error:
+			self.show_alert(str(error))
 		except OSError as e:
 			if isinstance(e, PermissionError):
 				message = 'Access was denied trying to rename %s to %s.'

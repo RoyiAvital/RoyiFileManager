@@ -118,6 +118,11 @@ refuses ambiguous operations rather than risk changing a link target or alias.
 
 Completed items are retained; a later refusal does not roll them back.
 
+Rename refuses symbolic links, junctions and files with multiple hard links.
+Batch File Renamer rejects such selections before opening its preview. Select
+actual files instead; sparse files and cloud placeholders remain supported.
+Same-volume Move retains its link-object behavior.
+
 ### Other Operations
 
 | Operation | {{ app_name }} behavior |

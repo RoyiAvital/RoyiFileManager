@@ -1,6 +1,7 @@
 """Versioned synthetic benchmark suite. All workloads are explicitly requested."""
 
 import argparse
+from contextlib import nullcontext
 from datetime import datetime, timezone
 import fnmatch
 import hashlib
@@ -12,6 +13,7 @@ import platform
 import re
 import subprocess
 import sys
+from tempfile import TemporaryDirectory
 import time
 import traceback
 
@@ -84,7 +86,10 @@ def invoke(test, directory, catalog_path, profile_directory=None, algorithm=Fals
 	env = dict(os.environ, QT_QPA_PLATFORM='windows', QT_SCALE_FACTOR='1',
 		QT_AUTO_SCREEN_SCALE_FACTOR='0', QT_ENABLE_HIGHDPI_SCALING='0',
 		QT_FONT_DPI='96', PYTHONHASHSEED='0', TZ='UTC')
-	result = subprocess.run(command, cwd=ROOT, env=env, capture_output=True, text=True, timeout=timeout)
+	with TemporaryDirectory(prefix='copy-run-') if test['workload'] == 'copy' else nullcontext(None) as scratch:
+		if scratch is not None:
+			command.extend(('--scratch', scratch))
+		result = subprocess.run(command, cwd=ROOT, env=env, capture_output=True, text=True, timeout=timeout)
 	if result.returncode:
 		raise subprocess.CalledProcessError(result.returncode, command, output=result.stdout, stderr=result.stderr)
 	for line in result.stdout.splitlines():
@@ -137,9 +142,13 @@ def selection_run(test, directory, catalog_path, catalog):
 	return dict(samples=samples, failures=failures)
 
 
-def child(test, catalog, directory, algorithm, profile_directory, selection_case=None):
+def child(test, catalog, directory, algorithm, profile_directory, selection_case=None, scratch=None):
 	workload = test['workload']
 	protocol = catalog['protocol']
+	if workload == 'copy':
+		from fman_performancetest.copy import child as copy
+		fixture = catalog['fixtures'][test['fixture']]
+		return copy(directory, protocol['viewport'], fixture['files'], fixture['bytes_per_file'], scratch)
 	if workload == 'selection':
 		from fman_performancetest.selection import selection_cases
 		from fman_performancetest.pane_rendering_benchmark import child as pane
@@ -189,6 +198,7 @@ def main(argv=None, *, record_saved=None):
 	parser.add_argument('--algorithm', action='store_true', help=argparse.SUPPRESS)
 	parser.add_argument('--profile-directory', type=Path, help=argparse.SUPPRESS)
 	parser.add_argument('--selection-case', help=argparse.SUPPRESS)
+	parser.add_argument('--scratch', type=Path, help=argparse.SUPPRESS)
 	args = parser.parse_args(argv)
 	if args.compare:
 		try:
@@ -201,7 +211,7 @@ def main(argv=None, *, record_saved=None):
 	all_tests = catalog['tests'] + catalog.get('full_tests', [])
 	if args.child:
 		test = next(test for test in all_tests if test['id'] == args.child)
-		return child(test, catalog, args.directory.resolve(strict=True), args.algorithm, args.profile_directory, args.selection_case)
+		return child(test, catalog, args.directory.resolve(strict=True), args.algorithm, args.profile_directory, args.selection_case, args.scratch)
 	if args.repeat is not None and args.repeat < 1:
 		parser.error('--repeat must be positive')
 	definitions = all_tests if args.full else catalog['tests']
@@ -227,7 +237,7 @@ def main(argv=None, *, record_saved=None):
 	record['status'] = 'failed'
 	record['artifacts'] = []
 	try:
-		image_assets = fixtures.assets()
+		image_assets = fixtures.assets() if any(catalog['fixtures'][test['fixture']]['kind'] != 'copy' for test in selected) else {}
 		prepared = {}
 		for test in selected:
 			identity = test['fixture']
@@ -248,7 +258,14 @@ def main(argv=None, *, record_saved=None):
 							ui = selection_run(test, fixture['directory'], args.catalog.resolve(), catalog)
 							result.setdefault('failures', []).extend(dict(failure, iteration=iteration + 1) for failure in ui['failures'])
 						else:
-							ui = invoke(test, fixture['directory'], args.catalog.resolve())
+							if test['workload'] == 'copy':
+								from fman_performancetest.copy import validate_result
+								specification = catalog['fixtures'][test['fixture']]
+								ui = invoke(test, fixture['directory'], args.catalog.resolve(), timeout=catalog['protocol']['copy_timeout_seconds'])
+								selected_count = min(10, specification['files']) if specification.get('layout') == 'tree' else specification['files']
+								validate_result(ui, specification['files'], specification['bytes_per_file'], selected_count)
+							else:
+								ui = invoke(test, fixture['directory'], args.catalog.resolve())
 							if ui['errors'] or not ui['settings_isolated']:
 								raise ValueError('Application errors or settings isolation failure')
 						sample = dict(iteration=iteration + 1, ui=ui)

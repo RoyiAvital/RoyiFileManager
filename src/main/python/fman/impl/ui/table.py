@@ -410,6 +410,7 @@ class FilterEditor(QWidget):
 
 class Table(QWidget):
 	state_changed = pyqtSignal()
+	presentation_changed = pyqtSignal()
 
 	def __init__(self, schema, rows, parent=None, text_filter='fuzzy', truncated=None):
 		require_ui_thread()
@@ -417,6 +418,7 @@ class Table(QWidget):
 		self.setObjectName('results-table')
 		self.schema = schema
 		self.rows = rows
+		self.visible_rows = ()
 		self.compile_text_filter = text_filter if callable(text_filter) else None
 		self.text_matching = 'substring' if text_filter == 'substring' else 'fuzzy'
 		self.truncated = truncated
@@ -498,9 +500,15 @@ class Table(QWidget):
 		return not self.closed and not self.pending and not self.error
 
 	def visible_positions(self):
-		# Positions in the caller's input order; identical row objects share visibility.
-		visible = {id(row) for row in self.model.rows}
-		return tuple(index for index, row in enumerate(self.rows) if id(row) in visible)
+		return tuple(sorted(self.visible_rows))
+
+	def view_mapping(self):
+		if not self.settled:
+			return None
+		mapping = [None] * len(self.rows)
+		for position, source in enumerate(self.visible_rows):
+			mapping[source] = position
+		return tuple(mapping)
 
 	def replace_rows(self, snapshot):
 		require_ui_thread()
@@ -563,6 +571,7 @@ class Table(QWidget):
 
 	def set_sort(self, column, descending=False):
 		self.sort_column, self.sort_descending = column, bool(descending) and column is not None
+		self.presentation_changed.emit()
 		self.view.horizontalHeader().viewport().update()
 		self.project()
 
@@ -576,11 +585,13 @@ class Table(QWidget):
 			self.filters.pop(column, None)
 		else:
 			self.filters[column] = column_filter
+		self.presentation_changed.emit()
 		self.view.horizontalHeader().viewport().update()
 		self.project()
 
 	def clear_all_filters(self):
 		self.filters.clear()
+		self.presentation_changed.emit()
 		self.view.horizontalHeader().viewport().update()
 		if self.query.text():
 			self.query.clear()
@@ -676,15 +687,15 @@ class Table(QWidget):
 		column = self.sort_column
 		policy = self.schema.columns[column].policy
 		if policy in ('date', 'number'):
-			known = [row for row in visible if row.values[column] is not None]
-			known.sort(key=lambda row: row.values[column], reverse=self.sort_descending)
-			return known + [row for row in visible if row.values[column] is None]
+			known = [position for position in visible if self.rows[position].values[column] is not None]
+			known.sort(key=lambda position: self.rows[position].values[column], reverse=self.sort_descending)
+			return known + [position for position in visible if self.rows[position].values[column] is None]
 		# Keys are computed once per snapshot and column; projections re-sort on every query edit.
 		keys = self.sort_keys.get(column)
 		if keys is None:
 			key = natural_key if policy == 'natural' else str.casefold
-			keys = self.sort_keys[column] = {id(row): key(row.cells[column]) for row in self.rows}
-		return sorted(visible, key=lambda row: keys[id(row)], reverse=self.sort_descending)
+			keys = self.sort_keys[column] = tuple(key(row.cells[column]) for row in self.rows)
+		return sorted(visible, key=keys.__getitem__, reverse=self.sort_descending)
 
 	def project(self):
 		self.generation += 1
@@ -708,6 +719,7 @@ class Table(QWidget):
 				return
 			self.error = 'Filter error: ' + message
 			self.pending = False
+			self.visible_rows = ()
 			self.model.replace((), {})
 			self.counts.setText(self.error)
 			self.state_changed.emit()
@@ -725,9 +737,10 @@ class Table(QWidget):
 			visible = [item[1] for item in ordered]
 			if self.sort_column is not None:
 				visible = self.sort_rows(visible)
-			self.model.replace(visible, matches)
+			self.visible_rows = tuple(visible)
+			self.model.replace((rows[position] for position in visible), matches)
 			if visible:
-				index = next((index for index, row in enumerate(visible) if current and row is current[0]), 0)
+				index = next((index for index, position in enumerate(visible) if current and rows[position] is current[0]), 0)
 				self.view.setCurrentIndex(self.model.index(index, current[1] if current else self.last_column))
 				self.view.verticalScrollBar().setValue(anchor)
 			self.counts.setText(self.count_text(len(visible), len(rows)))
@@ -744,7 +757,7 @@ class Table(QWidget):
 				if filters and not all(test(row) for test in filters):
 					pass
 				elif not query:
-					ranked.append(((0, 0), row))
+					ranked.append(((0, 0), position - 1))
 				elif predicate is not None:
 					try:
 						accepted = predicate(tuple(row.cells[column] for column in searchable))
@@ -755,7 +768,7 @@ class Table(QWidget):
 						fail('The text filter must return True or False.')
 						return
 					if accepted:
-						ranked.append(((0, 0), row))
+						ranked.append(((0, 0), position - 1))
 				else:
 					best = None
 					for column in searchable:
@@ -769,13 +782,13 @@ class Table(QWidget):
 							score = (locations[-1] - locations[0] + 1 - len(locations), locations[0]) if locations else (0, 0)
 							best = score if best is None else min(best, score)
 					if best is not None:
-						ranked.append((best, row))
+						ranked.append((best, position - 1))
 				if perf_counter() >= deadline:
 					defer(self, step)
 					return
 			finish()
 		if not query and not filters:
-			ranked = [((0, 0), row) for row in rows]
+			ranked = [((0, 0), position) for position in range(len(rows))]
 			finish()
 		else:
 			step()
@@ -789,4 +802,5 @@ class Table(QWidget):
 		self.sort_keys.clear()
 		self.generation += 1
 		self.rows = ()
+		self.visible_rows = ()
 		self.model.replace((), {})

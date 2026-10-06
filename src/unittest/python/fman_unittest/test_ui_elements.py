@@ -6,11 +6,37 @@ from fman.impl.navigation import NavigationRequest, current_request
 
 
 class QuickBoardDataTest(TestCase):
+	def test_full_capacity_with_distinct_typed_cells(self):
+		from fman.impl.ui.quick_board import MAX_COLUMNS, MAX_ROWS
+		from fman.impl.ui.table_data import QuickTableColumn, QuickTableRow, TableSchema
+		schema = TableSchema(tuple(QuickTableColumn(str(index), 'numeric') for index in range(MAX_COLUMNS)),
+			max_rows=MAX_ROWS, max_columns=MAX_COLUMNS)
+		rows = schema.snapshot(QuickTableRow(tuple(row * MAX_COLUMNS + column for column in range(MAX_COLUMNS)))
+			for row in range(MAX_ROWS))
+		self.assertEqual(MAX_ROWS, len(rows))
+		self.assertEqual(MAX_ROWS * MAX_COLUMNS - 1, rows[-1].values[-1])
+
+	def test_board_limits_do_not_change_quick_table_limits(self):
+		from fman.impl.ui.quick_board import MAX_COLUMNS, MAX_ROWS
+		from fman.impl.ui.table_data import QuickTableColumn, QuickTableRow, TableSchema
+		columns = tuple(QuickTableColumn('Column %d' % index) for index in range(MAX_COLUMNS))
+		schema = TableSchema(columns, max_rows=MAX_ROWS, max_columns=MAX_COLUMNS)
+		row = QuickTableRow(('value',) * MAX_COLUMNS)
+		self.assertEqual(MAX_ROWS, len(schema.snapshot(row for index in range(MAX_ROWS))))
+		with self.assertRaisesRegex(ValueError, 'row limit'):
+			schema.snapshot(row for index in range(MAX_ROWS + 1))
+		with self.assertRaisesRegex(ValueError, '1-16 columns'):
+			TableSchema(columns + (QuickTableColumn('Extra'),), max_rows=MAX_ROWS, max_columns=MAX_COLUMNS)
+		self.assertEqual(64, TableSchema((QuickTableColumn('Value'),) * 64).num_columns)
+		with self.assertRaisesRegex(ValueError, '10,000-row'):
+			TableSchema((QuickTableColumn('Value'),)).snapshot(QuickTableRow(('value',)) for index in range(10001))
+
 	def test_public_arguments_fail_before_ui_or_worker_creation(self):
 		from fman.ui import QuickTableColumn, show_quick_board
 		from unittest.mock import patch
-		valid = dict(columns=(QuickTableColumn('Preview'),), get_rows=lambda text: ())
+		valid = dict(columns=(QuickTableColumn('Preview'),), get_rows=lambda text, mapping: ((), None))
 		invalid = (dict(owner=None), dict(get_rows=None), dict(columns=()), dict(columns=('Name',)),
+			dict(columns=(QuickTableColumn('Value'),) * 17),
 			dict(text='a\nb'), dict(text='a\rb'), dict(text='\0'), dict(text='x' * 4097),
 			dict(text='\U0001f600' * 2049), dict(title='x' * 513), dict(summary='x' * 2049))
 		with patch('fman.impl.ui.quick_board._open') as opening:
@@ -19,29 +45,53 @@ class QuickBoardDataTest(TestCase):
 					show_quick_board(**dict(valid, **values))
 			opening.assert_not_called()
 
+	def test_preview_requires_rows_and_status_tuple(self):
+		from fman.impl.ui.quick_board import _prepare
+		from fman.impl.ui.table_data import QuickTableColumn, QuickTableRow, TableSchema
+		schema = TableSchema((QuickTableColumn('Value'),))
+		row = QuickTableRow(('value',))
+		for status in (None, '', 'Ready'):
+			for count in (0, 1, 2):
+				with self.subTest(status=status, count=count):
+					rows, error, actual_status = _prepare(schema,
+						lambda text, mapping: (iter((row,) * count), status), '', lambda: None)
+					self.assertIsNone(error)
+					self.assertEqual((row,) * count, rows)
+					self.assertEqual(status, actual_status)
+		for result in (None, (), (row,), (row, row), [(row,), None], ((row,),),
+				((row,), None, 'extra'), ((row,), 1), ((row,), object()),
+				((row,), 'x' * 513), ((row,), '\0')):
+			with self.subTest(result=result):
+				rows, error, status = _prepare(schema, lambda text, mapping: result, '', lambda: None)
+				self.assertIsNone(rows)
+				self.assertIsNotNone(error)
+				self.assertIsNone(status)
+		rows, error, status = _prepare(schema, lambda text, mapping: (), '', lambda: None)
+		self.assertIn('must return a (rows, status) tuple', error[1])
+
 	def test_preview_formats_once_and_closes_failed_iterators(self):
 		from fman.impl.ui.quick_board import _prepare
 		from fman.impl.ui.table_data import QuickTableColumn, QuickTableRow, TableSchema
 		formatter = Mock(side_effect=lambda value: 'custom:%d' % value)
 		schema = TableSchema((QuickTableColumn('Value', 'numeric', format=formatter),))
-		rows, error = _prepare(schema, lambda text: (QuickTableRow((7,)),), 'anything', lambda: None)
+		rows, error, status = _prepare(schema, lambda text, mapping: ((QuickTableRow((7,)),), None), 'anything', lambda: None)
 		self.assertIsNone(error)
 		self.assertEqual(('custom:7',), rows[0].cells)
 		self.assertEqual((7,), rows[0].values)
 		formatter.assert_called_once_with(7)
 		closed = []
-		def invalid(text):
+		def invalid():
 			try:
 				yield QuickTableRow(('bad',))
 			finally:
 				closed.append(True)
-		rows, error = _prepare(schema, invalid, '', lambda: None)
+		rows, error, status = _prepare(schema, lambda text, mapping: (invalid(), None), '', lambda: None)
 		self.assertIsNone(rows)
 		self.assertFalse(error[0])
 		self.assertEqual([True], closed)
 		from fman import Task
 		for failure in (ValueError('syntax'), RuntimeError('broken'), KeyboardInterrupt('canceled'), Task.Canceled()):
-			rows, error = _prepare(schema, Mock(side_effect=failure), '', lambda: None)
+			rows, error, status = _prepare(schema, Mock(side_effect=failure), '', lambda: None)
 			self.assertEqual((isinstance(failure, ValueError), str(failure) or type(failure).__name__), error)
 
 	def test_admission_is_global_bounded_and_release_is_idempotent(self):

@@ -790,10 +790,10 @@ def _capture_source_child(args):
 				from fman.impl.ui.quick_board import _Session, _open
 				from fman.ui import QuickTableColumn, QuickTableRow
 				if not state['started']:
-					def get_rows(prefix):
-						return tuple(QuickTableRow((name, prefix + name)) for name in QUICK_BOARD_NAMES)
+					def get_rows(prefix, mapping):
+						return tuple(QuickTableRow((name, prefix + name)) for name in QUICK_BOARD_NAMES), None
 					session = _Session(QUICK_BOARD_SAMPLE['text'])
-					window = _open(session, (QuickTableColumn('Original'), QuickTableColumn('Preview')),
+					window = _open(session, (QuickTableColumn('Original'), QuickTableColumn('Preview', sortable=False, filterable=False)),
 						get_rows, **QUICK_BOARD_SAMPLE)
 					window.table.view.setColumnWidth(0, 340)
 					state.update(started=True, settled=0, window=window)

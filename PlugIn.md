@@ -180,30 +180,30 @@ construct them with internal widgets yourself.
 
 `pane.window` is its public parent-window handle.
 
-| Method | Contract |
-| --- | --- |
-| `get_commands()` | Registered pane command names. |
-| `run_command(name, args=None)` | Run a pane command, honoring command rewrite listeners. |
-| `get_command_aliases(command_name)` | Aliases for a registered pane command. |
-| `is_command_visible(command_name)` | Evaluate visibility in this pane's context. |
-| `get_selected_files()` | Selected file URLs; current highlight is separate. |
-| `get_file_under_cursor()` | Current file URL, or no current value. |
-| `get_path()` | Current directory URL, not a native path. |
-| `get_listing()` | Current immutable `fman.listing.Listing`, or `None` before commit. Retaining it retains that snapshot's memory. |
+| Method                                                             | Contract                                                                                                                                                                                                                                                                          |
+| ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `get_commands()`                                                   | Registered pane command names.                                                                                                                                                                                                                                                    |
+| `run_command(name, args=None)`                                     | Run a pane command, honoring command rewrite listeners.                                                                                                                                                                                                                           |
+| `get_command_aliases(command_name)`                                | Aliases for a registered pane command.                                                                                                                                                                                                                                            |
+| `is_command_visible(command_name)`                                 | Evaluate visibility in this pane's context.                                                                                                                                                                                                                                       |
+| `get_selected_files()`                                             | Selected file URLs; current highlight is separate.                                                                                                                                                                                                                                |
+| `get_file_under_cursor()`                                          | Current file URL, or no current value.                                                                                                                                                                                                                                            |
+| `get_path()`                                                       | Current directory URL, not a native path.                                                                                                                                                                                                                                         |
+| `get_listing()`                                                    | Current immutable `fman.listing.Listing`, or `None` before commit. Retaining it retains that snapshot's memory.                                                                                                                                                                   |
 | `find_in_listing(search, query='', metadata=False, accepted=None)` | Start in-pane Find; return false if no snapshot is ready. `search(listing, query, check_canceled)` runs on a worker and returns `(entry_indices, highlights_by_entry)` with UTF-16 highlight offsets. `accepted(url)` runs on Qt after accepting and restoring normal projection. |
-| `set_path(dir_url, callback=None, onerror=host_default)` | Request a directory change, honoring location rewrite listeners. `callback()` signals initialization; do not treat it as a complete navigation outcome. |
-| `reload()` | Reload the pane's location. |
-| `edit_name(file_url, selection_start=0, selection_end=None)` | Start inline name editing and select the specified text range. |
-| `select_all()` / `clear_selection()` | Select all visible pane entries or clear selection. |
-| `toggle_selection(file_url)` | Toggle one entry. |
-| `select(file_urls)` / `deselect(file_urls)` | Update selection for URLs; missing-entry errors are ignored by these wrappers. |
-| `place_cursor_at(file_url)` | Move the current highlight to a URL. |
-| `focus()` | Focus this pane. |
-| `get_columns()` | List of current qualified column-name strings. |
-| `set_sort_column(column, ascending=True)` | Set a displayed column by qualified name and direction; a missing column raises `ValueError`. |
-| `get_sort_column()` | Return `(qualified_column_name, ascending_bool)`. |
-| `on_path_changed(callback)` | RoyiFileManager addition: register a no-argument path-change callback on the UI thread; return an idempotent unsubscribe function. |
-| `on_closed(callback)` | RoyiFileManager addition: register no-argument pane-destruction callback; return an idempotent unsubscribe function. |
+| `set_path(dir_url, callback=None, onerror=host_default)`           | Request a directory change, honoring location rewrite listeners. `callback()` signals initialization; do not treat it as a complete navigation outcome.                                                                                                                           |
+| `reload(on_done=None)`                                             | Reload the pane; an optional no-argument callback runs on Qt after a fresh successful scan and projection settle. Failed scans leave it pending for a successful retry; navigation/closure cancels it.                                                                            |
+| `edit_name(file_url, selection_start=0, selection_end=None)`       | Start inline name editing and select the specified text range.                                                                                                                                                                                                                    |
+| `select_all()` / `clear_selection()`                               | Select all visible pane entries or clear selection.                                                                                                                                                                                                                               |
+| `toggle_selection(file_url)`                                       | Toggle one entry.                                                                                                                                                                                                                                                                 |
+| `select(file_urls)` / `deselect(file_urls)`                        | Update selection for URLs; missing-entry errors are ignored by these wrappers.                                                                                                                                                                                                    |
+| `place_cursor_at(file_url)`                                        | Move the current highlight to a URL.                                                                                                                                                                                                                                              |
+| `focus()`                                                          | Focus this pane.                                                                                                                                                                                                                                                                  |
+| `get_columns()`                                                    | List of current qualified column-name strings.                                                                                                                                                                                                                                    |
+| `set_sort_column(column, ascending=True)`                          | Set a displayed column by qualified name and direction; a missing column raises `ValueError`.                                                                                                                                                                                     |
+| `get_sort_column()`                                                | Return `(qualified_column_name, ascending_bool)`.                                                                                                                                                                                                                                 |
+| `on_path_changed(callback)`                                        | RoyiFileManager addition: register a no-argument path-change callback on the UI thread; return an idempotent unsubscribe function.                                                                                                                                                |
+| `on_closed(callback)`                                              | RoyiFileManager addition: register no-argument pane-destruction callback; return an idempotent unsubscribe function.                                                                                                                                                              |
 
 Cursor movement methods all accept `toggle_selection=False`:
 `move_cursor_down`, `move_cursor_up`, `move_cursor_home`, `move_cursor_end`,
@@ -398,6 +398,40 @@ binding. Other exceptions propagate to the calling command's error handling.
 Cancellation does not forcibly interrupt an OS call or undo completed mutations.
 
 ## Filesystems and Columns
+
+### No-Overwrite Rename
+
+`fman.fs.rename_no_replace(source_url, destination_url)` changes a basename
+within the same provider and parent. It never falls back to replacing Move,
+merge or copy/delete. Windows local storage implements it; other providers
+currently raise `NotImplementedError`. Cross-provider/parent requests raise
+`io.UnsupportedOperation` before mutation. Existing `move`/`prepare_move` behavior
+is unchanged. Ordinary Rename uses this operation where supported and retains
+the existing route for providers that have not implemented it, such as archives.
+Local rename URLs must use forward slashes; backslashes are rejected with
+`io.UnsupportedOperation` before filesystem access. Convert native paths with
+`fman.url.as_url`.
+
+Local Rename rejects symbolic links, junctions and files with multiple hard links
+with `io.UnsupportedOperation`; ordinary Rename shows the refusal as an alert.
+Sparse files and cloud placeholders remain supported. Detection uses Windows'
+name-surrogate tag, not a blanket rejection of reparse points.
+
+The immutable public `RenameResult(source_url, destination_url, changed,
+notification_warnings=())` confirms the outcome. `changed=False` means an existing
+source and identical destination spelling. An occupied destination raises before
+commit, including one introduced after a precheck; Windows same-entry case-only
+rename remains supported. An existing 8.3 alias of the source is refused, not
+reported as a successful rename. Post-commit notification failures return bounded warning
+strings (at most 16, each at most 512 characters), not an ambiguous mutation error.
+Unformattable exceptions produce a fixed warning; later listeners still run.
+Do not retry a committed rename because its view refresh failed.
+
+Providers implement `FileSystem.rename_no_replace` and return `RenameResult`
+without emitting the normal removed/added events themselves: the host updates
+caches and dispatches those notifications independently, isolating listener errors.
+The base method raises `NotImplementedError`; a strict API call never uses the
+ordinary command's legacy-provider fallback.
 
 ### Filesystem Functions
 
@@ -606,13 +640,19 @@ plug-ins need no Qt import for them. The widget exports `QuickList`, `Panel`,
 ### Qt-Free QuickBoard
 
 ```python
-show_quick_board(*, columns, get_rows, text='', title='', summary='') -> tuple[str, bool]
+show_quick_board(*, columns, get_rows, text='', title='', summary='')
+get_rows(text, mapping) -> (rows, caller_status)
+text, accepted, mapping = show_quick_board(...)
 ```
 
-QuickBoard helps compose one string. `get_rows(text)` supplies read-only feedback
+QuickBoard helps compose one string. `get_rows(text, mapping)` supplies read-only feedback
 using the same `QuickTableColumn` and `QuickTableRow` records described below.
+Every callback must return a two-item tuple: an iterable of rows and a status
+string or `None`. Rows-only returns are rejected as preview errors; migrate
+`return rows` to `return rows, None` when no status is needed.
 The columns stay fixed; each successful callback replaces the whole preview.
-There is no public handle, row selection result, pane, Go To or operation API.
+There is no public handle, pane, Go To or operation API. A source-to-view mapping
+lets the caller interpret the exact preview it approved.
 The built-in cell menu copies the **displayed text**, including path columns;
 `targets` does not enable navigation or change Copy in a QuickBoard.
 
@@ -622,8 +662,10 @@ from fman.ui import QuickTableColumn, QuickTableRow, show_quick_board
 def compose_prefix(names):
   names = tuple(names)
   return show_quick_board(
-    columns=(QuickTableColumn('Original'), QuickTableColumn('Preview')),
-    get_rows=lambda prefix: (QuickTableRow((name, prefix + name)) for name in names),
+    columns=(QuickTableColumn('Original'),
+      QuickTableColumn('Preview', sortable=False, filterable=False)),
+    get_rows=lambda prefix, mapping: (
+      tuple(QuickTableRow((name, prefix + name)) for name in names), None),
     title='Compose prefix', summary=f'{len(names)} captured names',
   )
 ```
@@ -632,15 +674,21 @@ No owner or `UiController` subclass is required. The host owns the dialog;
 unloading the calling plug-in does not automatically close it. Omit the former
 `owner` argument when updating an earlier QuickBoard caller.
 The modal call blocks its worker caller until close; a Qt
-caller uses a local event loop. Enter returns `(text, True)`, including for an
-empty preview. Escape/window close returns `(text, False)` with the exact draft,
+caller uses a local event loop. Enter returns `(text, True, mapping)`, including for an
+empty preview. Escape/window close returns `(text, False, None)` with the exact draft,
 unlike `show_prompt`; spaces are never trimmed. Enter during work is queued for
 that exact input revision and waits for its successful, settled preview. Another
-edit, error or disposal clears the request. Filters and sorting persist between
-previews but affect presentation only. Clear All Filters never edits the string.
+text/view edit, error or disposal clears the request. Filters and sorting persist
+between previews; the caller decides whether hidden rows are excluded from its
+operation. Clear All Filters never edits the string.
 
 The window is frameless, with `title` in a draggable header, optional `summary`
-below it, the composition field and table, and one counts/status footer.
+below it, the composition field and table, and one footer: host counts/errors on
+the left and optional caller status on the right. Return `(rows, None)` for no
+caller message. A status string is plain text (at most 512 characters,
+no NUL), elided with a tooltip; it is never interpreted as validity or permission.
+The message publishes with its matching rows and is hidden while newer work is
+pending, so stale advice cannot remain alongside a different revision.
 The field starts focused. Up/Down/Page Up/Page Down focus the table; Tab and
 Shift+Tab move between them, Ctrl+F focuses/selects the field, and Alt+Down opens
 the column filter. A filter menu handles its own Enter/Escape first.
@@ -648,7 +696,9 @@ Editing the composition or publishing a new preview closes any open column
 filter editor and discards its unapplied draft; already-applied filters survive.
 
 The callback, iteration, numeric `format` callbacks and row validation run on a
-dedicated worker, initially after showing the window and again on text changes.
+dedicated worker, initially after showing the window. Text edits restart a 100 ms
+trailing debounce; Enter flushes it and waits for the mapped preview. View changes
+regenerate immediately. Escape cancels without waiting for a blocked callback.
 They must not access Qt or mutate files/shared state. Calls are serial per board,
 with at most one replaceable pending input. The host checks cancellation before
 and after each formatter, around the handler, and during validation, but cannot interrupt a blocked callback:
@@ -656,7 +706,8 @@ bound its work and apply I/O timeouts. Date context is captured on Qt once.
 Validated, immutable snapshots reach Qt; formatters are not rerun there.
 
 The host retains old rows and shows `Updating...` in the counts footer while
-working. Any caller exception, including `Task.Canceled` and other
+working. Failed previews label retained rows `Stale preview`, including after
+sorting or filtering. Any caller exception, including `Task.Canceled` and other
 `BaseException` subclasses, is a failed preview: `ValueError` is inline feedback;
 other exceptions also open a dialog-owned alert. Internal worker cancellation
 silently discards stale work instead. Failed or stale previews cannot approve
@@ -665,7 +716,7 @@ late results/alerts without joining workers on Qt. A running callback may finish
 but cancellation prevents subsequent formatters in its row from starting.
 Nothing persists or runs before a board is opened.
 
-Limits: 1-64 columns, 10,000 rows and the shared 16 MiB preview text/typed-value
+Limits: 1-16 columns, 25,000 rows and the shared 16 MiB preview text/typed-value
 budget. Input is one line, at most 4,096 UTF-16 code units (matching Qt's field);
 title/summary are at most 512/2,048 characters. NUL is forbidden in all three;
 initial CR/LF is rejected. Invalid arguments fail before UI/worker creation.
@@ -673,7 +724,7 @@ Qt may retain CR/LF pasted after opening: these drafts show an error and cannot
 be accepted, but Escape returns them exactly. A cancelled draft therefore may
 not be valid as a new `text` argument without correction.
 Two process-wide leases cover open boards and closed boards whose workers are
-still finishing. A third caller receives an alert and `(initial_text, False)`
+still finishing. A third caller receives an alert and `(initial_text, False, None)`
 without invoking its callback; Panel/navigation worker capacity is independent.
 
 The caller owns grammar, sampling, freshness, validation and any subsequent
@@ -681,16 +732,7 @@ operation. Accepted text is not an operation plan or proof that files are safe
 to mutate. This API requires a host containing QuickBoard; copying a consumer
 plug-in into an older portable release does not add the host service.
 
-#### Planned Row Mapping Extension
-
-This agreed extension is **not implemented yet**. The reference and runnable
-example above describe the current two-item return and one-argument callback.
-The proposed public API changes are limited to:
-
-```python
-get_rows(text, mapping)
-text, accepted, mapping = show_quick_board(...)
-```
+#### Row Mapping
 
 `mapping` is an immutable `tuple[int | None, ...]` indexed by generator row
 position. Each integer is that row's zero-based visible position; `None` means
@@ -698,15 +740,15 @@ filtered out. For generated rows `[A, B, C, D]` displayed as `[C, A]`, the map
 is `(1, None, 0, None)`. Non-None positions are unique and consecutive. It is a
 single source-to-view map, not a second unfiltered-order map or a set of row IDs.
 
-The initial callback receives `mapping=None` to establish a row snapshot.
-Text edits start a new snapshot with `None`; once projected, the callback receives
-its mapping. Sorting/filtering regenerates the preview when that mapping changes.
-Mapping-aware calls retain row count and generator order, including hidden rows,
-and keep all sortable/filterable source cells stable for that text revision.
+The initial callback receives `mapping=None` to establish the fixed source snapshot.
+Once projected, the callback receives its mapping. Later text edits reuse the
+current map; sorting/filtering changes regenerate the mapped preview. Every call
+retains row count and generator order, including hidden rows, and keeps all
+sortable/filterable cells and typed values fixed for the dialog lifetime.
 Cells computed from view positions must use `sortable=False, filterable=False`,
 preventing their values from feeding back into the projection that defines them.
-Snapshot/order changes belong to the next `mapping=None` bootstrap, not a mapped
-response. Map rows by input position, never Python object identity.
+Observable source changes produce a preview error rather than a bootstrap loop.
+Mappings use input positions, never Python object identity.
 
 Enter waits for matching text, mapping and completed preview. A later text,
 sort or filter edit clears an earlier pending acceptance request. Successful
@@ -718,11 +760,11 @@ not by `mapping=None`.
 QuickBoard only projects rows and exchanges plain data. The caller decides
 whether hidden rows are operation exclusions and owns all filename generation,
 validation and collision checks. In Batch File Renamer, only visible rows are
-renamed; hidden entries still occupy their original names. Migration requires
-adding the callback's second argument and unpacking the third return value.
-There is no new owner, mutable handle, operation callback or validity API.
-The canonical proposed consumer contract is in
-[Batch File Renamer](Plan/BatchFileRenamer.md#quickboard-mapping-contract).
+renamed; hidden entries still occupy their original names. The complete preview
+must fit the row/column/payload limits or acceptance is blocked with a clear error;
+the host does not silently truncate it. QuickTable's separate 10,000-row/64-column
+limits are unchanged. See the independent
+[Batch File Renamer](plugins/BatchFileRenamer/README.md) for an example consumer.
 
 ### Qt-Free QuickTable and Panel
 
@@ -757,6 +799,8 @@ QuickTable narrows a predefined, immutable set of rows. `show_quick_table`
 window only, so several modeless tables can close in any order; on the Qt
 thread it runs a nested event loop. Rows cannot be
 replaced while the table is open; call it again for new results.
+Returned positions identify individual source rows. Reusing the same row object
+does not collapse positions or visibility.
 
 The window is buttonless:
 

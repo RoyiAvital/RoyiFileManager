@@ -8,13 +8,16 @@ from fman.impl.ui.session import ToolWindow
 from fman.impl.ui.table import Table, defer
 from fman.impl.ui.table_data import TableSchema, _validate_columns, text as checked_text
 from fman.impl.util.qt.thread import is_in_main_thread, run_in_main_thread
-from PyQt5.QtCore import QEvent, QEventLoop, Qt
+from PyQt5.QtCore import QEvent, QEventLoop, Qt, QTimer
 from PyQt5.QtGui import QKeySequence
-from PyQt5.QtWidgets import QApplication, QLineEdit, QMenu, QShortcut, QVBoxLayout, QWidget
+from PyQt5.QtWidgets import QApplication, QHBoxLayout, QLineEdit, QMenu, QShortcut, QVBoxLayout, QWidget
 
 
 _slots = BoundedSemaphore(2)
 _board_owner = UiOwner()
+MAX_ROWS = 25000
+MAX_COLUMNS = 16
+DEBOUNCE_MS = 100
 
 
 def _reserve():
@@ -37,26 +40,42 @@ def _input_text(value):
 	return value
 
 
-def _prepare(schema, handler, text, check):
+def _prepare(schema, handler, text, check, mapping=None, source=None):
 	try:
 		check()
-		rows = handler(text)
+		result = handler(text, mapping)
+		if not isinstance(result, tuple) or len(result) != 2:
+			raise TypeError('QuickBoard get_rows must return a (rows, status) tuple.')
+		rows, caller_status = result
+		if caller_status is not None:
+			checked_text(caller_status, 'Caller status', 512)
 		check()
 		iterator = iter(rows)
 		with closing(iterator) if callable(getattr(iterator, 'close', None)) else nullcontext():
 			snapshot = schema.snapshot(iterator, check_canceled=check)
-		return snapshot, None
+		if source is not None:
+			if len(snapshot) != len(source):
+				raise ValueError('QuickBoard source row count must stay fixed.')
+			columns = tuple(index for index, column in enumerate(schema.columns) if column.sortable or column.filterable)
+			for previous, current in zip(source, snapshot):
+				check()
+				for column in columns:
+					if (previous.cells[column] != current.cells[column] or
+							(previous.values or previous.cells)[column] != (current.values or current.cells)[column]):
+						raise ValueError('QuickBoard source column %r must stay fixed; use '
+							'sortable=False, filterable=False for generated values.' % schema.columns[column].label)
+		return snapshot, None, caller_status
 	except Canceled:
 		raise
 	except BaseException as error:
 		check()
-		return None, (isinstance(error, ValueError), (str(error) or type(error).__name__)[:2048])
+		return None, (isinstance(error, ValueError), (str(error) or type(error).__name__)[:2048]), None
 
 
 class _Session:
 	def __init__(self, text):
 		self.done = Event()
-		self.result = text, False
+		self.result = text, False, None
 		self.loop = None
 
 
@@ -72,6 +91,16 @@ class QuickBoardWindow(ToolWindow):
 		self.preview_error = None
 		self.pending = True
 		self.accepted_text = False
+		self.source = None
+		self.mapping = self.generated_mapping = None
+		self.requested = None
+		self.publishing = False
+		self.started = False
+		self.caller_status_text = None
+		self.debounce = QTimer(self)
+		self.debounce.setSingleShot(True)
+		self.debounce.setInterval(DEBOUNCE_MS)
+		self.debounce.timeout.connect(self.submit_preview)
 		self.table = self.input = self.menu = None
 		self.disposed.connect(self.cleanup)
 		try:
@@ -95,7 +124,11 @@ class QuickBoardWindow(ToolWindow):
 			self.summary.setVisible(bool(summary))
 			layout.addWidget(self.summary)
 			self.table = Table(schema, (), self, text_filter=None)
-			self.table.view.setColumnWidth(0, 300)
+			for index, column in enumerate(schema.columns):
+				if column.policy == 'number':
+					self.table.view.setColumnWidth(index, max(90, self.fontMetrics().horizontalAdvance(column.label) + 64))
+			if not schema.columns[0].typed:
+				self.table.view.setColumnWidth(0, 300)
 			for shortcut in self.table.findChildren(QShortcut):
 				if shortcut.key().toString() == 'Ctrl+F':
 					shortcut.setEnabled(False)
@@ -105,8 +138,15 @@ class QuickBoardWindow(ToolWindow):
 			self.input.installEventFilter(self)
 			self.table.layout().insertWidget(0, self.input)
 			self.status = ElidedLabel('', self.table)
+			self.caller_status = ElidedLabel('', self.table)
+			self.caller_status.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+			self.caller_status.hide()
 			self.table.counts.hide()
-			self.table.layout().addWidget(self.status)
+			footer = QHBoxLayout()
+			footer.setContentsMargins(0, 0, 0, 0)
+			footer.addWidget(self.status, 1)
+			footer.addWidget(self.caller_status, 1)
+			self.table.layout().addLayout(footer)
 			layout.addWidget(self.table, 1)
 			self.focus_widget = self.input
 			self.setFocusProxy(self.input)
@@ -115,6 +155,7 @@ class QuickBoardWindow(ToolWindow):
 			self.table.view.accept_requested.connect(self.request_accept)
 			self.table.view.menu_requested.connect(self.open_menu)
 			self.table.state_changed.connect(self.projection_changed)
+			self.table.presentation_changed.connect(self.view_changed)
 			shortcut = QShortcut(QKeySequence('Ctrl+F'), self)
 			shortcut.setContext(Qt.WidgetWithChildrenShortcut)
 			shortcut.activated.connect(self.focus_input)
@@ -132,26 +173,66 @@ class QuickBoardWindow(ToolWindow):
 		if not self.alive.is_set():
 			return
 		if initial:
-			if self.revision:
+			if self.started:
 				return
 		else:
 			self.revision += 1
 			self.accept_revision = None
+		self.started = True
 		self.pending = True
 		self.preview_error = None
+		self.clear_caller_status()
 		self.close_menu()
 		self.table.close_filter_menu()
 		self.update_status()
-		revision, text, schema, handler = self.revision, self.input.text(), self.schema, self.get_rows
+		self.requested = None
+		self.jobs.cancel()
+		try:
+			_input_text(self.input.text())
+		except ValueError as error:
+			self.debounce.stop()
+			self.receive(self.revision, (None, (True, str(error)), None), None, None)
+			return
+		if initial:
+			self.submit_preview()
+		else:
+			self.debounce.start()
+
+	def clear_caller_status(self):
+		self.caller_status_text = None
+		self.caller_status.set_content('')
+		self.caller_status.hide()
+
+	def view_changed(self):
+		self.accept_revision = None
+		self.debounce.stop()
+		self.clear_caller_status()
+		if self.preview_error is not None:
+			return
+		self.revision += 1
+		self.requested = None
+		self.pending = True
+		self.preview_error = None
+		self.jobs.cancel()
+
+	def submit_preview(self):
+		if not self.alive.is_set() or self.debounce.isActive() or (self.source is not None and not self.table.settled):
+			return
+		mapping = self.table.view_mapping() if self.source is not None else None
+		key = self.revision, mapping
+		if self.requested == key:
+			return
+		self.requested = key
+		revision, text, schema, handler, source = self.revision, self.input.text(), self.schema, self.get_rows, self.source
 		try:
 			_input_text(text)
 		except ValueError as error:
 			self.jobs.cancel()
-			self.receive(revision, (None, (True, str(error))), None)
+			self.receive(revision, (None, (True, str(error)), None), None, mapping)
 			return
 		try:
-			self.jobs.submit(lambda check: _prepare(schema, handler, text, check),
-				lambda result, error: self.post(self.receive, revision, result, error))
+			self.jobs.submit(lambda check: _prepare(schema, handler, text, check, mapping, source),
+				lambda result, error: self.post(self.receive, revision, result, error, mapping))
 		except Exception as error:
 			self.start_failed(error)
 
@@ -161,13 +242,13 @@ class QuickBoardWindow(ToolWindow):
 		if self.main.isVisible():
 			show_alert('Could not start QuickBoard preview: ' + str(error)[:2048])
 
-	def receive(self, revision, prepared, start_error):
+	def receive(self, revision, prepared, start_error, mapping):
 		if not self.alive.is_set() or revision != self.revision:
 			return
 		if start_error is not None:
 			self.start_failed(start_error)
 			return
-		rows, error = prepared
+		rows, error, caller_status = prepared
 		self.pending = False
 		if error is not None:
 			self.accept_revision = None
@@ -178,18 +259,30 @@ class QuickBoardWindow(ToolWindow):
 			return
 		self.preview_error = None
 		self.preview_revision = revision
-		self.table.replace_rows(rows)
+		self.generated_mapping = mapping
+		self.caller_status_text = caller_status
+		if self.source is None:
+			self.source = rows
+		self.publishing = True
+		try:
+			self.table.replace_rows(rows)
+		finally:
+			self.publishing = False
 		self.projection_changed()
 
 	def update_status(self):
 		message = 'Updating...' if self.pending else \
 			('Preview error: ' + self.preview_error if self.preview_error is not None else '')
-		self.status.set_content(' | '.join(part for part in (self.table.counts.text(), message) if part))
+		stale = 'Stale preview' if self.preview_error is not None and self.source is not None else ''
+		self.status.set_content(' | '.join(part for part in (self.table.counts.text(), stale, message) if part))
 
 	def request_accept(self):
 		if not self.alive.is_set() or self.busy or self.preview_error is not None:
 			return
 		self.accept_revision = self.revision
+		if self.debounce.isActive():
+			self.debounce.stop()
+			self.submit_preview()
 		self.projection_changed()
 
 	def projection_changed(self):
@@ -199,6 +292,24 @@ class QuickBoardWindow(ToolWindow):
 		self.update_status()
 		if self.table.error:
 			self.accept_revision = None
+			self.pending = False
+			return
+		if self.publishing or not self.table.settled or self.preview_error is not None:
+			return
+		if self.source is None:
+			if self.started:
+				self.submit_preview()
+			return
+		mapping = self.table.view_mapping()
+		if self.generated_mapping != mapping or self.preview_revision != self.revision:
+			self.pending = True
+			self.update_status()
+			self.submit_preview()
+			return
+		self.mapping = mapping
+		if not self.pending:
+			self.caller_status.set_content(self.caller_status_text or '')
+			self.caller_status.setVisible(bool(self.caller_status_text))
 		if (self.accept_revision == self.revision == self.preview_revision and
 				not self.pending and self.preview_error is None and self.table.settled and not self.busy):
 			self.accepted_text = True
@@ -264,14 +375,16 @@ class QuickBoardWindow(ToolWindow):
 
 	def cleanup(self):
 		self.main.removeEventFilter(self)
+		self.debounce.stop()
 		self.accept_revision = None
 		self.jobs.close()
 		self.get_rows = None
+		self.source = None
 		self.close_menu()
 		if self.table is not None:
 			self.table.dispose()
 		text = self.input.text() if self.input is not None else self.session.result[0]
-		self.session.result = text, self.accepted_text
+		self.session.result = text, self.accepted_text, self.mapping if self.accepted_text else None
 		self.session.done.set()
 		if self.session.loop is not None:
 			self.session.loop.quit()
@@ -286,7 +399,8 @@ def _open(session, columns, get_rows, text, title, summary):
 		show_alert('Two QuickBoards are open or still finishing. Close one or try again shortly.')
 		return
 	try:
-		window = QuickBoardWindow(_get_ui(), session, TableSchema(columns), get_rows, text, title, summary, release)
+		window = QuickBoardWindow(_get_ui(), session,
+			TableSchema(columns, max_rows=MAX_ROWS, max_columns=MAX_COLUMNS), get_rows, text, title, summary, release)
 		window.show()
 		window.raise_()
 		window.activateWindow()
@@ -304,7 +418,7 @@ def show_quick_board(*, columns, get_rows, text='', title='', summary=''):
 	_input_text(text)
 	checked_text(title, 'Title', 512)
 	checked_text(summary, 'Summary', 2048)
-	columns = _validate_columns(columns)
+	columns = _validate_columns(columns, MAX_COLUMNS)
 	session = _Session(text)
 	_open(session, columns, get_rows, text, title, summary)
 	if is_in_main_thread():

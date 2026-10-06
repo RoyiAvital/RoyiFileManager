@@ -151,6 +151,68 @@ class ExternalPluginTest(TestCase):
 		super().tearDown()
 
 
+class BatchFileRenamerPluginIT(qt_tests.QuickBoardFixture):
+	def test_installed_public_only_command_renames_only_visible_files(self):
+		from pathlib import Path
+		from tempfile import TemporaryDirectory
+		from shutil import copytree
+		from unittest.mock import Mock, patch
+		from fman_unittest.batch_file_renamer_fixture import PLUGIN_ROOT
+		from fman.impl.ui.table_filters import compile_filter
+		from fman.url import as_url
+		from core import LocalFileSystem
+		fixture = ExternalPluginTest()
+		fixture.setUp()
+		self.addCleanup(fixture.tearDown)
+		with TemporaryDirectory() as directory:
+			root = Path(directory).resolve()
+			installed = root / 'Third-party/BatchFileRenamer'
+			copytree(PLUGIN_ROOT, installed)
+			files = root / 'files'
+			files.mkdir()
+			for name in ('IMG_2.txt', 'IMG_10.txt', 'occupied.txt'):
+				(files / name).write_text(name, encoding='utf-8')
+			fixture._plugin._path = str(installed)
+			self.assertTrue(fixture._plugin.load(), fixture._error_handler.error_messages)
+			try:
+				self.assertIn('batch_file_renamer', fixture._panecmd_registry.get_commands())
+				from batch_file_renamer import BatchFileRenamer
+				pane = Mock()
+				pane.get_path.return_value = as_url(files)
+				pane.get_selected_files.return_value = [as_url(files / 'IMG_2.txt'), as_url(files / 'IMG_10.txt')]
+				callbacks = []
+				def subscribe(callback):
+					callbacks.append(callback)
+					return lambda: callbacks.remove(callback) if callback in callbacks else None
+				pane.on_path_changed.side_effect = subscribe
+				pane.on_closed.return_value = lambda: None
+				pane.reload.side_effect = lambda on_done=None: on_done() if on_done is not None else None
+				mother = MotherFileSystem(None)
+				mother.add_child('file://', LocalFileSystem())
+				with patch('fman.fs._get_mother_fs', return_value=mother), patch('fman.APP_VERSION', '0.14.0'), \
+						patch('fman.submit_task', side_effect=lambda task: task()):
+					finished, result = self.start_call(BatchFileRenamer(pane))
+					board = self.window_for()
+					self.settled(board)
+					self.run_in_app(board.input.setText, 'renamed_{index}{ext}')
+					self.settled(board)
+					self.run_in_app(board.table.set_column_filter, 2, compile_filter(board.schema.columns[2], 2, 'substring', 'IMG_10'))
+					self.settled(board)
+					self.assertEqual((None, 0), board.mapping)
+					self.run_in_app(board.request_accept)
+					report = self.wait_table()
+					self.assertTrue((files / 'IMG_2.txt').exists())
+					self.assertFalse((files / 'IMG_10.txt').exists())
+					self.assertEqual('IMG_10.txt', (files / 'renamed_0.txt').read_text())
+					self.assertIn('1 renamed; 1 excluded', self.run_in_app(lambda: report.summary.content))
+					self.run_in_app(report.close)
+					self.assertTrue(finished.wait(5))
+					pane.select.assert_called_once_with((as_url(files / 'renamed_0.txt'),))
+					self.assertFalse(callbacks)
+			finally:
+				fixture._plugin.unload()
+
+
 class QuickBoardPluginIT(qt_tests.QuickBoardFixture):
 	def test_public_only_consumers_and_host_lifetime_after_unload(self):
 		from pathlib import Path
@@ -176,13 +238,13 @@ class QuickBoardPluginIT(qt_tests.QuickBoardFixture):
 				class Board:
 				    @classmethod
 				    def compose(cls, label, text, entered=None, release=None):
-				        def rows(value):
+				        def rows(value, mapping):
 				            if entered is not None:
 				                entered.set()
 				                release.wait(5)
-				            return (QuickTableRow((label, value)),)
+				            return (QuickTableRow((label, value)),), None
 				        return show_quick_board(
-				            columns=(QuickTableColumn('Context'), QuickTableColumn('Preview')),
+				            columns=(QuickTableColumn('Context'), QuickTableColumn('Preview', sortable=False, filterable=False)),
 				            get_rows=rows, text=text, title=label, summary='Captured sample')
 			'''.expandtabs(4)), encoding='utf-8')
 			plugin = fixture._plugin
@@ -196,9 +258,14 @@ class QuickBoardPluginIT(qt_tests.QuickBoardFixture):
 						window = self.window_for()
 						self.settled(window)
 						self.assertEqual((label, text), self.run_in_app(lambda: window.table.model.rows[0].cells))
+						edited = text + ' updated'
+						self.run_in_app(window.input.setText, edited)
+						self.settled(window)
+						self.assertIsNone(window.preview_error)
+						self.assertEqual((label, edited), self.run_in_app(lambda: window.table.model.rows[0].cells))
 						self.run_in_app(window.request_accept)
 						self.assertTrue(finished.wait(5))
-						self.assertEqual([(text, True)], result)
+						self.assertEqual([(edited, True, (0,))], result)
 				entered, release = Event(), Event()
 				self.releases.append(release)
 				finished, result = self.start_call(Board.compose, 'Unload', 'draft', entered, release)
@@ -209,7 +276,7 @@ class QuickBoardPluginIT(qt_tests.QuickBoardFixture):
 				self.assertTrue(self.run_in_app(window.isVisible))
 				self.run_in_app(window.close)
 				self.assertTrue(finished.wait(5))
-				self.assertEqual([('draft', False)], result)
+				self.assertEqual([('draft', False, None)], result)
 				self.assertNotIn('quick_board_consumer', sys.modules)
 				release.set()
 				from fman.impl.ui.quick_board import _slots

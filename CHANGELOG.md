@@ -11,10 +11,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Plug-in API: `fman.ui.show_quick_board` composes one string with a read-only,
   caller-generated typed preview. It preserves the draft on cancellation,
-  keeps sorting/filtering presentation-only, and bounds background work across
-  open and closing dialogs. No caller-supplied owner is required. The frameless
+  passes and returns source-to-view row mappings, and bounds background work across
+  open and closing dialogs. Callbacks must return `(rows, status)`, with `None`
+  displaying no right-hand status. Text edits use a 100 ms trailing debounce;
+  Enter flushes it. Supports up to 25,000 rows and 16 columns within the 16 MiB
+  preview budget. No caller-supplied owner is required. The frameless
   dialog has a draggable title, uses the QuickTable theme, and shares one footer
-  for row counts and preview status.
+  for row counts and preview status. Source-column errors identify the column
+  and required flags; retained rows after an error are marked as stale.
+- Independent Batch File Renamer plug-in: f-string-style templates with current
+  and file dates, visible and whole-folder indices, filename and extension;
+  visible-only renaming, collision hints, fresh preflight, progress/cancellation
+  and partial reports retained on unexpected errors. Links and junctions are
+  rejected before the preview opens; sparse files and cloud placeholders are
+  supported. Install separately from `plugins/BatchFileRenamer`.
+- Public `fman.fs.rename_no_replace` returns a confirmed `RenameResult` with
+  notification warnings separated from mutation failure. Windows local Rename
+  uses it and refuses links, junctions and files with multiple hard links;
+  backslash-containing local URLs and existing source short-name aliases are
+  rejected before mutation. Unformattable
+  notification errors retain the confirmed result and use a fallback warning.
+  Other providers retain their existing path until they implement it.
+- `DirectoryPane.reload(on_done=...)` reports fresh reload completion without
+  resetting pane filters. Completion requires a successful scan and settled
+  projection; failed scans wait for a successful retry, and navigation/closure
+  cancels the callback. Plain `reload()` keeps its original nonblocking refresh path.
 - Favorites Manager shows when each favorite was added and last opened, and how
   often Go To opened it. The values are saved in `Favorites.json`;
   `Ctrl+F1`–`Ctrl+F5` sort by Name, Path, Added, Last opened or Opened.
@@ -22,8 +43,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Copy and Move start cancellable preparation before batch validation. Ordinary
+  local files avoid repeated ancestor resolution; directory checks reuse
+  task-local identities with conservative provider fallbacks. Overwrite decisions
+  and destination creation retain prepare-before-execute ordering.
+  Move supports missing destination folders, including nested paths, without
+  creating them before preparation succeeds.
+- Public file selection batches Qt selection updates, avoiding per-file UI stalls
+  when restoring large rename results. Explicit-overwrite Move remains unchanged.
 - QuickTable initially focuses the first filterable column (column zero if none
   are filterable), and retains the last current column when empty results refill.
+- QuickTable tracks visibility by source position, including repeated row objects.
 - QuickList: the sort bar is replaced by a footer listing the `Ctrl+F` keys with
   the current sort; a third press of a sort key restores the original order.
   Sort arrows have reserved space, so no text moves. Metadata fields are
@@ -36,6 +66,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Saved application and plug-in JSON uses two-space indentation and a final
   newline. Formatting is applied on writes; unchanged plug-in settings still
   avoid rewrites.
+
+### Performance
+
+Local Copy results measured on 2026-10-06, comparing `0.14.0` with the selected
+Unreleased implementation (vanilla A). Medians of three runs per case using the
+same test harness and warm filesystem caches; lower is better.
+
+- **Flat:** 10,000 ordinary files, each 4 KiB (4,096 bytes), in one folder.
+- **Tree:** 1,000 ordinary files, each 8 KiB (8,192 bytes), spread over 360 folders
+  in ten top-level branches, with one to six nested levels. All ten branches
+  are selected, not 1,000 individual pane rows.
+
+Each run uses Ctrl+A then F5 to copy into an empty destination. Every file's
+contents and the resulting folder structure are checked outside the timed work.
+First-file and completion times start when the destination is confirmed;
+preparation is included, not extra time to add.
+
+| Fixture | Stage         |    0.14.0 | Unreleased |
+| ------- | ------------- | --------: | ---------: |
+| Flat    | Preparation   | 11,265 ms |     361 ms |
+| Flat    | First file    | 21,585 ms |     376 ms |
+| Flat    | Copy complete |   92.07 s |    67.27 s |
+| Tree    | Preparation   |  31.16 ms |   27.21 ms |
+| Tree    | First file    |  56.91 ms |   36.44 ms |
+| Tree    | Copy complete |    2.08 s |     1.11 s |
+
+These are retained Copy measurements, not new runs after selecting vanilla A
+or Move timings. Both cases run only with `python build.py measure --full`.
+See the [saved comparison and limitations](Done/CodeReview010.md#three-way-reference).
 
 ## [0.14.0] - 2026-10-05
 

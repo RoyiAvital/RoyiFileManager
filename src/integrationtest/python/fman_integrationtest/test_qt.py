@@ -1989,6 +1989,176 @@ class FilterBarIT(QtIT):
 		self.assertEqual(original_width, self.run_in_app(self.window.width), 'Long count text resized the window')
 
 class SnapshotFilterBarIT(FilterBarIT):
+	def test_copy_preparation_progress_is_visible_and_cancel_leaves_no_changes(self):
+		from core.commands import Copy
+		from core.fileoperations import FileTreeOperation
+		from fman import DirectoryPane
+		from fman.url import as_url
+		from PyQt5.QtCore import QTimer
+		from time import perf_counter
+		from unittest.mock import patch
+		release, observed, dialogs = Event(), [], []
+		destination = self.root / 'not-created'
+		source = self.root / 'report.txt'
+		pane = DirectoryPane(None, self.panes[0], None)
+		self.run_in_app(lambda: setattr(self.window, '_progress_bar_palette', QApplication.instance().palette()))
+		original_create = self.window.create_progress_dialog
+		original_contains = FileTreeOperation._contains_destination
+		def create(*args):
+			dialog = original_create(*args)
+			dialogs.append(dialog)
+			def watch():
+				timer = QTimer(dialog)
+				def tick():
+					if dialog.isVisible():
+						timer.stop()
+						observed.append((perf_counter() - started) * 1000)
+						dialog.request_cancel()
+						release.set()
+				timer.timeout.connect(tick)
+				timer.start(10)
+			self.run_in_app(watch)
+			return dialog
+		def hold(operation, *args):
+			self.assertTrue(release.wait(5), 'Preparation never displayed cancellable progress')
+			return original_contains(operation, *args)
+		started = perf_counter()
+		try:
+			with patch('fman._get_ui', return_value=self.window), \
+					patch('fman.fs._get_mother_fs', return_value=self.filesystem), \
+					patch.object(self.window, 'show_alert', side_effect=AssertionError('Unexpected copy alert')), \
+					patch.object(self.window, 'create_progress_dialog', side_effect=create), \
+					patch.object(Copy, '_confirm_tree_operation', return_value=(as_url(destination), None)), \
+					patch.object(FileTreeOperation, '_contains_destination', hold):
+				Copy(pane)(files=[as_url(source)], dest_dir=as_url(destination))
+			self.assertEqual(1, len(observed))
+			self.assertLess(observed[0], 1250)
+			self.assertLess((perf_counter() - started) * 1000 - observed[0], 250)
+			self.assertTrue(source.exists())
+			self.assertFalse(destination.exists())
+		finally:
+			release.set()
+			for dialog in dialogs:
+				self.run_in_app(dialog.cancel)
+				self.run_in_app(dialog.deleteLater)
+
+	def test_plain_public_reload_keeps_worker_signal_path(self):
+		from fman import DirectoryPane
+		from threading import get_ident
+		from unittest.mock import patch
+		pane = self.panes[0]
+		caller_thread = get_ident()
+		threads = []
+		with patch.object(pane._model, 'reload', side_effect=lambda: threads.append(get_ident())), \
+				patch.object(pane, '_reload_with_callback') as with_callback:
+			DirectoryPane(None, pane, None).reload()
+			with_callback.assert_not_called()
+		self.assertEqual([caller_thread], threads)
+
+	def test_reload_completion_waits_for_fresh_scan_once(self):
+		from fman import DirectoryPane
+		from threading import get_ident
+		from unittest.mock import patch
+		pane = self.panes[0]
+		source = self.run_in_app(pane._model.sourceModel)
+		public = DirectoryPane(None, pane, None)
+		started, released = (Event(), Event()), (Event(), Event())
+		finished, scans, completions = Event(), [], []
+		original = source._scanner
+		def scan(check):
+			index = len(scans)
+			scans.append(index)
+			if index < len(started):
+				started[index].set()
+				if not released[index].wait(5):
+					raise TimeoutError('Reload scan not released')
+			return original(check)
+		def completed():
+			completions.append((get_ident(), source._scan_revision,
+				source._committed_revision == source._revision))
+			finished.set()
+		receivers = self.run_in_app(lambda: source.receivers(source.all_rows_loaded))
+		with patch.object(source, '_scanner', scan):
+			try:
+				public.reload()
+				self.assertTrue(started[0].wait(5))
+				revision = self.run_in_app(lambda: source._scan_revision)
+				public.reload(on_done=completed)
+				self.assertFalse(finished.is_set())
+				released[0].set()
+				self.assertTrue(started[1].wait(5))
+				self.assertFalse(finished.is_set(), 'In-flight scan satisfied a newer reload')
+				released[1].set()
+				self.assertTrue(finished.wait(5))
+				self.drain(pane)
+				self.assertEqual([(self.run_in_app(get_ident), revision + 1, True)], completions)
+				self.assertEqual(receivers, self.run_in_app(lambda: source.receivers(source.all_rows_loaded)))
+				public.reload()
+				self.drain(pane)
+				self.assertEqual(1, len(completions))
+			finally:
+				for release in released:
+					release.set()
+
+	def test_failed_reload_does_not_complete_on_filter_or_sort(self):
+		from fman import DirectoryPane
+		from unittest.mock import Mock, patch
+		pane = self.panes[0]
+		source = self.run_in_app(pane._model.sourceModel)
+		public = DirectoryPane(None, pane, None)
+		for invalid_scan in (Mock(side_effect=RuntimeError('Scan failed')), Mock(return_value=None)):
+			failed, finished = Event(), Event()
+			callback = Mock(side_effect=finished.set)
+			revision = self.run_in_app(lambda: source._scan_revision)
+			receivers = self.run_in_app(lambda: source.receivers(source.all_rows_loaded))
+			with patch.object(source, '_scanner', invalid_scan), \
+					patch('sys.excepthook', side_effect=lambda *args: failed.set()):
+				public.reload(on_done=callback)
+				self.assertTrue(failed.wait(5))
+				self.set_query('report', pane)
+				pane.set_sort_column('core.Name', False)
+				self.drain(pane)
+				callback.assert_not_called()
+				self.assertEqual(revision, self.run_in_app(lambda: source._successful_scan_revision))
+				self.assertEqual(revision + 1, self.run_in_app(lambda: source._scan_revision))
+			public.reload()
+			self.assertTrue(finished.wait(5), 'Successful retry did not complete reload')
+			self.drain(pane)
+			callback.assert_called_once_with()
+			self.assertEqual(receivers, self.run_in_app(lambda: source.receivers(source.all_rows_loaded)))
+			self.set_query('', pane)
+			callback.assert_called_once_with()
+
+	def test_reload_completion_disconnects_on_navigation(self):
+		from fman import DirectoryPane
+		from unittest.mock import Mock, patch
+		pane = self.panes[0]
+		callback = Mock()
+		receivers = self.run_in_app(lambda: pane._model.receivers(pane._model.location_changed))
+		with patch.object(pane._model, 'reload'):
+			DirectoryPane(None, pane, None).reload(on_done=callback)
+		self.assertEqual(receivers + 1, self.run_in_app(lambda: pane._model.receivers(pane._model.location_changed)))
+		self.navigate(pane, self.root.parent)
+		callback.assert_not_called()
+		self.assertEqual(receivers, self.run_in_app(lambda: pane._model.receivers(pane._model.location_changed)))
+
+	def test_reload_completion_disconnects_on_window_close(self):
+		from fman import DirectoryPane
+		from unittest.mock import Mock, patch
+		pane = self.panes[0]
+		source = self.run_in_app(pane._model.sourceModel)
+		public, callback = DirectoryPane(None, pane, None), Mock()
+		receivers = self.run_in_app(lambda: source.receivers(source.all_rows_loaded))
+		with patch.object(pane._model, 'reload'):
+			public.reload(on_done=callback)
+		self.assertEqual(receivers + 1, self.run_in_app(lambda: source.receivers(source.all_rows_loaded)))
+		self.run_in_app(self.window.close)
+		self.assertEqual(receivers, self.run_in_app(lambda: source.receivers(source.all_rows_loaded)))
+		self.run_in_app(source.all_rows_loaded.emit)
+		public.reload(on_done=callback)
+		self.assertEqual(receivers, self.run_in_app(lambda: source.receivers(source.all_rows_loaded)))
+		callback.assert_not_called()
+
 	def test_status_snapshots_are_complete_for_visible_entries(self):
 		from fman.listing import Listing
 		from unittest.mock import patch
@@ -2713,6 +2883,21 @@ class SnapshotFilterBarIT(FilterBarIT):
 		self.assertEqual(1900, self.run_in_app(lambda: sum(
 			selection.bottom() - selection.top() + 1
 			for selection in pane._file_view.selectionModel().selection())))
+		def select_public_batch():
+			view = pane._file_view
+			view.clearSelection()
+			changes = []
+			def changed(*_):
+				changes.append(True)
+			view.selectionModel().selectionChanged.connect(changed)
+			try:
+				urls = [pane._model.url(pane._model.index(row, 0)) for row in range(pane._model.rowCount())]
+				pane.select(urls)
+				self.assertEqual(urls, pane.get_selected_files())
+				self.assertEqual([True], changes)
+			finally:
+				view.selectionModel().selectionChanged.disconnect(changed)
+		self.run_in_app(select_public_batch)
 
 class DirectorySizeIT(QtIT):
 	def test_no_standalone_directory_size_plugin(self):
@@ -6056,10 +6241,14 @@ class QuickBoardFixture(QtIT):
 	def start_board(self, handler=None, **arguments):
 		from fman.ui import QuickTableColumn, QuickTableRow, show_quick_board
 		handler = handler or (lambda text: (QuickTableRow(('result: ' + text,)),))
-		defaults = dict(columns=(QuickTableColumn('Preview'),), get_rows=handler, text='draft')
+		def mapped(text, mapping):
+			return handler(text), None
+		def invoke(**values):
+			return show_quick_board(**values)[:2]
+		defaults = dict(columns=(QuickTableColumn('Preview', sortable=False, filterable=False),), get_rows=mapped, text='draft')
 		defaults.update(arguments)
-		finished, results = self.start_call(show_quick_board, **defaults)
-		return handler, finished, results
+		finished, results = self.start_call(invoke, **defaults)
+		return mapped, finished, results
 
 	def start_call(self, callback, *args, **kwargs):
 		from threading import Thread
@@ -6086,6 +6275,192 @@ class QuickBoardFixture(QtIT):
 		self.wait_for(lambda: not window.pending and window.table.settled)
 
 
+class BatchFileRenamerIT(QuickBoardFixture):
+	def test_hidden_occupied_name_is_invalid_and_cancel_leaves_files_unchanged(self):
+		from tempfile import TemporaryDirectory
+		from pathlib import Path
+		from fman_unittest.batch_file_renamer_fixture import engine_module
+		from fman.ui import show_quick_board
+		from fman.url import as_url
+		from fman.impl.ui.table_filters import compile_filter
+		with TemporaryDirectory() as directory, engine_module() as engine:
+			root = Path(directory).resolve()
+			for name in ('A.txt', 'B.txt'):
+				(root / name).write_text(name)
+			captured = engine.capture(tuple(as_url(root / name) for name in ('A.txt', 'B.txt')))
+			finished, result = self.start_call(show_quick_board, columns=engine.COLUMNS,
+				get_rows=lambda text, mapping: engine.preview(captured, text, mapping, with_status=True), text='{name}{ext}')
+			window = self.window_for()
+			self.settled(window)
+			self.run_in_app(window.table.set_column_filter, 2, compile_filter(engine.COLUMNS[2], 2, 'substring', 'A.txt'))
+			self.settled(window)
+			self.run_in_app(window.input.setText, 'B.txt')
+			self.settled(window)
+			self.assertEqual((0, None), window.mapping)
+			self.assertIn('Target exists', self.run_in_app(lambda: window.table.model.rows[0].cells[5]))
+			self.run_in_app(window.close)
+			self.assertTrue(finished.wait(5))
+			self.assertEqual([('B.txt', False, None)], result)
+			self.assertEqual('A.txt', (root / 'A.txt').read_text())
+			self.assertEqual('B.txt', (root / 'B.txt').read_text())
+
+
+class QuickBoardMappingIT(QuickBoardFixture):
+	def test_optional_caller_status_and_trailing_debounce(self):
+		from fman.ui import QuickTableColumn, QuickTableRow, show_quick_board
+		calls = []
+		def rows(text, mapping):
+			calls.append((text, mapping))
+			return (QuickTableRow(('fixed',)),), None if text == 'quiet' else 'Rename blocked: 1 naming conflict.'
+		finished, result = self.start_call(show_quick_board, columns=(QuickTableColumn('Name'),), get_rows=rows)
+		window = self.window_for()
+		self.settled(window)
+		self.assertEqual('Rename blocked: 1 naming conflict.', self.run_in_app(window.caller_status.text))
+		self.assertTrue(self.run_in_app(window.caller_status.isVisible))
+		before = len(calls)
+		def edit():
+			for value in ('q', 'qu', 'qui', 'quie', 'quiet'):
+				window.input.setText(value)
+			self.assertTrue(window.debounce.isActive())
+			self.assertEqual(before, len(calls))
+			self.assertFalse(window.caller_status.isVisible())
+		self.run_in_app(edit)
+		self.settled(window)
+		self.assertEqual(before + 1, len(calls))
+		self.assertEqual('quiet', calls[-1][0])
+		self.assertFalse(self.run_in_app(window.caller_status.isVisible))
+		self.run_in_app(window.input.setText, 'accept')
+		self.run_in_app(window.request_accept)
+		self.assertTrue(finished.wait(5))
+		self.assertEqual([('accept', True, (0,))], result)
+
+	def test_view_change_during_bootstrap_does_not_strand_dialog(self):
+		from fman.ui import QuickTableColumn, QuickTableRow, show_quick_board
+		entered, release = Event(), Event()
+		self.releases.append(release)
+		calls = []
+		def rows(text, mapping):
+			calls.append(mapping)
+			if len(calls) == 1:
+				entered.set()
+				release.wait(5)
+			return (QuickTableRow(('beta',)), QuickTableRow(('alpha',))), None
+		finished, result = self.start_call(show_quick_board, columns=(QuickTableColumn('Name'),), get_rows=rows)
+		window = self.window_for()
+		self.assertTrue(entered.wait(5))
+		self.run_in_app(window.table.set_sort, 0)
+		release.set()
+		self.settled(window)
+		self.assertEqual((1, 0), window.mapping)
+		self.run_in_app(window.request_accept)
+		self.assertTrue(finished.wait(5))
+
+	def test_view_change_clears_pending_acceptance_and_rejects_old_map(self):
+		from fman.ui import QuickTableColumn, QuickTableRow, show_quick_board
+		from fman.impl.ui.table_filters import compile_filter
+		entered, release = Event(), Event()
+		self.releases.append(release)
+		def rows(text, mapping):
+			if mapping == (0, 1):
+				entered.set()
+				release.wait(5)
+			return tuple(QuickTableRow((name, '' if mapping is None or mapping[index] is None else str(mapping[index])))
+				for index, name in enumerate(('alpha', 'beta'))), None
+		columns = (QuickTableColumn('Source'), QuickTableColumn('Index', sortable=False, filterable=False))
+		finished, result = self.start_call(show_quick_board, columns=columns, get_rows=rows)
+		window = self.window_for()
+		self.assertTrue(entered.wait(5))
+		self.run_in_app(window.request_accept)
+		self.run_in_app(window.table.set_column_filter, 0, compile_filter(columns[0], 0, 'substring', 'beta'))
+		release.set()
+		self.settled(window)
+		self.assertFalse(finished.is_set())
+		self.assertEqual((None, 0), window.mapping)
+		self.run_in_app(window.request_accept)
+		self.assertTrue(finished.wait(5))
+		self.assertEqual([('', True, (None, 0))], result)
+
+	def test_bootstrap_once_and_accepted_map_matches_filtered_preview(self):
+		from fman.ui import QuickTableColumn, QuickTableRow, show_quick_board
+		from fman.impl.ui.table_filters import compile_filter
+		calls = []
+		def rows(text, mapping):
+			calls.append((text, mapping))
+			return tuple(QuickTableRow((name, '' if mapping is None or mapping[index] is None else text + str(mapping[index])))
+				for index, name in enumerate(('beta', 'alpha', 'gamma'))), None
+		columns = (QuickTableColumn('Name'), QuickTableColumn('Preview', sortable=False, filterable=False))
+		finished, result = self.start_call(show_quick_board, columns=columns, get_rows=rows, text='old')
+		window = self.window_for()
+		self.settled(window)
+		self.assertEqual([('old', None), ('old', (0, 1, 2))], calls)
+		self.run_in_app(window.input.setText, 'new')
+		self.settled(window)
+		self.assertEqual(('new', (0, 1, 2)), calls[-1])
+		self.run_in_app(window.table.set_sort, 0)
+		self.settled(window)
+		self.assertEqual((1, 0, 2), window.mapping)
+		self.run_in_app(window.table.set_column_filter, 0, compile_filter(columns[0], 0, 'substring', 'alpha'))
+		self.settled(window)
+		self.assertEqual((None, 0, None), window.mapping)
+		self.assertEqual('new0', self.run_in_app(lambda: window.table.model.rows[0].cells[1]))
+		self.run_in_app(window.request_accept)
+		self.assertTrue(finished.wait(5))
+		self.assertEqual([('new', True, (None, 0, None))], result)
+		self.assertEqual(1, sum(mapping is None for text, mapping in calls))
+
+	def test_sort_during_preview_error_marks_retained_rows_stale(self):
+		from fman.ui import QuickTableColumn, QuickTableRow, show_quick_board
+		calls = []
+		def rows(text, mapping):
+			calls.append((text, mapping))
+			if text == 'invalid':
+				raise ValueError('Invalid expression')
+			return tuple(QuickTableRow((name, '' if mapping is None else str(mapping[index])))
+				for index, name in enumerate(('beta', 'alpha'))), None
+		columns = (QuickTableColumn('Name'), QuickTableColumn('Index', sortable=False, filterable=False))
+		finished, result = self.start_call(show_quick_board, columns=columns, get_rows=rows)
+		window = self.window_for()
+		self.settled(window)
+		self.run_in_app(window.input.setText, 'invalid')
+		self.wait_for(lambda: window.preview_error)
+		count = len(calls)
+		self.run_in_app(window.table.set_sort, 0)
+		self.wait_for(lambda: window.table.settled)
+		self.assertEqual([('alpha', '1'), ('beta', '0')],
+			self.run_in_app(lambda: [row.cells for row in window.table.model.rows]))
+		self.assertIn('Stale preview', self.run_in_app(lambda: window.status.content))
+		self.assertEqual(count, len(calls))
+		self.run_in_app(window.request_accept)
+		self.assertFalse(finished.is_set())
+		self.run_in_app(window.input.setText, 'valid')
+		self.settled(window)
+		self.assertNotIn('Stale preview', self.run_in_app(lambda: window.status.content))
+		self.assertEqual([('alpha', '0'), ('beta', '1')],
+			self.run_in_app(lambda: [row.cells for row in window.table.model.rows]))
+		self.run_in_app(window.request_accept)
+		self.assertTrue(finished.wait(5))
+		self.assertEqual([('valid', True, (1, 0))], result)
+
+	def test_changed_source_is_error_not_a_loop(self):
+		from fman.ui import QuickTableColumn, QuickTableRow, show_quick_board
+		calls = []
+		def rows(text, mapping):
+			calls.append(mapping)
+			return (QuickTableRow(('initial' if mapping is None else 'changed',)),), None
+		finished, result = self.start_call(show_quick_board, columns=(QuickTableColumn('Source'),), get_rows=rows)
+		window = self.window_for()
+		self.wait_for(lambda: window.preview_error)
+		self.assertIn('must stay fixed', window.preview_error)
+		self.assertIn("column 'Source'", window.preview_error)
+		self.assertIn('sortable=False, filterable=False', window.preview_error)
+		self.assertEqual([None, (0,)], calls)
+		self.run_in_app(window.request_accept)
+		self.assertFalse(finished.is_set())
+		self.run_in_app(window.close)
+		self.assertTrue(finished.wait(5))
+		self.assertEqual([('', False, None)], result)
+
+
 class QuickBoardIT(QuickBoardFixture):
 	def test_cancel_during_formatter_stops_next_formatter(self):
 		from fman.ui import QuickTableColumn, QuickTableRow
@@ -6101,8 +6476,8 @@ class QuickBoardIT(QuickBoardFixture):
 						self.assertTrue(release.wait(5))
 					return str(value)
 				second = Mock(side_effect=str)
-				columns = (QuickTableColumn('First', 'numeric', format=first),
-					QuickTableColumn('Second', 'numeric', format=second))
+				columns = (QuickTableColumn('First', 'numeric', format=first, sortable=False, filterable=False),
+					QuickTableColumn('Second', 'numeric', format=second, sortable=False, filterable=False))
 				preview, finished, result = self.start_board(
 					lambda text: (QuickTableRow((1, 2) if text == 'A' else (3, 4)),), columns=columns, text='A')
 				window = self.window_for(preview)
@@ -6117,7 +6492,7 @@ class QuickBoardIT(QuickBoardFixture):
 				release.set()
 				if cancel_by_edit:
 					self.settled(window)
-					second.assert_called_once_with(4)
+					self.assertEqual([4, 4], [call.args[0] for call in second.call_args_list])
 					self.run_in_app(window.close)
 					self.assertTrue(finished.wait(5))
 				else:
@@ -6151,7 +6526,7 @@ class QuickBoardIT(QuickBoardFixture):
 		self.assertEqual([(draft, False)], result)
 
 	def test_new_preview_closes_filter_editor_and_retains_committed_filter(self):
-		from fman.ui import QuickTableRow
+		from fman.ui import QuickTableColumn, QuickTableRow
 		from fman.impl.ui.table import FilterEditor
 		from fman.impl.ui.table_filters import compile_filter
 		entered, release = Event(), Event()
@@ -6161,7 +6536,7 @@ class QuickBoardIT(QuickBoardFixture):
 				entered.set()
 				release.wait(5)
 			return (QuickTableRow(('alpha',)),)
-		preview, finished, result = self.start_board(handler)
+		preview, finished, result = self.start_board(handler, columns=(QuickTableColumn('Preview'),))
 		window = self.window_for(preview)
 		self.settled(window)
 		committed = compile_filter(window.schema.columns[0], 0, 'substring', 'alpha')
@@ -6205,7 +6580,7 @@ class QuickBoardIT(QuickBoardFixture):
 		from fman.ui import QuickTableColumn, show_quick_board
 		from fman.impl.ui.quick_board import _slots
 		from unittest.mock import Mock, patch
-		handler = Mock(return_value=())
+		handler = Mock(return_value=((), None))
 		with patch('fman.impl.ui.quick_board.TableSchema', side_effect=ValueError('Invalid schema')), \
 				self.assertRaisesRegex(ValueError, 'Invalid schema'):
 			self.run_in_app(show_quick_board,
@@ -6228,7 +6603,7 @@ class QuickBoardIT(QuickBoardFixture):
 			self.assertFalse(finished.is_set())
 			self.run_in_app(callbacks.pop())
 			self.assertTrue(finished.wait(5))
-		self.assertEqual([True], visible)
+		self.assertEqual([True, True], visible)
 		self.assertEqual([('draft', True)], result)
 
 	def test_queued_start_failure_and_owned_error_teardown(self):
@@ -6306,8 +6681,8 @@ class QuickBoardIT(QuickBoardFixture):
 					if isinstance(widget, QuickBoardWindow) and widget.alive.is_set())
 				QTest.keyClick(board.input, Qt.Key_Escape)
 			QTimer.singleShot(0, cancel)
-			return show_quick_board(columns=(QuickTableColumn('Value'),), get_rows=lambda text: (), text='\U0001f600 draft')
-		self.assertEqual(('\U0001f600 draft', False), self.run_in_app(nested))
+			return show_quick_board(columns=(QuickTableColumn('Value'),), get_rows=lambda text, mapping: ((), None), text='\U0001f600 draft')
+		self.assertEqual(('\U0001f600 draft', False, None), self.run_in_app(nested))
 
 	def test_queued_enter_accepts_only_its_revision(self):
 		from fman.ui import QuickTableRow
@@ -6419,7 +6794,7 @@ class QuickBoardIT(QuickBoardFixture):
 		self.assertEqual(('custom:7',), self.run_in_app(lambda: (window.table.model.rows[0].cells[0],)))
 		self.assertEqual((7, 0), self.run_in_app(lambda: window.table.model.rows[0].values))
 		self.run_in_app(window.table.set_sort, 0, True)
-		formatter.assert_called_once_with(7)
+		self.assertGreaterEqual(formatter.call_count, 2)
 		entered, release = Event(), Event()
 		self.releases.append(release)
 		def blocked(value):
@@ -6453,7 +6828,7 @@ class QuickBoardIT(QuickBoardFixture):
 			owner, finished, result = self.start_board(handler)
 			windows.append(self.window_for(owner))
 			self.assertTrue(gate.wait(5))
-		callback = Mock(return_value=())
+		callback = Mock(return_value=((), None))
 		with patch('fman.show_alert') as alert:
 			for close in (False, True):
 				if close:
@@ -6461,7 +6836,7 @@ class QuickBoardIT(QuickBoardFixture):
 						self.run_in_app(window.close)
 					for worker, finished, result, errors in self.workers:
 						self.assertTrue(finished.wait(5))
-				self.assertEqual(('third', False), show_quick_board(columns=(QuickTableColumn('Value'),),
+				self.assertEqual(('third', False, None), show_quick_board(columns=(QuickTableColumn('Value'),),
 					get_rows=callback, text='third'))
 			callback.assert_not_called()
 			self.assertEqual(2, alert.call_count)
@@ -6569,6 +6944,26 @@ class QuickBoardIT(QuickBoardFixture):
 
 
 class TableIT(QtIT):
+	def test_view_mapping_preserves_duplicate_source_positions(self):
+		def check():
+			from fman.impl.ui.table import Table
+			from fman.impl.ui.table_data import QuickTableColumn, QuickTableRow, TableSchema
+			schema = TableSchema((QuickTableColumn('Name'),))
+			duplicate = QuickTableRow(('beta',))
+			table = Table(schema, schema.snapshot((duplicate, QuickTableRow(('alpha',)), duplicate)))
+			try:
+				table.set_sort(0)
+				self.assertEqual((1, 0, 2), table.view_mapping())
+				table.query.setText('beta')
+				self.assertEqual((0, None, 1), table.view_mapping())
+				self.assertEqual((0, 2), table.visible_positions())
+				table.query.setText('missing')
+				self.assertEqual((None, None, None), table.view_mapping())
+			finally:
+				table.dispose()
+				table.deleteLater()
+		self.run_in_app(check)
+
 	def test_initial_column_and_empty_refill_use_first_filterable_column(self):
 		def check():
 			from fman.impl.ui.table import Table

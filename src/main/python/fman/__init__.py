@@ -195,8 +195,13 @@ class DirectoryPane:
 			else:
 				break
 		self._widget.set_location(args[0], args[1], args[2], callback, onerror)
-	def reload(self):
-		self._widget.reload()
+	def reload(self, on_done=None):
+		if on_done is not None and not callable(on_done):
+			raise TypeError('Reload completion must be callable.')
+		if on_done is None:
+			self._widget.reload()
+		else:
+			self._widget.reload(on_done=on_done)
 	def edit_name(self, file_url, selection_start=0, selection_end=None):
 		self._widget.edit_name(file_url, selection_start, selection_end)
 	def select_all(self):

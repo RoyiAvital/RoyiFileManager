@@ -125,6 +125,40 @@ class MotherFileSystem:
 				except Exception as e:
 					# Don't show previous UnsupportedOperation in traceback.
 					raise e from None
+	def rename_no_replace(self, source_url, destination_url):
+		from fman.fs import RenameResult
+		source_fs, source_path = self._split(source_url)
+		destination_fs, destination_path = self._split(destination_url)
+		if source_fs is not destination_fs or dirname(source_url) != dirname(destination_url):
+			raise UnsupportedOperation('Rename requires the same filesystem and parent folder.')
+		result = source_fs.rename_no_replace(source_url, destination_url)
+		if not isinstance(result, RenameResult):
+			raise TypeError('rename_no_replace providers must return RenameResult.')
+		if not result.changed:
+			return result
+		warnings = list(result.notification_warnings)
+		def attempt(callback, *args):
+			try:
+				callback(*args)
+			except BaseException as error:
+				if len(warnings) < 16:
+					try:
+						message = (str(error) or type(error).__name__)[:512]
+					except BaseException:
+						message = 'Notification failed (details unavailable).'
+					warnings.append(message)
+		attempt(self._remove, source_url)
+		attempt(destination_fs.cache.clear, destination_path)
+		attempt(self._add_to_parent, destination_url)
+		for event, url in ((self.file_removed, source_url), (self.file_added, destination_url)):
+			for callback in tuple(event._callbacks):
+				attempt(callback, url)
+		for event, url, forwarding in ((source_fs._file_removed, source_url, self._on_file_removed),
+				(destination_fs._file_added, destination_url, self._on_file_added)):
+			for callback in tuple(event._callbacks):
+				if callback != forwarding:
+					attempt(callback, url)
+		return RenameResult(result.source_url, result.destination_url, True, tuple(warnings))
 	def move_to_trash(self, url):
 		child, path = self._split(url)
 		child.move_to_trash(path)

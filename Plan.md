@@ -2,7 +2,6 @@
 
 ## Pending
 
-- [Batch File Renamer](Plan/BatchFileRenamer.md)
 - [Code Review 099: Deferred Work and Release Gates](Plan/CodeReview099.md)
 - [Date Format: Locale or ISO](Plan/DateFormat.md)
 - [Filter Files 002: Multiple Terms (AND)](Plan/FilterFiles002.md)
@@ -18,6 +17,7 @@
 
 - [Archive Transfers](Done/ArchiveTransfers.md)
 - [Assigned Model Signatures](Done/AssignedModelSignatures.md)
+- [Batch File Renamer](Done/BatchFileRenamer.md)
 - [Calculate File Hash](Done/CalculateFileHash.md)
 - [Checksum Files](Done/ChecksumFiles.md)
 - [Code Review 001: Dead Code Removal](Done/CodeReview001.md)
@@ -26,6 +26,7 @@
 - [Code Review 004: Low-Risk Responsiveness Improvements](Done/CodeReview004.md)
 - [Code Review 005: fman Leftovers and Non-Windows Code](Done/CodeReview005.md)
 - [Code Review 006: Bugs and Unneeded Edge Cases](Done/CodeReview006.md)
+- [Code Review 010: Large-Selection Copy Startup](Done/CodeReview010.md)
 - [Concise README Features](Done/ConciseReadmeFeatures.md)
 - [Context Window Capitalization](Done/ContextWindowCapitalization.md)
 - [Correct Provenance Metadata](Done/CorrectProvenanceMetadata.md)

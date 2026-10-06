@@ -1,7 +1,7 @@
 # Human-maintained definitions. The runner never rewrites this file.
 schema_version: 1
 suite_id: royifilemanager.desktop
-suite_revision: 10
+suite_revision: 13
 protocol:
   repetitions: 3
   cache: warm
@@ -18,6 +18,7 @@ protocol:
   # are process high-water marks, cumulative across these ordered cases.
   refresh_selections: [none, single-first, single-middle, single-last, middle-block, scattered, all-except-current, all]
   selection_timeout_seconds: 25
+  copy_timeout_seconds: 300
   # Profiles are separate runs and are never included in timing summaries.
   notes: Fresh process per test repetition; fixture verification precedes timing. Selection uses bulk Select All or explicit URLs, with status disabled, through a posted Down-key response and paint; diagnostic readback is separate.
 fixtures:
@@ -28,6 +29,9 @@ fixtures:
   flat-large-v2: {revision: 2, kind: flat, files: 200000, seed: 1729}
   flat-medium-v2: {revision: 2, kind: flat, files: 50000, seed: 1729}
   recursive-v1: {revision: 1, kind: recursive, files: 50000, seed: 1730}
+  copy-files-v1: {revision: 1, kind: copy, files: 15000, bytes_per_file: 8192, seed: 1732}
+  copy-flat-v1: {revision: 1, kind: copy, files: 10000, bytes_per_file: 4096, seed: 1732}
+  copy-tree-v1: {revision: 1, kind: copy, layout: tree, files: 1000, bytes_per_file: 8192, seed: 1733}
 queries:
   filter:
     - {id: substring-report, text: report}
@@ -75,3 +79,5 @@ full_tests:
   - {id: fuzzy.medium, revision: 2, workload: fuzzy, fixture: flat-medium-v1}
   - {id: quickview.medium, revision: 3, workload: quickview, fixture: flat-medium-v2}
   - {id: selection.medium, revision: 5, workload: selection, fixture: flat-medium-v1, selection_count: 1000}
+  - {id: copy.flat, revision: 1, workload: copy, fixture: copy-flat-v1}
+  - {id: copy.tree, revision: 1, workload: copy, fixture: copy-tree-v1}

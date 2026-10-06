@@ -99,8 +99,28 @@ class FileListView(
 	def select(self, file_urls, ignore_errors=False):
 		if isinstance(file_urls, str):
 			raise ValueError('It should be select([file]) not select(file).')
-		for url in file_urls:
-			self._change_selection(url, QISM.Select, ignore_errors)
+		model, selection = self.model(), QItemSelection()
+		first = last = None
+		try:
+			for url in file_urls:
+				try:
+					row = model.find(url).row()
+				except ValueError:
+					if ignore_errors:
+						continue
+					raise
+				if first is None:
+					first = last = row
+				elif row == last + 1:
+					last = row
+				else:
+					selection.select(model.index(first, 0), model.index(last, model.columnCount() - 1))
+					first = last = row
+		finally:
+			if first is not None:
+				selection.select(model.index(first, 0), model.index(last, model.columnCount() - 1))
+			if selection:
+				self.selectionModel().select(selection, QISM.Select | QISM.Rows)
 	def deselect(self, file_urls, ignore_errors=False):
 		if isinstance(file_urls, str):
 			raise ValueError(

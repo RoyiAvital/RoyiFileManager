@@ -50,3 +50,10 @@ The Python package and configuration files belong directly inside `<PluginName>`
 Run **Reload plugins** in Command Center. **List plugins** opens a plug-in's
 folder; **Remove plugin** deletes an installed third-party plug-in.
 There is no built-in downloader, and no `Plugin.json` installation metadata is required.
+
+## Batch File Renamer Example
+
+The independent [Batch File Renamer](https://github.com/RoyiAvital/RoyiFileManager/tree/main/plugins/BatchFileRenamer)
+demonstrates mapped QuickBoard previews, optional caller status and public
+no-overwrite renaming. Install it manually as described above; it is not bundled
+automatically. Its README lists the required host API and template syntax.

@@ -402,6 +402,87 @@ class TablePerformance(qt_tests.TableIT):
 
 
 class QuickBoardPerformance(qt_tests.QuickBoardFixture):
+	def test_capacity_25000_and_50000(self):
+		from fman.ui import QuickTableColumn, QuickTableRow, show_quick_board
+		from fman.impl.ui import quick_board
+		from fman.impl.ui.table import TableView
+		from fman.impl.ui.table_filters import compile_filter
+		from PyQt5.QtCore import QTimer
+		from PyQt5.QtWidgets import QTableView
+		from threading import enumerate as threads
+		import win32api, win32process
+		original_receive = quick_board.QuickBoardWindow.receive
+		baseline_threads = set(threads())
+		records = []
+		for count in (25000, 50000):
+			published, painted, observed, ticks = {}, {}, [], []
+			columns = (QuickTableColumn('Name', 'file_name'), QuickTableColumn('Date', 'date', date_display='date'),
+				QuickTableColumn('Size', 'numeric'), QuickTableColumn('Preview', sortable=False, filterable=False)) + tuple(
+				QuickTableColumn('Detail %d' % index, sortable=False, filterable=False) for index in range(12))
+			sources = tuple(('file%05d.txt' % index, (index % 30) * 86400 * 10**9, index) for index in range(count))
+			details = tuple('detail %d' % index for index in range(12))
+			callback_times = []
+			def handler(text, mapping):
+				started = perf_counter()
+				rows = tuple(QuickTableRow(source + (text + str(mapping[index]) if mapping is not None and mapping[index] is not None else '',) + details)
+					for index, source in enumerate(sources))
+				callback_times.append(perf_counter() - started)
+				return rows, None
+			def receive(window, revision, prepared, error, mapping):
+				if prepared is not None and prepared[0] is not None and mapping is not None:
+					published[revision] = perf_counter()
+				return original_receive(window, revision, prepared, error, mapping)
+			def paint(view, event):
+				QTableView.paintEvent(view, event)
+				if observed:
+					window = observed[0]
+					if (view is window.table.view and window.revision in published and window.revision not in painted
+							and not window.pending and window.table.settled and window.generated_mapping is not None):
+						painted[window.revision] = perf_counter()
+			with patch.object(quick_board, 'MAX_ROWS', count), patch.object(quick_board.QuickBoardWindow, 'receive', receive), \
+					patch.object(TableView, 'paintEvent', paint, create=True):
+				finished, result = self.start_call(show_quick_board, columns=columns, get_rows=handler)
+				window = self.window_for()
+				observed.append(window)
+				self.wait_for(lambda: not window.pending and window.table.settled and window.mapping is not None)
+				def heartbeat():
+					timer = QTimer(self.main)
+					timer.setTimerType(Qt.PreciseTimer)
+					timer.timeout.connect(lambda: ticks.append(perf_counter()))
+					timer.start(10)
+					return timer
+				timer = self.run_in_app(heartbeat)
+				timings = []
+				try:
+					for operation, action in (
+						('type', lambda: window.input.setText('item-')),
+						('sort', lambda: window.table.set_sort(0, True)),
+						('filter', lambda: window.table.set_column_filter(2, compile_filter(columns[2], 2, '>=', str(count // 2)))),
+						('clear', window.table.clear_all_filters)):
+						started = perf_counter()
+						self.run_in_app(action)
+						revision = self.run_in_app(lambda: window.revision)
+						self.wait_for(lambda: revision in painted or window.preview_error is not None)
+						self.assertIsNone(window.preview_error)
+						timings.append((operation, (painted[revision] - started) * 1000,
+							(painted[revision] - published[revision]) * 1000))
+						self.assertEqual(count // 2 if operation == 'filter' else count, self.run_in_app(window.table.model.rowCount))
+						self.assertEqual(count, len(window.mapping))
+					gaps = [(later - earlier) * 1000 for earlier, later in zip(ticks, ticks[1:])]
+					memory = win32process.GetProcessMemoryInfo(win32api.GetCurrentProcess())
+					record = dict(rows=count, columns=16, operations=timings,
+						max_heartbeat_ms=max(gaps), max_callback_ms=max(callback_times) * 1000,
+						working_set_mib=memory['WorkingSetSize'] / 2**20, peak_working_set_mib=memory['PeakWorkingSetSize'] / 2**20)
+					records.append(record)
+					print('QuickBoard capacity:', record, flush=True)
+				finally:
+					self.run_in_app(timer.stop)
+					self.run_in_app(timer.deleteLater)
+					self.run_in_app(window.close)
+					self.assertTrue(finished.wait(5))
+			self.wait_for(lambda: quick_board._slots._value == 2 and not set(threads()) - baseline_threads)
+		self.assertTrue(all(max(operation[2] for operation in record['operations']) <= 150 for record in records))
+
 	def test_large_preview_budgets(self):
 		from fman.ui import QuickTableColumn, QuickTableRow
 		from fman.impl.ui.quick_board import QuickBoardWindow, _slots
@@ -417,10 +498,10 @@ class QuickBoardPerformance(qt_tests.QuickBoardFixture):
 		ready = Event()
 		observed = []
 		original_receive = QuickBoardWindow.receive
-		def receive(window, revision, prepared, error):
+		def receive(window, revision, prepared, error, mapping):
 			if prepared is not None and prepared[0] and len(prepared[0]) == 10000:
 				published[revision] = perf_counter()
-			return original_receive(window, revision, prepared, error)
+			return original_receive(window, revision, prepared, error, mapping)
 		def paint(view, event):
 			QTableView.paintEvent(view, event)
 			if observed:
@@ -431,14 +512,15 @@ class QuickBoardPerformance(qt_tests.QuickBoardFixture):
 					ready.set()
 		def handler(text):
 			if not text:
-				return ()
+				return tuple(QuickTableRow(('', '')) for index in range(10000))
 			started = perf_counter()
 			rows = tuple(QuickTableRow(('%s-%05d' % (text, index), '%05d ' % index + 'x' * 1594)) for index in range(10000))
 			callback_times.append(perf_counter() - started)
 			return rows
 		with patch.object(QuickBoardWindow, 'receive', receive), patch.object(TableView, 'paintEvent', paint, create=True):
 			owner, finished, result = self.start_board(handler, text='',
-				columns=(QuickTableColumn('Name', 'file_name'), QuickTableColumn('Preview')))
+				columns=(QuickTableColumn('Name', 'file_name', sortable=False, filterable=False),
+					QuickTableColumn('Preview', sortable=False, filterable=False)))
 			window = self.window_for(owner)
 			observed.append(window)
 			self.settled(window)
@@ -510,7 +592,7 @@ class QuickBoardPerformance(qt_tests.QuickBoardFixture):
 		self.assertEqual(['initial'], calls)
 		release.set()
 		self.settled(window)
-		self.assertEqual(['initial', '199'], calls)
+		self.assertEqual(['initial', '199', '199'], calls)
 		started = perf_counter()
 		self.run_in_app(window.close)
 		self.assertTrue(finished.wait(5))
@@ -523,7 +605,7 @@ class QuickBoardPerformance(qt_tests.QuickBoardFixture):
 			self.run_in_app(window.close)
 			self.assertTrue(finished.wait(5))
 		self.wait_for(lambda: _slots._value == 2 and not set(threads()) - baseline_threads)
-		print('QuickBoard 200 rapid edits: 2 callbacks; close-to-return %.2f ms; 10 reopen cycles: 0 retained workers / leases' % (elapsed * 1000), flush=True)
+		print('QuickBoard 200 rapid edits: canceled initial + final bootstrap/mapped callbacks; close-to-return %.2f ms; 10 reopen cycles: 0 retained workers / leases' % (elapsed * 1000), flush=True)
 		self.assertLess(elapsed, .05)
 
 

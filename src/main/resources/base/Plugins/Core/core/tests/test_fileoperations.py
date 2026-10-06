@@ -11,6 +11,222 @@ import os
 import os.path
 import stat
 
+class PreparationSafetyTest(TestCase):
+	def test_move_to_missing_destination_prepares_without_mutation(self):
+		from pathlib import Path
+		from core.commands import Move
+		from core.fs.local import LocalFileSystem
+		from fman.impl.plugins.mother_fs import MotherFileSystem
+		with TemporaryDirectory() as directory:
+			root = Path(directory)
+			source, destination = root / 'source', root / 'new' / 'nested'
+			(source / 'folder').mkdir(parents=True)
+			(source / 'file.txt').write_bytes(b'file')
+			(source / 'folder' / 'child.txt').write_bytes(b'child')
+			filesystem = MotherFileSystem(None)
+			filesystem.add_child('file://', LocalFileSystem())
+			files = [as_url(source / 'file.txt'), as_url(source / 'folder')]
+			ui = Mock()
+			ui.show_prompt.return_value = (str(destination), True)
+			ui.show_alert.return_value = YES
+			confirmed = Move._confirm_tree_operation(files, as_url(root), as_url(source), ui=ui, fs=filesystem)
+			self.assertEqual((as_url(destination), None), confirmed)
+			ui.show_alert.assert_called_once()
+			self.assertFalse((root / 'new').exists())
+			operation = MoveFiles(files, *confirmed, fs=filesystem)
+			self.assertTrue(operation._gather_files())
+			self.assertFalse((root / 'new').exists())
+			self.assertEqual(b'file', (source / 'file.txt').read_bytes())
+			self.assertEqual(b'child', (source / 'folder' / 'child.txt').read_bytes())
+			for task in operation._tasks:
+				task()
+			self.assertEqual(b'file', (destination / 'file.txt').read_bytes())
+			self.assertEqual(b'child', (destination / 'folder' / 'child.txt').read_bytes())
+			self.assertEqual([], list(source.iterdir()))
+
+	def test_cancel_move_to_missing_destination_creates_nothing(self):
+		from pathlib import Path
+		from core.fs.local import LocalFileSystem
+		from fman.impl.plugins.mother_fs import MotherFileSystem
+		with TemporaryDirectory() as directory:
+			root = Path(directory)
+			source, destination = root / 'file.txt', root / 'new' / 'nested'
+			source.write_bytes(b'keep')
+			filesystem = MotherFileSystem(None)
+			filesystem.add_child('file://', LocalFileSystem())
+			operation = MoveFiles([as_url(source)], as_url(destination), fs=filesystem)
+			original = operation._gather_files
+			def cancel_after_preparation():
+				self.assertTrue(original())
+				raise Task.Canceled()
+			with patch.object(operation, '_gather_files', side_effect=cancel_after_preparation):
+				with self.assertRaises(Task.Canceled):
+					operation()
+			self.assertEqual(b'keep', source.read_bytes())
+			self.assertFalse((root / 'new').exists())
+			self.assertEqual({}, operation._ancestor_identities)
+
+	def test_file_selection_does_not_enumerate_its_parent(self):
+		from pathlib import Path
+		from core.fs.local import LocalFileSystem
+		from core.fs.local.windows import listing as scanner
+		from fman.impl.plugins.mother_fs import MotherFileSystem
+		for operation_class in (CopyFiles, MoveFiles):
+			for count in (1, 32):
+				with self.subTest(operation=operation_class.__name__, count=count), TemporaryDirectory() as directory:
+					root = Path(directory)
+					source, destination = root / 'source', root / 'destination'
+					source.mkdir()
+					paths = [source / ('file%d.txt' % index) for index in range(count)]
+					for path in paths:
+						path.write_bytes(b'keep')
+					filesystem = MotherFileSystem(None)
+					filesystem.add_child('file://', LocalFileSystem())
+					with patch.object(scanner, 'scan', side_effect=AssertionError('No bulk scan for selected files')):
+						operation_class([as_url(path) for path in paths], as_url(destination), fs=filesystem)()
+					self.assertEqual(count, len(list(destination.iterdir())))
+					for path in paths:
+						self.assertEqual(b'keep', (destination / path.name).read_bytes())
+						self.assertEqual(operation_class is CopyFiles, path.exists())
+
+	def test_direct_child_destinations_keep_absolute_and_relative_paths(self):
+		operation = CopyFiles(['file://C:/source/first.txt'], 'file://C:/destination', fs=Mock())
+		self.assertEqual('file://C:/destination/second.txt', operation._get_dest_url('file://C:/source/second.txt'))
+		operation = CopyFiles(['file://C:/source/first.txt'], 'relative', fs=Mock())
+		self.assertEqual('file://C:/source/relative/first.txt', operation._get_dest_url('file://C:/source/first.txt'))
+
+	def test_directory_transfer_does_not_use_bulk_metadata(self):
+		from pathlib import Path
+		from core.fs.local import LocalFileSystem
+		from core.fs.local.windows import listing as scanner
+		from fman.impl.plugins.mother_fs import MotherFileSystem
+		for operation_class in (CopyFiles, MoveFiles):
+			for merge in (False, True):
+				with self.subTest(operation=operation_class.__name__, merge=merge), TemporaryDirectory() as directory:
+					root = Path(directory)
+					source, destination = root / 'source', root / 'destination'
+					(source / 'child').mkdir(parents=True)
+					(source / 'child' / 'keep.txt').write_bytes(b'keep')
+					if merge:
+						(destination / source.name / 'child').mkdir(parents=True)
+					filesystem = MotherFileSystem(None)
+					filesystem.add_child('file://', LocalFileSystem())
+					with patch.object(scanner, 'scan', side_effect=AssertionError('No bulk scan during traversal')):
+						operation_class([as_url(source)], as_url(destination), fs=filesystem)()
+					self.assertEqual(b'keep', (destination / source.name / 'child' / 'keep.txt').read_bytes())
+					self.assertEqual(operation_class is CopyFiles, source.exists())
+
+	def test_copy_reads_live_source_after_preparation(self):
+		from pathlib import Path
+		from core.fs.local import CopyFile
+		with TemporaryDirectory() as directory:
+			root = Path(directory)
+			source, destination = root / 'file.txt', root / 'destination'
+			source.write_bytes(b'before')
+			operation = CopyFiles([as_url(source)], as_url(destination), fs=StubFS())
+			original = CopyFile.__call__
+			def copy(task):
+				source.write_bytes(b'after preparation')
+				return original(task)
+			with patch.object(CopyFile, '__call__', copy):
+				operation()
+			self.assertEqual(b'after preparation', (destination / source.name).read_bytes())
+
+	def test_directory_ancestry_is_resolved_once_per_destination(self):
+		from pathlib import Path
+		with TemporaryDirectory() as directory:
+			root = Path(directory)
+			destination = root / 'destination'
+			files = []
+			for index in range(8):
+				path = root / ('folder%d' % index)
+				path.mkdir()
+				files.append(as_url(path))
+			operation = CopyFiles(files, as_url(destination), fs=StubFS())
+			original = Path.resolve
+			with patch('core.fileoperations.Path.resolve', autospec=True, side_effect=original) as resolve, \
+					patch('core.fileoperations.is_parent', side_effect=AssertionError('No repeated ancestor walk')):
+				self.assertTrue(operation._gather_files())
+				resolve.assert_called_once()
+			self.assertFalse(destination.exists())
+
+	def test_directory_ancestry_refuses_junction_aliases(self):
+		from pathlib import Path
+		from subprocess import run
+		for operation_class in (CopyFiles, MoveFiles):
+			for alias_source in (False, True):
+				with self.subTest(operation=operation_class.__name__, alias_source=alias_source), TemporaryDirectory() as directory:
+					root = Path(directory)
+					source, link = root / 'source', root / 'link'
+					(source / 'child').mkdir(parents=True)
+					(source / 'keep').write_bytes(b'keep')
+					process = run(['cmd', '/c', 'mklink', '/J', str(link), str(source)], capture_output=True, timeout=10)
+					self.assertEqual(0, process.returncode, process.stderr)
+					selected, destination = (link, source / 'child') if alias_source else (source, link / 'child')
+					operation = operation_class([as_url(selected)], as_url(destination), fs=StubFS())
+					with patch.object(operation, 'show_alert', return_value=OK) as alert:
+						operation()
+						alert.assert_called_once()
+					self.assertEqual(b'keep', (source / 'keep').read_bytes())
+					self.assertEqual([], list((source / 'child').iterdir()))
+					self.assertEqual({}, operation._ancestor_identities)
+
+	def test_unknown_identity_and_nonlocal_paths_keep_fallback(self):
+		from pathlib import Path
+		from types import SimpleNamespace
+		operation = CopyFiles(['file://C:/source/item'], 'file://C:/destination', fs=Mock())
+		with patch('core.fileoperations.os.lstat', return_value=SimpleNamespace(st_dev=0, st_ino=0)), \
+				patch('core.fileoperations.is_parent', return_value=True) as fallback:
+			self.assertTrue(operation._contains_destination('file://C:/source/item', 'file://C:/destination/item', False, False))
+			fallback.assert_called_once()
+		with patch('core.fileoperations.is_parent', return_value=True) as fallback:
+			self.assertTrue(operation._contains_destination('zip://archive/item', 'file://C:/destination/item', False, False))
+			fallback.assert_called_once()
+		with patch('core.fileoperations.os.stat', return_value=SimpleNamespace(st_dev=1, st_ino=1)), \
+				patch('core.fileoperations.Path.stat', return_value=SimpleNamespace(st_dev=0, st_ino=0)), \
+				patch('core.fileoperations.Path.resolve', return_value=Path('C:/destination')), \
+				patch('core.fileoperations.is_parent', return_value=True) as fallback:
+			self.assertTrue(operation._contains_destination('file://C:/source', 'file://C:/destination/source', True, False))
+			fallback.assert_called_once()
+
+	def test_regular_files_do_not_walk_ancestors(self):
+		from pathlib import Path
+		with TemporaryDirectory() as directory:
+			root = Path(directory)
+			source, destination = root / 'source', root / 'destination'
+			source.mkdir()
+			files = []
+			for index in range(32):
+				path = source / ('file%d.txt' % index)
+				path.write_bytes(b'payload')
+				files.append(as_url(path))
+			operation = CopyFiles(files, as_url(destination), fs=StubFS())
+			with patch('core.fileoperations.is_parent', side_effect=AssertionError('No file ancestor walk')):
+				self.assertTrue(operation._gather_files())
+			self.assertFalse(destination.exists())
+			self.assertEqual(33, len(operation._tasks))
+
+	def test_self_alias_aborts_before_mutating_prepared_prefix(self):
+		from pathlib import Path
+		for operation_class in (CopyFiles, MoveFiles):
+			with self.subTest(operation=operation_class.__name__), TemporaryDirectory() as directory:
+				root = Path(directory)
+				source, destination = root / 'source', root / 'destination'
+				source.mkdir()
+				destination.mkdir()
+				(source / 'a.txt').write_bytes(b'first')
+				(source / 'b.txt').write_bytes(b'second')
+				os.link(source / 'b.txt', destination / 'b.txt')
+				last = source / 'b.txt' if operation_class is CopyFiles else destination / 'b.txt'
+				operation = operation_class([as_url(source / 'a.txt'), as_url(last)], as_url(destination), fs=StubFS())
+				with patch.object(operation, 'show_alert', return_value=ABORT) as alert:
+					operation()
+					self.assertTrue(alert.called)
+				self.assertFalse((destination / 'a.txt').exists())
+				self.assertEqual(b'first', (source / 'a.txt').read_bytes())
+				self.assertEqual(b'second', (source / 'b.txt').read_bytes())
+
+
 class ArchiveTransferErrorTest(TestCase):
 	def test_real_merged_hardlink_copy_retains_source(self):
 		from pathlib import Path

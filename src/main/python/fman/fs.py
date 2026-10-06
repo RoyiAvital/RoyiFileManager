@@ -5,6 +5,27 @@ from fman.impl.util.path import parent
 from fman.url import basename, normalize
 from functools import wraps
 from threading import Lock
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True, slots=True)
+class RenameResult:
+	source_url: str
+	destination_url: str
+	changed: bool
+	notification_warnings: tuple = ()
+
+	def __post_init__(self):
+		if not isinstance(self.source_url, str) or not isinstance(self.destination_url, str) or type(self.changed) is not bool:
+			raise TypeError('RenameResult requires URL strings and a boolean outcome.')
+		warnings = tuple(self.notification_warnings)
+		if len(warnings) > 16 or any(not isinstance(message, str) or len(message) > 512 for message in warnings):
+			raise ValueError('Rename warnings must be at most 16 strings of 512 characters.')
+		object.__setattr__(self, 'notification_warnings', warnings)
+
+
+def rename_no_replace(source_url, destination_url):
+	return _get_mother_fs().rename_no_replace(source_url, destination_url)
 
 def exists(url):
 	return _get_mother_fs().exists(url)
@@ -163,6 +184,8 @@ class FileSystem:
 			fn=self.copy, args=(src_url, dst_url)
 		)]
 	def move(self, src_url, dst_url):
+		raise self._operation_not_implemented()
+	def rename_no_replace(self, source_url, destination_url):
 		raise self._operation_not_implemented()
 	def prepare_move(self, src_url, dst_url):
 		if self.move.__func__ is FileSystem.move:

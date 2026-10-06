@@ -299,6 +299,7 @@ class ListingModel(DragAndDrop):
 		self._committed_revision = 0
 		self._projecting = False
 		self._scan_revision = 0
+		self._successful_scan_revision = 0
 		self._scanning = False
 		self._dirty = False
 		self._shutdown = False
@@ -426,6 +427,8 @@ class ListingModel(DragAndDrop):
 			self._scanning = False
 			if isinstance(error, Canceled):
 				return
+			if error is None and result is not None:
+				self._successful_scan_revision = revision
 			if error is None:
 				if result is None:
 					error = OSError('Snapshot enumeration is no longer supported for this folder')

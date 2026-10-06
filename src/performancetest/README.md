@@ -18,15 +18,17 @@ checks. A failed measurement run returns nonzero and displays its failure withou
 replacing the last successful version result.
 
 The regular suite keeps the original eleven workloads and two selection workloads,
-with five patterns per size. To also measure medium folders:
+with five patterns per size. It does not prepare or run the Copy fixture. To also
+measure medium folders and Copy:
 
 ```powershell
 python build.py measure --full
 ```
 
 Full mode adds six workloads on a 50,000-file flat folder: pane loading, refresh,
-Filter Bar, Fuzzy Find, QuickView and selections. Navigation is included in pane
-and QuickView workloads. It runs nineteen workloads with the same three
+Filter Bar, Fuzzy Find, QuickView and selections, plus two Copy workloads.
+Navigation is included in pane
+and QuickView workloads. It runs twenty-one workloads with the same three
 repetitions and protocols; it does not enable profiling or legacy stress tests.
 
 ## Report and Version History
@@ -47,7 +49,7 @@ in the result record. Repeating a version replaces its index entry, not its old 
 Corrupt history is reported, never silently reset. Earlier diagnostic runs under
 `target` are not imported as previous versions.
 
-The overview has sixteen rows: pane loading, Filter Bar, Fuzzy Find, QuickView Images
+The regular overview has sixteen rows: pane loading, Filter Bar, Fuzzy Find, QuickView Images
 and QuickView Text in
 small/large folders, Fuzzy Find (Recursive), Refresh / Selection,
 Selections / Small, Selections / Large, Selections Readback, and Navigation. Headlines are first populated
@@ -63,8 +65,8 @@ is the mean of five full selection-interaction case medians for its folder size.
 or failed selection cases suppress that aggregate. Details
 retain every case so the aggregate cannot conceal individual regressions.
 
-Full reports have twenty-two rows, including the additional medium pane, Filter
-Bar, Fuzzy Find, QuickView Images, QuickView Text and Selections / Medium rows.
+Full reports have twenty-four rows, including the additional medium pane, Filter
+Bar, Fuzzy Find, QuickView Images, QuickView Text, Selections / Medium and two Copy rows.
 Readback spans fifteen case medians. Refresh remains
 one aggregate, now across 24 case medians; Navigation averages 42. Both require
 all expected medium cases as well as small/large cases before showing an average.
@@ -84,8 +86,8 @@ stable names, not list positions. A query/action is identified by the pair
 semantics or measurement boundaries. Change fixture IDs when changing contents.
 
 `tests` defines the regular suite; `full_tests` contains the six optional medium
-definitions. Records store the effective mode's definitions. Regular runs do not
-create, verify or scan the medium fixture. Explicit diagnostic `--test` patterns
+definitions and both Copy cases. Records store the effective mode's definitions. Regular runs
+do not create, verify or scan medium or Copy fixtures. Explicit diagnostic `--test` patterns
 can match either list, independently of `--full`.
 
 The fixtures are `flat-small-v1` (256 files), `flat-large-v1` (200,000 files),
@@ -115,6 +117,64 @@ file operations against them. Generation and verification are untimed. All
 fixtures and results are local; nothing is uploaded.
 
 ## Protocol
+
+### Copy Workload
+
+Copy runs only with `python build.py measure --full` (or an explicit diagnostic
+selection). The two cases are:
+
+- `copy.flat`: 10,000 ordinary files, exactly 4,096 bytes each, seed 1732.
+- `copy.tree`: 1,000 files, exactly 8,192 bytes each, seed 1733. Ten root branches
+  contain five buckets each and nested chains of one to six levels, exercising
+  breadth and depth. Selected root entries and copied files are counted separately.
+
+Sources are verified read-only fixtures; every repetition uses a new disposable
+destination outside them. Allow about 94 MiB for both sources plus destinations,
+with filesystem overhead and staging headroom. No user files are copied. The
+old `copy-files-v1` fixture and its results remain historical, not reinterpreted.
+
+The native app receives Ctrl+A and F5, and its actual destination prompt is
+accepted. Selection paint/input/readback, prompt latency, task gathering, first
+completed file, total copy and final destination refresh are separate metrics.
+The Copy headline includes preparation but excludes source setup, content
+verification and cleanup. All source/destination bytes and file counts must match.
+Tree verification also requires matching relative paths and directory structure.
+Three repetitions are used; a failed or timed-out copy is never a successful result.
+When a short run finishes before progress appears, `progress_shown_count` is zero
+and `progress_visible_ms` is zero; this is not an instantaneous visible dialog.
+
+Memory details include before/after working set, process peak and preparation
+delta per queued task. The 200,000-task estimate includes allocator and other
+preparation overhead; it is not a measured 200,000-file copy or exact object size.
+The parent owns scratch storage so a timed-out child cannot leave its copy tree.
+
+### Copy Reference Results
+
+Retained medians from three successful runs per version, 15,000 x 8 KiB, warm
+caches, real Ctrl+A/F5 and destination-pane refresh. `Unreleased` is the measured
+Option A implementation, not a clean release. Moving the workload to full mode
+does not rewrite these reference results or their original catalog/harness hashes.
+
+| Metric                   | 0.14.0    | Unreleased |
+| ------------------------ | --------- | ---------- |
+| Select All paint         | 9.94 ms   | 6.02 ms    |
+| Progress first visible   | 14.62 s   | 1.02 s     |
+| Task preparation         | 14.53 s   | 0.538 s    |
+| First completed file     | 28.15 s   | 0.555 s    |
+| Copy complete            | 129.03 s  | 113.09 s   |
+
+Source run IDs: `55eba804-8f59-4661-a7a3-4d74029c263a` and
+`95092cdd-d9b4-47a7-9f24-a2db21f1010f`. The raw records and comparison are retained
+under `UserSettings/Performance/CodeReview010`; full provenance is in
+[CodeReview010](../../Done/CodeReview010.md#baseline-and-comparison).
+
+An earlier corrected-baseline attempt crashed during repetition two with a native
+access violation while copy and destination refresh were active. Its traceback
+and failed record are retained; the root cause is unresolved. Three subsequent
+baseline runs and three A runs passed. This does not establish that A fixed the
+crash or that future runs cannot encounter it. Only disposable files were involved.
+
+### Shared Settings
 
 - Three fresh processes per test; diagnostic `--repeat` overrides are recorded.
 - Native Windows Qt, 1280x800 window, 1x DPI, isolated settings, hidden files

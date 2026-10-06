@@ -1001,6 +1001,19 @@ class FindExtensionStartTest(TestCase):
 		self.assertEqual(7, _find_extension_start('archive.tar.gz'))
 
 class ConfirmTreeOperationTest(TestCase):
+	def test_copy_and_move_submit_before_mkdir_or_bulk_validation(self):
+		from core.commands import Copy, Move
+		from unittest.mock import Mock, patch
+		for command_class in (Copy, Move):
+			command = command_class(Mock())
+			files = [self._a_txt, self._b_txt]
+			with self.subTest(command=command_class.__name__), \
+					patch.object(command_class, '_confirm_tree_operation', return_value=(self._dest, None)), \
+					patch('core.commands.makedirs') as create, patch('core.commands.submit_task') as submit:
+				command(files=files, dest_dir=self._dest)
+				create.assert_not_called()
+				submit.assert_called_once()
+				self.assertEqual(files, submit.call_args.args[0]._files)
 
 	class FileSystem:
 		def __init__(self, files, case_sensitive=False):
@@ -1098,8 +1111,14 @@ class ConfirmTreeOperationTest(TestCase):
 		self._expect_prompt(
 			('Move 2 files to', dest_path, 0, None), (dest_path, True)
 		)
-		self._expect_alert(('You cannot move a file to itself!',), answer=OK)
-		self._check([self._a_txt, self._a], None, dest_dir=self._a)
+		self._check([self._a_txt, self._a], (self._a, None), dest_dir=self._a)
+	def test_symlink_keeps_pre_task_descendant_refusal(self):
+		from core.commands import Symlink
+		dest_path = as_human_readable(self._a)
+		self._expect_prompt(('Symlink 2 files to', dest_path, 0, None), (dest_path, True))
+		self._expect_alert(('You cannot symlink a file to itself!',), answer=OK)
+		self.assertIsNone(Symlink._confirm_tree_operation([self._a_txt, self._a], self._a, self._src, self._ui, self._fs))
+		self._ui.verify_expected_dialogs_were_shown()
 	def test_renamed_destination(self):
 		dest_path = as_human_readable(join(self._dest, 'a.txt'))
 		sel_start = dest_path.rindex(os.sep) + 1

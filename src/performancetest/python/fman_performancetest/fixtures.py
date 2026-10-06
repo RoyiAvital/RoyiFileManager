@@ -49,6 +49,15 @@ def assets():
 
 
 def entries(specification, image_assets):
+	if specification['kind'] == 'copy':
+		for index in range(specification['files']):
+			seed = ('%d:%d' % (specification['seed'], index)).encode('ascii')
+			name = 'file_%06d.bin' % index
+			if specification.get('layout', 'flat') == 'tree':
+				levels = '/'.join('level_%02d' % level for level in range(1 + (index // 10) % 6))
+				name = 'branch_%02d/bucket_%02d/%s/%s' % (index % 10, (index // 60) % 5, levels, name)
+			yield name, hashlib.shake_256(seed).digest(specification['bytes_per_file'])
+		return
 	preview_assets = ASSETS + (tuple(TEXT_ASSETS) if specification['revision'] == 2 else ())
 	for index in range(specification['files']):
 		if index < len(preview_assets) and specification['kind'] == 'flat':
@@ -121,16 +130,21 @@ def verify(directory, expected):
 def prepare(base, identity, specification, image_assets=None):
 	if not identity or Path(identity).name != identity or identity in ('.', '..'):
 		raise ValueError('Invalid fixture ID')
-	if specification['revision'] not in (1, 2) or specification['kind'] not in ('flat', 'recursive') or specification['files'] < 8:
+	if specification['revision'] not in (1, 2) or specification['kind'] not in ('flat', 'recursive', 'copy') or specification['files'] < 8:
 		raise ValueError('Invalid fixture specification')
+	if specification['kind'] == 'copy' and (specification['revision'] != 1 or
+			type(specification.get('bytes_per_file')) is not int or not 1 <= specification['bytes_per_file'] <= 1024 * 1024 or
+			specification.get('layout', 'flat') not in ('flat', 'tree')):
+		raise ValueError('Invalid copy fixture payload')
 	if specification['revision'] == 2 and specification['kind'] != 'flat':
 		raise ValueError('Text preview fixtures require flat folders')
-	image_assets = assets() if image_assets is None else image_assets
+	image_assets = {} if specification['kind'] == 'copy' else assets() if image_assets is None else image_assets
 	root = Path(base).resolve() / identity
 	directory, manifest = root / 'data', root / 'manifest.json'
 	expected = {name: dict(size=len(data), sha256=hashlib.sha256(data).hexdigest())
 		for name, data in entries(specification, image_assets)}
-	definition = dict(generator='sha256-names-rgb-bands-v%d' % specification['revision'], specification=specification,
+	generator = 'shake256-copy-v1' if specification['kind'] == 'copy' else 'sha256-names-rgb-bands-v%d' % specification['revision']
+	definition = dict(generator=generator, specification=specification,
 		mtime_ns=EPOCH_NS, creation_ns=EPOCH_NS, file_attributes=32, entries=expected)
 	fingerprint = digest(definition)
 	if root.exists():
