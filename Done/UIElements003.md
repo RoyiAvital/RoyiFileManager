@@ -1,8 +1,9 @@
 # UI Elements 003: QuickBoard
 
-Status: Implemented and locally validated on 2026-10-06 after user authorization
-on 2026-10-05. Portable-artifact and physical mixed-monitor checks remain
-unverified. The Batch Renamer plug-in remains a separate task.
+Status: Implemented; review follow-up validated on 2026-10-06. The user's
+frameless-window and owner-free API decisions supersede the original design.
+Portable-artifact and physical mixed-monitor checks remain unverified.
+The Batch Renamer plug-in remains a separate task.
 
 ## Task
 
@@ -20,22 +21,20 @@ targets or returned selections.
 
 ```python
 text, accepted = show_quick_board(
-  owner=owner,
   columns=columns,
   get_rows=get_rows,
   text="",
   title="",
-    summary="",
+  summary="",
 )
 ```
 
 | Argument      | Contract                                                              |
 | ------------- | --------------------------------------------------------------------- |
-| `owner`       | Existing plug-in `UiOwner`; invalidation cancels the board.            |
-| `columns`     | Fixed `QuickTableColumn` descriptors; unspecified types mean text.     |
-| `get_rows`    | `get_rows(text)` returns an iterable of `QuickTableRow` records.        |
-| `text`        | Initial string, empty by default; returned without trimming.           |
-| `title`       | Window title supplied by the caller.                                  |
+| `columns`     | Fixed `QuickTableColumn` descriptors; unspecified types mean text.    |
+| `get_rows`    | `get_rows(text)` returns an iterable of `QuickTableRow` records.      |
+| `text`        | Initial string, empty by default; returned without trimming.          |
+| `title`       | Window title and visible draggable header.                            |
 | `summary`     | Optional plain secondary text; its meaning belongs to the caller.     |
 
 Reuse the existing column types, formatting, highlights and per-column
@@ -48,16 +47,26 @@ Title and summary limits are 512 and 2,048 characters. Reject NUL in all three
 strings and CR/LF in initial text; preserve spaces and the exact draft on cancel.
 `summary` matches QuickList/QuickTable. Unlike `show_prompt`, cancellation retains
 the draft rather than returning an empty string. No `description` alias is added.
+Qt may retain pasted CR/LF after opening: these drafts fail preview validation
+and cannot be accepted, but cancellation returns them exactly. A cancelled draft
+may therefore need correction before reuse as initial text.
+
+No owner or controller subclass is required. Omit the former `owner` argument.
+The host owns the dialog lifetime, like QuickTable/QuickList; plug-in unload
+alone does not close the board or release its waiting caller.
 
 ### Interaction
 
-- Use QuickTable's window, theme, typography, table and filter menus. Its text
+- Use QuickTable's theme, typography, table and filter menus. Its text
   filter is replaced by the composition field; there is no second search field.
 - Show the optional summary in the same secondary-text style as the other
   Quick elements. No dedicated syntax controls, help drawer, reset button,
-  custom title strip or operation-specific footer are required.
+  operation-specific controls are required. Reuse QuickList's frameless,
+  draggable-title approach; counts and preview status share one footer.
 - Call the row handler initially and when the text changes. Replace the complete
   preview; keep column filters and ordering, which affect presentation only.
+  A text edit or new preview closes an open column-filter editor and discards
+  its unapplied draft; committed filters remain active.
 - Enter closes with `(text, True)`. While a preview/projection is pending, it
   requests acceptance of that exact input revision after successful publication.
   Any subsequent text edit, failure, cancellation or invalidation clears it.
@@ -67,9 +76,10 @@ the draft rather than returning an empty string. No `description` alias is added
 - Empty previews are valid. Row selection, sorting and filtering never alter
   the returned string or silently redefine the caller's operation targets.
 - The call blocks until the board closes. The window is modal to its owning
-  application window. Owner invalidation or application-window closure cancels
-  it and releases the caller.
-- Keep the framed `Qt.Dialog` window and QuickTable dimensions/margins. The input
+  application window. Board or application-window closure cancels it and
+  releases the caller, independently of a running callback.
+- Use `Qt.Dialog | Qt.FramelessWindowHint` and QuickTable dimensions/margins.
+  Show an elided draggable title, with no native context-help button. The input
   starts focused; Up/Down/Page Up/Page Down move focus into the table. Tab and
   Shift+Tab move between input and table; Ctrl+F focuses/selects the input, and
   Alt+Down opens the current column filter. No pane argument or Go To action:
@@ -81,8 +91,8 @@ Construct the schema, including the captured `LocalDates`/reentrant `QTimeZone`
 value, on Qt. A dedicated `LatestJobs(capacity=1)` lane per admitted board runs
 the initial callback only after the window is shown, and retains at most one
 latest pending input. The callback, iterable consumption, numeric formatters and
-snapshot validation all run off Qt, with cancellation checks during validation
-and before/after caller code. Qt receives only the validated immutable snapshot;
+snapshot validation all run off Qt, with cancellation checks during validation,
+around the handler, and before/after each typed-cell formatter. Qt receives only the validated immutable snapshot;
 formatters are never called again during publication. Callers must not access
 widgets, mutate shared state or perform filesystem mutations from callbacks.
 
@@ -95,17 +105,20 @@ shared Panel/navigation worker slots. Saturation shows a short alert and returns
 `(initial_text, False)` without calling the handler. Modal-only presentation
 remains; simultaneous independent programmatic callers are still accounted for.
 
-Keep old rows unchanged during work and show `Updating...` in a reserved board
-status label; no delegate dimming or custom theme. Store preview failure
+Keep old rows unchanged during work and show `Updating...` in the counts footer;
+no empty status band, delegate dimming or custom theme. Store preview failure
 separately from `Table.error` so sorting/filtering cannot clear it. `ValueError`
-is plain inline feedback; other exceptions additionally use an owned host alert.
+is plain inline feedback; all other caller exceptions, including `Task.Canceled`
+and other `BaseException` subclasses, additionally use a dialog-owned alert.
+Internal worker cancellation instead silently discards stale work.
 Failure clears queued acceptance; Escape remains immediate. Acceptance requires
 the same input revision, a successful preview and the corresponding settled
 table projection. No row/status text is interpreted as validity or operation
 policy. A new text edit cancels acceptance even if the later string is identical.
 
 Closing drops pending work and rejects late results without waiting on Qt.
-It cannot forcibly interrupt a running Python callback or OS call. Callers must
+It cannot forcibly interrupt a running Python callback or OS call; cancellation
+prevents later formatters in that row from starting after the current one returns. Callers must
 bound work and use timeouts for I/O; captured metadata or a prepared sample is
 preferable to scanning a filesystem on every keystroke. No preview jobs or
 recurring activity exist before opening the board.
@@ -117,12 +130,12 @@ their grammar, variables, expansion, validation or execution.
 
 | Use case                       | Example string                         | Caller-generated preview                    |
 | ------------------------------ | -------------------------------------- | ------------------------------------------- |
-| Batch rename                   | `{name}_{index:03d}.{ext}`              | Original name, proposed name, status        |
-| Copy/move destination template | `{modified:%Y-%m}/{ext}/{name}.{ext}`   | Source, destination, conflicts              |
-| File-list export format        | `{name}\t{size}\t{modified:%Y-%m-%d}`   | Source file, generated output line          |
-| Saved search query             | `ext:pdf size:>10mb`                    | Matching paths, sizes, dates                |
-| Include/exclude patterns       | `*.tmp;*.bak;cache*`                    | Entry, included/excluded, matching pattern  |
-| External-tool arguments        | `--output "{name}.txt" "{path}"`        | File, expanded arguments, validation        |
+| Batch rename                   | `{name}_{index:03d}.{ext}`             | Original name, proposed name, status        |
+| Copy/move destination template | `{modified:%Y-%m}/{ext}/{name}.{ext}`  | Source, destination, conflicts              |
+| File-list export format        | `{name}\t{size}\t{modified:%Y-%m-%d}`  | Source file, generated output line          |
+| Saved search query             | `ext:pdf size:>10mb`                   | Matching paths, sizes, dates                |
+| Include/exclude patterns       | `*.tmp;*.bak;cache*`                   | Entry, included/excluded, matching pattern  |
+| External-tool arguments        | `--output "{name}.txt" "{path}"`       | File, expanded arguments, validation        |
 
 All fit the same text-to-rows contract. The caller captures its data/context,
 supplies a summary and handler, then interprets the accepted string.
@@ -138,9 +151,9 @@ QuickList/QuickTable, and multiple independent inputs belong to a Panel.
 ## Scope
 
 - Include the generic string input, plain summary, typed preview, optional
-  per-column filtering/sorting, blocking result and owner-bound lifetime.
-- Keep the existing QuickTable appearance and reuse its data descriptors and
-  rendering. Leave QuickSearch, QuickList and QuickTable return contracts intact.
+  per-column filtering/sorting, blocking result and dialog-scoped lifetime.
+- Keep QuickTable rendering and descriptors with QuickList-style frameless
+  title treatment. Leave QuickSearch, QuickList and QuickTable return contracts intact.
 - Exclude editable cells, returned selections, operation buttons, syntax engines,
   variable registries, syntax-specific help and filesystem mutations.
 - Exclude implementation of any consumer plug-in, including Batch Rename.
@@ -163,19 +176,23 @@ QuickList/QuickTable, and multiple independent inputs belong to a Panel.
 - Add internal `Table.replace_rows(snapshot)`: close stale menus, invalidate
   pending projection work, replace the snapshot, clear identity-based sort keys
   and matches, preserve filters/sort/current column, and reproject. QuickTable's
-  public immutable API and its ordinary construction path remain unchanged.
+  public immutable API stays unchanged. The shared initial cell is now the first
+  filterable column, or column zero if none are filterable; empty refills restore
+  the last current column. This deliberate behavior is regression-tested.
 - The board owns a separate composition field. Construct the shared table with
   `text_filter=None` and keep `Table.query` hidden and empty. Clear All Filters
   and Ctrl+F must never erase or search-match the composition string.
-- Deliver worker results through alive/owner-guarded `ToolWindow.post`. Add only
+- Deliver worker results through alive-guarded `ToolWindow.post` with a private
+  host owner, as in QuickList. Add only
   the closed-lane callback needed to release the dedicated admission lease to
   `LatestJobs`; existing pane lanes retain their defaults and behavior.
 - Acceptance is tied to the current input and completed projection, not row IDs,
   row selection, visible counts or strings in a status column. Return the exact
   input on either outcome. Mutations happen only in the caller after return.
-- Use the existing loader-assigned `UiOwner` contract. Host window closure and
-  owner invalidation request cancellation on Qt; stop accepting work immediately
-  and release the waiting caller independently of any slow preview callback.
+- Do not require a loader-assigned public owner. Board/main-window closure
+  cancels the lane on Qt and releases the waiting caller independently of slow
+  preview work. Plug-in unload alone is not a cancellation trigger; the retained
+  callback remains part of the active blocking call until the dialog closes.
 - Match the existing blocking UI services: workers wait for their own result;
   a Qt caller requires a local event loop, never a blocking thread wait on Qt.
 - Persistence: not applicable. Text, preview rows, filters and ordering are
@@ -184,20 +201,20 @@ QuickList/QuickTable, and multiple independent inputs belong to a Panel.
 
 ### Review Resolutions
 
-| Feedback | Resolution |
-| --- | --- |
-| R1, F6 | Use `summary`; retain `(text, accepted)` and exact draft on cancel as explicitly requested by the user. Apply the existing title/summary limits and single-line text validation. |
-| R2, R13, F3 | Reuse one LatestJobs lane per board with two dedicated process-wide leases covering open and retiring boards. A dead-board-only cap is insufficient; do not use shared UI worker slots. |
-| R3, R12, F4 | Queue Enter for the exact input revision; edits/failure/disposal clear it. Wait for the matching settled projection. Keep old rows and use a status message, not dimming. |
-| R4, R9, F1 | Numeric formatting is caller code. Consume and validate bounded iterables on the worker, check cancellation, and reuse Qt-captured date context without rerunning formatters on Qt. |
-| R10, R11, F2 | Separate composition input from hidden table search. Add an internal snapshot-replacement method that clears identity caches and invalidates older projections. |
-| R5 | No pane or navigation. Keep a guarded Copy cell action; path columns remain preview values. |
-| R6, F8 | Match QuickTable's framed window. Specify input/table focus transfer and filter-menu key precedence; no global frame redesign. |
-| R7 | Gate host publication-to-paint at 10,000 rows at 150 ms, controlled preview heartbeat gaps at 50 ms, and release all leases/threads after close plus callback completion. Measure callback time separately. |
-| R8 | Owner is required because callbacks/formatters outlive edits, unlike static tables. Normalize continuation indentation in revised text; retain reviewer history verbatim. |
-| F5 | Keep modal-only API. Test independent programmatic callers and close/reopen under admission limits; no modeless argument is needed for composition. |
-| F7, F9 | Board-level preview error and queued, guarded publication; show before the first callback, no Qt joins, no stale alerts. |
-| F10 | Preserve all historical attribution. New records follow the user's explicit current-session assignment: GPT-6 Astra / Extra High / 1M, not a reviewer-inferred 272K default. |
+| Feedback     | Resolution                                                                                                                                                                                                  |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R1, F6       | Use `summary`; retain `(text, accepted)` and exact draft on cancel as explicitly requested by the user. Apply the existing title/summary limits and single-line text validation.                            |
+| R2, R13, F3  | Reuse one LatestJobs lane per board with two dedicated process-wide leases covering open and retiring boards. A dead-board-only cap is insufficient; do not use shared UI worker slots.                     |
+| R3, R12, F4  | Queue Enter for the exact input revision; edits/failure/disposal clear it. Wait for the matching settled projection. Keep old rows and use a status message, not dimming.                                   |
+| R4, R9, F1   | Numeric formatting is caller code. Consume and validate bounded iterables on the worker, check cancellation, and reuse Qt-captured date context without rerunning formatters on Qt.                         |
+| R10, R11, F2 | Separate composition input from hidden table search. Add an internal snapshot-replacement method that clears identity caches and invalidates older projections.                                             |
+| R5           | No pane or navigation. Keep a guarded Copy cell action; path columns remain preview values.                                                                                                                 |
+| R6, F8       | Superseded by the user's frameless requirement: keep table styling, add a draggable title, and preserve focus/menu behavior. No global frame redesign.                                                      |
+| R7           | Gate host publication-to-paint at 10,000 rows at 150 ms, controlled preview heartbeat gaps at 50 ms, and release all leases/threads after close plus callback completion. Measure callback time separately. |
+| R8           | Superseded by the user's owner-free API requirement: host-managed dialog cancellation replaces mandatory plug-in ownership. Preserve reviewer history verbatim.                                             |
+| F5           | Keep modal-only API. Test independent programmatic callers and close/reopen under admission limits; no modeless argument is needed for composition.                                                         |
+| F7, F9       | Board-level preview error and queued, guarded publication; show before the first callback, no Qt joins, no stale alerts.                                                                                    |
+| F10          | Preserve all historical attribution. New records follow the user's explicit current-session assignment: GPT-6 Astra / Extra High / 1M, not a reviewer-inferred 272K default.                                |
 
 ## Alternatives
 
@@ -213,6 +230,11 @@ QuickList/QuickTable, and multiple independent inputs belong to a Panel.
 - Run every handler synchronously on Qt, like legacy Quicksearch suppliers:
   simpler but can block typing and cancellation. Prefer bounded worker delivery;
   keep the existing Quicksearch contract unchanged.
+- Mandatory public owner: rejected by the user for consistency with blocking
+  QuickTable/QuickList calls. Keep internal dialog cancellation instead; no
+  implicit caller detection or new plug-in-wide lifetime API is introduced.
+- Retain a native frame or set a global context-help flag: superseded by a
+  frameless QuickBoard only. QuickTable's chrome is outside this follow-up.
 
 ## Runtime Effects
 
@@ -237,7 +259,7 @@ Contract tests are in
 worker tests in [test_listing.py](../src/unittest/python/fman_unittest/test_listing.py),
 and `QuickBoardIT` / replacement regressions in
 [test_qt.py](../src/integrationtest/python/fman_integrationtest/test_qt.py).
-`QuickBoardPluginIT` exercises loader-owned public-only consumers in the existing
+`QuickBoardPluginIT` exercises owner-free public-only consumers in the existing
 [plug-in tests](../src/integrationtest/python/fman_integrationtest/impl/plugins/test_plugin.py).
 
 - Unit: arguments, reused descriptors, single-line/NUL/length limits, exact
@@ -248,14 +270,14 @@ and `QuickBoardIT` / replacement regressions in
   column-menu precedence, retained sorting/filtering and empty-preview acceptance.
   Queue Enter for A, edit B, complete A/B: B must stay open. Replace under both
   sort directions and pending old projections; Clear All Filters preserves text.
-- Lifecycle: close/unload during work, parent closure, simultaneous callers,
+- Lifecycle: close during work, retained dialog after plug-in unload, parent closure, simultaneous callers,
   rapid reopen, failed worker admission and no callbacks into disposed widgets.
 - Third-party integration: a disposable public-API-only plug-in supplies different
   handlers and unloads safely; extend the existing plug-in loader test module.
 - Regression: unchanged QuickTable returns, appearance, typed filtering and
   menus. No field or row content may become an implicit operation directive.
 
-Focused correctness commands (132 tests per platform):
+Focused correctness commands (140 tests per platform):
 
 ```powershell
 @'
@@ -272,6 +294,8 @@ for platform in ('windows', 'offscreen'):
         'fman_integrationtest.test_qt.QuickBoardIT',
         'fman_integrationtest.test_qt.TableIT',
         'fman_integrationtest.impl.plugins.test_plugin',
+        'fman_unittest.test_generate_docs_screenshots.GenerateDocsScreenshotsTest.test_quick_board_capture_shows_arguments_without_desktop_grab',
+        'fman_unittest.test_generate_docs_screenshots.GenerateDocsScreenshotsTest.test_source_outputs_include_documented_features',
         '-q',
       ], env=env, timeout=120)
     if result.returncode:
@@ -317,7 +341,9 @@ for scale, folder in (('1', '100'), ('1.5', '150'), ('2', '200')):
 
 The smoke uses disposable settings and normal main-window closure. Compare
 QuickBoard/QuickTable at 820x520 and the 460x280 minimum; check summary
-elision/tooltips, menus, keyboard-only use and 100%/150%/200% Windows scaling.
+elision/tooltips, frameless title and footer containment, menus, keyboard-only
+use and 100%/150%/200% Windows scaling. Documentation captures use widget grabs,
+not desktop pixels, with `text`, `title` and `summary` checked before capture.
 The public-only loader fixture covers rename, destination, export, query,
 exclusion and argument previews without performing operations. Physical monitor
 transitions and a separately authorized portable artifact remain release checks.
@@ -332,7 +358,7 @@ to complete this plan.
    the immutable data and generic error boundaries.
 3. Reuse QuickTable presentation and implement caller-driven preview delivery;
    immediately run the narrow new regression after the first substantive edit.
-4. Complete owner/window teardown, string acceptance and typed projection tests;
+4. Complete dialog teardown, string acceptance and typed projection tests;
    verify native and offscreen behavior plus the public-only plug-in fixture.
 5. Run the agreed opt-in measurements and visual checks. Add packaging inputs
    only if new runtime modules need explicit collection.
@@ -348,7 +374,8 @@ to complete this plan.
   failed/stale previews never accept and later edits clear the request.
 - Column filters/sorting affect presentation only and survive row replacement.
 - The element remains grammar- and operation-agnostic, with only a generic
-  summary and the established QuickTable appearance.
+  summary, QuickTable rendering and a frameless draggable title. No public owner
+  is required, and pending/error state shares the row-count footer.
 - All six use-case fixtures fit the same API, without case-specific UI options.
 - Worker admission, memory and teardown remain bounded, including close/reopen;
   two open/retiring board leases never starve the shared UI worker slots.
@@ -872,3 +899,100 @@ restoring this record did not rerun application tests.
   and are not resolved by this review. Performance/screenshot regeneration, full
   suite, freeze/package, Windows CI and physical mixed-monitor checks were not
   run; portable-artifact checks remain unverified.
+
+## Review Follow-Up Decisions (2026_10_06)
+
+- User notes 1-2: remove the public `owner` argument and controller boilerplate;
+  use a frameless, draggable-title dialog. Modal behavior and exact text returns
+  remain unchanged. Plug-in unload alone no longer cancels the dialog.
+- I1/J4: retain the first-filterable-column initial selection and last-column
+  refill behavior; add a focused TableIT assertion and a changelog entry.
+- I2: preserve cancelled drafts exactly rather than silently rewriting pasted
+  line breaks; document that such a draft cannot be accepted or reused as
+  initial text without correction, and test the actual paste path.
+- I3: document all caller exceptions, including `Task.Canceled`, as failed
+  previews; retain silent handling only for internal worker cancellation.
+- I4: document and test dismissal of unapplied filter-editor drafts when a
+  preview arrives. Preserve committed filters rather than delaying publication.
+- J1: frameless QuickBoard eliminates the native help button; no unrelated
+  QuickTable chrome or application-wide Qt attribute changes.
+- J2: use one elided counts/status footer, retaining old rows while updating.
+- J3: remove `_grab_framed_dialog`; use the widget grab and test with desktop
+  grabs forbidden. The visible title remains part of the captured widget.
+- K1: check cancellation before/after each typed-cell formatter. Test two
+  formatters with the first blocked: close returns promptly without starting
+  the second; a newer input cancels that row and only formats the new snapshot.
+  The running formatter may finish and its lease drains afterward.
+
+### 2026_10_06 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Extra High
+- Context Window: 1M
+- Outcome: Resolved I1-I4, J1-J4 and K1 with the decisions above, applying the
+  user's frameless and owner-free API overrides. Historical reviews and prior
+  implementation/validation records remain unchanged.
+
+## Implementer Follow-Up
+
+### 2026_10_06 - GitHub Copilot
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Extra High
+- Context Window: 1M
+- Outcome: Removed the public owner argument and controller boilerplate; adopted
+  a frameless draggable title and combined counts/status footer. Fixed K1 with
+  per-formatter cancellation checks, addressed I1-I4/J1-J4 as recorded above,
+  and migrated public consumers, API examples and widget-only captures.
+  All focused correctness, source/DPI, performance and documentation gates pass.
+
+## Follow-Up Validation Results
+
+- The current Tests launchers above are the exact focused commands used:
+  140 tests passed on Windows and 140 offscreen, with no skips. The capture
+  regression explicitly runs native Qt and forbids `QScreen.grabWindow`.
+- K1: the pure-data test invokes only the first formatter after cancellation;
+  default snapshot formatting still invokes both. Real Qt tests block the first
+  formatter, then close or edit the board: the cancelled row's second formatter
+  never runs, the caller is released on close, and admission drains afterward.
+- Owner-free loader integration covers all six sample consumers. Unloading the
+  plug-in leaves its active board open by design; closing it still returns the
+  exact cancelled draft and rejects late work. No hidden caller detection was
+  substituted for the removed argument.
+- New checks cover first-filterable-column initialization/refill, pasted CR/LF
+  cancellation, `Task.Canceled` failure, retained committed filters after editor
+  dismissal, title dragging, and absence of an extra status band.
+- Both opt-in performance cases passed. At 10,000 rows / approximately 15.4 MiB
+  text, three updates: input-to-completed-paint median/max 65.3/67.3 ms;
+  publication-to-paint 12.8/14.5 ms (150 ms budget); callback median 13.8 ms;
+  maximum heartbeat gap 23.4 ms (50 ms budget).
+- Separate allocation pass: retained/peak Python allocation 18.23/20.84 MiB;
+  process working set before/after 120.32/137.91 MiB; process peak 147.59 MiB.
+  These controlled local values are not arbitrary-callback guarantees.
+- 200 rapid edits produced two callbacks; close-to-return was 2.75 ms. Ten reopen
+  cycles left zero extra worker threads or admission leases.
+- Source smoke passed at DPR 1.0, 1.5 and 2.0, regenerating 18 images under
+  `target/quickboard/{100,150,200}`. Title/footer containment, normal/minimum
+  geometry, menus, errors and exactly one normal main-window close passed.
+- The docs image was regenerated at 820x520 using the command below. Screenshot
+  inspection confirms a visible title, input and summary without native chrome
+  or an empty status band. No desktop capture helper remains.
+
+  ```powershell
+  python -B -c "import sys; sys.path.insert(0, 'src/misc'); import generate_docs_screenshots as screenshots; screenshots.SOURCE_CAPTURES = ('quick-board',); sys.exit(screenshots.main(['--mode', 'source']))"
+  python -B -m mkdocs build --strict --site-dir target/quickboard-docs
+  ```
+
+- Strict docs and changed-file editor diagnostics passed. The original review,
+  implementation and validation history was checked unchanged as a complete
+  prefix. Current task tables are normalized separately from that history.
+- No full suite, performance catalog, dependency installation, clean/freeze,
+  package, staging or commit. Portable artifact, Windows CI and physical
+  mixed-monitor transitions remain unverified; QuickTable's native chrome and
+  the user-restored README were left unchanged.

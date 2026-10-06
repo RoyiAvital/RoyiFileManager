@@ -9,6 +9,7 @@ from fman.impl.plugins.key_bindings import KeyBindings
 from fman.impl.plugins.mother_fs import MotherFileSystem
 from fman.impl.plugins.plugin import Plugin
 from fman_integrationtest import get_resource
+from fman_integrationtest import test_qt as qt_tests
 from fman_integrationtest.impl.plugins import StubCommandCallback, StubTheme, \
 	StubFontDatabase
 from fman_unittest.impl.plugins import StubErrorHandler
@@ -17,6 +18,9 @@ from unittest import TestCase
 
 import json
 import sys
+
+setUpModule = qt_tests.setUpModule
+tearDownModule = qt_tests.tearDownModule
 
 class PluginTest(TestCase):
 	def test_error_instantiating_application_command(self):
@@ -145,3 +149,70 @@ class ExternalPluginTest(TestCase):
 	def tearDown(self):
 		sys.path = self._sys_path_before
 		super().tearDown()
+
+
+class QuickBoardPluginIT(qt_tests.QuickBoardFixture):
+	def test_public_only_consumers_and_host_lifetime_after_unload(self):
+		from pathlib import Path
+		from tempfile import TemporaryDirectory
+		from textwrap import dedent
+		from threading import Event
+		fixture = ExternalPluginTest()
+		fixture.setUp()
+		self.addCleanup(fixture.tearDown)
+		with TemporaryDirectory() as directory:
+			package = Path(directory, 'quick_board_consumer')
+			package.mkdir()
+			package.joinpath('__init__.py').write_text(dedent('''
+				from fman.ui import QuickTableColumn, QuickTableRow, show_quick_board
+				CASES = (
+				    ('Batch rename', '{name}_{index:03d}.{ext}'),
+				    ('Destination', '{modified:%Y-%m}/{ext}/{name}.{ext}'),
+				    ('Export', '{name} | {size} | {modified:%Y-%m-%d}'),
+				    ('Query', 'ext:pdf size:>10mb'),
+				    ('Exclusion', '*.tmp;*.bak;cache*'),
+				    ('Arguments', '--output "{name}.txt" "{path}"'),
+				)
+				class Board:
+				    @classmethod
+				    def compose(cls, label, text, entered=None, release=None):
+				        def rows(value):
+				            if entered is not None:
+				                entered.set()
+				                release.wait(5)
+				            return (QuickTableRow((label, value)),)
+				        return show_quick_board(
+				            columns=(QuickTableColumn('Context'), QuickTableColumn('Preview')),
+				            get_rows=rows, text=text, title=label, summary='Captured sample')
+			'''.expandtabs(4)), encoding='utf-8')
+			plugin = fixture._plugin
+			plugin._path = directory
+			self.assertTrue(plugin.load(), fixture._error_handler.error_messages)
+			try:
+				from quick_board_consumer import Board, CASES
+				for label, text in CASES:
+					with self.subTest(label=label):
+						finished, result = self.start_call(Board.compose, label, text)
+						window = self.window_for()
+						self.settled(window)
+						self.assertEqual((label, text), self.run_in_app(lambda: window.table.model.rows[0].cells))
+						self.run_in_app(window.request_accept)
+						self.assertTrue(finished.wait(5))
+						self.assertEqual([(text, True)], result)
+				entered, release = Event(), Event()
+				self.releases.append(release)
+				finished, result = self.start_call(Board.compose, 'Unload', 'draft', entered, release)
+				window = self.window_for()
+				self.assertTrue(entered.wait(5))
+				plugin.unload()
+				self.assertFalse(finished.is_set())
+				self.assertTrue(self.run_in_app(window.isVisible))
+				self.run_in_app(window.close)
+				self.assertTrue(finished.wait(5))
+				self.assertEqual([('draft', False)], result)
+				self.assertNotIn('quick_board_consumer', sys.modules)
+				release.set()
+				from fman.impl.ui.quick_board import _slots
+				self.wait_for(lambda: _slots._value == 2)
+			finally:
+				plugin.unload()

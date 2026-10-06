@@ -45,8 +45,11 @@ SOURCE_CAPTURES = (
 	'overview', 'go-to', 'context-menu', 'filter-pane', 'quick-view', 'quick-view-text',
 	'fuzzy-find', 'everything-search', 'everything-folders',
 	'search-files', 'find-files', 'favorites', 'directory-size', 'file-hash',
-	'checksum-files', 'process-pane', 'pack-archive', 'quick-table'
+	'checksum-files', 'process-pane', 'pack-archive', 'quick-table', 'quick-board'
 )
+QUICK_BOARD_SAMPLE = dict(text='Archive_', title='Compose a file-name prefix',
+	summary='3 captured names; preview only')
+QUICK_BOARD_NAMES = ('report.txt', 'notes.md', 'photo.jpg')
 PYTHON_SAMPLE = '''from dataclasses import dataclass
 from pathlib import Path
 
@@ -339,6 +342,7 @@ def _source_outputs(output_dir, capture):
 			'royifilemanager-ui-quicktable.png',
 			'royifilemanager-ui-quicktable-filter.png',
 		),
+		'quick-board': ('royifilemanager-ui-quickboard.png',),
 	}
 	return tuple(output_dir / name for name in names[capture])
 
@@ -782,6 +786,30 @@ def _capture_source_child(args):
 				finally:
 					painter.end()
 				finish(pixmap, outputs[1], lambda: (menu.close(), window.close()))
+			elif args._capture == 'quick-board':
+				from fman.impl.ui.quick_board import _Session, _open
+				from fman.ui import QuickTableColumn, QuickTableRow
+				if not state['started']:
+					def get_rows(prefix):
+						return tuple(QuickTableRow((name, prefix + name)) for name in QUICK_BOARD_NAMES)
+					session = _Session(QUICK_BOARD_SAMPLE['text'])
+					window = _open(session, (QuickTableColumn('Original'), QuickTableColumn('Preview')),
+						get_rows, **QUICK_BOARD_SAMPLE)
+					window.table.view.setColumnWidth(0, 340)
+					state.update(started=True, settled=0, window=window)
+					return
+				window = state['window']
+				if window.preview_error:
+					raise RuntimeError(window.preview_error)
+				if window.pending or not window.table.settled or state['settled'] < 3:
+					return
+				if (window.input.text() != QUICK_BOARD_SAMPLE['text'] or
+						window.windowTitle() != QUICK_BOARD_SAMPLE['title'] or
+						window.summary.content != QUICK_BOARD_SAMPLE['summary'] or
+						tuple(row.cells for row in window.table.model.rows) != tuple(
+							(name, QUICK_BOARD_SAMPLE['text'] + name) for name in QUICK_BOARD_NAMES)):
+					raise RuntimeError('QuickBoard example arguments or preview differ from the documentation')
+				finish(window.grab(), outputs[0], window.close)
 			elif args._capture == 'process-pane':
 				filter_bar = pane._widget._filter_bar
 				if not state['started']:

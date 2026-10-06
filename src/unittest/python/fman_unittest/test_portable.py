@@ -79,7 +79,8 @@ class PluginApiCompatibilityTest(TestCase):
 			'NavigationHandle', 'navigate', 'OutputTextBox', 'QuickTableRow', 'QuickTableColumn',
 			'TextField', 'Toggle', 'Choice', 'Label', 'Action', 'PanelHandle',
 			'Select', 'DateField', 'IntegerField', 'Separator',
-			'show_quick_table', 'show_panel', 'show_quick_list', 'QuickListHandle', 'QuickListState'
+			'show_quick_table', 'show_panel', 'show_quick_list', 'QuickListHandle', 'QuickListState',
+			'show_quick_board'
 		}
 		self.assertEqual(expected, set(fman.ui.__all__))
 		self.assertFalse(hasattr(fman.ui, 'BottomPanel'))

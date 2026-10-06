@@ -528,6 +528,47 @@ class NativeListingTest(TestCase):
 
 
 class SnapshotJobsTest(TestCase):
+	def test_closed_callback_waits_for_active_work_and_runs_once_outside_lock(self):
+		from fman.impl.model.listing import LatestJobs
+		from threading import Event
+		from unittest.mock import Mock
+		entered, release, drained = Event(), Event(), Event()
+		def on_closed():
+			self.assertTrue(jobs._lock.acquire(blocking=False))
+			jobs._lock.release()
+			drained.set()
+		callback = Mock(side_effect=on_closed)
+		jobs = LatestJobs(on_closed=callback)
+		def work(check):
+			entered.set()
+			self.assertTrue(release.wait(5))
+		try:
+			jobs.submit(work, Mock())
+			self.assertTrue(entered.wait(5))
+			jobs.cancel()
+			jobs.close()
+			jobs.close()
+			self.assertFalse(drained.is_set())
+		finally:
+			release.set()
+		self.assertTrue(drained.wait(5))
+		jobs.close()
+		callback.assert_called_once()
+
+	def test_closed_callback_releases_idle_and_failed_start_lanes(self):
+		from fman.impl.model.listing import LatestJobs
+		from unittest.mock import Mock, patch
+		for fails in (False, True):
+			callback = Mock()
+			jobs = LatestJobs(on_closed=callback)
+			if fails:
+				with patch('fman.impl.model.listing.Thread', side_effect=RuntimeError('start')):
+					with self.assertRaises(RuntimeError):
+						jobs.submit(Mock(), Mock())
+			jobs.close()
+			jobs.close()
+			callback.assert_called_once()
+
 	def test_icon_start_failure_can_retry(self):
 		from collections import OrderedDict
 		from threading import Lock

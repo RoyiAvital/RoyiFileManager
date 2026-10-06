@@ -401,6 +401,132 @@ class TablePerformance(qt_tests.TableIT):
 			self.run_in_app(widget.deleteLater)
 
 
+class QuickBoardPerformance(qt_tests.QuickBoardFixture):
+	def test_large_preview_budgets(self):
+		from fman.ui import QuickTableColumn, QuickTableRow
+		from fman.impl.ui.quick_board import QuickBoardWindow, _slots
+		from fman.impl.ui.table import TableView
+		from PyQt5.QtCore import QTimer
+		from PyQt5.QtWidgets import QTableView
+		from statistics import median
+		from threading import enumerate as threads
+		import tracemalloc
+		import win32api, win32process
+		baseline_threads = set(threads())
+		published, painted, inputs, callback_times, ticks = {}, {}, {}, [], []
+		ready = Event()
+		observed = []
+		original_receive = QuickBoardWindow.receive
+		def receive(window, revision, prepared, error):
+			if prepared is not None and prepared[0] and len(prepared[0]) == 10000:
+				published[revision] = perf_counter()
+			return original_receive(window, revision, prepared, error)
+		def paint(view, event):
+			QTableView.paintEvent(view, event)
+			if observed:
+				window = observed[0]
+				revision = window.revision
+				if view is window.table.view and revision in published and revision not in painted and window.table.settled:
+					painted[revision] = perf_counter()
+					ready.set()
+		def handler(text):
+			if not text:
+				return ()
+			started = perf_counter()
+			rows = tuple(QuickTableRow(('%s-%05d' % (text, index), '%05d ' % index + 'x' * 1594)) for index in range(10000))
+			callback_times.append(perf_counter() - started)
+			return rows
+		with patch.object(QuickBoardWindow, 'receive', receive), patch.object(TableView, 'paintEvent', paint, create=True):
+			owner, finished, result = self.start_board(handler, text='',
+				columns=(QuickTableColumn('Name', 'file_name'), QuickTableColumn('Preview')))
+			window = self.window_for(owner)
+			observed.append(window)
+			self.settled(window)
+			def start_timer():
+				timer = QTimer(self.main)
+				timer.setTimerType(Qt.PreciseTimer)
+				timer.timeout.connect(lambda: ticks.append(perf_counter()))
+				timer.start(10)
+				return timer
+			timer = self.run_in_app(start_timer)
+			try:
+				for index in range(3):
+					ready.clear()
+					def edit():
+						inputs[window.revision + 1] = perf_counter()
+						window.input.setText('preview%d' % index)
+					self.run_in_app(edit)
+					self.assertTrue(ready.wait(10), 'Completed table paint timed out')
+					self.assertEqual(10000, self.run_in_app(window.table.model.rowCount))
+			finally:
+				self.run_in_app(timer.stop)
+				self.run_in_app(timer.deleteLater)
+			gaps = [later - earlier for earlier, later in zip(ticks, ticks[1:])]
+			latencies = [painted[revision] - published[revision] for revision in inputs]
+			totals = [painted[revision] - inputs[revision] for revision in inputs]
+			self.assertTrue(gaps)
+			print('QuickBoard 10,000 rows / ~15.4 MiB text, 3 replacements: input-to-paint median/max %.1f/%.1f ms; publication-to-paint %.1f/%.1f ms; callback median %.1f ms; heartbeat max %.1f ms' %
+				(median(totals) * 1000, max(totals) * 1000, median(latencies) * 1000, max(latencies) * 1000,
+				median(callback_times) * 1000, max(gaps) * 1000), flush=True)
+			self.assertLessEqual(max(latencies), .150)
+			self.assertLessEqual(max(gaps), .050)
+			ready.clear()
+			before = win32process.GetProcessMemoryInfo(win32api.GetCurrentProcess())['WorkingSetSize']
+			tracemalloc.start()
+			try:
+				self.run_in_app(window.input.setText, 'memory')
+				self.assertTrue(ready.wait(15))
+				current, peak = tracemalloc.get_traced_memory()
+			finally:
+				tracemalloc.stop()
+			memory = win32process.GetProcessMemoryInfo(win32api.GetCurrentProcess())
+			print('Separate replacement allocation: retained %.2f MiB, peak %.2f MiB; process working set before/after %.2f/%.2f MiB, process peak %.2f MiB' %
+				(current / 2**20, peak / 2**20, before / 2**20, memory['WorkingSetSize'] / 2**20,
+				memory['PeakWorkingSetSize'] / 2**20), flush=True)
+			self.run_in_app(window.close)
+			self.assertTrue(finished.wait(5))
+		self.wait_for(lambda: _slots._value == 2 and not set(threads()) - baseline_threads)
+
+	def test_rapid_input_and_close_reopen_drain(self):
+		from fman.impl.ui.quick_board import _slots
+		from threading import enumerate as threads
+		baseline_threads = set(threads())
+		entered, release = Event(), Event()
+		self.releases.append(release)
+		calls = []
+		def handler(text):
+			calls.append(text)
+			if text == 'initial':
+				entered.set()
+				release.wait(10)
+			return ()
+		owner, finished, result = self.start_board(handler, text='initial')
+		window = self.window_for(owner)
+		self.assertTrue(entered.wait(5))
+		def edit():
+			for index in range(200):
+				window.input.setText(str(index))
+		self.run_in_app(edit)
+		self.assertEqual(['initial'], calls)
+		release.set()
+		self.settled(window)
+		self.assertEqual(['initial', '199'], calls)
+		started = perf_counter()
+		self.run_in_app(window.close)
+		self.assertTrue(finished.wait(5))
+		elapsed = perf_counter() - started
+		self.wait_for(lambda: _slots._value == 2 and not set(threads()) - baseline_threads)
+		for index in range(10):
+			owner, finished, result = self.start_board(lambda text: ())
+			window = self.window_for(owner)
+			self.settled(window)
+			self.run_in_app(window.close)
+			self.assertTrue(finished.wait(5))
+		self.wait_for(lambda: _slots._value == 2 and not set(threads()) - baseline_threads)
+		print('QuickBoard 200 rapid edits: 2 callbacks; close-to-return %.2f ms; 10 reopen cycles: 0 retained workers / leases' % (elapsed * 1000), flush=True)
+		self.assertLess(elapsed, .05)
+
+
 class ArchivePerformance(zip_tests.SevenZipExecutableTest):
 	def test_copy_verification_timing(self):
 		with TemporaryDirectory() as directory:

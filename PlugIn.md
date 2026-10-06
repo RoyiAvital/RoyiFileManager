@@ -32,7 +32,7 @@ contracts whose details matter when extending the application.
 | [fman.listing](src/main/python/fman/listing.py) | Immutable display snapshots | New provider contract |
 | [fman.url](src/main/python/fman/url.py) | Application URL manipulation | Legacy API |
 | [fman.clipboard](src/main/python/fman/clipboard.py) | Text and file clipboard operations | Legacy API |
-| [fman.ui](src/main/python/fman/ui.py) | QuickList, QuickTable, Panel services, hosting, navigation | Provisional RoyiFileManager extension |
+| [fman.ui](src/main/python/fman/ui.py) | QuickList, QuickTable, QuickBoard, Panel services, hosting, navigation | Provisional RoyiFileManager extension |
 
 The upstream fman 1.7.5 listing/column contracts are not preserved. Implement
 the snapshot methods below; old per-row display methods are not an adapter.
@@ -593,15 +593,93 @@ Import from `fman.ui`. The complete explicit export list is:
 ListItem, UiController, UiOwner, Resource, settings_resource, matchers,
 ToolWindow, PaneToolWindow, NavigationHandle, navigate, OutputTextBox,
 QuickTableRow, QuickTableColumn, TextField, Toggle, Choice, Select, DateField, IntegerField, Separator, Label, Action,
-PanelHandle, show_quick_table, show_panel, show_quick_list, QuickListHandle, QuickListState
+PanelHandle, show_quick_table, show_quick_board, show_panel, show_quick_list, QuickListHandle, QuickListState
 ```
 
 This is an additive **provisional** API, not upstream fman 1.7.5. Public names
 do not imply permission to change host widget parenting, lifetime or internal
-model state arbitrarily. QuickList, QuickTable and Panel are plain services;
+model state arbitrarily. QuickList, QuickTable, QuickBoard and Panel are plain services;
 plug-ins need no Qt import for them. The widget exports `QuickList`, `Panel`,
 `IconButton`, `TextButton`, `DropDown` and `JsonSettings` were removed: use
 `show_quick_list`, `show_panel` controls and `load_json`/`save_json` instead.
+
+### Qt-Free QuickBoard
+
+```python
+show_quick_board(*, columns, get_rows, text='', title='', summary='') -> tuple[str, bool]
+```
+
+QuickBoard helps compose one string. `get_rows(text)` supplies read-only feedback
+using the same `QuickTableColumn` and `QuickTableRow` records described below.
+The columns stay fixed; each successful callback replaces the whole preview.
+There is no public handle, row selection result, pane, Go To or operation API.
+The built-in cell menu copies the **displayed text**, including path columns;
+`targets` does not enable navigation or change Copy in a QuickBoard.
+
+```python
+from fman.ui import QuickTableColumn, QuickTableRow, show_quick_board
+
+def compose_prefix(names):
+  names = tuple(names)
+  return show_quick_board(
+    columns=(QuickTableColumn('Original'), QuickTableColumn('Preview')),
+    get_rows=lambda prefix: (QuickTableRow((name, prefix + name)) for name in names),
+    title='Compose prefix', summary=f'{len(names)} captured names',
+  )
+```
+
+No owner or `UiController` subclass is required. The host owns the dialog;
+unloading the calling plug-in does not automatically close it. Omit the former
+`owner` argument when updating an earlier QuickBoard caller.
+The modal call blocks its worker caller until close; a Qt
+caller uses a local event loop. Enter returns `(text, True)`, including for an
+empty preview. Escape/window close returns `(text, False)` with the exact draft,
+unlike `show_prompt`; spaces are never trimmed. Enter during work is queued for
+that exact input revision and waits for its successful, settled preview. Another
+edit, error or disposal clears the request. Filters and sorting persist between
+previews but affect presentation only. Clear All Filters never edits the string.
+
+The window is frameless, with `title` in a draggable header, optional `summary`
+below it, the composition field and table, and one counts/status footer.
+The field starts focused. Up/Down/Page Up/Page Down focus the table; Tab and
+Shift+Tab move between them, Ctrl+F focuses/selects the field, and Alt+Down opens
+the column filter. A filter menu handles its own Enter/Escape first.
+Editing the composition or publishing a new preview closes any open column
+filter editor and discards its unapplied draft; already-applied filters survive.
+
+The callback, iteration, numeric `format` callbacks and row validation run on a
+dedicated worker, initially after showing the window and again on text changes.
+They must not access Qt or mutate files/shared state. Calls are serial per board,
+with at most one replaceable pending input. The host checks cancellation before
+and after each formatter, around the handler, and during validation, but cannot interrupt a blocked callback:
+bound its work and apply I/O timeouts. Date context is captured on Qt once.
+Validated, immutable snapshots reach Qt; formatters are not rerun there.
+
+The host retains old rows and shows `Updating...` in the counts footer while
+working. Any caller exception, including `Task.Canceled` and other
+`BaseException` subclasses, is a failed preview: `ValueError` is inline feedback;
+other exceptions also open a dialog-owned alert. Internal worker cancellation
+silently discards stale work instead. Failed or stale previews cannot approve
+the string. Closing the board or main window cancels pending work and suppresses
+late results/alerts without joining workers on Qt. A running callback may finish,
+but cancellation prevents subsequent formatters in its row from starting.
+Nothing persists or runs before a board is opened.
+
+Limits: 1-64 columns, 10,000 rows and the shared 16 MiB preview text/typed-value
+budget. Input is one line, at most 4,096 UTF-16 code units (matching Qt's field);
+title/summary are at most 512/2,048 characters. NUL is forbidden in all three;
+initial CR/LF is rejected. Invalid arguments fail before UI/worker creation.
+Qt may retain CR/LF pasted after opening: these drafts show an error and cannot
+be accepted, but Escape returns them exactly. A cancelled draft therefore may
+not be valid as a new `text` argument without correction.
+Two process-wide leases cover open boards and closed boards whose workers are
+still finishing. A third caller receives an alert and `(initial_text, False)`
+without invoking its callback; Panel/navigation worker capacity is independent.
+
+The caller owns grammar, sampling, freshness, validation and any subsequent
+operation. Accepted text is not an operation plan or proof that files are safe
+to mutate. This API requires a host containing QuickBoard; copying a consumer
+plug-in into an older portable release does not add the host service.
 
 ### Qt-Free QuickTable and Panel
 
@@ -727,6 +805,10 @@ Header layout, left to right: label, sort arrow (sorted column only), filter
 funnel (filterable columns). The funnel is dim when idle and uses the theme
 Highlight color when active. Clicking the label sorts; clicking the funnel opens
 the filter menu only.
+
+The initial current cell is in the first filterable column, or column zero if
+none are filterable. After an empty result refills, the last current column is
+restored. This also applies to QuickBoard.
 
 ```text
 | File Path        ▽ | Size        ↓ ▼ | Date Modified  ▽ | Snippet         ▽ |

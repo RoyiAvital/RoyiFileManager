@@ -6019,7 +6019,634 @@ class ChecksumFilesIT(QtIT):
 		self.run_in_app(check)
 
 
+class QuickBoardFixture(QtIT):
+	def setUp(self):
+		from PyQt5.QtWidgets import QWidget
+		from unittest.mock import patch
+		self.main = self.run_in_app(QWidget)
+		self.run_in_app(self.main.show)
+		self.workers, self.releases = [], []
+		self.ui_patch = patch('fman._get_ui', return_value=self.main)
+		self.ui_patch.start()
+
+	def tearDown(self):
+		for release in self.releases:
+			release.set()
+		self.run_in_app(self.main.close)
+		for worker, finished, results, errors in self.workers:
+			self.assertTrue(finished.wait(5), 'QuickBoard caller stranded')
+			worker.join(5)
+			self.assertFalse(worker.is_alive())
+			self.assertFalse(errors, errors)
+		from fman.impl.ui.quick_board import _slots
+		self.wait_for(lambda: _slots._value == 2)
+		self.ui_patch.stop()
+		self.run_in_app(self.main.deleteLater)
+
+	def wait_for(self, predicate):
+		from time import monotonic
+		deadline = monotonic() + 5
+		while monotonic() < deadline:
+			value = self.run_in_app(predicate)
+			if value:
+				return value
+			Event().wait(.01)
+		self.fail('QuickBoard condition did not complete')
+
+	def start_board(self, handler=None, **arguments):
+		from fman.ui import QuickTableColumn, QuickTableRow, show_quick_board
+		handler = handler or (lambda text: (QuickTableRow(('result: ' + text,)),))
+		defaults = dict(columns=(QuickTableColumn('Preview'),), get_rows=handler, text='draft')
+		defaults.update(arguments)
+		finished, results = self.start_call(show_quick_board, **defaults)
+		return handler, finished, results
+
+	def start_call(self, callback, *args, **kwargs):
+		from threading import Thread
+		finished, results, errors = Event(), [], []
+		def invoke():
+			try:
+				results.append(callback(*args, **kwargs))
+			except BaseException as error:
+				errors.append(error)
+			finally:
+				finished.set()
+		worker = Thread(target=invoke, daemon=True)
+		self.workers.append((worker, finished, results, errors))
+		worker.start()
+		return finished, results
+
+	def window_for(self, handler=None):
+		from fman.impl.ui.quick_board import QuickBoardWindow
+		return self.wait_for(lambda: next((widget for widget in QApplication.topLevelWidgets()
+			if isinstance(widget, QuickBoardWindow) and (handler is None or widget.get_rows is handler)
+			and widget.alive.is_set()), None))
+
+	def settled(self, window):
+		self.wait_for(lambda: not window.pending and window.table.settled)
+
+
+class QuickBoardIT(QuickBoardFixture):
+	def test_cancel_during_formatter_stops_next_formatter(self):
+		from fman.ui import QuickTableColumn, QuickTableRow
+		from unittest.mock import Mock
+		from fman.impl.ui.quick_board import _slots
+		for cancel_by_edit in (False, True):
+			with self.subTest(cancel_by_edit=cancel_by_edit):
+				entered, release = Event(), Event()
+				self.releases.append(release)
+				def first(value):
+					if value == 1:
+						entered.set()
+						self.assertTrue(release.wait(5))
+					return str(value)
+				second = Mock(side_effect=str)
+				columns = (QuickTableColumn('First', 'numeric', format=first),
+					QuickTableColumn('Second', 'numeric', format=second))
+				preview, finished, result = self.start_board(
+					lambda text: (QuickTableRow((1, 2) if text == 'A' else (3, 4)),), columns=columns, text='A')
+				window = self.window_for(preview)
+				self.assertTrue(entered.wait(5))
+				if cancel_by_edit:
+					self.run_in_app(window.input.setText, 'B')
+				else:
+					self.run_in_app(window.close)
+					self.assertTrue(finished.wait(5))
+					self.assertEqual([('A', False)], result)
+				self.assertEqual(1, _slots._value)
+				release.set()
+				if cancel_by_edit:
+					self.settled(window)
+					second.assert_called_once_with(4)
+					self.run_in_app(window.close)
+					self.assertTrue(finished.wait(5))
+				else:
+					self.wait_for(lambda: _slots._value == 2)
+					second.assert_not_called()
+				self.wait_for(lambda: _slots._value == 2)
+
+	def test_multiline_paste_returns_draft_only_on_cancel(self):
+		from PyQt5.QtTest import QTest
+		preview, finished, result = self.start_board()
+		window = self.window_for(preview)
+		self.settled(window)
+		draft = 'first\nsecond\r\nthird'
+		def paste():
+			clipboard = QApplication.clipboard()
+			previous = clipboard.text()
+			try:
+				clipboard.setText(draft)
+				window.input.selectAll()
+				window.input.paste()
+			finally:
+				clipboard.setText(previous)
+			self.assertEqual(draft, window.input.text())
+			self.assertIsNotNone(window.preview_error)
+			self.assertIn('Preview error:', window.status.content)
+			QTest.keyClick(window.input, Qt.Key_Return)
+		self.run_in_app(paste)
+		self.assertFalse(finished.is_set())
+		self.run_in_app(QTest.keyClick, window.input, Qt.Key_Escape)
+		self.assertTrue(finished.wait(5))
+		self.assertEqual([(draft, False)], result)
+
+	def test_new_preview_closes_filter_editor_and_retains_committed_filter(self):
+		from fman.ui import QuickTableRow
+		from fman.impl.ui.table import FilterEditor
+		from fman.impl.ui.table_filters import compile_filter
+		entered, release = Event(), Event()
+		self.releases.append(release)
+		def handler(text):
+			if text == 'next':
+				entered.set()
+				release.wait(5)
+			return (QuickTableRow(('alpha',)),)
+		preview, finished, result = self.start_board(handler)
+		window = self.window_for(preview)
+		self.settled(window)
+		committed = compile_filter(window.schema.columns[0], 0, 'substring', 'alpha')
+		self.run_in_app(window.table.set_column_filter, 0, committed)
+		self.run_in_app(window.input.setText, 'next')
+		self.assertTrue(entered.wait(5))
+		def edit_filter():
+			self.assertIn('Updating...', window.status.content)
+			menu = window.table.open_filter_menu(0)
+			menu.findChild(FilterEditor).first.setText('unapplied')
+		self.run_in_app(edit_filter)
+		release.set()
+		self.settled(window)
+		self.assertIsNone(self.run_in_app(lambda: window.table.filter_menu))
+		self.assertIs(committed, self.run_in_app(lambda: window.table.filters[0]))
+		self.assertNotIn('Updating...', self.run_in_app(lambda: window.status.content))
+		self.run_in_app(window.close)
+
+	def test_frameless_title_drags_without_changing_text(self):
+		from PyQt5.QtCore import QEvent, QPoint, QPointF
+		from PyQt5.QtGui import QMouseEvent
+		from PyQt5.QtTest import QTest
+		preview, finished, result = self.start_board(title='Compose names')
+		window = self.window_for(preview)
+		self.settled(window)
+		def drag():
+			start = window.pos()
+			local, delta = QPoint(10, 8), QPoint(24, 16)
+			QTest.mousePress(window.header, Qt.LeftButton, pos=local)
+			global_position = window.header.mapToGlobal(local) + delta
+			QApplication.sendEvent(window.header, QMouseEvent(QEvent.MouseMove, QPointF(local),
+				QPointF(global_position), Qt.NoButton, Qt.LeftButton, Qt.NoModifier))
+			QTest.mouseRelease(window.header, Qt.LeftButton, pos=local)
+			self.assertEqual(start + delta, window.pos())
+			self.assertEqual('draft', window.input.text())
+			self.assertIsNone(window.drag)
+			window.close()
+		self.run_in_app(drag)
+
+	def test_construction_failure_releases_admission(self):
+		from fman.ui import QuickTableColumn, show_quick_board
+		from fman.impl.ui.quick_board import _slots
+		from unittest.mock import Mock, patch
+		handler = Mock(return_value=())
+		with patch('fman.impl.ui.quick_board.TableSchema', side_effect=ValueError('Invalid schema')), \
+				self.assertRaisesRegex(ValueError, 'Invalid schema'):
+			self.run_in_app(show_quick_board,
+				columns=(QuickTableColumn('Preview'),), get_rows=handler, text='draft')
+		handler.assert_not_called()
+		self.assertEqual(2, _slots._value)
+
+	def test_shown_before_initial_callback_and_early_enter_is_retained(self):
+		from PyQt5.QtTest import QTest
+		from unittest.mock import patch
+		callbacks, visible = [], []
+		def handler(text):
+			visible.append(self.run_in_app(window.isVisible))
+			return ()
+		with patch('fman.impl.ui.quick_board.defer', side_effect=lambda window, callback: callbacks.append(callback)):
+			owner, finished, result = self.start_board(handler)
+			window = self.window_for(owner)
+			self.assertFalse(visible)
+			self.run_in_app(QTest.keyClick, window.table.view, Qt.Key_Return)
+			self.assertFalse(finished.is_set())
+			self.run_in_app(callbacks.pop())
+			self.assertTrue(finished.wait(5))
+		self.assertEqual([True], visible)
+		self.assertEqual([('draft', True)], result)
+
+	def test_queued_start_failure_and_owned_error_teardown(self):
+		from unittest.mock import patch
+		from PyQt5.QtTest import QTest
+		entered, release = Event(), Event()
+		self.releases.append(release)
+		def handler(text):
+			entered.set()
+			release.wait(5)
+			return ()
+		owner, finished, result = self.start_board(handler)
+		window = self.window_for(owner)
+		self.assertTrue(entered.wait(5))
+		self.run_in_app(window.input.setText, 'queued')
+		with patch('fman.impl.model.listing.Thread', side_effect=RuntimeError('Queued start failed')), patch('fman.show_alert') as alert:
+			release.set()
+			self.assertTrue(finished.wait(5))
+			self.wait_for(lambda: alert.call_count == 1)
+		self.assertEqual([('queued', False)], result)
+		from fman.ui import QuickTableColumn, QuickTableRow
+		def bad_format(value):
+			raise RuntimeError('Formatter failed')
+		owner, finished, result = self.start_board(lambda text: (QuickTableRow((7,)),),
+			columns=(QuickTableColumn('Value', 'numeric', format=bad_format),))
+		window = self.window_for(owner)
+		self.wait_for(lambda: window.prompt is not None)
+		prompt = self.run_in_app(lambda: window.prompt)
+		self.run_in_app(QTest.keyClick, prompt, Qt.Key_Escape)
+		self.assertFalse(finished.is_set())
+		self.assertEqual('Formatter failed', window.preview_error)
+		self.run_in_app(window.close)
+		self.assertTrue(finished.wait(5))
+		self.assertEqual([('draft', False)], result)
+
+	def test_public_worker_and_qt_callers_preserve_text_and_theme(self):
+		from fman.ui import QuickTableColumn, show_quick_board
+		from fman.impl.ui.quick_board import QuickBoardWindow
+		from PyQt5.QtCore import QTimer
+		from PyQt5.QtTest import QTest
+		from PyQt5.QtWidgets import QAbstractButton
+		from threading import get_ident
+		threads = []
+		def handler(text):
+			threads.append(get_ident())
+			return ()
+		owner, finished, result = self.start_board(handler, text='  draft  ', summary='<literal & summary>')
+		window = self.window_for(owner)
+		self.settled(window)
+		def inspect():
+			self.assertFalse([button for button in window.findChildren(QAbstractButton) if button.isVisible()])
+			self.assertEqual(Qt.WindowModal, window.windowModality())
+			self.assertTrue(window.windowFlags() & Qt.FramelessWindowHint)
+			self.assertEqual(window.windowTitle(), window.header.content)
+			self.assertEqual(Qt.PlainText, window.header.textFormat())
+			self.assertTrue(window.header.font().bold())
+			self.assertTrue(window.table.counts.isHidden())
+			self.assertEqual('0 / 0 rows', window.status.content)
+			self.assertEqual(window.table.layout().spacing(), window.table.view.y() - window.input.geometry().bottom() - 1)
+			self.assertEqual((820, 520), (window.width(), window.height()))
+			self.assertFalse(window.styleSheet())
+			self.assertEqual('<literal & summary>', window.summary.content)
+			self.assertEqual(Qt.PlainText, window.summary.textFormat())
+			self.assertEqual('', window.table.query.text())
+			self.assertTrue(window.table.query.isHidden())
+			self.assertTrue(window.table.view.alternatingRowColors())
+			self.assertNotEqual(get_ident(), threads[0])
+			QTest.keyClick(window.input, Qt.Key_Return)
+		self.run_in_app(inspect)
+		self.assertTrue(finished.wait(5))
+		self.assertEqual([('  draft  ', True)], result)
+		def nested():
+			def cancel():
+				board = next(widget for widget in QApplication.topLevelWidgets()
+					if isinstance(widget, QuickBoardWindow) and widget.alive.is_set())
+				QTest.keyClick(board.input, Qt.Key_Escape)
+			QTimer.singleShot(0, cancel)
+			return show_quick_board(columns=(QuickTableColumn('Value'),), get_rows=lambda text: (), text='\U0001f600 draft')
+		self.assertEqual(('\U0001f600 draft', False), self.run_in_app(nested))
+
+	def test_queued_enter_accepts_only_its_revision(self):
+		from fman.ui import QuickTableRow
+		from PyQt5.QtTest import QTest
+		for edited in (False, True):
+			with self.subTest(edited=edited):
+				entered, release = Event(), Event()
+				self.releases.append(release)
+				def handler(text):
+					if text == 'A':
+						entered.set()
+						release.wait(5)
+					return (QuickTableRow((text,)),)
+				owner, finished, result = self.start_board(handler, text='A')
+				window = self.window_for(owner)
+				self.assertTrue(entered.wait(5))
+				self.run_in_app(QTest.keyClick, window.input, Qt.Key_Return)
+				self.assertFalse(finished.is_set())
+				if edited:
+					self.run_in_app(window.input.setText, 'B')
+					release.set()
+					self.settled(window)
+					self.assertFalse(finished.is_set())
+					self.assertEqual('B', self.run_in_app(lambda: window.table.model.rows[0].cells[0]))
+					self.run_in_app(QTest.keyClick, window.input, Qt.Key_Return)
+				else:
+					release.set()
+				self.assertTrue(finished.wait(5))
+				self.assertEqual([('B' if edited else 'A', True)], result)
+
+	def test_queued_enter_waits_for_new_projection(self):
+		from fman.ui import QuickTableRow
+		from fman.impl.ui.table_filters import compile_filter
+		from itertools import count
+		from unittest.mock import patch
+		from PyQt5.QtTest import QTest
+		entered, release = Event(), Event()
+		self.releases.append(release)
+		def handler(text):
+			if text == 'slow':
+				entered.set()
+				release.wait(5)
+			return tuple(QuickTableRow(('match%d' % index,)) for index in range(4))
+		owner, finished, result = self.start_board(handler)
+		window = self.window_for(owner)
+		self.settled(window)
+		self.run_in_app(window.table.set_column_filter, 0, compile_filter(window.schema.columns[0], 0, 'substring', 'match'))
+		self.run_in_app(window.input.setText, 'slow')
+		self.assertTrue(entered.wait(5))
+		callbacks = []
+		with patch('fman.impl.ui.table.perf_counter', side_effect=count().__next__), \
+				patch('fman.impl.ui.table.defer', side_effect=lambda owner, callback: callbacks.append(callback)):
+			self.run_in_app(QTest.keyClick, window.input, Qt.Key_Return)
+			release.set()
+			self.wait_for(lambda: not window.pending and window.table.pending)
+			self.assertFalse(finished.is_set())
+			def finish_projection():
+				while callbacks:
+					callbacks.pop(0)()
+			self.run_in_app(finish_projection)
+		self.assertTrue(finished.wait(5))
+		self.assertEqual([('slow', True)], result)
+
+	def test_errors_are_separate_from_filtering_and_recover(self):
+		from fman.ui import QuickTableRow
+		from PyQt5.QtTest import QTest
+		from unittest.mock import patch
+		def handler(text):
+			if text == 'invalid':
+				def rows():
+					yield QuickTableRow(('partial',))
+					raise ValueError('Invalid expression')
+				return rows()
+			if text == 'broken':
+				raise RuntimeError('Unexpected failure')
+			return (QuickTableRow(('result',)),)
+		owner, finished, result = self.start_board(handler)
+		window = self.window_for(owner)
+		self.settled(window)
+		with patch.object(window, 'alert') as alert:
+			for text in ('invalid', 'broken'):
+				self.run_in_app(window.input.setText, text)
+				self.wait_for(lambda: window.preview_error is not None)
+				self.run_in_app(window.table.set_sort, 0, True)
+				self.run_in_app(window.table.clear_all_filters)
+				self.run_in_app(QTest.keyClick, window.input, Qt.Key_Return)
+				self.assertFalse(finished.is_set())
+				self.assertEqual('', self.run_in_app(lambda: window.table.error))
+				self.assertIsNone(window.accept_revision)
+			alert.assert_called_once_with('Unexpected failure')
+		self.run_in_app(window.input.setText, 'good')
+		self.settled(window)
+		self.assertIsNone(window.preview_error)
+		self.run_in_app(QTest.keyClick, window.input, Qt.Key_Escape)
+		self.assertTrue(finished.wait(5))
+		self.assertEqual([('good', False)], result)
+
+	def test_formatters_are_worker_only_and_late_results_are_discarded(self):
+		from fman.ui import QuickTableColumn, QuickTableRow
+		from threading import get_ident
+		from unittest.mock import Mock
+		calls = []
+		formatter = Mock(side_effect=lambda value: (calls.append(get_ident()), 'custom:%d' % value)[1])
+		columns = (QuickTableColumn('Value', 'numeric', format=formatter), QuickTableColumn('Date', 'date'))
+		owner, finished, result = self.start_board(lambda text: (QuickTableRow((7, 0)),), columns=columns)
+		window = self.window_for(owner)
+		self.settled(window)
+		self.assertNotEqual(self.run_in_app(get_ident), calls[0])
+		self.assertEqual(('custom:7',), self.run_in_app(lambda: (window.table.model.rows[0].cells[0],)))
+		self.assertEqual((7, 0), self.run_in_app(lambda: window.table.model.rows[0].values))
+		self.run_in_app(window.table.set_sort, 0, True)
+		formatter.assert_called_once_with(7)
+		entered, release = Event(), Event()
+		self.releases.append(release)
+		def blocked(value):
+			entered.set()
+			release.wait(5)
+			return 'late'
+		formatter.side_effect = blocked
+		self.run_in_app(window.input.setText, 'later')
+		self.assertTrue(entered.wait(5))
+		self.run_in_app(window.close)
+		self.assertTrue(finished.wait(5))
+		self.assertEqual([('later', False)], result)
+		from fman.impl.ui.quick_board import _slots
+		self.assertEqual(1, _slots._value)
+		release.set()
+		self.wait_for(lambda: _slots._value == 2)
+
+	def test_global_admission_includes_closed_blocked_boards(self):
+		from fman.ui import QuickTableColumn, show_quick_board
+		from fman.impl.ui import _work_slots
+		from unittest.mock import Mock, patch
+		release = Event()
+		self.releases.append(release)
+		entered = [Event(), Event()]
+		windows = []
+		for gate in entered:
+			def handler(text, gate=gate):
+				gate.set()
+				release.wait(5)
+				return ()
+			owner, finished, result = self.start_board(handler)
+			windows.append(self.window_for(owner))
+			self.assertTrue(gate.wait(5))
+		callback = Mock(return_value=())
+		with patch('fman.show_alert') as alert:
+			for close in (False, True):
+				if close:
+					for window in windows:
+						self.run_in_app(window.close)
+					for worker, finished, result, errors in self.workers:
+						self.assertTrue(finished.wait(5))
+				self.assertEqual(('third', False), show_quick_board(columns=(QuickTableColumn('Value'),),
+					get_rows=callback, text='third'))
+			callback.assert_not_called()
+			self.assertEqual(2, alert.call_count)
+		release.set()
+		from fman.impl.ui.quick_board import _slots
+		self.wait_for(lambda: _slots._value == 2)
+		self.assertTrue(_work_slots.acquire(blocking=False))
+		self.assertTrue(_work_slots.acquire(blocking=False))
+		try:
+			owner, finished, result = self.start_board()
+			window = self.window_for(owner)
+			self.settled(window)
+			self.run_in_app(window.close)
+			self.assertTrue(finished.wait(5))
+		finally:
+			_work_slots.release()
+			_work_slots.release()
+
+	def test_thread_start_failure_releases_caller_and_admission(self):
+		from unittest.mock import patch
+		for constructor in (True, False):
+			with self.subTest(constructor=constructor), patch('fman.show_alert') as alert, \
+					patch('fman.impl.model.listing.Thread') as thread:
+				if constructor:
+					thread.side_effect = RuntimeError('Cannot start')
+				else:
+					thread.return_value.start.side_effect = RuntimeError('Cannot start')
+				owner, finished, result = self.start_board()
+				self.assertTrue(finished.wait(5))
+				self.assertEqual([('draft', False)], result)
+				self.wait_for(lambda: alert.call_count == 1)
+		from fman.impl.ui.quick_board import _slots
+		self.assertEqual(2, _slots._value)
+
+	def test_filters_focus_and_copy_do_not_change_composition(self):
+		from fman.ui import QuickTableColumn, QuickTableRow
+		from fman.impl.ui.table import FilterEditor
+		from PyQt5.QtCore import QPoint
+		from PyQt5.QtTest import QTest
+		columns = (QuickTableColumn('Path', 'file_path'), QuickTableColumn('Value', 'numeric'))
+		owner, finished, result = self.start_board(lambda text: (QuickTableRow(('relative-file.txt', 7)),),
+			columns=columns, text='rename-{index}')
+		window = self.window_for(owner)
+		self.settled(window)
+		def check():
+			window.raise_()
+			window.activateWindow()
+			window.input.setFocus()
+			QApplication.processEvents()
+			QTest.keyClick(window.input, Qt.Key_Down)
+			self.assertIs(window.table.view, QApplication.focusWidget())
+			QTest.keyClick(window.table.view, Qt.Key_F, Qt.ControlModifier)
+			self.assertIs(window.input, QApplication.focusWidget())
+			self.assertEqual('rename-{index}', window.input.selectedText())
+			QTest.keyClick(window.input, Qt.Key_Tab)
+			self.assertIs(window.table.view, QApplication.focusWidget())
+			QTest.keyClick(window.table.view, Qt.Key_Backtab, Qt.ShiftModifier)
+			self.assertIs(window.input, QApplication.focusWidget())
+			QTest.keyClick(window.input, Qt.Key_Down, Qt.AltModifier)
+			QApplication.processEvents()
+			menu = window.table.filter_menu
+			self.assertIsNotNone(menu)
+			editor = menu.findChild(FilterEditor)
+			editor.first.setText('not-present')
+			QTest.keyClick(editor.first, Qt.Key_Return)
+			QApplication.processEvents()
+			self.assertEqual(0, window.table.model.rowCount())
+			window.table.clear_all_filters()
+			self.assertEqual('rename-{index}', window.input.text())
+			self.assertEqual(1, window.table.model.rowCount())
+			window.table.view.setCurrentIndex(window.table.model.index(0, 0))
+			window.open_menu(window.table.model.rows[0], 0, window.mapToGlobal(QPoint(20, 50)))
+			self.assertEqual(['Copy Path', '', 'Filter This Column...', 'Clear All Filters'],
+				[action.text() for action in window.menu.actions()])
+			clipboard = QApplication.clipboard()
+			previous = clipboard.text()
+			try:
+				window.menu.setActiveAction(window.menu.actions()[0])
+				QTest.keyClick(window.menu, Qt.Key_Return)
+				self.assertEqual('relative-file.txt', clipboard.text())
+			finally:
+				clipboard.setText(previous)
+			window.table.open_filter_menu(0)
+			QTest.keyClick(window.table.filter_menu, Qt.Key_Escape)
+			self.assertTrue(window.alive.is_set())
+			QTest.keyClick(window.input, Qt.Key_Escape)
+		self.run_in_app(check)
+		self.assertTrue(finished.wait(5))
+		self.assertEqual([('rename-{index}', False)], result)
+
+	def test_parent_close_and_worker_completion_order(self):
+		first, first_done, first_result = self.start_board(text='first')
+		first_window = self.window_for(first)
+		second, second_done, second_result = self.start_board(text='second')
+		second_window = self.window_for(second)
+		self.settled(first_window)
+		self.settled(second_window)
+		self.run_in_app(first_window.close)
+		self.assertTrue(first_done.wait(5))
+		self.assertFalse(second_done.is_set())
+		self.run_in_app(self.main.close)
+		self.assertTrue(second_done.wait(5))
+		self.assertEqual([('first', False)], first_result)
+		self.assertEqual([('second', False)], second_result)
+
+
 class TableIT(QtIT):
+	def test_initial_column_and_empty_refill_use_first_filterable_column(self):
+		def check():
+			from fman.impl.ui.table import Table
+			from fman.impl.ui.table_data import QuickTableColumn, QuickTableRow, TableSchema
+			for filterable, expected in (((False, True), 1), ((False, False), 0), ((True, True), 0)):
+				schema = TableSchema(tuple(QuickTableColumn(str(index), filterable=value)
+					for index, value in enumerate(filterable)))
+				table = Table(schema, schema.snapshot((QuickTableRow(('alpha', 'beta')),)))
+				try:
+					self.assertEqual(expected, table.view.currentIndex().column())
+					table.query.setText('missing')
+					self.assertFalse(table.view.currentIndex().isValid())
+					table.query.clear()
+					self.assertEqual(expected, table.view.currentIndex().column())
+				finally:
+					table.dispose()
+					table.deleteLater()
+		self.run_in_app(check)
+
+	def test_replace_rows_preserves_presentation_and_rebuilds_identity_caches(self):
+		def check():
+			from fman.impl.ui.table import Table
+			from fman.impl.ui.table_data import QuickTableColumn, QuickTableRow, TableSchema
+			from fman.impl.ui.table_filters import compile_filter
+			schema = TableSchema((QuickTableColumn('Name', 'file_name'), QuickTableColumn('Size', 'numeric')))
+			original = schema.snapshot((QuickTableRow(('item10', 1)), QuickTableRow(('item2', 2))))
+			replacement = schema.snapshot((QuickTableRow(('item3', 3)), QuickTableRow(('item20', 4)), QuickTableRow(('other', 9))))
+			table = Table(schema, original)
+			try:
+				table.query.setText('item')
+				predicate = compile_filter(schema.columns[1], 1, '<=', '5')
+				table.set_column_filter(1, predicate)
+				for descending in (False, True):
+					table.set_sort(0, descending)
+					table.view.setCurrentIndex(table.model.index(0, 1))
+					self.assertTrue(table.sort_keys)
+					table.replace_rows(replacement)
+					self.assertTrue(table.settled)
+					self.assertEqual(['item20', 'item3'] if descending else ['item3', 'item20'],
+						[row.cells[0] for row in table.model.rows])
+					self.assertEqual(1, table.view.currentIndex().column())
+					self.assertIs(predicate, table.filters[1])
+					self.assertEqual('item', table.query.text())
+					self.assertEqual((0, 1), table.visible_positions())
+					self.assertTrue(all(key[0] in {id(row) for row in replacement} for key in table.model.matches))
+			finally:
+				table.dispose()
+				table.deleteLater()
+		self.run_in_app(check)
+
+	def test_replace_rows_rejects_pending_previous_projection(self):
+		def check():
+			from itertools import count
+			from unittest.mock import patch
+			from fman.impl.ui.table import Table
+			from fman.impl.ui.table_data import QuickTableColumn, QuickTableRow, TableSchema
+			schema = TableSchema((QuickTableColumn('Name'),))
+			rows = schema.snapshot(tuple(QuickTableRow(('alpha%d' % index,)) for index in range(4)))
+			table = Table(schema, rows)
+			callbacks = []
+			try:
+				with patch('fman.impl.ui.table.perf_counter', side_effect=count().__next__), \
+						patch('fman.impl.ui.table.defer', side_effect=lambda owner, callback: callbacks.append(callback)):
+					table.query.setText('a')
+					self.assertTrue(table.pending)
+					obsolete = callbacks.pop(0)
+					replacement = schema.snapshot((QuickTableRow(('beta',)), QuickTableRow(('gamma',))))
+					table.replace_rows(replacement)
+					obsolete()
+					while callbacks:
+						callbacks.pop(0)()
+				self.assertTrue(table.settled)
+				self.assertEqual({'beta', 'gamma'}, {row.cells[0] for row in table.model.rows})
+			finally:
+				table.dispose()
+				table.deleteLater()
+		self.run_in_app(check)
+
 	def test_panel_escape_returns_focus_to_last_active_pane(self):
 		def check():
 			from fman import DirectoryPane, Window

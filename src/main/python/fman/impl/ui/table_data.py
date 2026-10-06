@@ -251,9 +251,11 @@ class TableSchema:
 	def column(self, index):
 		return self.columns[index]
 
-	def _display(self, row):
+	def _display(self, row, check_canceled=None):
 		cells = list(row.cells)
 		for index in self.typed:
+			if check_canceled is not None:
+				check_canceled()
 			value = cells[index]
 			if row.highlights and row.highlights[index]:
 				raise ValueError('Date and Numeric cells do not accept highlights.')
@@ -269,6 +271,8 @@ class TableSchema:
 					raise ValueError('Date value cannot be displayed: %s' % error) from None
 			else:
 				cells[index] = _number_text(column, value)
+			if check_canceled is not None:
+				check_canceled()
 		return replace(row, cells=tuple(cells), values=row.cells)
 
 	def target(self, row, column):
@@ -287,7 +291,7 @@ class TableSchema:
 			raise ValueError('Expected a native Windows path, not a URL.')
 		return ntpath.normpath(ntpath.join(self.base, value)) if self.base else None
 
-	def snapshot(self, rows):
+	def snapshot(self, rows, *, check_canceled=None):
 		if isinstance(rows, (str, bytes)) or not isinstance(rows, Iterable):
 			raise TypeError('rows must be an iterable of QuickTableRow records.')
 		result, seen = [], set()
@@ -295,6 +299,8 @@ class TableSchema:
 		width = self.num_columns
 		typed_bytes = TYPED_SLOT_BYTES * len(self.typed)
 		for row in rows:
+			if check_canceled is not None:
+				check_canceled()
 			if len(result) >= MAX_ROWS:
 				raise ValueError('Table exceeds the 10,000-row limit.')
 			if not isinstance(row, QuickTableRow):
@@ -312,7 +318,9 @@ class TableSchema:
 							raise ValueError('Only name and path columns accept targets.')
 						absolute_path(target)
 			if self.typed:
-				row = self._display(row)
+				row = self._display(row, check_canceled)
+				if check_canceled is not None:
+					check_canceled()
 			elif row.values:
 				row = replace(row, values=())
 			for cell in row.cells:
@@ -330,6 +338,8 @@ class TableSchema:
 			if size > MAX_TEXT_BYTES:
 				raise ValueError('Table exceeds the 16 MiB text limit.')
 			result.append(row)
+		if check_canceled is not None:
+			check_canceled()
 		return tuple(result)
 
 

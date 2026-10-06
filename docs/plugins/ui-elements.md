@@ -16,6 +16,7 @@ The elements aim for a _buttonless_ experience:
 | [QuickSearch](#quicksearch) | Picking a **single** item from a fuzzy-searched text list | The chosen item |
 | [QuickList](#quicklist) | Navigating, sorting and selecting **multiple** items in a fuzzy-searched text list | The chosen IDs; a handle drives the open list |
 | [QuickTable](#quicktable) | Narrowing a predefined, immutable table with typed columns, per-column filters and fuzzy search | The remaining (visible) rows |
+| [QuickBoard](#quickboard) | Composing one string with a caller-generated typed preview | The exact string and approval/cancellation |
 | [Panel](#panel) | Operation controls and actions docked above the status bar | Values and actions delivered to callbacks |
 | [OutputTextBox](#outputtextbox) | Showing selectable plain-text output that is easy to copy | Nothing; Enter copies the text |
 
@@ -26,12 +27,14 @@ The elements aim for a _buttonless_ experience:
 - **QuickTable** is for results with structure: names, paths, sizes and dates.
   The user narrows the rows down; the caller receives what remains.
   ++ctrl+enter++ is a _Go To_ shortcut on a name or path cell.
+- **QuickBoard** uses its text field to compose a string, not filter the table.
+  The caller updates the preview; column filters only change its presentation.
 - **Panel** holds the inputs of an operation (patterns, options, actions) so the
   result elements stay free of buttons.
 - **OutputTextBox** shows a computed text, such as a hash, ready to copy.
 
 New plug-ins should prefer the Qt-free services: `show_quicksearch`,
-`show_quick_list`, `show_quick_table` and `show_panel`. OutputTextBox is a Qt
+`show_quick_list`, `show_quick_table`, `show_quick_board` and `show_panel`. OutputTextBox is a Qt
 widget hosted in a tool window.
 
 ## QuickSearch
@@ -168,6 +171,80 @@ class ShowColors(DirectoryPaneCommand):
         if result:
             show_status_message(', '.join(result))
 ```
+
+## QuickBoard
+
+<figure class="product-shot" markdown>
+  ![QuickBoard with title Compose a file-name prefix, input Archive_, summary 3 captured names; preview only, and three preview rows](../assets/royifilemanager-ui-quickboard.png)
+  <figcaption><code>title</code> is the draggable header, <code>text</code> initializes the composition field, and <code>summary</code> provides the line above it.</figcaption>
+</figure>
+
+```python
+show_quick_board(*, columns, get_rows, text='', title='', summary='')
+```
+
+A modal, frameless, buttonless string-composition dialog with the same table, columns,
+theme and filter menus as QuickTable. `get_rows(text)` returns `QuickTableRow`
+records for fixed `QuickTableColumn` descriptors. The optional `summary` is
+plain secondary text; the caller owns its meaning and any expression grammar.
+
+The screenshot uses this public-API-only example. Call `compose_prefix()`;
+no owner or controller subclass is needed:
+
+```python
+from fman.ui import QuickTableColumn, QuickTableRow, show_quick_board
+
+def compose_prefix():
+  names = ('report.txt', 'notes.md', 'photo.jpg')
+
+  def get_rows(prefix):
+    return tuple(QuickTableRow((name, prefix + name)) for name in names)
+
+  return show_quick_board(
+    columns=(QuickTableColumn('Original'), QuickTableColumn('Preview')),
+    get_rows=get_rows,
+    text='Archive_',
+    title='Compose a file-name prefix',
+    summary='3 captured names; preview only',
+  )
+```
+
+The result is the composed prefix and its approval flag; this example renames
+no files. The caller decides what to do with an accepted string.
+
+- ++enter++ returns `(text, True)` after the matching preview settles. During
+  work it queues approval for that input revision; another edit or error clears it.
+- ++esc++ or window close returns `(text, False)`, preserving the draft and spaces.
+- Sorting and column filters survive preview replacement and affect display only.
+  Clear All Filters leaves the composed string untouched. Empty previews are valid.
+- ++ctrl+f++ focuses/selects the composition field. Up/Down/Page Up/Page Down
+  focus the table; Tab/Shift+Tab move between them. ++alt+down++ opens the current
+  column filter, whose Enter/Escape keys remain local to the menu.
+- Copy uses displayed cell text. There is no Go To, pane, mutable public handle,
+  row result, or operation button.
+- A text edit or arriving preview closes an open column filter editor, discarding
+  its unapplied draft; committed filters remain active.
+
+The dialog lifetime is host-managed, like QuickTable: plug-in unload alone does
+not close it. Closing the board or main window cancels pending work and rejects
+late results. Earlier QuickBoard callers must remove their `owner` argument.
+The handler, iteration, numeric formatters and validation run off Qt, serially
+with only the latest pending input retained. Keep callbacks bounded and read-only;
+the host cannot forcibly interrupt a blocked call, but checks cancellation
+before and after each formatter. Old rows remain while the counts footer shows
+`Updating...` or a preview error. Any caller exception, including `Task.Canceled`,
+fails the preview: `ValueError` is inline feedback; other exceptions also show
+a dialog-owned alert.
+
+Limits are 1-64 columns, 10,000 rows, the shared 16 MiB preview budget, 4,096 UTF-16
+input units, and 512/2,048 title/summary characters. NUL and multiline initial
+input are rejected. Qt may retain pasted line breaks in a draft: Enter is blocked,
+but Escape returns that invalid draft unchanged. Two open or still-draining boards can exist process-wide;
+saturation cancels the new call without invoking its handler. No persistence or
+background activity exists before opening a board.
+
+For a public-only example and the complete threading/return contract, see the
+[plug-in API reference](https://github.com/RoyiAvital/RoyiFileManager/blob/main/PlugIn.md#qt-free-quickboard).
 
 ## QuickTable
 

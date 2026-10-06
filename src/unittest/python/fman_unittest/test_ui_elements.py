@@ -5,6 +5,61 @@ from unittest.mock import Mock
 from fman.impl.navigation import NavigationRequest, current_request
 
 
+class QuickBoardDataTest(TestCase):
+	def test_public_arguments_fail_before_ui_or_worker_creation(self):
+		from fman.ui import QuickTableColumn, show_quick_board
+		from unittest.mock import patch
+		valid = dict(columns=(QuickTableColumn('Preview'),), get_rows=lambda text: ())
+		invalid = (dict(owner=None), dict(get_rows=None), dict(columns=()), dict(columns=('Name',)),
+			dict(text='a\nb'), dict(text='a\rb'), dict(text='\0'), dict(text='x' * 4097),
+			dict(text='\U0001f600' * 2049), dict(title='x' * 513), dict(summary='x' * 2049))
+		with patch('fman.impl.ui.quick_board._open') as opening:
+			for values in invalid:
+				with self.subTest(values=values), self.assertRaises((TypeError, ValueError)):
+					show_quick_board(**dict(valid, **values))
+			opening.assert_not_called()
+
+	def test_preview_formats_once_and_closes_failed_iterators(self):
+		from fman.impl.ui.quick_board import _prepare
+		from fman.impl.ui.table_data import QuickTableColumn, QuickTableRow, TableSchema
+		formatter = Mock(side_effect=lambda value: 'custom:%d' % value)
+		schema = TableSchema((QuickTableColumn('Value', 'numeric', format=formatter),))
+		rows, error = _prepare(schema, lambda text: (QuickTableRow((7,)),), 'anything', lambda: None)
+		self.assertIsNone(error)
+		self.assertEqual(('custom:7',), rows[0].cells)
+		self.assertEqual((7,), rows[0].values)
+		formatter.assert_called_once_with(7)
+		closed = []
+		def invalid(text):
+			try:
+				yield QuickTableRow(('bad',))
+			finally:
+				closed.append(True)
+		rows, error = _prepare(schema, invalid, '', lambda: None)
+		self.assertIsNone(rows)
+		self.assertFalse(error[0])
+		self.assertEqual([True], closed)
+		from fman import Task
+		for failure in (ValueError('syntax'), RuntimeError('broken'), KeyboardInterrupt('canceled'), Task.Canceled()):
+			rows, error = _prepare(schema, Mock(side_effect=failure), '', lambda: None)
+			self.assertEqual((isinstance(failure, ValueError), str(failure) or type(failure).__name__), error)
+
+	def test_admission_is_global_bounded_and_release_is_idempotent(self):
+		from fman.impl.ui.quick_board import _reserve
+		first, second = _reserve(), _reserve()
+		try:
+			self.assertIsNotNone(first)
+			self.assertIsNotNone(second)
+			self.assertIsNone(_reserve())
+		finally:
+			first()
+			first()
+			second()
+		third = _reserve()
+		self.assertIsNotNone(third)
+		third()
+
+
 class QuickListDataTest(TestCase):
 	def test_metadata_value_forms_and_hashable_items(self):
 		from fman.impl.ui import ListItem
@@ -84,6 +139,46 @@ class QuickListDataTest(TestCase):
 
 
 class TableDataTest(TestCase):
+	def test_snapshot_checks_cancellation_during_iteration_and_after_formatting(self):
+		from fman.impl.ui.table_data import QuickTableColumn, QuickTableRow, TableSchema
+		from fman.impl.model.listing import Canceled
+		consumed = []
+		def rows():
+			for value in range(10):
+				consumed.append(value)
+				yield QuickTableRow((str(value),))
+		check = Mock(side_effect=[None, Canceled()])
+		with self.assertRaises(Canceled):
+			TableSchema((QuickTableColumn('Text'),)).snapshot(rows(), check_canceled=check)
+		self.assertEqual([0, 1], consumed)
+		check = Mock(side_effect=[None, None, Canceled()])
+		formatter = Mock(return_value='formatted')
+		schema = TableSchema((QuickTableColumn('Value', 'numeric', format=formatter),))
+		with self.assertRaises(Canceled):
+			schema.snapshot((QuickTableRow((7,)),), check_canceled=check)
+		formatter.assert_called_once_with(7)
+		self.assertEqual(3, check.call_count)
+
+	def test_cancellation_stops_remaining_formatters_in_the_row(self):
+		from fman.impl.ui.table_data import QuickTableColumn, QuickTableRow, TableSchema
+		from fman.impl.model.listing import Canceled
+		calls = []
+		def formatter(value):
+			calls.append(value)
+			return str(value)
+		def check():
+			if calls:
+				raise Canceled()
+		schema = TableSchema((QuickTableColumn('First', 'numeric', format=formatter),
+			QuickTableColumn('Second', 'numeric', format=formatter)))
+		rows = (QuickTableRow((1, 2)),)
+		with self.assertRaises(Canceled):
+			schema.snapshot(rows, check_canceled=check)
+		self.assertEqual([1], calls)
+		calls.clear()
+		self.assertEqual(('1', '2'), schema.snapshot(rows)[0].cells)
+		self.assertEqual([1, 2], calls)
+
 	def test_structured_panel_fields(self):
 		from fman.impl.ui.table_data import DateField, IntegerField, Select, Separator, panel_records, validate_field_value
 		options = tuple((str(index), 'Type %d' % index) for index in range(11))

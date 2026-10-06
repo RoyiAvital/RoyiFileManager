@@ -56,13 +56,14 @@ class ScanObservation:
 
 
 class LatestJobs:
-	def __init__(self, capacity=1, cooperative=False):
+	def __init__(self, capacity=1, cooperative=False, on_closed=None):
 		self._capacity = capacity
 		self._cooperative = cooperative
 		self._lock = Lock()
 		self._active = set()
 		self._pending = None
 		self._closed = False
+		self._on_closed = on_closed
 
 	def submit(self, work, deliver, canceled_callback=None):
 		failed = None
@@ -136,9 +137,14 @@ class LatestJobs:
 			with self._lock:
 				self._active.remove(canceled)
 				failed = self._start()
-			if failed is not None:
-				job, error = failed
-				job[1](None, error)
+				closed_callback = self._take_closed_callback()
+			try:
+				if failed is not None:
+					job, error = failed
+					job[1](None, error)
+			finally:
+				if closed_callback is not None:
+					closed_callback()
 
 	def cancel(self):
 		with self._lock:
@@ -153,7 +159,17 @@ class LatestJobs:
 			retired, self._pending = self._pending, None
 			for canceled in self._active:
 				canceled.set()
-		self._retire(retired)
+			closed_callback = self._take_closed_callback()
+		try:
+			self._retire(retired)
+		finally:
+			if closed_callback is not None:
+				closed_callback()
+
+	def _take_closed_callback(self):
+		if self._closed and not self._active:
+			callback, self._on_closed = self._on_closed, None
+			return callback
 
 
 @dataclass(frozen=True, slots=True)

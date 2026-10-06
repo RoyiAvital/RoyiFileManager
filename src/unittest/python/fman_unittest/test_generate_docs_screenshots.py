@@ -401,7 +401,57 @@ assert not context.main_window.isVisible(), 'Capture left its main window open'
 			'royifilemanager-pack-archive.png',
 			'royifilemanager-ui-quicktable.png',
 			'royifilemanager-ui-quicktable-filter.png',
+			'royifilemanager-ui-quickboard.png',
 		), outputs)
+
+	def test_quick_board_capture_shows_arguments_without_desktop_grab(self):
+		script = '''
+import sys
+from unittest.mock import patch
+sys.path.insert(0, sys.argv[1])
+import generate_docs_screenshots as screenshots
+from fman.impl.application_context import get_application_context
+from fman.impl.ui.quick_board import QuickBoardWindow
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QScreen
+
+context = get_application_context()
+closed, captured = [], []
+context.main_window.closed.connect(lambda: closed.append(True))
+original = QuickBoardWindow.grab
+def grab(window):
+    assert window.input.text() == 'Archive_'
+    assert window.windowTitle() == 'Compose a file-name prefix'
+    assert window.summary.content == '3 captured names; preview only'
+    assert tuple(row.cells for row in window.table.model.rows) == (
+        ('report.txt', 'Archive_report.txt'), ('notes.md', 'Archive_notes.md'),
+        ('photo.jpg', 'Archive_photo.jpg'))
+    assert window.summary.isVisible() and window.input.isVisible()
+    assert window.summary.text() == window.summary.content
+	assert window.header.isVisible() and window.header.content == window.windowTitle()
+	assert window.windowFlags() & Qt.FramelessWindowHint
+	assert window.status.content == '3 / 3 rows'
+    image = original(window)
+	assert image.height() == round(window.height() * image.devicePixelRatio()), 'Wrong widget bounds'
+    captured.append(True)
+    return image
+args = screenshots._parse_args([
+    '--_source-child', '--_capture', 'quick-board', '--output-dir', sys.argv[2]
+])
+with patch.object(QuickBoardWindow, 'grab', grab), patch.object(QScreen, 'grabWindow',
+	side_effect=AssertionError('Desktop capture is forbidden')):
+    assert screenshots._capture_source_child(args) == 0
+assert captured == [True] and closed == [True], 'Capture or normal cleanup was skipped'
+screenshots._validate_image(screenshots._source_outputs(args.output_dir, 'quick-board')[0])
+'''
+		with TemporaryDirectory() as directory, patch.object(screenshots, 'WORK_DIR', Path(directory)):
+			settings = screenshots._prepare_settings('quick-board')
+			environment = screenshots._source_environment(settings)
+			environment['QT_QPA_PLATFORM'] = 'windows'
+			result = subprocess.run([sys.executable, '-B', '-X', 'faulthandler', '-c', dedent(script.expandtabs(4)),
+				str(SCRIPT.parent), str(settings.parent / 'output')], cwd=ROOT, env=environment,
+				capture_output=True, text=True, timeout=45)
+			self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
 	def test_text_capture_generates_its_own_python_sample(self):
 		with TemporaryDirectory() as temporary_directory, \

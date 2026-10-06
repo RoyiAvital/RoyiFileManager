@@ -502,6 +502,17 @@ class Table(QWidget):
 		visible = {id(row) for row in self.model.rows}
 		return tuple(index for index, row in enumerate(self.rows) if id(row) in visible)
 
+	def replace_rows(self, snapshot):
+		require_ui_thread()
+		if self.closed:
+			return
+		self.close_filter_menu()
+		self.generation += 1
+		self.rows = snapshot
+		self.sort_keys.clear()
+		self.model.matches = {}
+		self.project()
+
 	def current_changed(self, current, previous):
 		if current.isValid():
 			self.last_column = current.column()
@@ -717,7 +728,7 @@ class Table(QWidget):
 			self.model.replace(visible, matches)
 			if visible:
 				index = next((index for index, row in enumerate(visible) if current and row is current[0]), 0)
-				self.view.setCurrentIndex(self.model.index(index, current[1] if current else 0))
+				self.view.setCurrentIndex(self.model.index(index, current[1] if current else self.last_column))
 				self.view.verticalScrollBar().setValue(anchor)
 			self.counts.setText(self.count_text(len(visible), len(rows)))
 			self.pending = False

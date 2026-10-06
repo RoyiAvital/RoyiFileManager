@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Plug-in API: `fman.ui.show_quick_board` composes one string with a read-only,
+  caller-generated typed preview. It preserves the draft on cancellation,
+  keeps sorting/filtering presentation-only, and bounds background work across
+  open and closing dialogs. No caller-supplied owner is required. The frameless
+  dialog has a draggable title, uses the QuickTable theme, and shares one footer
+  for row counts and preview status.
 - Favorites Manager shows when each favorite was added and last opened, and how
   often Go To opened it. The values are saved in `Favorites.json`;
   `Ctrl+F1`–`Ctrl+F5` sort by Name, Path, Added, Last opened or Opened.
@@ -16,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- QuickTable initially focuses the first filterable column (column zero if none
+  are filterable), and retains the last current column when empty results refill.
 - QuickList: the sort bar is replaced by a footer listing the `Ctrl+F` keys with
   the current sort; a third press of a sort key restores the original order.
   Sort arrows have reserved space, so no text moves. Metadata fields are
