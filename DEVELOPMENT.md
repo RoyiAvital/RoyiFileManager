@@ -63,9 +63,24 @@ the frozen Everything files, and `clean`/`doc` do not download dependencies.
 These commands therefore require internet access on their first run; verified
 cached files can be reused offline.
 Transient HTTP download failures are retried three times, after 1, 2, and 4
-seconds. SHA-256 checks remain mandatory; permanent HTTP errors and hash
-mismatches fail the build. A persistent server outage still requires a later
-retry of the failed workflow.
+seconds. SHA-256 checks remain mandatory. Sources are tried in order; a source
+with a permanent HTTP error, network error or hash mismatch is rejected and the
+next one is tried. The build fails only when no source provides a verified file.
+Everything falls back to an unmodified copy of the official ZIP, attached to
+this repository's [v0.10.2 release](https://github.com/RoyiAvital/RoyiFileManager/releases/tag/v0.10.2),
+because voidtools has answered HTTP 403 to GitHub-hosted runners. 7-Zip has one source.
+A persistent outage of every source still requires a later retry of the workflow.
+
+When `EVERYTHING_VERSION` changes, attach the new official ZIP to a release,
+unmodified, and update the mirror URL in `EVERYTHING_ARCHIVE_URLS`. Check its
+SHA-256 against `EVERYTHING_ARCHIVE_SHA256` before uploading:
+
+```powershell
+$version = '1.4.1.1032'
+$zip = "target/Everything-$version.x64.zip"
+Invoke-WebRequest "https://www.voidtools.com/Everything-$version.x64.zip" -OutFile $zip
+(Get-FileHash $zip -Algorithm SHA256).Hash
+```
 
 Focused Everything checks use `build._environment()` for the child process:
 
@@ -540,7 +555,7 @@ running untouched beside ours. Findings are recorded in
 | Symptom | Cause and fix |
 | --- | --- |
 | `python build.py doc` reports `No module named mkdocs` | The environment predates the documentation dependencies. Run `conda env update -f environment.yml`. If `mkdocs` then fails on `click`, run `micromamba update click --no-deps`. |
-| `run`, `test` or `freeze` fails while downloading `7za.exe` | The first run needs internet access. Transient HTTP errors are retried; rerun after an outage. A hash mismatch always fails. |
+| `run`, `test` or `freeze` fails while downloading `7za.exe` or Everything | The first run needs internet access. Transient HTTP errors are retried and Everything has a verified fallback source. The error lists each rejected source; rerun after an outage. A file that fails its SHA-256 check is never used. |
 | A focused test cannot import `fman`, `core` or a plug-in | Run it with the repository environment, as shown below. A terminal's previous `PYTHONPATH` is not enough. |
 | A Qt test opens windows or behaves differently from CI | Set `QT_QPA_PLATFORM=offscreen`, as `build.py test` does. Use `windows` only for native checks. |
 | `build.py test` stalls | Use the last printed test name and the thread dump emitted every two minutes. Each discovery group times out after ten minutes. |

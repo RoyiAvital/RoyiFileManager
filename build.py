@@ -9,7 +9,7 @@ import sys
 from tempfile import TemporaryDirectory
 import time
 from urllib.error import HTTPError
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 from zipfile import ZIP_DEFLATED, ZipFile
 
 from src.main.python.fbs_runtime.build_settings import load_build_settings as _load_build_settings
@@ -45,6 +45,12 @@ SEVEN_ZIP_BINARY_SHA256 = \
 EVERYTHING_VERSION = '1.4.1.1032'
 EVERYTHING_DIRECTORY = ROOT / 'src/main/resources/base/Plugins/Everything/bin'
 EVERYTHING_ARCHIVE_URL = f'https://www.voidtools.com/Everything-{EVERYTHING_VERSION}.x64.zip'
+# voidtools has answered HTTP 403 to GitHub-hosted runners; the mirror is an unmodified release asset.
+EVERYTHING_ARCHIVE_URLS = (
+	EVERYTHING_ARCHIVE_URL,
+	'https://github.com/RoyiAvital/RoyiFileManager/releases/download/'
+	f'v0.10.2/Everything-{EVERYTHING_VERSION}.x64.zip',
+)
 EVERYTHING_LICENSE = EVERYTHING_DIRECTORY.parent / 'licenses/Everything.txt'
 EVERYTHING_ARCHIVE_SHA256 = \
 	'698df475ec44e638f66f1b6a32d28fea613cec78d3b6310e6abe53431eeb940c'
@@ -54,6 +60,7 @@ EVERYTHING_LICENSE_SHA256 = \
 	'252a9d0a811b6c648202d3660493d859fb0a30a3d520a4d3dbadfec72b6a3910'
 DOWNLOAD_SETTLE_SECONDS = 0.25
 DOWNLOAD_RETRY_DELAYS = (1, 2, 4)
+DOWNLOAD_USER_AGENT = f'{APP_NAME}-build (+https://github.com/RoyiAvital/RoyiFileManager)'
 NATIVE_PARSER_DIRECTORY = ROOT / 'src' / 'main' / 'c'
 NATIVE_PARSER_BINARY = NATIVE_PARSER_DIRECTORY / '_fsparser.pyd'
 
@@ -185,30 +192,46 @@ def _verify_sha256(path, expected, description):
 		)
 
 
-def _download(url, destination, expected_sha256):
-	for attempt in range(len(DOWNLOAD_RETRY_DELAYS) + 1):
-		verified = False
+def _fetch(url, destination):
+	"""Write url to destination, retrying transient HTTP errors."""
+	request = Request(url, headers={'User-Agent': DOWNLOAD_USER_AGENT})
+	for delay in (*DOWNLOAD_RETRY_DELAYS, None):
 		try:
-			with urlopen(url, timeout=120) as response, \
+			with urlopen(request, timeout=120) as response, \
 					destination.open('wb') as output:
 				shutil.copyfileobj(response, output)
 				output.flush()
 				os.fsync(output.fileno())
 			time.sleep(DOWNLOAD_SETTLE_SECONDS)
-			_verify_sha256(destination, expected_sha256, url)
-			verified = True
 			return
 		except HTTPError as error:
 			error.close()
-			if error.code not in (408, 429, 500, 502, 503, 504) or \
-					attempt == len(DOWNLOAD_RETRY_DELAYS):
+			if error.code not in (408, 429, 500, 502, 503, 504) or delay is None:
 				raise
-			delay = DOWNLOAD_RETRY_DELAYS[attempt]
 			print(f'HTTP {error.code} downloading {url}; retrying in {delay}s...')
+		time.sleep(delay)
+
+
+def _download(urls, destination, expected_sha256):
+	"""Keep the first source, in order, whose file matches the SHA-256 pin."""
+	failures = []
+	for url in urls:
+		verified = False
+		try:
+			_fetch(url, destination)
+			actual = _sha256(destination)
+			verified = actual == expected_sha256
+			if verified:
+				return
+			failure = f'SHA-256 {actual or "of an unreadable file"}, expected {expected_sha256}'
+		except OSError as error:
+			failure = str(error)
 		finally:
 			if not verified:
 				destination.unlink(missing_ok=True)
-		time.sleep(delay)
+		failures.append(f'{url}: {failure}')
+		print(f'Download rejected: {failures[-1]}')
+	raise SystemExit('No source provided a verified download:\n  ' + '\n  '.join(failures))
 
 
 def _ensure_7za(destination=SEVEN_ZIP_PATH):
@@ -222,9 +245,9 @@ def _ensure_7za(destination=SEVEN_ZIP_PATH):
 		archive = temporary_directory / '7zip-extra.7z'
 		extracted = temporary_directory / 'extracted'
 		_download(
-			SEVEN_ZIP_EXTRACTOR_URL, extractor, SEVEN_ZIP_EXTRACTOR_SHA256
+			(SEVEN_ZIP_EXTRACTOR_URL,), extractor, SEVEN_ZIP_EXTRACTOR_SHA256
 		)
-		_download(SEVEN_ZIP_ARCHIVE_URL, archive, SEVEN_ZIP_ARCHIVE_SHA256)
+		_download((SEVEN_ZIP_ARCHIVE_URL,), archive, SEVEN_ZIP_ARCHIVE_SHA256)
 		subprocess.run(
 			[
 				str(extractor), 'x', str(archive), f'-o{extracted}', '-y'
@@ -274,7 +297,7 @@ def _ensure_everything(destination=EVERYTHING_DIRECTORY):
 		if needs_binary:
 			print(f'Downloading verified Everything {EVERYTHING_VERSION} x64 portable runtime...')
 			archive = staging / 'Everything.zip'
-			_download(EVERYTHING_ARCHIVE_URL, archive, EVERYTHING_ARCHIVE_SHA256)
+			_download(EVERYTHING_ARCHIVE_URLS, archive, EVERYTHING_ARCHIVE_SHA256)
 			with ZipFile(archive) as zipped, zipped.open('everything.exe') as source, \
 					(staging / 'Everything.exe').open('wb') as output:
 				shutil.copyfileobj(source, output)

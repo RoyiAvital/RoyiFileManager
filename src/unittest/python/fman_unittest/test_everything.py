@@ -740,7 +740,7 @@ class EverythingBuildTest(TestCase):
 			license_source.write_bytes(license_text)
 			license_destination = destination.parent / 'licenses/Everything.txt'
 			def download(url, path, expected):
-				self.assertEqual(build.EVERYTHING_ARCHIVE_URL, url)
+				self.assertEqual(build.EVERYTHING_ARCHIVE_URLS, url)
 				with ZipFile(path, 'w') as zipped:
 					zipped.writestr('everything.exe', binary)
 			with patch.object(build, 'EVERYTHING_BINARY_SHA256', hashlib.sha256(binary).hexdigest()), \
@@ -766,6 +766,64 @@ class EverythingBuildTest(TestCase):
 	def test_reviewed_license_matches_pin(self):
 		import build
 		build._verify_everything_license(build.EVERYTHING_LICENSE)
+
+	def test_official_archive_is_tried_before_the_mirror(self):
+		import build
+		official, mirror = build.EVERYTHING_ARCHIVE_URLS
+		self.assertEqual(build.EVERYTHING_ARCHIVE_URL, official)
+		self.assertEqual('https://github.com/RoyiAvital/RoyiFileManager/releases/download/'
+			f'v0.10.2/Everything-{build.EVERYTHING_VERSION}.x64.zip', mirror)
+
+	def test_download_falls_back_to_the_next_verified_source(self):
+		import build
+		from io import BytesIO
+		from urllib.error import HTTPError
+		payload = b'pinned archive'
+		responses = {
+			'https://official/a.zip': [503, 403],
+			'https://tampered/a.zip': [b'tampered'],
+			'https://mirror/a.zip': [payload],
+		}
+		requests = []
+		def urlopen(request, timeout):
+			requests.append((request.full_url, request.get_header('User-agent')))
+			response = responses[request.full_url].pop(0)
+			if isinstance(response, int):
+				raise HTTPError(request.full_url, response, 'error', {}, BytesIO())
+			return BytesIO(response)
+		with TemporaryDirectory() as temporary, \
+				patch.object(build, 'urlopen', side_effect=urlopen), \
+				patch.object(build, 'DOWNLOAD_RETRY_DELAYS', (0,)), \
+				patch.object(build, 'DOWNLOAD_SETTLE_SECONDS', 0):
+			destination = Path(temporary) / 'a.zip'
+			build._download(tuple(responses), destination, hashlib.sha256(payload).hexdigest())
+			self.assertEqual(payload, destination.read_bytes())
+		self.assertEqual(['https://official/a.zip'] * 2 + ['https://tampered/a.zip', 'https://mirror/a.zip'],
+			[url for url, _ in requests])
+		self.assertEqual({build.DOWNLOAD_USER_AGENT}, {agent for _, agent in requests})
+
+	def test_download_fails_when_no_source_is_verified(self):
+		import build
+		from io import BytesIO
+		from urllib.error import HTTPError, URLError
+		def urlopen(request, timeout):
+			if 'official' in request.full_url:
+				raise HTTPError(request.full_url, 403, 'Forbidden', {}, BytesIO())
+			if 'offline' in request.full_url:
+				raise URLError('unreachable')
+			return BytesIO(b'tampered')
+		urls = ('https://official/a.zip', 'https://offline/a.zip', 'https://mirror/a.zip')
+		with TemporaryDirectory() as temporary, \
+				patch.object(build, 'urlopen', side_effect=urlopen), \
+				patch.object(build, 'DOWNLOAD_SETTLE_SECONDS', 0):
+			destination = Path(temporary) / 'a.zip'
+			with self.assertRaises(SystemExit) as raised:
+				build._download(urls, destination, 'pinned')
+			self.assertFalse(destination.exists())
+		message = str(raised.exception)
+		for expected in ('official/a.zip: HTTP Error 403', 'offline/a.zip: <urlopen error unreachable>',
+				'mirror/a.zip: SHA-256', 'expected pinned'):
+			self.assertIn(expected, message)
 
 	def test_published_files_inherit_destination_permissions(self):
 		import build
