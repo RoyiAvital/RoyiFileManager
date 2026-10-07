@@ -8,8 +8,8 @@ QuickView previews the file under the cursor over the other pane.
 Both folder locations stay unchanged.
 
 !!! danger "QuickView Availability"
-  QuickView previews files on local drives and network shares, not inside archives
-  or other virtual file systems.
+    QuickView previews files on local drives and network shares, not inside archives
+    or other virtual file systems.
 
 ### QuickView for Images
 
@@ -22,6 +22,24 @@ Both folder locations stay unchanged.
 - Fit, zoom and pan the image.
 - Show it at 100% or copy its decoded pixels.
 - Animated images show a still frame. Format availability depends on the bundled Qt codecs.
+
+### QuickView for PDF Files
+
+- Read PDF files from page 1, fitted to the view.
+- Scroll through all pages, or type a page number and press ++enter++.
+- A bundled helper process renders the pages. No PDF reader is needed.
+- Password-protected and damaged files show an error.
+
+| Key | Action |
+| --- | --- |
+| ++f++ | Fit the page |
+| ++w++ | Fit the width |
+| ++plus++ / ++minus++ or ++ctrl++ + wheel | Zoom from 25% to 400% |
+| Arrows, ++page-up++ / ++page-down++, ++home++ / ++end++ | Scroll, or jump to the start or end |
+| ++tab++ or ++esc++ | Return to the file pane |
+
+Files are limited to 64 MiB and 2,000 pages.
+Text selection, search, forms and printing are not available.
 
 ### QuickView for Text based Files
 
@@ -262,7 +280,7 @@ See [File Hash usage](https://github.com/RoyiAvital/RoyiFileManager/blob/main/sr
 
 ## Checksum Files
 
-Press ++ctrl+p++ and run **Generate checksum file** or **Verify checksum file**.
+Press ++ctrl+shift+p++ and run **Generate checksum file** or **Verify checksum file**.
 Both commands are bundled with the application.
 
 - Generate from marked files and folders, recursively. With no marked selection,

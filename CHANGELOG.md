@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-10-07
+
+This release added a fully feature _Batch File Renamer_ with options to filter and
+sort the files coupled with Python's `f string` like syntax.  
+The motivation for the plug in is to be a use case for the new `QuickBoard` UI 
+element.  
+In addition the release reduced greatly the latency to start copying large number
+of files.
+
 ### Added
 
 - Plug-in API: `fman.ui.show_quick_board` composes one string with a read-only,
@@ -48,7 +57,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   task-local identities with conservative provider fallbacks. Overwrite decisions
   and destination creation retain prepare-before-execute ordering.
   Move supports missing destination folders, including nested paths, without
-  creating them before preparation succeeds.
+  creating them before preparation succeeds. If destination creation fails,
+  the batch stops with one error instead of attempting each dependent transfer.
+- Copy and Move: after **Yes to all**, skipped errors are reported once when the
+  operation ends, is refused or is canceled, listing the first ten. If preparation
+  leaves nothing to transfer, the destination folder is not created.
 - Public file selection batches Qt selection updates, avoiding per-file UI stalls
   when restoring large rename results. Explicit-overwrite Move remains unchanged.
 - QuickTable initially focuses the first filterable column (column zero if none
@@ -66,6 +79,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Saved application and plug-in JSON uses two-space indentation and a final
   newline. Formatting is applied on writes; unchanged plug-in settings still
   avoid rewrites.
+
+### Fixed
+
+- Copying to an unavailable drive or network share shows one clear error instead
+  of a plug-in error.
 
 ### Performance
 
@@ -94,7 +112,18 @@ preparation is included, not extra time to add.
 
 These are retained Copy measurements, not new runs after selecting vanilla A
 or Move timings. Both cases run only with `python build.py measure --full`.
-See the [saved comparison and limitations](Done/CodeReview010.md#three-way-reference).
+See the [saved comparison and limitations](Done/FileOperations001.md#three-way-reference).
+
+### Documentation
+
+- Tools documents QuickView PDF previews, shows the QuickView availability
+  notice that rendered empty and names the Command Center shortcut for the
+  checksum commands.
+- Configuration documents the Theme.css selectors and disabling a shortcut with
+  `none`; it no longer lists the ignored Fuzzy Find `include_hidden` setting.
+- The API overview attributes `get_chosen_files()` to pane commands. The README
+  names the Process Pane command correctly and the Fuzzy Find README has a
+  distinct title.
 
 ## [0.14.0] - 2026-10-05
 

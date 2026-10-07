@@ -979,6 +979,16 @@ class LocalFileSystemTest(TestCase):
 				with self.subTest(path=path), self.assertRaises(NotADirectoryError):
 					self._fs._get_expected_st_dev(_urlpath(path), {})
 			self.assertEqual(b'keep', blocked.read_bytes())
+	def test_makedirs_reports_missing_drive_or_share_before_recursion(self):
+		for path, drive in (('Q:/missing/new', 'Q:'), ('//server/share/missing/new', '\\\\server\\share')):
+			with self.subTest(path=path), \
+					patch('core.fs.local.os.path.isdir', return_value=False) as available, \
+					patch.object(self._fs, 'mkdir') as create:
+				with self.assertRaises(FileNotFoundError) as raised:
+					self._fs.makedirs(path)
+				available.assert_called_once_with(drive + '\\')
+				create.assert_not_called()
+				self.assertEqual(drive, raised.exception.filename)
 	def test_expected_device_preserves_lookup_errors_and_stops_at_roots(self):
 		for path, error in (
 			('C:/denied/new', PermissionError('denied')),

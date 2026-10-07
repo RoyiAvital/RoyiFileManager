@@ -1,4 +1,4 @@
-# Find Files
+# Fuzzy Find Files
 
 Finds files by name in a separate Quicksearch dialog. Current-folder Find reuses
 the committed pane snapshot when possible without changing the pane's filter,

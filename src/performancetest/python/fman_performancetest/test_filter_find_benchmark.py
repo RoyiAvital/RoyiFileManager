@@ -667,6 +667,7 @@ class CopyBenchmarkTest(TestCase):
 		self.assertFalse(any(test['workload'] == 'copy' for test in catalog['tests']))
 		tests = [test for test in catalog['full_tests'] if test['workload'] == 'copy']
 		self.assertEqual(['copy.flat', 'copy.tree'], [test['id'] for test in tests])
+		self.assertEqual([2, 2], [test['revision'] for test in tests])
 		for test, count, size in zip(tests, (10000, 1000), (4096, 8192)):
 			self.assertEqual(count, catalog['fixtures'][test['fixture']]['files'])
 			self.assertEqual(size, catalog['fixtures'][test['fixture']]['bytes_per_file'])
@@ -678,6 +679,10 @@ class CopyBenchmarkTest(TestCase):
 			dict(action_id='copy.transfer', wall_ms=100, first_file_ms=5, preparation_ms=4, prompt_ms=1,
 				throughput_mib_s=1, queued_task_count=15001, copied_count=15000, bytes_copied=15000 * 8192)])
 		copy.validate_result(result, 15000, 8192)
+		broken = deepcopy(result)
+		broken['samples'][0]['input_ready_ms'] = 1
+		with self.assertRaisesRegex(ValueError, 'input-ready'):
+			copy.validate_result(broken, 15000, 8192)
 		metrics = records.summarize(dict(samples=[dict(ui=result)]))
 		self.assertEqual(5, metrics['copy.transfer.first_file_ms']['median'])
 		for field, value in (('copied_count', 1), ('first_file_ms', 101), ('wall_ms', float('nan'))):
@@ -703,12 +708,31 @@ class CopyBenchmarkTest(TestCase):
 		import os
 		import subprocess
 		code = """
+from contextlib import contextmanager
+import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 from fman_performancetest import fixtures, copy
+offset = [0.0]
+clock = copy.perf_counter
+@contextmanager
+def isolated_scratch(*args, **kwargs):
+	with TemporaryDirectory(*args, **kwargs) as temporary:
+		os.environ['ROYIFILEMANAGER_USER_SETTINGS'] = str(Path(temporary) / 'UserSettings')
+		from fman.impl.view import FileListView
+		select = FileListView.selectAll
+		def measured_selection(view):
+			offset[0] += .25
+			return select(view)
+		with patch.object(FileListView, 'selectAll', measured_selection):
+			yield temporary
 with TemporaryDirectory() as temporary:
-    fixture = fixtures.prepare(temporary, 'copy-smoke', dict(revision=1, kind='copy', files=8, seed=1732, bytes_per_file=8192))
-    raise SystemExit(copy.child(Path(fixture['directory']), [1280, 800], 8, 8192))
+	fixture = fixtures.prepare(temporary, 'copy-smoke', dict(revision=1, kind='copy', files=8, seed=1732, bytes_per_file=8192))
+	with patch.object(copy, 'TemporaryDirectory', isolated_scratch), patch.object(copy, 'perf_counter', lambda: clock() + offset[0]):
+		result = copy.child(Path(fixture['directory']), [1280, 800], 8, 8192)
+	assert offset[0] == .25
+	raise SystemExit(result)
 """
 		env = dict(os.environ, QT_QPA_PLATFORM='windows')
 		env['PYTHONPATH'] = os.pathsep.join((str(SCRIPT.parents[1]), env.get('PYTHONPATH', '')))
@@ -718,6 +742,11 @@ with TemporaryDirectory() as temporary:
 		self.assertTrue(payload['verified'])
 		self.assertEqual(8, payload['samples'][0]['selected_count'])
 		self.assertEqual(8, payload['samples'][1]['copied_count'])
+		selection = payload['samples'][0]
+		self.assertGreaterEqual(selection['paint_ms'], 250)
+		self.assertGreaterEqual(selection['input_ready_ms'], selection['paint_ms'])
+		metrics = records.summarize(dict(samples=[dict(ui=payload)]))
+		self.assertEqual(selection['input_ready_ms'], metrics['copy.selection.input_ready_ms']['median'])
 
 	def test_native_copy_tree_preserves_structure_and_selected_roots(self):
 		import os

@@ -1,7 +1,7 @@
 # Human-maintained definitions. The runner never rewrites this file.
 schema_version: 1
 suite_id: royifilemanager.desktop
-suite_revision: 13
+suite_revision: 14
 protocol:
   repetitions: 3
   cache: warm
@@ -79,5 +79,5 @@ full_tests:
   - {id: fuzzy.medium, revision: 2, workload: fuzzy, fixture: flat-medium-v1}
   - {id: quickview.medium, revision: 3, workload: quickview, fixture: flat-medium-v2}
   - {id: selection.medium, revision: 5, workload: selection, fixture: flat-medium-v1, selection_count: 1000}
-  - {id: copy.flat, revision: 1, workload: copy, fixture: copy-flat-v1}
-  - {id: copy.tree, revision: 1, workload: copy, fixture: copy-tree-v1}
+  - {id: copy.flat, revision: 2, workload: copy, fixture: copy-flat-v1}
+  - {id: copy.tree, revision: 2, workload: copy, fixture: copy-tree-v1}

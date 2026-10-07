@@ -235,6 +235,15 @@ ordinary provider metadata and directory traversal.
 
 Copy and Move can create missing destination folders, including nested folders.
 Creation waits until preparation succeeds, so cancelling preparation creates nothing.
+If destination creation fails, the batch stops with one error. Continue remains
+available for independent file failures, not this prerequisite failure.
+After **Yes to all**, later errors are skipped without prompts. One summary lists
+the first ten when the operation ends, is refused or is canceled, including during
+preparation. If preparation leaves nothing to transfer, for example because every
+source is missing, no destination folder is created. A folder created before
+later transfers fail is kept.
+Cancellation retains completed items; it does not produce a completion summary
+or roll back changes already made.
 
 Regular-file copies write to a sibling temporary file before publishing output.
 Allow free space for the complete new file in addition to an existing destination.

@@ -34,10 +34,12 @@ class ShowCurrentFile(DirectoryPaneCommand):
 | `get_path()` | Current directory URL |
 | `get_file_under_cursor()` | Current file URL, or `None` |
 | `get_selected_files()` | Selected file URLs |
-| `get_chosen_files()` | Selection, then cursor fallback |
 | `set_path(url)` | Request navigation |
 | `reload()` | Reload the current location |
 | `run_command(name, args)` | Run a pane command |
+
+A `DirectoryPaneCommand` also has `self.get_chosen_files()`. It returns the
+selected files, else the file under the cursor, else `[]`.
 
 Paths in the API are URLs. Use `fman.url` helpers to convert them.
 

@@ -9,8 +9,19 @@ from stat import S_ISREG
 import fman.fs
 import os
 
+_REPORTED_ERRORS = 10
+_REPORTED_ERROR_LENGTH = 200
+
 class ArchiveUpdateError(OSError):
 	pass
+
+def _describe_error(error):
+	# Providers may wrap the OS error, e.g. FileExistsError(path) from WinError 183.
+	for candidate in (error, error.__cause__):
+		strerror = getattr(candidate, 'strerror', None)
+		if strerror:
+			return strerror[0].lower() + strerror[1:]
+	return error.__class__.__name__
 
 class FileTreeOperation(Task):
 	def __init__(
@@ -28,10 +39,14 @@ class FileTreeOperation(Task):
 		self._fs = fs
 		self._src_dir = dirname(files[0])
 		self._tasks = []
+		self._destination_task = None
 		self._num_files = 0
 		self._cannot_move_to_self_shown = False
 		self._override_all = None
 		self._ignore_exceptions = False
+		self._skipped_errors = 0
+		self._suppressed_errors = 0
+		self._skipped_examples = []
 		self._ancestor_identities = {}
 	def _transfer(self, src, dest):
 		raise NotImplementedError()
@@ -44,6 +59,13 @@ class FileTreeOperation(Task):
 	def _postprocess_directory(self, src_dir_path):
 		return None
 	def __call__(self):
+		try:
+			self._prepare_and_transfer()
+		except Task.Canceled:
+			self._report_skipped_errors()
+			raise
+		self._report_skipped_errors()
+	def _prepare_and_transfer(self):
 		self.set_text('Gathering files...')
 		try:
 			gathered = self._gather_files()
@@ -52,7 +74,7 @@ class FileTreeOperation(Task):
 			return
 		finally:
 			self._ancestor_identities.clear()
-		if not gathered:
+		if not gathered or self._tasks == [self._destination_task]:
 			return
 		self.set_size(sum(task.get_size() for task in self._tasks))
 		for i, task in enumerate(self._iter(self._tasks)):
@@ -64,6 +86,12 @@ class FileTreeOperation(Task):
 				self.show_alert(str(error), OK, OK)
 				break
 			except (OSError, IOError) as e:
+				if task is self._destination_task:
+					self.show_alert('Could not create the destination folder %s (%s).' %
+						(as_human_readable(self._get_dest_dir_url()), _describe_error(e)), OK, OK)
+					# Nothing was transferred; this stays the batch's only alert.
+					self._suppressed_errors = 0
+					return
 				title = task.get_title()
 				message = 'Error ' + (title[0].lower() + title[1:])
 				if not self._handle_exception(message, is_last, e):
@@ -71,10 +99,11 @@ class FileTreeOperation(Task):
 				self.set_progress(progress_before + task.get_size())
 	def _gather_files(self):
 		dest_dir_url = self._get_dest_dir_url()
-		self._enqueue([Task(
+		self._destination_task = Task(
 			'Preparing ' + basename(dest_dir_url), fn=self._fs.makedirs,
 			 args=(dest_dir_url,), kwargs={'exist_ok': True}
-		)])
+		)
+		self._enqueue([self._destination_task])
 		for i, src in enumerate(self._iter(self._files)):
 			is_last = i == len(self._files) - 1
 			dest = self._get_dest_url(src)
@@ -227,27 +256,50 @@ class FileTreeOperation(Task):
 				)
 			self._tasks.append(task)
 	def _handle_exception(self, message, is_last, exc):
+		failure = '%s (%s).' % (message, _describe_error(exc))
 		if self._ignore_exceptions:
+			self._suppressed_errors += 1
+			self._record_skipped(failure)
 			return True
-		if exc.strerror:
-			cause = exc.strerror[0].lower() + exc.strerror[1:]
-		else:
-			cause = exc.__class__.__name__
-		message = '%s (%s).' % (message, cause)
 		if is_last:
 			buttons = OK
 			default_button = OK
+			message = failure
 		else:
 			buttons = YES | YES_TO_ALL | ABORT
 			default_button = YES
-			message += ' Do you want to continue?'
+			message = failure + ' Do you want to continue?'
 		choice = self.show_alert(message, buttons, default_button)
 		if is_last:
-			return choice & OK
+			proceed = choice & OK
 		else:
 			if choice & YES_TO_ALL:
 				self._ignore_exceptions = True
-			return choice & YES or choice & YES_TO_ALL
+			proceed = choice & YES or choice & YES_TO_ALL
+		if proceed:
+			self._record_skipped(failure)
+		return proceed
+	def _record_skipped(self, failure):
+		self._skipped_errors += 1
+		if len(self._skipped_examples) < _REPORTED_ERRORS:
+			if len(failure) > _REPORTED_ERROR_LENGTH:
+				# Elide the middle: the file name and cause are at the end.
+				half = _REPORTED_ERROR_LENGTH // 2
+				failure = failure[:half - 1] + '\u2026' + failure[-half:]
+			self._skipped_examples.append(failure)
+	def _report_skipped_errors(self):
+		# Errors shown individually need no repeat; only report silently skipped ones.
+		if not self._suppressed_errors:
+			return
+		self._suppressed_errors = 0
+		count = self._skipped_errors
+		lines = list(self._skipped_examples)
+		if count > len(lines):
+			lines.append('... and {:,} more.'.format(count - len(lines)))
+		self.show_alert('{}: {:,} {} skipped.\n\n{}'.format(
+			self.get_title(), count, 'error was' if count == 1 else 'errors were',
+			'\n'.join(lines)
+		), OK, OK)
 	def _get_dest_dir_url(self):
 		try:
 			splitscheme(self._dest_dir)
@@ -287,7 +339,7 @@ class FileTreeOperation(Task):
 		if len(files) == 1:
 			result += basename(files[0])
 		else:
-			result += '%d files' % len(files)
+			result += '{:,} files'.format(len(files))
 		return result
 
 class CopyFiles(FileTreeOperation):

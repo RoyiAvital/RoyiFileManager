@@ -121,6 +121,12 @@ class LocalFileSystem(FileSystem):
 			else:
 				raise
 		self.notify_file_added(path)
+	def makedirs(self, path, exist_ok=True):
+		# Otherwise the base recursion reaches a bare drive or server name.
+		drive = splitdrive(self._url_to_os_path(path))[0]
+		if drive and not os.path.isdir(drive + '\\'):
+			raise FileNotFoundError(ENOENT, 'The drive or network share is not available', drive)
+		super().makedirs(path, exist_ok)
 	def move(self, src_url, dst_url):
 		self._check_transfer_precnds(src_url, dst_url)
 		for task in self._prepare_move(src_url, dst_url):

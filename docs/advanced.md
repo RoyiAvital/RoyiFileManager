@@ -13,6 +13,10 @@ start leaves files unchanged. Cancelling later does not undo completed copies
 or moves.
 Missing destination folders are created only after preparation succeeds.
 
+If an item fails, choose **Yes** to skip it, **Yes to all** to skip later
+errors without asking, or **Abort**. After **Yes to all**, one summary lists the
+skipped errors at the end.
+
 ### Local Copies
 
 - A copy is completed in temporary space beside the destination before it is

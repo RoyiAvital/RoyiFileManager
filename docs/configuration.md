@@ -62,16 +62,17 @@ Use `SearchFileFuzzy.json`.
 | `mode` | `fuzzy` | Use `fuzzy` subsequence matching or `regular` substring matching. |
 | `max_recursive_entries` | 50,000 | Maximum files and folders inspected while building a find index. |
 | `max_results` | 100 | Maximum results shown in Quicksearch. |
-| `include_hidden` | `true` | Include hidden entries and hidden directory trees. |
 | `show_metadata` | `false` | Show modified time and size below each result. |
 
 Limits must be positive integers. Larger values can use more time and memory.
 
+Hidden entries follow the active pane. Press ++ctrl+period++ before searching
+to show or hide them.
+
 ```json
 {
   "max_recursive_entries": 100000,
-  "max_results": 250,
-  "include_hidden": false
+  "max_results": 250
 }
 ```
 
@@ -156,6 +157,17 @@ Create `Key Bindings (Windows).json` in the user Settings folder to add custom b
 ]
 ```
 
+Your bindings take precedence over the built-in ones.
+To disable a built-in shortcut, bind it to `none`:
+
+```json
+[
+  { "keys": ["Delete"], "command": "none" }
+]
+```
+
+This keeps ++f8++ for the Recycle Bin and disables ++delete++.
+
 Restart {{ app_name }} after editing the file.
 
 See the [keyboard shortcut reference](shortcuts.md).
@@ -190,7 +202,41 @@ Use `Folder Context Menu (Windows).json` in the same Settings folder to customiz
 
 Create `Theme (Windows).css` in the user Settings folder for visual overrides.
 
-The file uses Qt Style Sheet syntax. Restart after changing it.
+```css
+* {
+  font-size: 10pt;
+}
+
+.statusbar {
+  font-size: 9pt;
+  color: #c8c8c8;
+}
+```
+
+The file uses CSS syntax with a fixed set of selectors. Their properties go to
+Qt Style Sheets, so use properties that Qt supports. Other selectors are ignored.
+
+| Selector | Styles |
+| --- | --- |
+| `*` | Every widget |
+| `th` | Column headers |
+| `.locationbar` | Location bars |
+| `.statusbar` | Status bar |
+| `.statusbar-pane` | Extended status bar statistics |
+| `.quicksearch-query` | QuickSearch and QuickList query fields |
+| `.quicksearch-item` | QuickSearch and QuickList rows |
+| `.panel` | Docked Panel controls |
+| `.plugin-panel-dock` | Docked Panel frame |
+| `.plugin-tool-window` | Plug-in tool windows |
+
+QuickSearch text also reads `font-size` and `color` from `.quicksearch-item-title`,
+`.quicksearch-item-hint` and `.quicksearch-item-description`, and `color` from
+`.quicksearch-item-title-highlight`.
+
+To use a custom font, put its `.ttf` file in the same folder and name its
+family in `font-family`.
+
+Run **Reload plugins** in the Command Center to apply changes.
 
 ## Text Editor and Viewer
 

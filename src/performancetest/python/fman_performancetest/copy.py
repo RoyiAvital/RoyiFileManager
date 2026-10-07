@@ -59,6 +59,8 @@ def validate_result(result, count, size, selected_count=None):
 			value = sample.get(field)
 			if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
 				raise ValueError('Invalid copy metric: ' + field)
+	if selection['input_ready_ms'] < selection['paint_ms']:
+		raise ValueError('Selection input-ready must include the selection paint interval')
 	if not 0 < transfer['first_file_ms'] <= transfer['wall_ms'] or transfer['queued_task_count'] < 1:
 		raise ValueError('Invalid copy timing order')
 	return result
@@ -118,7 +120,7 @@ def child(directory, viewport, count, size, scratch=None):
 					selection['paint_ms'] = (perf_counter() - state['selection_started']) * 1000
 					painted.set()
 				if state.get('followup') and not moved.is_set() and view.currentIndex().row() == state['cursor'] + 1:
-					selection['input_ready_ms'] = (perf_counter() - state['followup']) * 1000
+					selection['input_ready_ms'] = (perf_counter() - state['selection_started']) * 1000
 					moved.set()
 
 		def gather(operation):
@@ -219,7 +221,7 @@ def child(directory, viewport, count, size, scratch=None):
 				if not painted.wait(30):
 					raise TimeoutError('Select All did not paint')
 				def followup():
-					state['followup'] = perf_counter()
+					state['followup'] = True
 					QTest.keyClick(view, Qt.Key_Down)
 				gui(followup)
 				if not moved.wait(10):

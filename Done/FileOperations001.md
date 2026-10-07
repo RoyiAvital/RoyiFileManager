@@ -1,4 +1,4 @@
-# Code Review 010: Large-Selection Copy Startup
+# File Operations 001: Large-Selection Copy Startup
 
 Status: Option A implemented with explicit user approval on 2026-10-06, following
 all three independent reviews. B and status-capture optimization remain deferred.
@@ -11,6 +11,19 @@ application changes. The approximately 100 ms preparation stretch target was not
 The current full-only workloads are 10,000 flat files at 4 KiB and a 1,000-file
 tree at 8 KiB per file. Both measure Select All through copy completion. Earlier
 15,000-file results are retained as historical references, not relabeled.
+
+Review follow-ups are implemented on 2026-10-07. The final independent re-review
+accepted them the same day; see [Implementation Review 4](#implementation-review-4-2026_10_07-opus).
+The strict documentation gate is blocked only by missing
+generated screenshots in this checkout. N1, N2 and bounded skipped-error
+reporting followed at the user's request; see
+[Review Follow-Up](#review-follow-up-n1-n2-and-skipped-errors). Its Implementation
+Review 5 findings R1/R2 are resolved; see [Review 5 Resolution](#review-5-resolution-2026_10_07).
+Destination-creation failure is terminal, Copy
+interaction timing is corrected in workload revision 2, and between-file
+cancellation has a permanent state regression. See [Review Resolution](#review-resolution-2026_10_07)
+for every finding's disposition and the pending crash/performance hand-offs.
+This is not release certification or a claim that the native crash is fixed.
 
 ## Task
 
@@ -126,6 +139,10 @@ and [task gathering](https://github.com/mherrmann/fman/blob/v1.7.5/src/main/reso
 - Move pre-task destination creation inside the cancellable task. Cancellation
   before the first mutation must create/copy/move nothing. Later cancellation
   follows the chosen option's partial-completion rules below.
+- The queued destination-creation task is a prerequisite. Its failure stops
+  the batch with one alert, even after an earlier Yes to all; per-file Continue
+  remains unchanged for independent transfers. Directory creation is not a
+  transaction: intermediate directories created before an error may remain.
 - Run application safety/policy checks before the operation they protect.
   Keep cancellation checks during validation, traversal and execution; an OS
   call already running cannot be forcibly cancelled. Neither option promises
@@ -220,7 +237,9 @@ a reliable throughput advantage worth new streaming/provider semantics.
 ### 3. Deferred Status-Capture Proposal
 
 The following is retained as design context only. It was not implemented in this
-task and its acceptance gates require separate approval.
+task and its acceptance gates require separate approval. Pending ownership is
+[FO02 in CodeReview099](../Plan/CodeReview099.md#file-operations-001-follow-ups);
+FO03 separately owns streaming B and compact-record exploration.
 
 - Retain the existing status debounce, worker service and generation/token checks.
 - For snapshot-backed panes, capture references to the immutable `Listing`, its
@@ -292,6 +311,9 @@ task and its acceptance gates require separate approval.
   metadata/identity checks. Final copy I/O is unchanged.
 - Threading/cancellation: reuse command/task and status workers. No per-file
   threads. Check cancellation between bounded work items; no Qt-thread joins.
+- Review fixes retain one reference to the already queued destination task and
+  check it only on an execution error. No new scan, timer, I/O, worker or settings.
+  Corrected benchmark timing adds no application work or additional workload.
 - No-op paths: cancelled destination prompt starts no operation; disabled status
   creates no feature-specific snapshot, I/O or work.
 - Copy workloads run with `python build.py measure --full`, not regular measure,
@@ -317,9 +339,17 @@ Regression coverage was added before the corresponding application change:
   destination, mixed selections, denied metadata and provider fallbacks. Prove
   cancellation before any mutation causes no mkdir/copy/move and later collisions
   are rejected by provider safeguards. A must leave no changes after preparation
-  refusal; B must report a completed prefix after a later error/cancellation and
-  never delete an uncopied Move source. Native link cases use expected skips only
+  refusal and preserve the exact completed prefix after between-file cancellation;
+  no new completion report is promised. Never delete an uncopied Move source.
+  Native link cases use expected skips only
   when the platform cannot create the fixture.
+- `PreparationSafetyTest.test_destination_creation_failure_stops_copy_and_move`:
+  one terminal alert and no dependent transfer, including prior Yes to all.
+- `PreparationSafetyTest.test_cancel_after_first_transfer_retains_exact_prefix`:
+  verify every source and destination name and byte for Copy and same-volume Move.
+- `CopyBenchmarkTest.test_native_copy_workload_verifies_contents`: inject a
+  deterministic 250 ms clock offset during Select All; both paint and input-ready
+  include it, aggregation retains the result, and all eight copied files verify.
 - Status unit and Qt tests: all/none/contiguous/fragmented selection, filters,
   hidden entries, unknown sizes and the size-query cap. Verify counts and totals
   against the old algorithm. Ensure workers access no Qt objects, stale results
@@ -327,8 +357,9 @@ Regression coverage was added before the corresponding application change:
   requirements for the deferred status task, not claims of this implementation.
 - Native Qt integration: after confirming a blocked preparation, observe a
   visible progress dialog, issue Cancel and verify no mutation if execution has
-  not started. Also cancel after some copies and verify exact partial results.
-  Test actual Ctrl+A followed by F5, not only direct command calls.
+  not started. The real-provider state regression above separately verifies
+  cancellation between completed transfers. Tiny native benchmark smokes exercise
+  actual Ctrl+A followed by F5, not only direct command calls.
 
 Focused unit launcher:
 
@@ -428,6 +459,9 @@ python -B -c "import build, os, subprocess, sys; env=build._environment(); env.u
 9. At the user's request on 2026-10-07, restored the measured vanilla-A transfer
   modules and removed the bulk experiment from production. Retained both full-only
   benchmarks, all source exports and historical results.
+10. Resolved implementation reviews I1-I5, A1-A3 and S1-S3 with terminal
+  prerequisite errors, corrected/versioned interaction timing, cancellation
+  coverage, narrower completion wording and explicit pending ownership.
 
 ## Acceptance Criteria
 
@@ -448,8 +482,15 @@ python -B -c "import build, os, subprocess, sys; env=build._environment(); env.u
 - Approximately 100 ms preparation is a stretch goal, not an achieved result or
   a reason to weaken safety; report the measured value and remaining delay.
 - Small full-copy fixtures are exact; cancellation before execution leaves source
-  and destination unchanged. Later error/cancellation retains and accurately
-  reports the completed prefix. Plug-in APIs and Move/link semantics are preserved.
+  and destination unchanged. Later error/cancellation retains completed transfers;
+  a between-file cancellation regression verifies the exact prefix and untouched
+  remaining sources. Errors skipped after Yes to all are reported once, listing
+  at most ten; there is no completion summary or batch rollback.
+  Plug-in APIs and Move/link semantics are preserved.
+- A failed destination-creation task emits one terminal error and attempts no
+  dependent transfers. Independent file errors retain their existing Continue policy.
+- Copy input-ready includes Ctrl+A through the next verified input paint;
+  revision-1 settled-key timings are preserved but not compared as equivalent.
 - `python build.py measure --full` runs the two requested Copy workloads,
   selected through Ctrl+A and copied through F5. All contents and tree structure
   and selection counts are verified. The report separates Select All latency,
@@ -528,6 +569,73 @@ python -B -c "import build, os, subprocess, sys; env=build._environment(); env.u
   the shared startup rules are sound. E1 explains the recommendation, E2 makes
   the remaining directory check O(N + D) for both options, and E3-E5 are smaller.
   No code changed or run.
+
+### 2026_10_07 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Extra High
+- Context Window: 1M
+- Outcome: Reviewed the implemented vanilla-A path and missing-destination fix.
+  Confirmed I1, found an incorrect Copy input-ready measurement boundary, and
+  verified exact partial state on between-file cancellation. Focused tests pass;
+  request the follow-ups in Implementation Review 2. No application code changed.
+
+### 2026_10_07 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6.1 Sol
+- Effort: High
+- Context Window: 1M
+- Outcome: Reconfirmed I1/A1 and the A2 measurement boundary in current source.
+  Disposable Copy/Move probes preserve exact partial state, but the completion
+  reporting promise and committed cancellation regression remain unresolved.
+  Request changes; no additional source-loss defect established. See
+  Implementation Review 3 for fresh checks and scope limits.
+
+### 2026_10_07 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Extra High
+- Context Window: 1M
+- Outcome: Reconciled all design and implementation findings under the user's
+  request to address the reviews. Retained vanilla A, selected terminal prerequisite
+  failure and state-only cancellation coverage, and assigned independent follow-ups.
+  Final independent confirmation remains recommended; no release gate is waived.
+
+### 2026_10_07 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Claude Opus 5.5
+- Effort: Extra High
+- Context Window: 872K
+- Outcome: Accept. The fixes resolve I1/A1/S1, A2/S2 and I4/A3/S3; I2, I3 and I5
+  have owners in FO01-FO04. Two optional P3 notes remain (N1, N2). Focused gates
+  pass. The documentation gate fails only on generated screenshots. See
+  Implementation Review 4. No application code changed.
+
+### 2026_10_07 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Extra High
+- Context Window: 1M
+- Outcome: Reviewed Opus's N1/N2 and skipped-error follow-up. Error causes,
+  missing-root handling and bounded execution summaries pass existing checks.
+  Preparation cancellation/refusal can lose the summary; empty-destination
+  documentation overstates the preparation-only guarantee. Request these narrow
+  corrections; no application code changed. See Implementation Review 5.
 
 ## Design Review (2026_10_06, Opus)
 
@@ -1162,3 +1270,561 @@ and [metric comparisons](../UserSettings/Performance/CodeReview010/BulkEnumerati
 - Documentation: `python -B -m mkdocs build --strict --site-dir target/code-review-010-docs`
   passed. Editor diagnostics were clear; task history, command fences and local
   links were verified without rewriting earlier records.
+
+## Implementation Review
+
+### 2026_10_07 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Claude Opus 5.5
+- Effort: Extra High
+- Context Window: 872K
+- Outcome: Vanilla A is sound. Its safety checks match `is_parent`, every
+  decision precedes mutation and all focused gates pass. One P2 regression: an
+  uncreatable destination now prompts once per item (I1). The native refresh
+  crash needs an owner (I2). No application code changed.
+
+### Findings
+
+- **I1 [P2] Destination-creation failure is continuable.** The queued
+  `Preparing <name>` task is now the only `makedirs`. When it fails,
+  `_handle_exception` offers Yes / Yes to all / Abort, then prompts again for
+  every item. A probe copying 3 files to a path through a file, or to an invalid
+  name, showed 4 alerts. Move catches these two cases in preparation, but not
+  failures that only `mkdir` reveals, such as access denied. Sources were kept.
+  In 0.14.0 the command created the folder first and failed once. Stop the batch
+  with one clear alert when the destination task fails, keeping its queued
+  placement. Add Copy and Move regressions for an uncreatable destination.
+- **I2 [P2] The native refresh crash has no owner.** The 0.14.0 baseline crashed
+  with an access violation in `reconcile`/`project` during destination refresh.
+  It is recorded only in this Done document. Add it to
+  [CodeReview099](../Plan/CodeReview099.md) or a new task, with a native dump.
+- **I3 [P3] Move into a missing folder repeats the device walk per source.**
+  Preparation for 5,000 files, medians of three: existing folder 653 ms, one
+  missing level 900 ms, three missing levels 1,262 ms. That is about 50 µs per
+  item per missing level; `LocalFileSystem.stat` also retries each missing path
+  with `lstat`. It is still better than failing. Sharing the inference across
+  sources needs an operation-scoped hint that `prepare_move` lacks. Accept it
+  unless large moves into new folders are common.
+- **I4 [P3] Mid-execution cancellation is untested.** The Tests section requires
+  cancelling after some copies and checking the exact partial state; no test
+  does. The acceptance criterion says A reports the completed prefix, but A has
+  no completion summary. Add a state-only regression and reword the criterion.
+- **I5 [P3] Deferred work has no pending owner.** Status capture (218 ms Qt
+  snapshot at 200,000 rows) and Option B live only here. Track them in
+  CodeReview099 or a pending task.
+
+### Verified
+
+- `_contains_destination` keeps the destination identity check, the 8.3/case/
+  junction/hard-link alias refusals and conservative fallbacks for links, zero
+  identities, metadata errors and other providers.
+- Overwrite, Abort and self-transfer refusals finish before the first mutation.
+  `makedirs` is queued first. Cancelling before execution changes nothing.
+- Symlink keeps its pre-task guard. Drag-and-drop and paste use the deferred
+  path; Everything rewrites its `copy` before Core runs it.
+- Archive and cross-scheme `prepare_*` calls build tasks lazily, so the deferred
+  folder creation does not affect them.
+
+### Validation Results
+
+- Offscreen gate (command above): 351 tests, OK, 6 expected skips, 6.2 s.
+  Native gate: 351 tests, OK, 6 expected skips, 7.7 s.
+- Archive transfers, not rerun since the bulk removal: 103 tests, OK, 2 skips,
+  106 s.
+
+  ```powershell
+  python -B -c "import build, os, subprocess, sys; env=build._environment(); env.update(QT_QPA_PLATFORM='offscreen',QT_QPA_FONTDIR=os.path.join(os.environ['WINDIR'],'Fonts')); sys.exit(subprocess.run([sys.executable,'-B','-X','faulthandler','-m','unittest','core.tests.fs.test_zip','-q'],env=env,timeout=300).returncode)"
+  ```
+
+- Benchmark tooling (command above): 74 tests, OK.
+- Temporary-directory probes through `MotherFileSystem`: I1 alert counts; I3
+  timings; directory Copy/Move into an 8.3 ancestor, a case-variant ancestor
+  and an 8.3 destination with `is_parent` disabled. The fast path refused or
+  renamed in place without the fallback walk; sources stayed intact.
+- Rename follow-up: the title, [Plan.md](../Plan.md), changelog and performance
+  guide now point to CodeReview007. `UserSettings/Performance/CodeReview010`
+  artifact paths are unchanged; they are local-only and absent in this checkout.
+- No full suite, freeze, package or performance run.
+- At the user's request, the document was then renamed to FileOperations001.
+  Its title, the index, changelog and performance guide links were updated.
+
+## Implementation Review 2 (2026_10_07, Astra)
+
+Vanilla A remains the appropriate selected design. The checked slice showed no
+new source-loss regression, but the following issues prevent unconditional
+acceptance of the documented failure and measurement contracts.
+
+### Findings
+
+- **A1 [P2], confirms I1: stop after destination creation fails.**
+  [FileTreeOperation.__call__](../src/main/resources/base/Plugins/Core/core/fileoperations.py#L58)
+  applies the per-file Continue policy to the first, prerequisite `makedirs` task.
+  With three real local files and an injected `PermissionError` from `makedirs`,
+  both Copy and Move produced four alerts when Continue was selected: one for
+  creation and one for each dependent transfer. All sources remained intact.
+  Treat this prerequisite failure as terminal with one alert; retain queued
+  creation and the existing Continue policy for independent file failures.
+- **A2 [P2], new: Copy's input-ready metric excludes selection latency.**
+  The [paint hook](../src/performancetest/python/fman_performancetest/copy.py#L121)
+  stores `input_ready_ms` from `state['followup']`, which is set only after the
+  Select All paint and after the follow-up dispatch reaches Qt. Consequently,
+  it measures the settled Down key, not Ctrl+A through the next input response
+  required by this task. An isolated eight-file native run with 141.15 ms of
+  injected Select All work recorded 144.41 ms selection paint but only 1.47 ms
+  input-ready; `records.summarize` retained that 1.47 ms value. All copies verified.
+  Start the interaction interval at selection dispatch and end at the verified
+  follow-up paint, including intervening queued work. The settled-key measurement
+  may remain a separately named diagnostic. Revise the Copy workload protocol
+  IDs/revisions before comparing corrected results; preserve historical records.
+  This finding does not invalidate the separate first-file or Copy-total timings.
+- **A3 [P3], refines I4: distinguish partial state from a completion report.**
+  Fresh temporary-directory probes canceled Copy and same-volume Move after the
+  first published file. Both retained exactly that destination file and left the
+  remaining sources untouched; Copy also retained the first source. The behavior
+  passes this check, but it still lacks a committed between-file cancellation
+  regression. The [acceptance criterion](#acceptance-criteria) also promises an
+  accurate completed-prefix report, while the current task closes progress without
+  such a summary. Add the regression and either narrow that wording to retained
+  filesystem state or separately approve a reporting change. These probes do not
+  certify cancellation inside a blocked OS call or a real cross-volume move.
+
+### Validation Results
+
+Run with the existing `python` environment; no environment or package changes.
+
+- Command, transfer and local-provider baseline: 158 tests, 152 passed and six
+  expected skips for unavailable link privileges.
+
+  ```powershell
+  python -B -c "import build, subprocess, sys; sys.exit(subprocess.run([sys.executable,'-B','-X','faulthandler','-m','unittest','core.tests.commands.test___init__.ConfirmTreeOperationTest','core.tests.test_fileoperations','core.tests.fs.test_local','-q'],env=build._environment(),timeout=120).returncode)"
+  ```
+
+- Native progress visibility and cancellation before mutation: one test passed.
+
+  ```powershell
+  python -B -c "import build, os, subprocess, sys; env=build._environment(); env.update(QT_QPA_PLATFORM='windows',QT_QPA_FONTDIR=os.path.join(os.environ['WINDIR'],'Fonts')); sys.exit(subprocess.run([sys.executable,'-B','-X','faulthandler','-m','unittest','fman_integrationtest.test_qt.SnapshotFilterBarIT.test_copy_preparation_progress_is_visible_and_cancel_leaves_no_changes','-v'],env=env,timeout=30).returncode)"
+  ```
+
+- Copy benchmark tests: four passed, including tiny native flat/tree copies,
+  content/structure verification, full-only dispatch and scratch timeout cleanup.
+
+  ```powershell
+  python -B -c "import build, os, subprocess, sys; env=build._environment(); env.update(QT_QPA_PLATFORM='windows',QT_QPA_FONTDIR=os.path.join(os.environ['WINDIR'],'Fonts')); env['PYTHONPATH']=os.pathsep.join((str(build.ROOT / 'src/performancetest/python'),env['PYTHONPATH'])); sys.exit(subprocess.run([sys.executable,'-B','-X','faulthandler','-m','unittest','fman_performancetest.test_filter_find_benchmark.CopyBenchmarkTest','-v'],env=env,timeout=90).returncode)"
+  ```
+
+- A1/A3 probe procedure: in separate temporary trees for Copy and Move, create
+  three files, route through `MotherFileSystem` with `LocalFileSystem`, and use a
+  missing destination. First inject a `makedirs` permission failure and answer
+  Continue, counting alerts and verifying source bytes. Then run without that
+  failure, raising `Task.Canceled` at the next checkpoint after the first
+  destination appears; verify every source and destination entry. All four
+  probes completed with the outcomes above.
+- A2 probe procedure: use the existing eight-file Copy fixture and `copy.child`
+  with isolated settings. Wrap `FileListView.selectAll` with one bounded
+  `hashlib.pbkdf2_hmac('sha256', b'review', b'fixture', 1000000)` call before the
+  original method. Capture the injected duration, emitted selection timings and
+  `records.summarize` result. Assert selection paint includes the injected work
+  while the stored input-ready value is less than half of it. This is a boundary
+  test, not a product-performance measurement; no retained result was overwritten.
+- No full correctness suite, large benchmark, freeze, package or user-data
+  inspection. The native refresh crash and previously unverified platform/release
+  gates remain unresolved; passing these checks does not waive them.
+
+## Implementation Review 3 (2026_10_07, Sol)
+
+Request changes before unconditional acceptance. Vanilla A remains the selected
+design; the earlier implementation findings are still open in current source.
+This review establishes no additional source-loss defect.
+
+### Findings
+
+- **S1 [P2], confirms I1/A1: destination creation is a prerequisite.**
+  [FileTreeOperation.__call__](../src/main/resources/base/Plugins/Core/core/fileoperations.py#L58)
+  still routes its failed first task through per-file Continue handling. Fresh
+  three-file probes with an injected `makedirs` permission failure produced four
+  alerts for both Copy and Move when Continue was selected. All source bytes
+  remained intact. Stop once on this prerequisite failure; preserve queued
+  creation and Continue for independent transfer failures.
+- **S2 [P2], confirms A2: input-ready timing starts too late.**
+  [Copy's paint hook](../src/performancetest/python/fman_performancetest/copy.py#L121)
+  measures from the follow-up Down dispatch, after Select All has painted, rather
+  than from selection dispatch. The stored metric therefore omits selection
+  latency; [records.measurements](../src/performancetest/python/fman_performancetest/records.py#L144)
+  retains that value unchanged. Correct the start boundary and version the Copy
+  protocol before comparison. The earlier injected-delay probe was not rerun;
+  first-file and total-copy timing boundaries are not implicated by this finding.
+- **S3 [P3], confirms A3: acceptance promises an absent report.**
+  The [acceptance criteria](#acceptance-criteria) require accurate completed-prefix
+  reporting, but the task only retains filesystem state and closes progress on
+  cancellation. Fresh between-file probes for Copy and same-volume Move retained
+  exactly one completed target and untouched remaining sources. Add a committed
+  regression and narrow the wording to retained state, or approve reporting as
+  separate work. These probes do not cover in-file or real cross-volume cancellation.
+
+### Validation Results
+
+- Command/preparation/local-provider baseline: 158 tests, 152 passed and six
+  expected link-privilege skips. Native progress/cancellation: one test passed.
+  Copy benchmark slice: four tests passed, including tiny real flat/tree copies,
+  contents/structure, full-only scheduling and timeout cleanup.
+- Exact commands, using the existing environment:
+
+  ```powershell
+  python -B -c "import build, subprocess, sys; sys.exit(subprocess.run([sys.executable,'-B','-X','faulthandler','-m','unittest','core.tests.commands.test___init__.ConfirmTreeOperationTest','core.tests.test_fileoperations','core.tests.fs.test_local','-q'],env=build._environment(),timeout=120).returncode)"
+  python -B -c "import build, os, subprocess, sys; env=build._environment(); env.update(QT_QPA_PLATFORM='windows',QT_QPA_FONTDIR=os.path.join(os.environ['WINDIR'],'Fonts')); env['PYTHONPATH']=os.pathsep.join((str(build.ROOT / 'src/performancetest/python'),env['PYTHONPATH'])); sys.exit(subprocess.run([sys.executable,'-B','-X','faulthandler','-m','unittest','fman_performancetest.test_filter_find_benchmark.CopyBenchmarkTest','-v'],env=env,timeout=90).returncode)"
+  python -B -c "import build, os, subprocess, sys; env=build._environment(); env.update(QT_QPA_PLATFORM='windows',QT_QPA_FONTDIR=os.path.join(os.environ['WINDIR'],'Fonts')); sys.exit(subprocess.run([sys.executable,'-B','-X','faulthandler','-m','unittest','fman_integrationtest.test_qt.SnapshotFilterBarIT.test_copy_preparation_progress_is_visible_and_cancel_leaves_no_changes','-v'],env=env,timeout=30).returncode)"
+  ```
+
+- Four temporary-tree probes used real `MotherFileSystem`/`LocalFileSystem`:
+  three ordinary files per operation; inject a creation failure and answer
+  Continue, or cancel at the first checkpoint after one published destination.
+  Assert every source/destination name and byte and cleared ancestry state.
+  Both Copy and Move reproduced S1 and passed the partial-state checks.
+- Git is unavailable in this terminal, so worktree status/diff checks could not
+  run. No application edits, full suite, large measurement, freeze/package,
+  dependency changes or user-data inspection. Native crash investigation,
+  real-volume/network behavior and skipped privilege cases remain unverified.
+
+## Review Resolution (2026_10_07)
+
+### Disposition
+
+| Review Items | Resolution |
+| --- | --- |
+| E1, E5, G6 and Sol's design recommendation | Retain whole-batch A, pre-execution overwrite/Abort choices, Symlink's guard and actual progress-visibility checks. Preparation is visibly cancellable, not instant; the 100 ms stretch goal remains unmet. |
+| E2, G1, G2 | Retain the implemented destination identity comparison, task-local directory ancestor set and conservative fallback for links, unknown identities and other providers. Existing safety/alias tests remain gates. |
+| E3, G3 | Retain measured preparation working-set and task-count estimates with their caveats; they are not exact Task allocations or a 200k-transfer measurement. No compact-record optimization is justified here; FO03 owns reconsideration. |
+| E4, G4, G5, I5 | FO02/FO03 in the existing pending backlog own status capture and possible streaming/compact records, with separate approval and measurable re-entry criteria. Historical design discussion stays here; it is not active Copy scope. |
+| I1, A1, S1 | Fixed. The queued prerequisite is identified explicitly; its failure alerts once and stops, even when per-file errors were previously ignored. Copy/Move regression covers all four combinations. |
+| I2 | Tracking addressed by FO01 with code ownership, original run identity and a native-dump investigation requirement. The crash itself is unresolved; no dump or root cause is claimed. |
+| I3 | Accepted limitation of vanilla A; FO04 records measured motivation and criteria for later inference sharing. No new provider contract, dispatcher or cache. |
+| I4, A3, S3 | Added exact-prefix cancellation coverage for Copy and same-volume Move. Acceptance now promises retained filesystem state, not an absent summary. Real cross-volume/in-file cancellation remains separate. |
+| A2, S2 | Fixed. Input-ready starts at Ctrl+A and ends at the verified follow-up paint; validation rejects a value earlier than selection paint. Copy workload revisions are 2 and catalog revision is 14. Existing eight-file smoke catches the old boundary deterministically and verifies aggregation. |
+
+Pending ownership: [CodeReview099 FO01-FO04](../Plan/CodeReview099.md#file-operations-001-follow-ups).
+No earlier reviewer record or retained measurement was rewritten.
+
+### Implementation
+
+### 2026_10_07 - GitHub Copilot
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Extra High
+- Context Window: 1M
+- Outcome: Implemented terminal destination-creation failure, permanent
+  between-file cancellation coverage and versioned selection-to-input timing.
+  Updated task contracts, usage, changelog and pending ownership. No streaming,
+  status redesign, transfer bulk path, new dependency or completion-summary UI.
+
+### Validation Results
+
+- The new prerequisite regression failed before the fix: four alerts with
+  Continue and zero alerts with prior Yes to all, for both Copy and Move. It
+  passed after the fix. All 83 transfer tests passed (two expected privilege skips).
+- The timing regression failed before correction: 253.44 ms selection paint and
+  2.49 ms input-ready with a deterministic 250 ms offset. It passed after the
+  timestamp change. This is a protocol check, not a product-performance result.
+- Native task gate: 353 tests, 347 passed and six expected link-privilege skips.
+  Includes command/safety/local-provider/snapshot and progress-cancellation checks.
+
+  ```powershell
+  python -B -c "import build, os, subprocess, sys; env=build._environment(); env.update(QT_QPA_PLATFORM='windows',QT_QPA_FONTDIR=os.path.join(os.environ['WINDIR'],'Fonts')); sys.exit(subprocess.run([sys.executable,'-B','-X','faulthandler','-m','unittest','core.tests.commands.test___init__','core.tests.test_fileoperations','core.tests.test_util','core.tests.fs.test_local','fman_unittest.test_listing','fman_integrationtest.test_qt.SnapshotFilterBarIT','-q'],env=env,timeout=180).returncode)"
+  ```
+
+- Offscreen task gate: the same 353 tests, 347 passed and six expected skips.
+  Qt emits its usual offscreen `propagateSizeHints` notices.
+
+  ```powershell
+  python -B -c "import build, os, subprocess, sys; env=build._environment(); env.update(QT_QPA_PLATFORM='offscreen',QT_QPA_FONTDIR=os.path.join(os.environ['WINDIR'],'Fonts')); sys.exit(subprocess.run([sys.executable,'-B','-X','faulthandler','-m','unittest','core.tests.commands.test___init__','core.tests.test_fileoperations','core.tests.test_util','core.tests.fs.test_local','fman_unittest.test_listing','fman_integrationtest.test_qt.SnapshotFilterBarIT','-q'],env=env,timeout=180).returncode)"
+  ```
+
+- Archive compatibility: 103 tests, 101 passed and two expected privilege skips.
+  The duplicate-entry ZIP fixture emits its expected warning.
+
+  ```powershell
+  python -B -c "import build, os, subprocess, sys; env=build._environment(); env.update(QT_QPA_PLATFORM='offscreen',QT_QPA_FONTDIR=os.path.join(os.environ['WINDIR'],'Fonts')); sys.exit(subprocess.run([sys.executable,'-B','-X','faulthandler','-m','unittest','core.tests.fs.test_zip','-q'],env=env,timeout=300).returncode)"
+  ```
+
+- Benchmark-tool module: all 74 tests passed, including tiny real flat/tree
+  copies, full-only scheduling, fixtures, aggregation, reporting and timeout cleanup.
+  Use process-local imports rather than placing performance tooling in the
+  verification environment's PYTHONPATH:
+
+  ```powershell
+  @'
+  import build, os, subprocess, sys
+  code = '''import sys, unittest
+  sys.path.insert(0, 'src/performancetest/python')
+  unittest.main(module=None, argv=['benchmark-tests', 'fman_performancetest.test_filter_find_benchmark', '-q'])
+  '''
+  env = build._environment()
+  env.update(QT_QPA_PLATFORM='windows', QT_QPA_FONTDIR=os.path.join(os.environ['WINDIR'], 'Fonts'))
+  sys.exit(subprocess.run([sys.executable, '-B', '-X', 'faulthandler', '-c', code], env=env, timeout=180).returncode)
+  '@ | python -B -
+  ```
+
+- Two validation-fixture mistakes were corrected without weakening tests: mixed
+  indentation in the embedded native probe, and a launcher that polluted
+  PYTHONPATH (correctly rejected by the isolation test). Both corrected checks passed.
+- Task structure, all 22 review IDs, four pending follow-ups, Markdown fences,
+  narrowed acceptance and canonical index links passed focused checks. All edited
+  files have clear editor diagnostics.
+- Strict documentation build did not pass:
+
+  ```powershell
+  python -B -m mkdocs build --strict --site-dir target/file-operations-001-docs
+  ```
+
+  It aborted on 12 missing generated screenshot assets referenced by untouched
+  `docs/search.md`, `docs/tools.md` and `docs/plugins/ui-elements.md`. No warnings
+  were suppressed and no screenshots generated. Restore/generate those assets
+  through the existing documentation workflow and rerun before claiming this gate.
+- No full correctness suite, large performance run, freeze/package, native dump,
+  dependency/environment change, Git staging/commit or user-data inspection.
+  Historical timings and reference artifacts remain untouched.
+
+### Closure Recommendation
+
+1. Obtain final independent confirmation of this resolution and the focused checks.
+   Keep vanilla A and the documented I3 cost; do not expand this task into B,
+   status redesign or new reporting UI to close review bookkeeping.
+2. Resolve the missing documentation screenshots and rerun the strict build,
+  or explicitly record acceptance of that environmental blocker. Close this
+  implementation task once final review accepts the fixes and explicit
+  hand-offs. FO01 remains an unresolved release risk, not an implemented fix;
+   real-volume/network/privilege and frozen-host gates retain their existing owners.
+3. Before publishing corrected comparative latency numbers, explicitly schedule
+   the same two Copy workloads against baseline and current code using the same
+   revision-2 harness and three repetitions. Do not compare new input-ready values
+   with old settled-key measurements or overwrite old references. A full performance
+   suite is not needed for that comparison.
+
+## Implementation Review 4 (2026_10_07, Opus)
+
+Accept. The fixes are correct and covered by regressions. No new source-loss,
+ordering or cancellation defect was found.
+
+### Findings
+
+- **N1 [P3] The terminal alert can lack a cause.** A path through a file raises
+  `FileExistsError(path)` without `strerror`. The alert then reads
+  `Could not prepare destination C:\...\blocker\sub: C:/.../blocker`. Other errors
+  repeat the path. Format the cause as `_handle_exception` does: `strerror`,
+  otherwise the exception name.
+- **N2 [P3, pre-existing] Copy to a missing drive escapes the handler.**
+  `FileSystem.makedirs` recurses to the bare drive (`Q:`), where
+  `LocalFileSystem.mkdir` raises `ValueError('Path must be absolute')`. It is not
+  an `OSError`, so the host reports a plug-in exception. 0.14.0 failed the same way
+  in the command. Move reports `FileNotFoundError` cleanly during preparation.
+  No files change. Raise `FileNotFoundError` for a missing drive root, or track it.
+
+### Verified
+
+- `_destination_task` is identified explicitly. Its failure shows one OK alert
+  and stops, before `_handle_exception`, also after an earlier Yes to all.
+  Independent file errors keep Continue.
+- Real failures through `MotherFileSystem`: a path through a file and an invalid
+  name now show one alert for Copy (four before) and for Move. Sources intact.
+- Both regressions fail against the old code by construction: four alerts, or
+  none after Yes to all. The cancellation regression checks the exact destination
+  and source sets for Copy and same-volume Move.
+- Copy revision 2 times Ctrl+A dispatch to the verified Down paint, as selection
+  revision 5 does. `validate_result` rejects input-ready below paint. The 250 ms
+  clock offset in the smoke makes the old boundary fail. Fixtures are unchanged.
+- FO01-FO04 name owners and re-entry criteria. The acceptance criterion now
+  promises retained state only. The Core README and changelog match the code.
+
+### Validation Results
+
+- Focused gate (command in Review Resolution): 353 tests, OK, 6 expected skips,
+  offscreen 4.3 s and native 6.0 s.
+- Benchmark tooling: 74 tests, OK. The Copy class alone: 4 tests, OK, including
+  both native smokes.
+- Probes in temporary folders: Copy and Move to a path through a file, an
+  invalid name and a missing drive.
+- Strict documentation build into a temporary folder: 12 warnings, all missing
+  generated screenshots in `search.md`, `tools.md` and `plugins/ui-elements.md`.
+  No other warning. The blocker is environmental.
+- Archive tests were not rerun; the implementer ran them after the fix. No full
+  suite, freeze, package or performance run.
+
+### Closure
+
+The task can stay closed. Record acceptance of the screenshot-only documentation
+blocker, or generate the screenshots and rerun. N1 and N2 are optional.
+
+## Review Follow-Up: N1, N2 and Skipped Errors
+
+### 2026_10_07 - GitHub Copilot
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: Claude Opus 5.5
+- Effort: Extra High
+- Context Window: 872K
+- Outcome: Fixed N1 and N2. At the user's request, many failing items are
+  handled gracefully: after Yes to all, one bounded summary reports skipped
+  errors at completion or cancellation, and no empty destination is created
+  when every item fails. No new worker, timer, setting or public API.
+
+### Logic and Runtime
+
+- **N1:** `_describe_error` uses `strerror`, then the wrapped `__cause__`, then the
+  exception name. Prompts and the destination alert share it. A path through a
+  file now names the Windows reason instead of `FileExistsError`.
+- **N2:** `LocalFileSystem.makedirs` checks the drive or share root first and
+  raises `FileNotFoundError` when it is unavailable. The base recursion no longer
+  reaches `Q:` (`ValueError`) or `\\` (WinError 123). Cost: one `isdir` per call
+  and per missing level.
+- **Many failures:** the existing Yes / Yes to all / Abort prompt is unchanged.
+  Each skipped error is counted; only the first ten messages are kept. Messages
+  over 200 characters are elided in the middle, keeping the file name and cause.
+  After Yes to all, one alert gives the total, the ten
+  examples and `... and N more`. It appears when the batch ends, breaks on an
+  archive error or is canceled. Errors the user saw individually are not
+  repeated unless later ones were suppressed. Destination-creation failure still
+  stops with its single alert.
+- If preparation leaves only the destination task, nothing is executed, so no
+  empty folder is created. Titles use thousands separators (`Copying 5,000 files`).
+- Probe: 5,000 items vanishing after preparation, Yes to all. Copy and Move each
+  showed two alerts and finished in about one second including preparation.
+
+### Validation Results
+
+- New regressions: 25-item summary for Copy and Move, all-failed sources without
+  a destination, cancellation after skipped errors, wrapped error causes, a path
+  through a file and a missing drive for Copy and Move, and the provider's
+  drive/share check. `test_error_yes_to_all` now expects the summary.
+- File operations and local provider: 152 tests, OK, 6 expected skips.
+
+  ```powershell
+  python -B -c "import build, subprocess, sys; sys.exit(subprocess.run([sys.executable,'-B','-X','faulthandler','-m','unittest','core.tests.test_fileoperations','core.tests.fs.test_local','-q'],env=build._environment(),timeout=180).returncode)"
+  ```
+
+- Focused gate (command in Review Resolution): 359 tests, OK, 6 expected skips,
+  offscreen and native.
+- Archive transfers (command in Implementation Review): 103 tests, OK, 2 skips.
+- Copy benchmark smokes (`CopyBenchmarkTest`): 4 tests, OK.
+- Strict documentation build into a temporary folder: only the 12 known missing
+  screenshot warnings.
+- The missing-drive subtests used an unused letter (`Z:` here); no real network
+  share was exercised. No full suite, freeze, package or performance run.
+- Native message-box probe with long, deep paths: 25 and 20,000 failures both
+  produced 13 text lines and the same 532 x 711 px dialog on a 1920 x 1032 screen.
+  A regression records 20,000 failures and keeps ten 200-character examples.
+
+## Implementation Review 5 (2026_10_07, Astra)
+
+Scope: Opus's additional N1/N2 fixes and skipped-error summary, not a reopening
+of the accepted vanilla-A design or the earlier review resolutions.
+
+### Findings
+
+- **R1 [P2] Preparation exits can discard suppressed-error feedback.**
+  [FileTreeOperation.__call__](../src/main/resources/base/Plugins/Core/core/fileoperations.py#L61)
+  calls `_gather_files` before the cancellation handler that reports skipped
+  errors. Its `not gathered` and preparation-exception returns also bypass
+  reporting. With three missing sources followed by another item, choosing
+  Yes to all then canceling during preparation left three recorded errors and
+  two suppressed errors, but only the initial prompt. Both Copy and Move
+  reproduced this. Replacing cancellation with a self-transfer refusal also
+  lost the summary. Sources and destination entries remained unchanged.
+  Report suppressed errors on preparation cancellation/refusal as well as
+  execution exits, once per operation, while preserving cancellation propagation
+  and the destination prerequisite's single-alert rule. Add regressions for
+  these gathering exits; the current cancellation test only cancels execution.
+- **R2 [P3] The no-destination claim needs a preparation qualifier.**
+  The [Core README](../src/main/resources/base/Plugins/Core/README.md#L241) and
+  [changelog](../CHANGELOG.md#L54) say no destination is created if every item
+  fails. The implementation deliberately avoids creation only when preparation
+  leaves just the destination task. Three sources disappearing after preparation
+  made every Copy/Move transfer fail, produced the bounded summary, and left an
+  empty destination. The existing `test_many_skipped_failures_are_summarized_once`
+  likewise expects that folder to exist. Say that no destination is created when
+  preparation leaves no transfers. Do not add automatic directory cleanup or
+  rollback to satisfy the broader wording.
+
+### Validation Results
+
+- File-operation/local-provider baseline: 152 tests, 146 passed and six expected
+  link-privilege skips. Covers readable wrapped causes, missing-drive handling,
+  first-ten/200-character bounds, all-failed preparation and execution summaries.
+
+  ```powershell
+  python -B -c "import build, subprocess, sys; sys.exit(subprocess.run([sys.executable,'-B','-X','faulthandler','-m','unittest','core.tests.test_fileoperations','core.tests.fs.test_local','-q'],env=build._environment(),timeout=180).returncode)"
+  ```
+
+- Native task gate: 360 tests, 354 passed and six expected skips. No editor
+  diagnostics in the two production modules or their test modules.
+
+  ```powershell
+  python -B -c "import build, os, subprocess, sys; env=build._environment(); env.update(QT_QPA_PLATFORM='windows',QT_QPA_FONTDIR=os.path.join(os.environ['WINDIR'],'Fonts')); sys.exit(subprocess.run([sys.executable,'-B','-X','faulthandler','-m','unittest','core.tests.commands.test___init__','core.tests.test_fileoperations','core.tests.test_util','core.tests.fs.test_local','fman_unittest.test_listing','fman_integrationtest.test_qt.SnapshotFilterBarIT','-q'],env=env,timeout=180).returncode)"
+  ```
+
+- Six disposable-tree probes used the real `MotherFileSystem`/`LocalFileSystem`.
+  For each of Copy and Move, prepare three missing sources followed by an existing
+  file and return Yes to all on the first error. Cancel at the next checkpoint
+  after the third skipped error, or let the final same-path transfer refuse.
+  Assert three counted/two suppressed errors, no summary, cleared ancestry state
+  and unchanged original entries. Separately prepare three real files, delete
+  those fixture sources before execution, then run the tasks with Yes to all.
+  Assert three failures, two alerts including the summary, and an empty created
+  destination. All six probes completed with these outcomes.
+- An initial combined probe confirmed preparation cancellation but its speculative
+  root-access assertion failed: patching `os.stat` did not reproduce a root-guard
+  refusal. It is not evidence of an access regression and is not a finding.
+- No application edits, new environment/packages, full suite, archive-suite rerun,
+  large benchmark, freeze/package or user-data inspection. Live UNC/root-ACL cases
+  were not exercised. The known screenshot-only documentation blocker and FO01
+  native-crash investigation remain separate; neither is newly validated here.
+
+### Recommendation
+
+Keep the N1/N2 and bounded-summary changes. Correct R1 and qualify R2 before
+accepting the new skipped-error workflow. No streaming, status redesign, new
+completion report or automatic cleanup is needed for these findings.
+
+## Review 5 Resolution (2026_10_07)
+
+### 2026_10_07 - GitHub Copilot
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: Claude Opus 5.5
+- Effort: Extra High
+- Context Window: 872K
+- Outcome: Fixed R1 and qualified R2. The earlier Follow-Up outcome overstated
+  the no-destination rule; it applies only when preparation leaves no transfers.
+  No cleanup, rollback, new report or public API.
+
+### Logic
+
+- **R1:** `__call__` now wraps preparation and transfer (`_prepare_and_transfer`).
+  Every exit reports suppressed errors: completion, archive break, Abort or
+  self-transfer refusal, preparation `OSError` and cancellation in either phase.
+  Cancellation still propagates. `_report_skipped_errors` clears its counter, so
+  the summary appears at most once. Destination-creation failure clears it too and
+  stays the batch's only alert.
+- **R2:** the Core README and changelog say no folder is created when preparation
+  leaves nothing to transfer. A folder created before later transfers fail is kept.
+
+### Validation Results
+
+- New regression for Copy and Move: three missing sources then an existing file,
+  Yes to all, followed by preparation cancellation, self-transfer refusal or a
+  preparation `OSError`. Each shows the exact three-error summary once; sources
+  are unchanged and no destination is created. It fails against the previous
+  structure (summary missing on all three exits).
+- File operations and local provider: 153 tests, OK, 6 expected skips.
+- Focused gate (command in Review Resolution): 361 tests, OK, 6 expected skips,
+  offscreen and native.
+- Archive transfers (command in Implementation Review): 103 tests, OK, 2 skips.
+- No full suite, freeze, package or performance run.

@@ -26,7 +26,7 @@ See the [tools](tools.md) and [search guide](search.md).
 
 ## Preview and Inspect
 
-- Preview images, text, Markdown and highlighted source code with QuickView.
+- Preview images, PDFs, text, Markdown and highlighted source code with QuickView.
 - Fit, zoom, pan or copy the displayed image.
 - Calculate directory sizes in the Size column.
 - Calculate hashes with a choice of algorithms.

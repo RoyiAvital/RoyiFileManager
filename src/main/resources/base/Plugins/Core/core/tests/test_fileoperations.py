@@ -12,6 +12,229 @@ import os.path
 import stat
 
 class PreparationSafetyTest(TestCase):
+	def test_destination_creation_failure_stops_copy_and_move(self):
+		from pathlib import Path
+		from core.fs.local import LocalFileSystem
+		from fman.impl.plugins.mother_fs import MotherFileSystem
+		for operation_class in (CopyFiles, MoveFiles):
+			for ignore_errors in (False, True):
+				with self.subTest(operation=operation_class.__name__, ignore_errors=ignore_errors), TemporaryDirectory() as directory:
+					root = Path(directory)
+					source, destination = root / 'source', root / 'new' / 'nested'
+					source.mkdir()
+					paths = tuple(source / ('file%d.txt' % index) for index in range(3))
+					for path in paths:
+						path.write_bytes(b'keep')
+					filesystem = MotherFileSystem(None)
+					filesystem.add_child('file://', LocalFileSystem())
+					operation = operation_class(tuple(as_url(path) for path in paths), as_url(destination), fs=filesystem)
+					operation._ignore_exceptions = ignore_errors
+					with patch.object(filesystem, 'makedirs', side_effect=PermissionError(13, 'destination denied')) as create, \
+							patch.object(operation, 'show_alert', return_value=YES) as alert, \
+							patch.object(operation, 'run', wraps=operation.run) as execute:
+						operation()
+						create.assert_called_once_with(as_url(destination), exist_ok=True)
+						alert.assert_called_once()
+						self.assertEqual((OK, OK), alert.call_args.args[1:])
+						self.assertIn('destination denied', alert.call_args.args[0])
+						self.assertEqual(1, execute.call_count)
+					self.assertEqual({path.name for path in paths}, {path.name for path in source.iterdir()})
+					self.assertTrue(all(path.read_bytes() == b'keep' for path in paths))
+					self.assertFalse((root / 'new').exists())
+					self.assertEqual({}, operation._ancestor_identities)
+
+	def test_cancel_after_first_transfer_retains_exact_prefix(self):
+		from pathlib import Path
+		from core.fs.local import LocalFileSystem
+		from fman.impl.plugins.mother_fs import MotherFileSystem
+		for operation_class in (CopyFiles, MoveFiles):
+			with self.subTest(operation=operation_class.__name__), TemporaryDirectory() as directory:
+				root = Path(directory)
+				source, destination = root / 'source', root / 'destination'
+				source.mkdir()
+				paths = tuple(source / ('file%d.txt' % index) for index in range(3))
+				for path in paths:
+					path.write_bytes(path.name.encode('ascii'))
+				filesystem = MotherFileSystem(None)
+				filesystem.add_child('file://', LocalFileSystem())
+				operation = operation_class(tuple(as_url(path) for path in paths), as_url(destination), fs=filesystem)
+				check = operation.check_canceled
+				def cancel_after_publication():
+					check()
+					if (destination / paths[0].name).exists():
+						raise Task.Canceled()
+				with patch.object(operation, 'check_canceled', side_effect=cancel_after_publication), \
+						patch.object(operation, 'show_alert', side_effect=AssertionError('Cancellation must not prompt')):
+					with self.assertRaises(Task.Canceled):
+						operation()
+				self.assertEqual([paths[0].name], [path.name for path in destination.iterdir()])
+				self.assertEqual(paths[0].name.encode('ascii'), (destination / paths[0].name).read_bytes())
+				retained = paths if operation_class is CopyFiles else paths[1:]
+				self.assertEqual({path.name for path in retained}, {path.name for path in source.iterdir()})
+				self.assertTrue(all(path.read_bytes() == path.name.encode('ascii') for path in retained))
+				self.assertEqual({}, operation._ancestor_identities)
+
+	def _vanishing_sources(self, operation_class, root, count, vanish_after_preparation=True):
+		from core.fs.local import LocalFileSystem
+		from fman.impl.plugins.mother_fs import MotherFileSystem
+		source, destination = root / 'source', root / 'destination'
+		source.mkdir()
+		paths = tuple(source / ('file%03d.txt' % index) for index in range(count))
+		if vanish_after_preparation:
+			for path in paths:
+				path.write_bytes(b'keep')
+		filesystem = MotherFileSystem(None)
+		filesystem.add_child('file://', LocalFileSystem())
+		operation = operation_class(tuple(as_url(path) for path in paths), as_url(destination), fs=filesystem)
+		prepare = operation._gather_files
+		def gather():
+			result = prepare()
+			for path in paths:
+				path.unlink(missing_ok=True)
+			return result
+		return operation, destination, gather
+
+	def test_many_skipped_failures_are_summarized_once(self):
+		from pathlib import Path
+		for operation_class, verb in ((CopyFiles, 'Copying'), (MoveFiles, 'Moving')):
+			with self.subTest(operation=operation_class.__name__), TemporaryDirectory() as directory:
+				operation, destination, gather = self._vanishing_sources(operation_class, Path(directory), 25)
+				with patch.object(operation, '_gather_files', side_effect=gather), \
+						patch.object(operation, 'show_alert', side_effect=[YES_TO_ALL, OK]) as alert:
+					operation()
+				self.assertEqual(2, alert.call_count)
+				summary, buttons = alert.call_args.args[0], alert.call_args.args[1:]
+				self.assertEqual((OK, OK), buttons)
+				lines = summary.split('\n')
+				self.assertEqual('%s 25 files: 25 errors were skipped.' % verb, lines[0])
+				self.assertEqual(13, len(lines))
+				self.assertTrue(all(line.startswith('Error ') for line in lines[2:12]))
+				self.assertEqual('... and 15 more.', lines[-1])
+				self.assertEqual([], list(destination.iterdir()))
+				self.assertEqual(10, len(operation._skipped_examples))
+
+	def test_all_failed_sources_do_not_create_destination(self):
+		from pathlib import Path
+		for operation_class in (CopyFiles, MoveFiles):
+			with self.subTest(operation=operation_class.__name__), TemporaryDirectory() as directory:
+				operation, destination, gather = self._vanishing_sources(
+					operation_class, Path(directory), 3, vanish_after_preparation=False)
+				with patch.object(operation, 'show_alert', side_effect=[YES_TO_ALL, OK]) as alert:
+					operation()
+				self.assertEqual(2, alert.call_count)
+				self.assertIn(': 3 errors were skipped.', alert.call_args.args[0])
+				self.assertFalse(destination.exists())
+
+	def test_cancel_after_skipped_failures_reports_them(self):
+		from pathlib import Path
+		with TemporaryDirectory() as directory:
+			operation, destination, gather = self._vanishing_sources(CopyFiles, Path(directory), 5)
+			check = operation.check_canceled
+			def cancel_after_three_failures():
+				check()
+				if operation._skipped_errors >= 3:
+					raise Task.Canceled()
+			with patch.object(operation, '_gather_files', side_effect=gather), \
+					patch.object(operation, 'check_canceled', side_effect=cancel_after_three_failures), \
+					patch.object(operation, 'show_alert', side_effect=[YES_TO_ALL, OK]) as alert:
+				with self.assertRaises(Task.Canceled):
+					operation()
+			self.assertEqual(2, alert.call_count)
+			self.assertTrue(alert.call_args.args[0].startswith('Copying 5 files: 3 errors were skipped.'))
+
+	def test_preparation_exits_report_skipped_errors_once(self):
+		from pathlib import Path
+		from core.fs.local import LocalFileSystem
+		from fman.impl.plugins.mother_fs import MotherFileSystem
+		for operation_class in (CopyFiles, MoveFiles):
+			for exit_kind in ('cancel', 'refusal', 'error'):
+				with self.subTest(operation=operation_class.__name__, exit=exit_kind), TemporaryDirectory() as directory:
+					root = Path(directory)
+					source = root / 'source'
+					source.mkdir()
+					(source / 'keep.txt').write_bytes(b'keep')
+					files = [as_url(source / ('missing%d.txt' % index)) for index in range(3)] + [as_url(source / 'keep.txt')]
+					destination = source if exit_kind == 'refusal' else root / 'destination'
+					filesystem = MotherFileSystem(None)
+					filesystem.add_child('file://', LocalFileSystem())
+					operation = operation_class(files, as_url(destination), fs=filesystem)
+					check = operation.check_canceled
+					def cancel_after_three_failures():
+						check()
+						if exit_kind == 'cancel' and operation._skipped_errors >= 3:
+							raise Task.Canceled()
+					failure = OSError(5, 'preparation failed') if exit_kind == 'error' else None
+					with patch.object(operation, 'check_canceled', side_effect=cancel_after_three_failures), \
+							patch.object(operation, '_prepare_transfer', side_effect=failure,
+								wraps=None if failure else operation._prepare_transfer), \
+							patch.object(operation, 'show_alert', side_effect=[YES_TO_ALL, OK, OK]) as alert:
+						if exit_kind == 'cancel':
+							with self.assertRaises(Task.Canceled):
+								operation()
+						else:
+							operation()
+					self.assertEqual(2 if exit_kind == 'cancel' else 3, alert.call_count)
+					self.assertTrue(alert.call_args.args[0].endswith('3 errors were skipped.\n\n' + '\n'.join(
+						'Could not %s %s (the system cannot find the file specified).' % (
+							operation._descr_verb, as_human_readable(url)) for url in files[:3])))
+					self.assertEqual(['keep.txt'], [path.name for path in source.iterdir()])
+					self.assertEqual(b'keep', (source / 'keep.txt').read_bytes())
+					self.assertFalse((root / 'destination').exists())
+
+	def test_error_causes_include_wrapped_os_errors(self):
+		from core.fileoperations import _describe_error
+		wrapped = FileExistsError('C:/blocker')
+		wrapped.__cause__ = OSError(183, 'Cannot create a file when that file already exists')
+		self.assertEqual('cannot create a file when that file already exists', _describe_error(wrapped))
+		self.assertEqual('access is denied', _describe_error(PermissionError(13, 'Access is denied')))
+		self.assertEqual('FileExistsError', _describe_error(FileExistsError('C:/blocker')))
+
+	def test_reported_errors_are_bounded_and_keep_name_and_cause(self):
+		operation = CopyFiles(['file://C:/source/a.txt'], 'file://C:/destination', fs=Mock())
+		failure = 'Could not copy C:\\' + 'deep\\' * 200 + 'report.txt (access is denied).'
+		for _ in range(20000):
+			operation._record_skipped(failure)
+		self.assertEqual(20000, operation._skipped_errors)
+		self.assertEqual(10, len(operation._skipped_examples))
+		example = operation._skipped_examples[0]
+		self.assertEqual(200, len(example))
+		self.assertTrue(example.startswith('Could not copy C:\\deep'))
+		self.assertTrue(example.endswith('report.txt (access is denied).'))
+		self.assertIn('\u2026', example)
+
+	def test_uncreatable_destinations_report_one_readable_error(self):
+		from pathlib import Path
+		from string import ascii_uppercase
+		from core.fs.local import LocalFileSystem
+		from fman.impl.plugins.mother_fs import MotherFileSystem
+		missing_drive = next((letter + ':\\' for letter in reversed(ascii_uppercase[3:])
+			if not os.path.exists(letter + ':\\')), None)
+		for operation_class in (CopyFiles, MoveFiles):
+			for case in ('path through a file', 'missing drive'):
+				if case == 'missing drive' and missing_drive is None:
+					continue
+				with self.subTest(operation=operation_class.__name__, case=case), TemporaryDirectory() as directory:
+					root = Path(directory)
+					(root / 'blocker').write_bytes(b'x')
+					paths = (root / 'a.txt', root / 'b.txt')
+					for path in paths:
+						path.write_bytes(b'keep')
+					destination = root / 'blocker' / 'new' if case == 'path through a file' else \
+						Path(missing_drive, 'rfm-missing', 'new')
+					filesystem = MotherFileSystem(None)
+					filesystem.add_child('file://', LocalFileSystem())
+					operation = operation_class(tuple(as_url(path) for path in paths), as_url(destination), fs=filesystem)
+					with patch.object(operation, 'show_alert', return_value=OK) as alert:
+						operation()
+					alert.assert_called_once()
+					message = alert.call_args.args[0]
+					if operation_class is CopyFiles:
+						self.assertTrue(message.startswith('Could not create the destination folder'))
+						self.assertNotIn('FileExistsError', message)
+						if case == 'missing drive':
+							self.assertIn('the drive or network share is not available', message)
+					self.assertTrue(all(path.read_bytes() == b'keep' for path in paths))
+
 	def test_move_to_missing_destination_prepares_without_mutation(self):
 		from pathlib import Path
 		from core.commands import Move
@@ -536,6 +759,15 @@ class FileTreeOperationAT:
 				 ),
 				 YES | YES_TO_ALL | ABORT, YES),
 				answer=answer_2
+			)
+		if answer_1 & YES_TO_ALL:
+			failures = '\n'.join('Could not %s %s (%s).' % (
+				self.operation_descr_verb, as_human_readable(url), self._NO_SUCH_FILE_MSG
+			) for url in (nonexistent_file_1, nonexistent_file_2))
+			verb = 'Copying' if self.operation_descr_verb == 'copy' else 'Moving'
+			self._expect_alert(
+				('%s 3 files: 2 errors were skipped.\n\n%s' % (verb, failures), OK, OK),
+				answer=OK
 			)
 		self._perform_on(nonexistent_file_1, nonexistent_file_2, existent_file)
 		if not answer_1 & ABORT and not answer_2 & ABORT:

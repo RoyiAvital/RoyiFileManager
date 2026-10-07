@@ -13,6 +13,8 @@ of the six completed optimizations in [CodeReview004](../Done/CodeReview004.md).
 
 - Retain C01-C15, R01-R07, M01 and the investigation/rejection notes below.
   Sizes describe potential implementation, not approval or measured benefit.
+- Retain FO01-FO04 from FileOperations001 as independent follow-ups, not
+  additional requirements to implement streaming or status changes in that task.
 - Retain unselected CodeReview004 proposals N05-N08 and N11-N13. Only
   N01-N04, N09 and N10 were authorized and delivered there.
 - [LinkOperationPolicy](LinkOperationPolicy.md) and
@@ -109,6 +111,23 @@ These checks transfer here without being labeled passed:
 - R07: compatible candidate performance/persistence validation after changes.
   Existing full catalog evidence predates the latest operation fixes; no automatic
   rerun or relaxed compatibility checks. Keep the historical results intact.
+
+### File Operations 001 Follow-Ups
+
+Carried from [FileOperations001](../Done/FileOperations001.md#review-resolution-2026_10_07).
+Owners below identify the responsible code area; investigation and release
+acceptance remain separate from the completed preparation fixes.
+
+| ID | Priority / Owner | Next Step And Completion Evidence |
+| --- | --- | --- |
+| FO01 | P2, host pane model/native crash investigation | Investigate the native access violation during destination refresh in the preserved 0.14.0 run `11dd3575-73fe-41f1-abbc-dbe1ba8d2bc5`. Last Python frames were `reconcile`/`project`; they do not identify the native failing component. Reproduce with disposable files, a fixed source/harness and an attached native debugger; capture a dump, native stack, loaded modules, Python/Qt versions and source/binary hashes. No dump was captured in the original run or this follow-up; local artifacts may be absent in another checkout. Do not enable Registry-based dump settings or inspect user data. Passing retries do not close this release risk; require a diagnosed fix and regression, or explicit release-risk acceptance. |
+| FO02 | P3, status capture in widgets/status_bar | Separately design immutable listing/selection-range capture on Qt and expansion on the existing status worker. Preserve size freshness, limits, cancellation and the disabled no-op path. Historical 218 ms capture at 200k rows is motivation, not a new measurement. Require parity and action-to-next-input timings with status enabled before approval. This owns the deferred status proposal independently of Copy. |
+| FO03 | P3, Core transfer scheduling | Keep streaming Option B and compact prepared records deferred. Reopen only when compatible measurements miss an explicitly agreed first-file or memory budget and the user accepts late conflict prompts and partial completion on later refusal. Prefer compact records within A if memory alone is the issue. Any B design must specify breadth-first traversal, Move dependencies, provider fallbacks and truthful partial outcomes; do not introduce a production A/B switch implicitly. |
+| FO04 | P3, local Move device inference | Accept the per-source missing-parent walk in vanilla A for now. Historical 5k-file medians were 653/900/1262 ms for existing/one/three missing levels; no current speed claim. Consider operation-scoped inference sharing only after frequent large moves into new folders justify the contract and lifecycle cost. Preserve provider fallbacks and prepare-before-create ordering; no global metadata cache or bulk transfer scanner. |
+
+FO01 is unresolved, not fixed or certified by FileOperations001. FO02-FO04 are
+optional, separately approved changes. Existing R02/R05/R06 and C06 retain
+real-volume, privileged-link, network and packaged-release checks.
 
 ### ChecksumFiles Release Checks
 
@@ -314,3 +333,16 @@ Their references describe that historical scope, not new work approved here.
 - Outcome: Carried CS01-CS06 from the completed ChecksumFiles task into this
   existing Pending backlog. Distinguishes bundled behavior from optional
   standalone lifecycle checks; no gate is waived or newly claimed as passed.
+
+### 2026_10_07 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Extra High
+- Context Window: 1M
+- Outcome: Assigned FO01-FO04 to explicit code areas while resolving all
+  FileOperations001 reviews. Native dump capture and diagnosis remain open;
+  status/streaming/device-inference work remains separate and unapproved.
+  No historical measurements, review records or release gates were waived.

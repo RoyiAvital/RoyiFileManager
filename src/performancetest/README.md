@@ -136,6 +136,13 @@ old `copy-files-v1` fixture and its results remain historical, not reinterpreted
 The native app receives Ctrl+A and F5, and its actual destination prompt is
 accepted. Selection paint/input/readback, prompt latency, task gathering, first
 completed file, total copy and final destination refresh are separate metrics.
+Copy workload revision 2 (catalog revision 14) measures `input_ready_ms` from
+Ctrl+A dispatch through the verified Down-key response and completed paint.
+The next input follows selection paint without a settled-idle delay; queued
+work and dispatch time remain inside the interval. Selected-URL readback runs
+afterward and is not added to it. Revision 1 instead timed only the follow-up
+key; those historical values remain unchanged and are not comparable to revision 2.
+Fixture contents, repetitions and first-file/total-copy boundaries are unchanged.
 The Copy headline includes preparation but excludes source setup, content
 verification and cleanup. All source/destination bytes and file counts must match.
 Tree verification also requires matching relative paths and directory structure.
@@ -166,7 +173,7 @@ does not rewrite these reference results or their original catalog/harness hashe
 Source run IDs: `55eba804-8f59-4661-a7a3-4d74029c263a` and
 `95092cdd-d9b4-47a7-9f24-a2db21f1010f`. The raw records and comparison are retained
 under `UserSettings/Performance/CodeReview010`; full provenance is in
-[CodeReview010](../../Done/CodeReview010.md#baseline-and-comparison).
+[FileOperations001](../../Done/FileOperations001.md#baseline-and-comparison).
 
 An earlier corrected-baseline attempt crashed during repetition two with a native
 access violation while copy and destination refresh were active. Its traceback
