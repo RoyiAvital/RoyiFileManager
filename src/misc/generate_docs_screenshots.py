@@ -3,6 +3,7 @@
 The source capture follows the Qt smoke-test approach and grabs widgets directly.
 The packaged capture launches the frozen executable and grabs its native window.
 Both use isolated settings and only show ``C:\\`` and ``C:\\Windows`` locations.
+The Robocopy picker shows an example destination and is canceled before transfer.
 The text preview uses a generated Python sample with a neutral location label.
 Checksum captures verify generated sample files and show only relative paths.
 Generated PNG files remain ignored by Git. The Pages workflow generates them
@@ -45,7 +46,7 @@ SOURCE_CAPTURES = (
 	'overview', 'go-to', 'context-menu', 'filter-pane', 'quick-view', 'quick-view-text',
 	'fuzzy-find', 'everything-search', 'everything-folders',
 	'search-files', 'find-files', 'favorites', 'directory-size', 'file-hash',
-	'checksum-files', 'process-pane', 'pack-archive', 'quick-table', 'quick-board'
+	'checksum-files', 'process-pane', 'pack-archive', 'quick-table', 'quick-board', 'robocopy'
 )
 QUICK_BOARD_SAMPLE = dict(text='Archive_', title='Compose a file-name prefix',
 	summary='3 captured names; preview only')
@@ -75,7 +76,7 @@ RIGHT_PANE_CAPTURES = (
 	'context-menu', 'filter-pane', 'search-files', 'find-files', 'file-hash',
 	'process-pane', 'pack-archive', 'quick-table'
 )
-DIALOG_CAPTURES = ('overview', 'go-to', 'fuzzy-find', 'everything-search', 'pack-archive')
+DIALOG_CAPTURES = ('overview', 'go-to', 'fuzzy-find', 'everything-search', 'pack-archive', 'robocopy')
 EVERYTHING_QUERIES = (
 	'ext:jpg;png size:>100kb !img0',
 	'path:Fonts\\ <consola|segoe> ext:ttf !*b.ttf',
@@ -287,7 +288,7 @@ def _source_capture_paths(capture):
 		folder.mkdir(parents=True, exist_ok=True)
 		(folder / 'file_summary.py').write_text(PYTHON_SAMPLE, encoding='utf-8')
 		return folder, windows
-	if capture == 'fuzzy-find':
+	if capture in ('fuzzy-find', 'robocopy'):
 		return windows / 'Web', windows
 	if capture in ('everything-search', 'everything-folders'):
 		return windows / 'Web', windows / 'Fonts'
@@ -343,6 +344,7 @@ def _source_outputs(output_dir, capture):
 			'royifilemanager-ui-quicktable-filter.png',
 		),
 		'quick-board': ('royifilemanager-ui-quickboard.png',),
+		'robocopy': ('royifilemanager-robocopy-destination.png',),
 	}
 	return tuple(output_dir / name for name in names[capture])
 
@@ -431,6 +433,12 @@ def _capture_source_child(args):
 			return
 		def capture_overview_dialog():
 			try:
+				if args._capture == 'robocopy':
+					destination = str(_public_paths()[0] / 'Backups' / 'Wallpapers')
+					dialog._query.setText(destination)
+					if not dialog._curr_items or dialog._curr_items[0].value != destination:
+						raise RuntimeError('Robocopy destination picker did not show the typed path')
+					QApplication.processEvents()
 				output = outputs[1] if args._capture == 'overview' else outputs[0]
 				if args._capture == 'overview':
 					_save_pixmap(dialog.grab(), outputs[2])
@@ -494,6 +502,18 @@ def _capture_source_child(args):
 				state['started'] = True
 				pane.focus()
 				pane.run_command('go_to')
+			elif args._capture == 'robocopy':
+				if state['started']:
+					return
+				folder = as_url(str(_public_paths()[1] / 'Web' / 'Wallpaper'))
+				pane.clear_selection()
+				pane.select((folder,))
+				pane.place_cursor_at(folder)
+				if pane.get_selected_files() != [folder]:
+					raise RuntimeError('Robocopy source folder was not selected')
+				pane.focus()
+				state['started'] = True
+				pane.run_command('copy_with_robocopy')
 			elif args._capture == 'context-menu':
 				from PyQt5.QtGui import QContextMenuEvent
 				from PyQt5.QtWidgets import QMenu

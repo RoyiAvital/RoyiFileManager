@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-10-08
+
+This release integrates Windows' `robocopy` command. [Robocopy](https://en.wikipedia.org/wiki/Robocopy) 
+is a _battle tested_ and optimized method to copy large (size and / or number of files) batch of files.
+
+### Added
+
+- Bundled Robocopy plug-in: **Copy with robocopy** and **Move with robocopy**
+  use exact selected roots, a destination-only wizard, cancellable native jobs,
+  approximate progress and optional Unicode transfer logs with external viewing.
+  Native merge, overwrite and Move-skip policies apply, including destination
+  link/hard-link effects; normal F5/F6 and pane-refresh scheduling are unchanged.
+  Included automatically as a separate public-API plug-in, with no manual installation.
+
 ## [0.15.0] - 2026-10-07
 
 This release added a fully feature _Batch File Renamer_ with options to filter and

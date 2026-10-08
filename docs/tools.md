@@ -241,6 +241,28 @@ The sort is remembered the next time the manager opens.
 
 See [Favorites usage](https://github.com/RoyiAvital/RoyiFileManager/blob/main/src/main/resources/base/Plugins/Favorites/README.md).
 
+## Robocopy
+
+Use Windows' multithreaded Robocopy for large folder trees, batches of files or
+network transfers. It provides an alternative to ++F5++/++F6++ which is optimized for large number of files or size.
+
+!!! warning "Different Policies"
+    Robocopy handles overwrites, skipped files, links and interruptions differently
+    from built-in Copy/Move. See [Robocopy policies](file-system-operations.md#operations-with-robocopy).
+
+Select files or folders, open Command Center with ++ctrl+shift+p++, and run
+**Copy with robocopy** or **Move with robocopy**. Choose the destination folder.
+
+<figure class="product-shot" markdown>
+  ![Robocopy destination picker with the Wallpaper folder selected](assets/royifilemanager-robocopy-destination.png)
+  <figcaption>Choose where to copy the selected folder.</figcaption>
+</figure>
+
+!!! info "Progress Bar"
+    The progress bar shows the progress of batched jobs. For single item it will show "Busy" indication only.
+
+See [advanced usage, native overwrite behavior, settings and logs](https://github.com/RoyiAvital/RoyiFileManager/blob/main/src/main/resources/base/Plugins/Robocopy/README.md).
+
 ## Directory Size
 
 Press ++ctrl+shift+d++.

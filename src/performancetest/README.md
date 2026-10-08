@@ -375,6 +375,26 @@ measurements outside verification discovery. `image` includes the separate
 history. `run.py search` retains the earlier configurable seeded Filter/Find
 runner. `run.py pane` retains historical application A/B comparisons.
 
+## Small-Buffer Side Test
+
+```powershell
+python -B src/performancetest/run.py copy-buffer -v
+```
+
+[test_copy_buffer.py](python/fman_performancetest/test_copy_buffer.py) contains
+the unshipped prototype and ten correctness tests. A known task-size hint of
+1-65,536 bytes selects 64 KiB reads; larger or unknown-size inputs use the original
+loop. Copying always continues to EOF. This checks the measured size-hint variant,
+not a future policy based on newly acquired source metadata.
+
+Coverage includes empty/boundary/large files, stale size hints, short reads,
+growth between reads, cancellation before reading and before publication,
+read/write errors, overwrite races, read-only files, timestamps and staging cleanup.
+Real-file checks use temporary directories and per-task overrides; production
+classes, filesystem notifications and pane refresh are unchanged. No performance
+catalog, retained report or application settings are modified. This is not a
+speed test or certification of network, real cross-volume or crash recovery.
+
 ## Development-Tool Checks
 
 Normal application and release verification does not test benchmark harnesses,

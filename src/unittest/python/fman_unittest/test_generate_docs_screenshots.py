@@ -402,7 +402,49 @@ assert not context.main_window.isVisible(), 'Capture left its main window open'
 			'royifilemanager-ui-quicktable.png',
 			'royifilemanager-ui-quicktable-filter.png',
 			'royifilemanager-ui-quickboard.png',
+			'royifilemanager-robocopy-destination.png',
 		), outputs)
+
+	def test_robocopy_capture_selects_folder_and_cancels_without_transfer(self):
+		script = '''
+import sys
+from unittest.mock import patch
+sys.path.insert(0, sys.argv[1])
+import generate_docs_screenshots as screenshots
+import fman
+from fman.impl.application_context import get_application_context
+from fman.impl.quicksearch import Quicksearch
+from PyQt5.QtGui import QScreen
+
+context = get_application_context()
+captured = []
+original = Quicksearch.grab
+def grab(dialog):
+    assert dialog._query.text() == 'C:\\\\Backups\\\\Wallpapers'
+    assert dialog._curr_items[0].value == dialog._query.text()
+    assert dialog._curr_items[0].hint == 'Copy with robocopy'
+    assert context.window.get_panes()[0].get_selected_files() == ['file://C:/Windows/Web/Wallpaper']
+    captured.append(True)
+    return original(dialog)
+args = screenshots._parse_args([
+    '--_source-child', '--_capture', 'robocopy', '--output-dir', sys.argv[2]
+])
+with patch.object(Quicksearch, 'grab', grab), patch.object(QScreen, 'grabWindow',
+        side_effect=AssertionError('Desktop capture is forbidden')), patch.object(fman, 'submit_task',
+        side_effect=AssertionError('Screenshot must not start a transfer')) as transfer:
+    assert screenshots._capture_source_child(args) == 0
+    transfer.assert_not_called()
+assert captured == [True], 'Destination picker was not captured'
+screenshots._validate_image(screenshots._source_outputs(args.output_dir, 'robocopy')[0])
+'''
+		with TemporaryDirectory() as directory, patch.object(screenshots, 'WORK_DIR', Path(directory)):
+			settings = screenshots._prepare_settings('robocopy')
+			environment = screenshots._source_environment(settings)
+			environment['QT_QPA_PLATFORM'] = 'windows'
+			result = subprocess.run([sys.executable, '-B', '-X', 'faulthandler', '-c', dedent(script),
+				str(SCRIPT.parent), str(settings.parent / 'output')], cwd=ROOT, env=environment,
+				capture_output=True, text=True, timeout=45)
+			self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
 	def test_quick_board_capture_shows_arguments_without_desktop_grab(self):
 		script = '''

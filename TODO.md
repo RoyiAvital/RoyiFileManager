@@ -51,8 +51,8 @@
 - [x] CHANGE: Using _Fuzzy Find File_ should respect the active pane settings for hidden files.
 - [x] CHANGE: The saved `json` files of the application and plug ins should be saved in a `pretty` mode.
 - [ ] CHANGE: Use `fman.fs.rename_no_replace(source, destination)` in all rename use cases. Review its logic.
-- [ ] CHANGE: Minimize delay before copying a folder with many files.
-- [ ] FEATURE: Implement multithreaded high performance copy with option for verification like `FastCopy`.
+- [x] CHANGE: Minimize delay before copying a folder with many files.
+- [x] FEATURE: Implement multithreaded high performance copy with option for verification like `FastCopy`.
 - [x] BUG: Fix Move preparation failing when the destination folder does not exist.
 
 ## Performance

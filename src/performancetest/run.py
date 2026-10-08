@@ -19,6 +19,7 @@ WORKLOADS = {
 	'image': ('-m', 'unittest', 'fman_performancetest.legacy.ImageMemoryTest'),
 	'fd': ('-m', 'unittest', 'fman_performancetest.legacy.FindFilesPerformance.test_large_tree_exact_count_and_bounded_storage'),
 	'poc': ('-m', 'unittest', 'fman_performancetest.legacy.TimingTest'),
+	'copy-buffer': ('-m', 'unittest', 'fman_performancetest.test_copy_buffer'),
 	'pane-filter': ('-m', 'unittest', 'fman_performancetest.legacy.PaneFilterPerformance.test_full_update_performance'),
 	'ui-table': ('-m', 'unittest', 'fman_performancetest.legacy.TablePerformance.test_large_snapshot_projection_timing'),
 	'archive-copy': ('-m', 'unittest', 'fman_performancetest.legacy.ArchivePerformance.test_copy_verification_timing'),

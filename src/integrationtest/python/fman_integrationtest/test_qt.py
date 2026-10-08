@@ -4802,6 +4802,351 @@ class CommandPaletteRecentIT(QtIT):
 		self.assertEqual(2, len(loads))
 		pane.run_command.assert_not_called()
 
+class RobocopyIT(QtIT):
+	close_window = FilterBarIT.close_window
+	navigate = FilterBarIT.navigate
+	drain = FilterBarIT.drain
+
+	def setUp(self):
+		from fman import DirectoryPane, Window
+		from fman.impl.plugins.discover import find_plugin_dirs
+		from fman.impl.theme import Theme
+		from fman_integrationtest.impl.plugins.test_plugin import ExternalPluginTest
+		from fman_unittest.robocopy_fixture import PLUGIN_ROOT
+		from pathlib import Path
+		from shutil import copytree
+		from unittest.mock import Mock, patch
+		FilterBarIT.setUp(self)
+		self.destination = self.root / 'destination'
+		self.destination.mkdir()
+		self.navigate(self.panes[1], self.destination)
+		fixture = self.fixture = ExternalPluginTest()
+		self.run_in_app(fixture.setUp)
+		self.addCleanup(fixture.tearDown)
+		installed = self.root / 'resources' / 'Plugins' / 'Robocopy'
+		copytree(PLUGIN_ROOT, installed, ignore=__import__('shutil').ignore_patterns('__pycache__'))
+		discovered = find_plugin_dirs(str(installed.parent),
+			str(self.root / 'UserSettings/Plugins/Third-party'), str(self.root / 'UserSettings/Plugins/User'))
+		self.assertIn(str(installed), discovered)
+		fixture._plugin._path = next(path for path in discovered if Path(path).name == 'Robocopy')
+		self.assertTrue(fixture._plugin.load(), fixture._error_handler.error_messages)
+		self.loaded = True
+		self.addCleanup(self.unload)
+		import robocopy_plugin
+		self.plugin = robocopy_plugin
+		public_window = Window(self.window, fixture._panecmd_registry)
+		self.public_panes = [DirectoryPane(public_window, pane, fixture._panecmd_registry) for pane in self.panes]
+		public_window._panes = self.public_panes
+		for pane in self.public_panes:
+			fixture._plugin.on_pane_added(pane)
+		self.accepted_path = None
+		self.cancel_wizard = False
+		self.wizard_count = 0
+		self.dialog_errors = []
+		self.progress = []
+		self.alerts = []
+		self.seeds = []
+		def prepare():
+			theme = Theme(Mock(), [])
+			theme.load(str(Path(__file__).parents[3] / 'main/resources/base/Plugins/Core/Theme.css'))
+			self.window._theme = theme
+			self.window._progress_bar_palette = QApplication.instance().palette()
+			self.window.before_dialog.connect(self.answer)
+		self.run_in_app(prepare)
+		original = self.window.create_progress_dialog
+		def create(*args):
+			dialog = original(*args)
+			self.progress.append(dialog)
+			return dialog
+		for target, kwargs in (
+			('fman._get_ui', {'return_value': self.window}),
+			('fman._get_plugin_support', {'return_value': fixture._config}),
+			('fman.DATA_DIRECTORY', {'new': str(self.root / 'settings')}),
+			('fman.show_alert', {'side_effect': self.alerts.append})):
+			patcher = patch(target, **kwargs)
+			patcher.start()
+			self.addCleanup(patcher.stop)
+		patcher = patch.object(self.window, 'create_progress_dialog', side_effect=create)
+		patcher.start()
+		self.addCleanup(patcher.stop)
+		self.addCleanup(lambda: self.assertEqual([], self.dialog_errors))
+
+	def unload(self):
+		if self.loaded:
+			self.run_in_app(self.fixture._plugin.unload)
+			self.loaded = False
+
+	def answer(self, dialog):
+		from fman.impl.quicksearch import Quicksearch
+		from PyQt5.QtCore import QThread, QTimer
+		def respond():
+			try:
+				self.assertIsInstance(dialog, Quicksearch)
+				self.assertEqual(QApplication.instance().thread(), QThread.currentThread())
+				self.wizard_count += 1
+				self.seeds.append(dialog._query.text())
+				if self.cancel_wizard:
+					dialog.reject()
+				else:
+					if self.accepted_path is not None:
+						dialog._query.setText(str(self.accepted_path))
+					self.assertEqual(dialog._query.text(), dialog._curr_items[0].value)
+					dialog._on_return_pressed()
+			except BaseException as error:
+				self.dialog_errors.append(error)
+				dialog.reject()
+		QTimer.singleShot(0, respond)
+
+	def choose(self, *names):
+		from fman.url import as_url
+		pane = self.public_panes[0]
+		pane.clear_selection()
+		pane.select(tuple(as_url(self.root / name) for name in names))
+
+	def test_progress_text_fits_and_status_stays_on_one_line(self):
+		from importlib import import_module
+		from pathlib import Path
+		from fman.impl.theme import Theme
+		from PyQt5.QtCore import QBuffer, QByteArray, QIODevice
+		from PyQt5.QtWidgets import QLabel, QProgressBar, QPushButton
+		from unittest.mock import Mock, patch
+		engine = import_module('robocopy_plugin.engine')
+		task = self.plugin._Transfer('Copy with robocopy', '', (), '', engine.Settings(), False, Event())
+		dialog = self.window.create_progress_dialog(task.get_title(), 0)
+		task._dialog = dialog
+		self.progress_snapshots = {}
+		def style():
+			resources = Path(__file__).parents[3] / 'main/resources'
+			theme = Theme(Mock(set_style_sheet=self.window.setStyleSheet),
+				[str(resources / 'base/styles.qss'), str(resources / 'windows/os_styles.qss')])
+			theme.load(str(resources / 'base/Plugins/Core/Theme.css'))
+			theme.enable_updates()
+			dialog.setMinimumDuration(0)
+		self.run_in_app(style)
+		try:
+			for name in ('Quarterly reports', '\u754c' * 100):
+				entry = engine.Source('C:\\source\\' + name, name, True, (1, 2, 3))
+				job = engine.Job(entry.path, 'D:\\target', (entry,))
+				task.current_job = job
+				task.plan = Mock(jobs=(job, job))
+				task.started_at = 0
+				with patch.object(self.plugin, 'monotonic', return_value=70):
+					task.activity('\tNew File\t82150C:\\bad\ufffdpath')
+				def inspect():
+					dialog._update()
+					dialog.show()
+					QApplication.processEvents()
+					label = dialog.findChild(QLabel)
+					bar = dialog.findChild(QProgressBar)
+					button = dialog.findChild(QPushButton)
+					self.assertLessEqual(dialog.width(), 640)
+					self.assertEqual(0, bar.maximum())
+					self.assertEqual(2, len(label.text().splitlines()))
+					for line in label.text().splitlines():
+						self.assertLessEqual(label.fontMetrics().horizontalAdvance(line), label.contentsRect().width())
+					self.assertLessEqual(label.fontMetrics().lineSpacing() * 2, label.contentsRect().height())
+					self.assertLess(label.geometry().bottom(), bar.geometry().top())
+					self.assertLess(bar.geometry().bottom(), button.geometry().top())
+					image = QByteArray()
+					buffer = QBuffer(image)
+					buffer.open(QIODevice.WriteOnly)
+					self.assertTrue(dialog.grab().save(buffer, 'PNG'))
+					return dialog.width(), bytes(image)
+				width, image = self.run_in_app(inspect)
+				self.progress_snapshots['unicode' if name.startswith('\u754c') else 'folder'] = image
+				with patch.object(self.plugin, 'monotonic', return_value=71):
+					task.activity('x' * 5000)
+				self.assertEqual(width, self.run_in_app(inspect)[0])
+			self.run_in_app(dialog.request_cancel)
+			with self.assertRaises(task.Canceled):
+				task.activity('Late output')
+			self.assertEqual('Canceling...', dialog._text)
+		finally:
+			self.run_in_app(dialog.cancel)
+			self.run_in_app(dialog.deleteLater)
+		def baseline():
+			self.window.resize(960, 600)
+			self.window.layout().activate()
+			QApplication.processEvents()
+			return self.window.width(), self.window.statusBar().height()
+		width, height = self.run_in_app(baseline)
+		task.codes.extend((1, 1))
+		task.log = Mock(path=Path('C:/logs/' + 'long-folder/' * 50 + 'transfer.txt'))
+		self.plugin._present(task, self.plugin.ui.UiOwner(), Event())
+		def inspect_status():
+			QApplication.processEvents()
+			label = self.window._status_bar_text
+			self.assertNotIn('\n', label.text())
+			self.assertNotIn('Log:', label.text())
+			self.assertLessEqual(label.fontMetrics().horizontalAdvance(label.text()), label.contentsRect().width())
+			self.assertEqual(width, self.window.width())
+			self.assertEqual(height, self.window.statusBar().height())
+		self.run_in_app(inspect_status)
+
+	def test_discovery_real_wizard_copy_and_final_pane_snapshot(self):
+		self.assertEqual({'copy_with_robocopy', 'move_with_robocopy'}, self.fixture._panecmd_registry.get_commands())
+		self.choose('report.txt', 'script.py')
+		self.public_panes[0].run_command('copy_with_robocopy')
+		self.assertEqual([str(self.destination)], self.seeds)
+		self.assertEqual([], self.alerts)
+		self.assertEqual({'report.txt', 'script.py'}, {path.name for path in self.destination.iterdir()})
+		self.drain(self.panes[1])
+		self.assertEqual(2, self.run_in_app(self.panes[1]._model.rowCount))
+		self.assertEqual(0, self.run_in_app(self.progress[0].maximum))
+		self.assertFalse(self.run_in_app(self.progress[0].isVisible))
+		self.assertFalse((self.root / 'settings').exists())
+
+	def test_navigation_during_transfer_does_not_retarget_or_restore_panes(self):
+		from fman.url import as_url
+		from unittest.mock import patch
+		other = self.root / 'other'
+		other.mkdir()
+		self.choose('report.txt')
+		submit = self.plugin.fman.submit_task
+		def navigate_then_submit(task):
+			self.navigate(self.panes[0], other)
+			self.navigate(self.panes[1], other)
+			submit(task)
+		with patch.object(self.plugin.fman, 'submit_task', side_effect=navigate_then_submit):
+			self.public_panes[0].run_command('copy_with_robocopy')
+		self.assertEqual([], self.alerts)
+		self.assertTrue((self.destination / 'report.txt').exists())
+		self.assertEqual([], list(other.iterdir()))
+		self.assertEqual([as_url(other), as_url(other)], [pane.get_path() for pane in self.public_panes])
+
+	def test_move_of_displayed_directory_refreshes_without_stale_location(self):
+		from fman.url import as_url
+		folder = self.root / 'Folder'
+		folder.mkdir()
+		(folder / 'file.txt').write_bytes(b'file')
+		self.panes[0].reload()
+		self.drain(self.panes[0])
+		self.navigate(self.panes[1], folder)
+		self.choose('Folder')
+		self.accepted_path = self.destination
+		restored = Event()
+		self.addCleanup(self.public_panes[1].on_path_changed(restored.set))
+		self.public_panes[0].run_command('move_with_robocopy')
+		self.assertEqual([], self.alerts)
+		self.assertTrue((self.destination / 'Folder' / 'file.txt').exists())
+		self.assertFalse(folder.exists())
+		self.assertTrue(restored.wait(5), 'Deleted-folder navigation did not finish')
+		self.drain(self.panes[1])
+		self.assertEqual(as_url(self.root), self.public_panes[1].get_path())
+		self.assertNotIn('Folder', self.public_panes[1].get_listing().names)
+
+	def test_wizard_cancel_and_typed_destination_cursor_fallback(self):
+		from fman.url import as_url
+		from unittest.mock import patch
+		self.public_panes[0].clear_selection()
+		self.public_panes[0].place_cursor_at(as_url(self.root / 'report.txt'))
+		self.cancel_wizard = True
+		with patch.object(self.plugin.fman, 'submit_task') as submit:
+			self.public_panes[0].run_command('move_with_robocopy')
+			submit.assert_not_called()
+		self.cancel_wizard = False
+		self.accepted_path = self.root / 'typed destination'
+		self.public_panes[0].run_command('move_with_robocopy')
+		self.assertFalse((self.root / 'report.txt').exists())
+		self.assertTrue((self.accepted_path / 'report.txt').exists())
+		self.assertEqual([], self.alerts)
+		self.assertEqual(as_url(self.destination), self.public_panes[1].get_path())
+		self.drain(self.panes[0])
+		self.assertNotIn('report.txt', self.public_panes[0].get_listing().names)
+
+	def test_log_viewer_after_real_progress_closure_and_lease_release(self):
+		from pathlib import Path
+		from unittest.mock import patch
+		self.choose('report.txt')
+		def view(path):
+			self.assertTrue(self.run_in_app(lambda: all(not dialog.isVisible() for dialog in self.progress)))
+			release = self.plugin.ui.settings_resource('Robocopy operation').try_claim()
+			self.assertIsNotNone(release)
+			release()
+			self.assertIn('Robocopy finished', Path(path).read_text(encoding='utf-16'))
+			raise OSError('Viewer fixture failure')
+		with patch.object(self.plugin.fman, 'load_json', return_value={'log_enabled': True, 'open_log_on_finish': True}), \
+				patch.object(self.plugin.os, 'startfile', side_effect=view) as viewer:
+			self.public_panes[0].run_command('copy_with_robocopy')
+			viewer.assert_called_once()
+		self.assertEqual(1, len(self.alerts))
+		self.assertIn('finished: 1/1', self.alerts[0])
+		self.assertIn('Viewer fixture failure', self.alerts[0])
+
+	def test_quiet_owned_child_cancel_and_unload_keep_lease_until_reaped(self):
+		from importlib import import_module
+		from unittest.mock import patch
+		engine = import_module('robocopy_plugin.engine')
+		windows = import_module('robocopy_plugin.windows')
+		self.choose('report.txt')
+		real_run, real_process = windows.run, windows.OwnedProcess
+		children = []
+		for unload in (False, True):
+			with self.subTest(unload=unload):
+				def launch(arguments, cwd=None):
+					child = real_process([sys.executable, '-B', '-c', 'from threading import Event; Event().wait()'])
+					children.append(child)
+					self.assertEqual(0, self.run_in_app(self.progress[-1].maximum))
+					self.plugin.MoveWithRobocopy(self.public_panes[0])()
+					self.assertIn('already active', self.run_in_app(self.window._status_bar_text.text))
+					self.assertIsNone(self.plugin.ui.settings_resource('Robocopy operation').try_claim())
+					if unload:
+						self.unload()
+					else:
+						self.run_in_app(self.progress[-1].request_cancel)
+						self.assertEqual('Canceling...', self.progress[-1]._text)
+					return child
+				with patch.object(engine, 'probe'), patch.object(windows, 'OwnedProcess', side_effect=launch), \
+						patch.object(self.plugin.fman, 'load_json', return_value={'log_enabled': True, 'open_log_on_finish': True}), \
+						patch.object(self.plugin.os, 'startfile') as viewer:
+					self.plugin.CopyWithRobocopy(self.public_panes[0])()
+					if unload:
+						viewer.assert_not_called()
+					else:
+						viewer.assert_called_once()
+				self.assertFalse(children[-1].reader.is_alive())
+				self.assertIsNone(children[-1].process)
+				release = self.plugin.ui.settings_resource('Robocopy operation').try_claim()
+				self.assertIsNotNone(release)
+				release()
+				if not unload:
+					self.assertEqual('Canceling...', self.progress[-1]._text)
+		self.assertEqual(1, len(self.alerts))
+		self.assertIn('canceled', self.alerts[0])
+		self.assertEqual(2, self.wizard_count)
+		self.assertEqual([], list(self.destination.iterdir()))
+		logs = list((self.root / 'settings' / 'Local' / 'Robocopy' / 'Logs').glob('*.txt'))
+		self.assertEqual(2, len(logs))
+		for log in logs:
+			self.assertIn('[Robocopy transfer finished]', log.read_text(encoding='utf-16'))
+
+	def test_pane_destruction_cancels_child_without_late_alert_or_viewer(self):
+		from importlib import import_module
+		from PyQt5 import sip
+		from unittest.mock import patch
+		engine = import_module('robocopy_plugin.engine')
+		windows = import_module('robocopy_plugin.windows')
+		self.choose('report.txt')
+		real_process = windows.OwnedProcess
+		children = []
+		def launch(arguments, cwd=None):
+			child = real_process([sys.executable, '-B', '-c', 'from threading import Event; Event().wait()'])
+			children.append(child)
+			widget = self.panes.pop(0)
+			self.run_in_app(sip.delete, widget)
+			return child
+		with patch.object(engine, 'probe'), patch.object(windows, 'OwnedProcess', side_effect=launch), \
+				patch.object(self.plugin.os, 'startfile') as viewer:
+			self.plugin.CopyWithRobocopy(self.public_panes[0])()
+			viewer.assert_not_called()
+		self.assertEqual([], self.alerts)
+		self.assertFalse(children[0].reader.is_alive())
+		self.assertIsNone(children[0].process)
+		release = self.plugin.ui.settings_resource('Robocopy operation').try_claim()
+		self.assertIsNotNone(release)
+		release()
+
+
 class TextEditorIT(QtIT):
 	def setUp(self):
 		from fman.impl.plugins.config import Config

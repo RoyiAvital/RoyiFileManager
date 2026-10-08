@@ -37,6 +37,7 @@
 - [Favorites 004: Favorites Manager on QuickList](Done/Favorites004.md)
 - [File and Folder Comparators](Done/FileAndFolderComparators.md)
 - [File Operations 001: Large-Selection Copy Startup](Done/FileOperations001.md)
+- [File Operations 002: Robocopy Plug-In](Done/FileOperations002.md)
 - [File System and Pane Architecture 001: Columnar Snapshots](Done/FSPaneArch001.md)
 - [File System and Pane Architecture 002: Performance](Done/FSPaneArch002.md)
 - [FS Parser: Native Directory Record Parsing](Done/FSParser.md)

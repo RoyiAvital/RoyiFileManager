@@ -1,9 +1,28 @@
-# File System Links
+# File System Operations
+
+## Operations with [Robocopy](https://en.wikipedia.org/wiki/Robocopy)
+
+These policies apply to **Copy with robocopy** and **Move with robocopy**.
+Built-in **F5/F6** are unchanged.
+
+- **Folders:** Merge existing folders. Keep unrelated destination entries.
+- **Overwrites:** Older sources can replace newer files. No built-in Copy conflict prompts.
+- **Skips:** Matching size/time may skip files without comparing bytes. Move can leave these sources behind.
+- **Source links:** Selected symlinks/junctions are refused; nested ones are excluded. Built-in Copy can recreate file symlinks.
+- **Destination links:** May redirect writes or change hard-link aliases. Built-in Copy refuses known linked overwrites and directory-link merges.
+- **Interruption:** Can leave partial destination files. Built-in Copy stages regular files before replacement. Neither mode rolls back completed items.
+- **Same-volume moves:** Robocopy copies then removes sources. Built-in Move can rename directly.
+- **Named streams:** Robocopy copies source streams. Built-in Copy does not; it preserves existing destination streams.
+
+See [usage and a screenshot](tools.md#robocopy) or the
+[advanced guide](https://github.com/RoyiAvital/RoyiFileManager/blob/main/src/main/resources/base/Plugins/Robocopy/README.md).
+
+## File System Links
 
 NTFS and ReFS support hard links, directory junctions and symbolic links. A
 Windows `.lnk` shortcut is an ordinary file, not a file system link.
 
-## Link Types
+### Link Types
 
 | Property | Hard link | Junction | Symbolic link |
 | --- | --- | --- | --- |
@@ -21,7 +40,7 @@ Hard-linked names are peers, not a link and an original. Changes through one nam
 are visible through every name. Windows reclaims the data after the last name and
 open handle are gone.
 
-### Creation
+#### Creation
 
 | Type | Command Prompt |
 | --- | --- |
@@ -38,7 +57,7 @@ Reparse points can represent other features too, including volume mount points
 and cloud placeholders. A reparse point is not automatically a junction or
 symbolic link.
 
-## Windows File Explorer Behavior
+### Windows File Explorer Behavior
 
 These are File Explorer defaults. Permissions, unavailable targets, cloud
 providers and other reparse types can change or refuse an operation.
@@ -53,7 +72,7 @@ providers and other reparse types can change or refuse an operation.
 
 Copying a directory link can copy much more data than the link itself occupies.
 
-### Relative Symbolic Links
+#### Relative Symbolic Links
 
 | Operation | Result |
 | --- | --- |
@@ -64,7 +83,7 @@ Copying a directory link can copy much more data than the link itself occupies.
 `robocopy` has options to preserve links instead of following them; its behavior
 is not the File Explorer default.
 
-### Chained Links
+#### Chained Links
 
 Windows resolves each junction or symbolic link in sequence. Each relative
 symbolic link is resolved from its own containing directory.
@@ -86,7 +105,7 @@ Hard links do not form chains; their names identify the same file directly.
 Windows permits at most 63 reparse points on one path, reduced in some cases such
 as fully qualified targets.
 
-## Microsoft References
+### Microsoft References
 
 - [Hard Links and Junctions](https://learn.microsoft.com/en-us/windows/win32/fileio/hard-links-and-junctions).
 - [Symbolic Links](https://learn.microsoft.com/en-us/windows/win32/fileio/symbolic-links).
@@ -94,12 +113,12 @@ as fully qualified targets.
 - [Reparse Points](https://learn.microsoft.com/en-us/windows/win32/fileio/reparse-points)
 - [ReFS Feature Comparison](https://learn.microsoft.com/en-us/windows-server/storage/refs/refs-overview#feature-comparison).
 
-## Royi File Manager Behavior
+### Royi File Manager Behavior
 
-Yes, {{ app_name }} handles several cases differently from File Explorer. It
-refuses ambiguous operations rather than risk changing a link target or alias.
+These are the built-in operations, not Robocopy. They refuse ambiguous link
+operations rather than risk changing a target or alias.
 
-### Differences from File Explorer
+#### Differences from File Explorer
 
 | Case | File Explorer | {{ app_name }} |
 | --- | --- | --- |
@@ -109,7 +128,7 @@ refuses ambiguous operations rather than risk changing a link target or alias.
 | Merge through a source or destination directory link | Follows and merges the target tree | Refuses before traversing the link |
 | Move a symbolic link or junction to another volume | Copies target data, then removes the source link | Refuses and retains the source link |
 
-### What a Refusal Does
+#### What a Refusal Does
 
 | Refusal point | Cases | Result for the batch |
 | --- | --- | --- |
@@ -123,7 +142,7 @@ Batch File Renamer rejects such selections before opening its preview. Select
 actual files instead; sparse files and cloud placeholders remain supported.
 Same-volume Move retains its link-object behavior.
 
-### Other Operations
+#### Other Operations
 
 | Operation | {{ app_name }} behavior |
 | --- | --- |

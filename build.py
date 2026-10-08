@@ -346,7 +346,9 @@ def _environment():
 		ROOT / 'src' / 'main' / 'resources' / 'base' / 'Plugins' /
 		'ProcessPane',
 		ROOT / 'src' / 'main' / 'resources' / 'base' / 'Plugins' /
-		'Everything'
+		'Everything',
+		ROOT / 'src' / 'main' / 'resources' / 'base' / 'Plugins' /
+		'Robocopy'
 	]
 	existing = environment.get('PYTHONPATH')
 	if existing:
