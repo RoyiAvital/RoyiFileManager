@@ -242,9 +242,11 @@ Run **Reload plugins** in the Command Center to apply changes.
 
 Press ++ctrl+shift+p++ and run **Set text editor** or **Set text viewer**.
 
-1. Choose [CudaText](https://github.com/Alexey-T/CudaText), [EmEditor](https://www.emeditor.com), [Notepad++](https://github.com/notepad-plus-plus/notepad-plus-plus), [Notepad 4](https://github.com/zufuliu/notepad4) or **Manual configuration**.
+1. Choose [CudaText](https://github.com/Alexey-T/CudaText), [EmEditor](https://www.emeditor.com), [Notepad++](https://github.com/notepad-plus-plus/notepad-plus-plus), [Notepad 4](https://github.com/zufuliu/notepad4), [Ecode](https://github.com/SpartanJ/ecode) or **Manual configuration**.
 2. Select the program's `.exe` file.
 3. Enter arguments when using Manual configuration.
+
+The Ecode preset uses `--zen-mode` for editing and `--zen-mode --read-only` for viewing.
 
 Press ++f4++ to edit. Press ++f3++ to view.
 

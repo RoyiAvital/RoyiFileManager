@@ -16,6 +16,7 @@ PRESETS = (
 	('CudaText', ('-n', '-ns', '-nh'), ('-r', '-n', '-ns', '-nh')),
 	('Notepad 4', ('-ns',), ('-ro', '-ns')),
 	('EmEditor', ('-nr', '-sp'), ('-nr', '-sp', '-r')),
+	('Ecode', ('--zen-mode',), ('--zen-mode', '--read-only')),
 )
 SETTINGS = 'Core Settings.json'
 MANUAL = 'Manual configuration'

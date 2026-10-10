@@ -42,10 +42,10 @@
 - [x] CHANGE: Update the structure of the "About" box.
 - [x] CHANGE: Use `app_version` and `APP_VERSION` instead of `fman_version` and `FMAN_VERSION`.
 - [x] CHANGE: Rename the command "Show processes" to "Show OS' processes".
-- [ ] FEATURE: Add metadata to commands in _Command Palette_ for better search (Bookmarks for Favorites).
+- [ ] FEATURE: Add _synonyms_to commands in _Command Palette_ for better search. For example, searching "Bookmarks" should give the "Favorites" result.
 - [ ] CHANGE: Update to Everything 1.5 when released. It supports tags on Windows files.
 - [ ] FEATURE: _Folder Diff_ based on names, dates and hash.
-- [ ] CHANGE: Candidates for presets as text viewer / editor: [Editpad](https://github.com/imluyg/editpad), [Dan](https://github.com/dfallman/dan), [FastPad](https://github.com/coccor/Fastpad), [Lite Anvil](https://github.com/danpozmanter/lite-anvil), [Noter](https://github.com/blisspixel/noter), [Token](https://github.com/HelgeSverre/token), [Fulgur](https://github.com/fulgur-app/Fulgur).
+- [ ] FEATURE: Candidates for presets as text viewer / editor: [Editpad](https://github.com/imluyg/editpad), [Dan](https://github.com/dfallman/dan), [FastPad](https://github.com/coccor/Fastpad), [Lite Anvil](https://github.com/danpozmanter/lite-anvil), [Noter](https://github.com/blisspixel/noter), [Token](https://github.com/HelgeSverre/token), [Fulgur](https://github.com/fulgur-app/Fulgur).
 - [x] CHANGE: Remove the extended status bar for 2 panes. Leave only the option for a single pane (Active pane).
 - [x] BUG: Resetting the geometry of the application does not make it move to the default position on next run.
 - [x] CHANGE: Using _Fuzzy Find File_ should respect the active pane settings for hidden files.
@@ -54,6 +54,8 @@
 - [x] CHANGE: Minimize delay before copying a folder with many files.
 - [x] FEATURE: Implement multithreaded high performance copy with option for verification like `FastCopy`.
 - [x] BUG: Fix Move preparation failing when the destination folder does not exist.
+- [x] FEATURE: Add a preset for [`ecode`](https://github.com/SpartanJ/ecode) editor. Use `--zen-mode` for edit and `--zen-mode --read-only` for view.
+- [ ] FEATURE: Copy the status callback in `QuickBoard` to `QuickTable` and `QickList`. Add modes like callouts (Error, Alert, Text).
 
 ## Performance
 
