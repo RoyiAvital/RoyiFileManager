@@ -1248,7 +1248,7 @@ Findings:
   `verify_source` already enforce it) and let the host API rename link
   objects, adding a provider test for symlink/junction/hard-link sources; or
   (b) keep the host refusal, reword the alert for ordinary Rename, update the
-  Core README and [file-system-links](../docs/file-system-links.md), and add a
+  Core README and [file-system-links](../docs/file-system-operations.md), and add a
   `RenameListener` regression asserting the refusal.
 - **N2 [P3] Notification replication in `MotherFileSystem.rename_no_replace`.**
   The method re-implements `_on_file_removed`/`_on_file_added` by iterating the

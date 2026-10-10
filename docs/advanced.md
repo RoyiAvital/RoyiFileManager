@@ -40,7 +40,7 @@ skipped errors at the end.
 - Moving out of an archive, or between archives of the same format, verifies
   copied data before deleting the source and may need extra time and space.
 
-See the [archive guide](archives.md), [file-system link behavior](file-system-links.md)
+See the [archive guide](archives.md), [file-system link behavior](file-system-operations.md)
 and the Core plug-in's detailed
 [local transfer](https://github.com/RoyiAvital/RoyiFileManager/blob/main/src/main/resources/base/Plugins/Core/README.md#local-transfers)
 and [archive transfer](https://github.com/RoyiAvital/RoyiFileManager/blob/main/src/main/resources/base/Plugins/Core/README.md#archive-transfers)
