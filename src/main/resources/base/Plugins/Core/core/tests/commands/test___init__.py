@@ -262,6 +262,70 @@ class CommandCleanupTest(TestCase):
 		pane.place_cursor_at.assert_not_called()
 		pane.move_cursor_home.assert_not_called()
 
+class CopyItemTextTest(TestCase):
+	def test_single_file_folder_and_provider_text(self):
+		from core.commands import CopyFileName, CopyFilePath
+		for url, name, path in (
+			('file://C:/folder/report.tar.gz', 'report.tar.gz', 'C:\\folder\\report.tar.gz'),
+			('file://C:/folder/Project notes', 'Project notes', 'C:\\folder\\Project notes'),
+			('file://C:/folder/caf\u00e9.txt', 'caf\u00e9.txt', 'C:\\folder\\caf\u00e9.txt'),
+			('file:////server/share/Folder', 'Folder', '\\\\server\\share\\Folder'),
+			('zip://C:/archive.zip/folder/item.txt', 'item.txt', 'zip://C:/archive.zip/folder/item.txt'),
+		):
+			for command_type, text in ((CopyFileName, name), (CopyFilePath, path)):
+				with self.subTest(url=url, command=command_type.__name__):
+					pane = Mock()
+					pane.get_selected_files.return_value = [url]
+					pane.get_file_under_cursor.return_value = 'file://C:/other'
+					command = command_type(pane)
+					with patch('core.commands.clipboard.clear') as clear, \
+						patch('core.commands.clipboard.set_text') as set_text, \
+						patch('core.commands.show_status_message') as status:
+						self.assertTrue(command.is_visible())
+						command()
+					clear.assert_called_once_with()
+					set_text.assert_called_once_with(text)
+					status.assert_called_once_with('Copied %s to the clipboard' % text, timeout_secs=3)
+					pane.get_path.assert_not_called()
+	def test_cursor_fallback_and_invalid_selection_counts(self):
+		from core.commands import CopyFileName, CopyFilePath
+		for command_type in (CopyFileName, CopyFilePath):
+			for selected, cursor, visible in (
+				([], 'file://C:/folder', True),
+				([], None, False),
+				(['file://C:/one', 'file://C:/two'], 'file://C:/one', False),
+			):
+				with self.subTest(command=command_type.__name__, selected=selected, cursor=cursor):
+					pane = Mock()
+					pane.get_selected_files.return_value = selected
+					pane.get_file_under_cursor.return_value = cursor
+					command = command_type(pane)
+					with patch('core.commands.clipboard.clear') as clear, \
+						patch('core.commands.clipboard.set_text') as set_text, \
+						patch('core.commands.show_status_message') as status:
+						self.assertEqual(visible, command.is_visible())
+						command()
+					if visible:
+						set_text.assert_called_once_with('folder' if command_type is CopyFileName else 'C:\\folder')
+					else:
+						clear.assert_not_called()
+						set_text.assert_not_called()
+						status.assert_not_called()
+					pane.get_path.assert_not_called()
+	def test_execution_rechecks_selection(self):
+		from core.commands import CopyFileName, CopyFilePath
+		for command_type in (CopyFileName, CopyFilePath):
+			pane = Mock()
+			pane.get_selected_files.return_value = ['file://C:/one']
+			command = command_type(pane)
+			self.assertTrue(command.is_visible())
+			pane.get_selected_files.return_value = ['file://C:/one', 'file://C:/two']
+			with patch('core.commands.clipboard.clear') as clear, \
+				patch('core.commands.clipboard.set_text') as set_text:
+				command()
+			clear.assert_not_called()
+			set_text.assert_not_called()
+
 class ExternalAppConfigurationTest(TestCase):
 	def test_edit_app_uses_windows_picker_and_keeps_associations(self):
 		from core import commands

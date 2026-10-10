@@ -56,6 +56,7 @@
 - [x] BUG: Fix Move preparation failing when the destination folder does not exist.
 - [x] FEATURE: Add a preset for [`ecode`](https://github.com/SpartanJ/ecode) editor. Use `--zen-mode` for edit and `--zen-mode --read-only` for view.
 - [ ] FEATURE: Copy the status callback in `QuickBoard` to `QuickTable` and `QickList`. Add modes like callouts (Error, Alert, Text).
+- [x] FEATURE: Add `Copy file name` and `Copy file path` to file or dir right menu (_Context Menu_).
 
 ## Performance
 

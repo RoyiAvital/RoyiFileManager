@@ -22,11 +22,16 @@ Open the Command Center with ++ctrl+shift+p++ to see every command.
 
 ## Clipboard
 
-| Key | Action |
-| --- | --- |
-| ++ctrl+c++ | Copy files to the clipboard |
-| ++ctrl+x++ | Cut files to the clipboard |
-| ++ctrl+v++ | Paste files |
+| Key           | Action                      |
+| ------------- | --------------------------- |
+| ++ctrl+c++    | Copy files to the clipboard |
+| ++ctrl+x++    | Cut files to the clipboard  |
+| ++ctrl+v++    | Paste files                 |
+| ++f11++       | Copy file path              |
+| ++shift+f11++ | Copy file name              |
+
+!!! info "Multiple Files / Folders Selection"
+    The _Copy file path_ and _Copy file name_ are enabled only for a single element selection.
 
 ## Navigation
 

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.2] - 2026-10-10
+
+### Added
+
+- Single-item **Copy file name** and **Copy file path** actions in the row
+  context menu and Command Center, including folders. `Shift+F11` copies the
+  name; both actions are hidden for multiple items. Existing `F11` behavior is unchanged.
+
 ## [0.16.1] - 2026-10-10
 
 ### Added

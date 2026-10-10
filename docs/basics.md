@@ -11,16 +11,16 @@ Open a source on one side. Open a destination on the other. Then copy or move.
 
 ## Start Here
 
-| Action | Key |
-| --- | --- |
-| Switch panes | ++tab++ |
-| Open | ++enter++ |
-| Go up | ++backspace++ |
-| Select | ++space++ |
-| Copy | ++f5++ |
-| Move | ++f6++ |
-| New folder | ++f7++ |
-| Delete to Recycle Bin | ++f8++ |
+| Action                | Key           |
+| --------------------- | ------------- |
+| Switch panes          | ++tab++       |
+| Open                  | ++enter++     |
+| Go up                 | ++backspace++ |
+| Select                | ++space++     |
+| Copy                  | ++f5++        |
+| Move                  | ++f6++        |
+| New folder            | ++f7++        |
+| Delete to Recycle Bin | ++f8++        |
 
 ## Transfer Files Between Panes
 

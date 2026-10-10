@@ -43,6 +43,23 @@ NTFS/ReFS scans use bulk native records; other local paths use provider-owned
 enumeration. Display snapshots never replace authoritative file-operation
 metadata or identity checks.
 
+## Clipboard Text
+
+Right-click one file or folder for **Copy file name** and **Copy file path**.
+Both commands also appear in Command Center when exactly one item is chosen:
+the marked item, or the cursor item when nothing is marked. They are hidden
+for multiple chosen items and do nothing if invoked without exactly one item.
+Right-clicking an unmarked row targets that row; right-clicking a marked row
+preserves the marked group.
+
+`Shift+F11` copies the name, including a file's extension. Copy file path copies
+the full Windows path, including UNC paths; nonlocal providers retain their URL.
+Both copy plain text without quotes or file-transfer clipboard data.
+
+`F11` remains **Copy paths to clipboard**: it copies all chosen paths, one per
+line, or the current directory when no item is chosen. `Ctrl+C` still copies
+items for file transfer.
+
 ## QuickView
 
 On Windows, `Ctrl+Q` / **Toggle QuickView** previews the file under the source

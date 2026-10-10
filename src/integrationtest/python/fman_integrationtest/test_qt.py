@@ -4802,6 +4802,148 @@ class CommandPaletteRecentIT(QtIT):
 		self.assertEqual(2, len(loads))
 		pane.run_command.assert_not_called()
 
+class ClipboardCommandsIT(QtIT):
+	def setUp(self):
+		from core.commands import CopyFileName, CopyFilePath, CopyPathsToClipboard
+		from fman import DirectoryPane
+		from fman.impl.plugins.command_registry import ApplicationCommandRegistry, PaneCommandRegistry
+		from fman.impl.plugins.context_menu import ContextMenuProvider
+		from fman.impl.plugins.key_bindings import KeyBindings
+		from fman.impl.plugins.plugin import _get_command_name
+		from fman.impl.view import FileListView
+		from pathlib import Path
+		from PyQt5.QtCore import pyqtSignal
+		from PyQt5.QtGui import QStandardItem, QStandardItemModel
+		from unittest.mock import Mock, patch
+		import json
+		class UrlModel(QStandardItemModel):
+			sort_order_changed = pyqtSignal(object, object)
+			transaction_ended = pyqtSignal()
+			def url(self, index):
+				return index.data(Qt.UserRole)
+		root = Path(__file__).parents[3] / 'main/resources/base/Plugins/Core'
+		self.menu_config = json.loads((root / 'File Context Menu (Windows).json').read_text(encoding='utf-8'))
+		self.background_config = json.loads((root / 'Folder Context Menu (Windows).json').read_text(encoding='utf-8'))
+		self.bindings_config = json.loads((root / 'Key Bindings.json').read_text(encoding='utf-8'))
+		self.completed = Event()
+		self.errors = Mock()
+		callback = Mock()
+		callback.after_command.side_effect = lambda *args: self.completed.set()
+		def create():
+			self.registry = PaneCommandRegistry(self.errors, callback)
+			for command_type in (CopyFileName, CopyFilePath, CopyPathsToClipboard):
+				self.registry.register_command(_get_command_name(command_type), command_type)
+			bindings = KeyBindings()
+			for name in self.registry.get_commands():
+				bindings.register_command(name)
+			self.assertEqual([], bindings.load([entry for entry in self.bindings_config
+				if entry['command'] in self.registry.get_commands()]))
+			self.provider = ContextMenuProvider(self.registry,
+				ApplicationCommandRegistry(None, self.errors, callback), bindings)
+			for config, context in ((self.menu_config, self.provider.FILE_CONTEXT),
+				(self.background_config, self.provider.FOLDER_CONTEXT)):
+				self.assertEqual([], self.provider.load([entry for entry in config
+					if entry.get('command') in self.registry.get_commands()], '', context))
+			self.view = FileListView(None, lambda event, url: self.provider.get_context_menu(self.pane, url))
+			self.view.setSortingEnabled(False)
+			self.model = UrlModel(self.view)
+			for name in ('report.tar.gz', 'Folder notes', 'caf\u00e9.txt'):
+				item = QStandardItem(name)
+				item.setData('file://C:/clipboard-test/' + name, Qt.UserRole)
+				self.model.appendRow(item)
+			self.view.setModel(self.model)
+			widget = Mock()
+			widget.get_selected_files.side_effect = lambda: self.run_in_app(lambda:
+				[self.model.url(index) for index in self.view.selectionModel().selectedRows()])
+			widget.get_file_under_cursor.side_effect = lambda: self.run_in_app(lambda:
+				self.model.url(self.view.currentIndex()) if self.view.currentIndex().isValid() else None)
+			widget.get_location.return_value = 'file://C:/clipboard-test'
+			self.pane = DirectoryPane(None, widget, self.registry)
+			self.view.resize(640, 240)
+			self.view.show()
+			QApplication.processEvents()
+		self.run_in_app(create)
+		self.addCleanup(self.run_in_app, self.view.deleteLater)
+		self.addCleanup(self.run_in_app, self.view.close)
+		patcher = patch('core.commands.show_status_message')
+		patcher.start()
+		self.addCleanup(patcher.stop)
+	def _select(self, rows, cursor=0):
+		from PyQt5.QtCore import QItemSelectionModel
+		def select():
+			selection = self.view.selectionModel()
+			selection.clearSelection()
+			selection.setCurrentIndex(self.model.index(cursor, 0), QItemSelectionModel.NoUpdate)
+			for row in rows:
+				selection.select(self.model.index(row, 0), QItemSelectionModel.Select | QItemSelectionModel.Rows)
+		self.run_in_app(select)
+	def test_menu_visibility_for_single_file_folder_multiple_and_background(self):
+		for rows, cursor, expected in (([0], 0, True), ([1], 1, True), ([0, 1], 0, False), ([], -1, False)):
+			with self.subTest(rows=rows, cursor=cursor):
+				self._select(rows, cursor)
+				titles = self.run_in_app(lambda: [entry[0] for entry in
+					self.provider.get_context_menu(self.pane, self.pane.get_file_under_cursor())])
+				for title in ('Copy file name', 'Copy file path'):
+					self.assertEqual(expected, title in titles)
+		self._select([0])
+		self.assertEqual([], self.run_in_app(lambda: list(self.provider.get_context_menu(self.pane))))
+		self.errors.report.assert_not_called()
+	def test_palette_shortcuts_and_real_clipboard(self):
+		from core.commands import CommandPalette
+		from fman import clipboard
+		from unittest.mock import patch
+		palette = CommandPalette(self.pane)
+		with patch('core.commands.load_json', return_value=self.bindings_config), \
+			patch('core.commands.get_application_commands', return_value=[]):
+			self._select([0, 1])
+			self.assertEqual(['Copy paths to clipboard'], [item.title for item in palette._suggest_commands('copy')])
+			for row, expected in ((0, 'report.tar.gz'), (1, 'Folder notes'), (2, 'caf\u00e9.txt')):
+				self._select([row])
+				items = {item.title: item for item in palette._suggest_commands('copy')}
+				self.assertEqual('Shift+F11', items['Copy file name'].hint)
+				self.assertEqual('F11', items['Copy paths to clipboard'].hint)
+				for title, text in (('Copy file name', expected),
+					('Copy file path', 'C:\\clipboard-test\\' + expected)):
+					items[title].value()
+					self.assertEqual(text, clipboard.get_text())
+					self.assertFalse(self.run_in_app(lambda: QApplication.clipboard().mimeData().hasUrls()))
+			self._select([0, 1])
+			items = palette._suggest_commands('copy')
+			items[0].value()
+			self.assertEqual('C:\\clipboard-test\\report.tar.gz\nC:\\clipboard-test\\Folder notes', clipboard.get_text())
+		self.errors.report.assert_not_called()
+	def test_mouse_target_and_selected_group(self):
+		from fman import clipboard
+		from PyQt5.QtGui import QContextMenuEvent
+		from unittest.mock import patch
+		for selected, target, visible in (([0, 1], 2, True), ([0, 1], 0, False), ([1], 1, True)):
+			with self.subTest(selected=selected, target=target):
+				self._select(selected)
+				self.completed.clear()
+				clipboard.set_text('unchanged')
+				def inspect(menu, position):
+					actions = {action.text(): action for action in menu.actions()}
+					for title in ('Copy file name', 'Copy file path'):
+						self.assertEqual(visible, title in actions)
+					if visible:
+						actions['Copy file name'].trigger()
+				def open_menu():
+					position = self.view.visualRect(self.model.index(target, 0)).center()
+					event = QContextMenuEvent(QContextMenuEvent.Mouse, position,
+						self.view.viewport().mapToGlobal(position))
+					self.view.contextMenuEvent(event)
+				with patch('fman.impl.view.Menu.exec', inspect):
+					self.run_in_app(open_menu)
+				if visible:
+					self.assertTrue(self.completed.wait(5), 'Menu command did not complete')
+					self.assertEqual(('report.tar.gz', 'Folder notes', 'caf\u00e9.txt')[target], clipboard.get_text())
+				else:
+					self.assertEqual('unchanged', clipboard.get_text())
+				expected_rows = [] if target not in selected else selected
+				self.assertEqual(expected_rows, self.run_in_app(lambda:
+					[index.row() for index in self.view.selectionModel().selectedRows()]))
+		self.errors.report.assert_not_called()
+
 class RobocopyIT(QtIT):
 	close_window = FilterBarIT.close_window
 	navigate = FilterBarIT.navigate

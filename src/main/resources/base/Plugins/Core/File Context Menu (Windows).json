@@ -5,6 +5,8 @@
 	{ "caption": "-", "id": "clipboard" },
 	{ "command": "cut", "caption": "Cu&t" },
 	{ "command": "copy_to_clipboard", "caption": "&Copy" },
+	{ "command": "copy_file_name", "caption": "Copy file name" },
+	{ "command": "copy_file_path", "caption": "Copy file path" },
 	{ "caption": "-", "id": "file_operations" },
 	{ "command": "move_to_trash", "caption": "&Delete" },
 	{ "command": "rename", "caption": "Rena&me" },

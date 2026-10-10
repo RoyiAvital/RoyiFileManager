@@ -15,6 +15,7 @@ from fman.fs import exists, touch, mkdir, is_dir, delete, samefile, \
 from fman.impl.product import APP_NAME
 from fman.url import splitscheme, as_url, join, basename, as_human_readable, \
 	dirname, relpath, normalize
+from fman.url import basename as url_basename
 from html import escape
 from io import UnsupportedOperation
 from itertools import chain
@@ -935,6 +936,26 @@ class CopyPathsToClipboard(DirectoryPaneCommand):
 		clipboard.clear()
 		clipboard.set_text('\n'.join(map(as_human_readable, to_copy)))
 		_report_clipboard_action('Copied', to_copy, ' to the clipboard', 'path')
+
+class CopyFileName(DirectoryPaneCommand):
+	def __call__(self):
+		_copy_single_item_text(self.get_chosen_files(), url_basename)
+	def is_visible(self):
+		return len(self.get_chosen_files()) == 1
+
+class CopyFilePath(DirectoryPaneCommand):
+	def __call__(self):
+		_copy_single_item_text(self.get_chosen_files(), as_human_readable)
+	def is_visible(self):
+		return len(self.get_chosen_files()) == 1
+
+def _copy_single_item_text(files, format_text):
+	if len(files) != 1:
+		return
+	text = format_text(files[0])
+	clipboard.clear()
+	clipboard.set_text(text)
+	show_status_message('Copied %s to the clipboard' % text, timeout_secs=3)
 
 def _report_clipboard_action(verb, files, suffix='', ftype='file'):
 	num = len(files)
