@@ -113,6 +113,11 @@ optional `args`, optional `caption`, and optional grouping `id`. A caption of
 commands see the clicked item's context for visibility and execution, which may
 differ from the ordinary cursor context.
 
+An optional `shortcut_command` names a registered command whose current binding
+is used as a fallback shortcut label when the entry's own command has no binding.
+This does not change the click callback, visibility, or global key bindings.
+Use it only for commands with equivalent behavior in that menu context.
+
 The cursor override applies only on the command's thread. Capture
 `pane.get_file_under_cursor()` there before passing the URL to a Qt-thread helper
 or another worker; reading it on that other thread returns the ordinary cursor.

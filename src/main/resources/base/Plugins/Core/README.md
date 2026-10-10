@@ -56,6 +56,9 @@ preserves the marked group.
 the full Windows path, including UNC paths; nonlocal providers retain their URL.
 Both copy plain text without quotes or file-transfer clipboard data.
 
+The Copy file path menu entry shows `F11`, following the current binding for
+Copy paths to clipboard unless Copy file path has its own binding.
+
 `F11` remains **Copy paths to clipboard**: it copies all chosen paths, one per
 line, or the current directory when no item is chosen. `Ctrl+C` still copies
 items for file transfer.

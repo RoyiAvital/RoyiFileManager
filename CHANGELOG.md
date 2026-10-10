@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Copy file path** now displays the current path-copy shortcut (`F11` by
+  default) in its context menu, preserving single-item visibility and existing
+  keyboard behavior. A direct custom binding for the action takes precedence.
+
 ## [0.16.2] - 2026-10-10
 
 ### Added

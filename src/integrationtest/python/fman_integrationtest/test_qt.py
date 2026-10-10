@@ -4926,7 +4926,9 @@ class ClipboardCommandsIT(QtIT):
 					for title in ('Copy file name', 'Copy file path'):
 						self.assertEqual(visible, title in actions)
 					if visible:
-						actions['Copy file name'].trigger()
+						self.assertEqual('Shift+F11', actions['Copy file name'].shortcut().toString())
+						self.assertEqual('F11', actions['Copy file path'].shortcut().toString())
+						actions['Copy file path'].trigger()
 				def open_menu():
 					position = self.view.visualRect(self.model.index(target, 0)).center()
 					event = QContextMenuEvent(QContextMenuEvent.Mouse, position,
@@ -4936,7 +4938,7 @@ class ClipboardCommandsIT(QtIT):
 					self.run_in_app(open_menu)
 				if visible:
 					self.assertTrue(self.completed.wait(5), 'Menu command did not complete')
-					self.assertEqual(('report.tar.gz', 'Folder notes', 'caf\u00e9.txt')[target], clipboard.get_text())
+					self.assertEqual('C:\\clipboard-test\\' + ('report.tar.gz', 'Folder notes', 'caf\u00e9.txt')[target], clipboard.get_text())
 				else:
 					self.assertEqual('unchanged', clipboard.get_text())
 				expected_rows = [] if target not in selected else selected

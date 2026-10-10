@@ -114,11 +114,9 @@ class ContextMenuProvider:
 		args = entry.get('args', {})
 		# Need `r=run_command,...` to create one lambda per loop:
 		callback = lambda r=run_command, c=cmd_name, a=args: r(c, a)
-		all_shortcuts = self._get_shortcuts_for_command(cmd_name)
-		try:
-			shortcut = next(iter(all_shortcuts))
-		except StopIteration:
-			shortcut = ''
+		shortcut = next(self._get_shortcuts_for_command(cmd_name), '')
+		if not shortcut and 'shortcut_command' in entry:
+			shortcut = next(self._get_shortcuts_for_command(entry['shortcut_command']), '')
 		return caption, shortcut, callback
 	def _get_shortcuts_for_command(self, command):
 		for binding in self._key_bindings.get_sanitized_bindings():
@@ -164,6 +162,13 @@ def sanitize_context_menu(cm, file_name, available_commands):
 					(file_name, json.dumps(command), json.dumps(item))
 				)
 				continue
+			if 'shortcut_command' in item:
+				shortcut_command = item['shortcut_command']
+				if not isinstance(shortcut_command, str) or shortcut_command not in available_commands:
+					errors.append(
+						'Error in %s: "shortcut_command" must name an available command.' % file_name
+					)
+					continue
 			args = item.get('args')
 			if args is not None and not isinstance(args, dict):
 				errors.append(
