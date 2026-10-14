@@ -98,6 +98,105 @@ class BatchFileRenamerTest(TestCase):
 		self.assertEqual('', self.engine.preview(self.captured, '{name}{ext}', (None, 0))[0].cells[4])
 		self.assertEqual('', self.engine.preview(self.captured, '{name}{ext}', None)[0].cells[5])
 
+	def test_random_fields_stay_with_files_across_preview_and_view_changes(self):
+		template = '{name}_{c}{c}{d}{d}{ext}'
+		entries = self.engine.plan(self.captured, template, (0, 1))
+		for entry in entries:
+			self.assertRegex(entry.target, r'^IMG_[0-9]+_[a-zA-Z]{2}[0-9]{2}\.txt$')
+			self.assertIsNone(entry.problem)
+		self.assertEqual(entries, self.engine.plan(self.captured, template, (0, 1)))
+		reordered = self.engine.plan(self.captured, template, (1, 0))
+		self.assertEqual(tuple(entry.target for entry in entries), tuple(entry.target for entry in reordered))
+		filtered = self.engine.plan(self.captured, template, (None, 0))
+		self.assertIsNone(filtered[0].target)
+		self.assertEqual(entries[1].target, filtered[1].target)
+		rows = self.engine.preview(self.captured, template, (0, 1))
+		self.assertEqual(tuple(entry.target for entry in entries), tuple(row.cells[4] for row in rows))
+		edited = self.engine.plan(self.captured, 'prefix_' + template, (0, 1))
+		self.assertEqual(tuple('prefix_' + entry.target for entry in entries), tuple(entry.target for entry in edited))
+
+	def test_random_field_sequences_are_independent_and_extend_without_rerolling(self):
+		mixed = self.engine.plan(self.captured, '{c}{d}{c}{d}', (0, 1))
+		letters = self.engine.plan(self.captured, '{c}{c}', (0, 1))
+		digits = self.engine.plan(self.captured, '{d}{d}', (0, 1))
+		longer = self.engine.plan(self.captured, '{c}{c}{c}{d}{d}{d}', (0, 1))
+		for combined, characters, numbers, extended in zip(mixed, letters, digits, longer):
+			self.assertEqual(characters.target, combined.target[::2])
+			self.assertEqual(numbers.target, combined.target[1::2])
+			self.assertTrue(extended.target.startswith(characters.target))
+			self.assertEqual(numbers.target, extended.target[3:5])
+		with patch.object(self.engine, 'Random') as generator:
+			generator.return_value.choices.side_effect = lambda alphabet, *, k: alphabet[:k]
+			entries = self.engine.plan(self.captured, '{name}_{c}{c}{d}{d}{c}{d}{ext}', (0, 1))
+			self.assertTrue(all(entry.target.endswith('_ab01c2.txt') for entry in entries))
+			self.assertEqual(4, generator.call_count)
+
+	def test_random_session_seed_is_fresh_and_preview_needs_no_entropy(self):
+		from random import getstate
+		urls = tuple(source.url for source in self.captured.sources)
+		with patch.object(self.engine.os, 'urandom', side_effect=(b'a' * 16, b'b' * 16)) as entropy:
+			first = self.engine.capture(urls)
+			second = self.engine.capture(urls)
+			self.assertEqual(2, entropy.call_count)
+			self.assertTrue(all(call.args == (16,) for call in entropy.call_args_list))
+		self.assertNotEqual(first.random_seed, second.random_seed)
+		template = '{name}_' + '{c}' * 12 + '{d}' * 12 + '{ext}'
+		before = getstate()
+		with patch.object(self.engine.os, 'urandom', side_effect=AssertionError('No preview entropy reads')):
+			first_plan = self.engine.plan(first, template, (0, 1))
+			self.assertEqual(first_plan, self.engine.plan(first, template, (0, 1)))
+			second_plan = self.engine.plan(second, template, (0, 1))
+		self.assertEqual(before, getstate())
+		self.assertNotEqual(tuple(entry.target for entry in first_plan), tuple(entry.target for entry in second_plan))
+
+	def test_random_collisions_are_reported_without_regeneration(self):
+		from dataclasses import replace
+		paths = tuple(self.root / ('digit_source_%02d.txt' % index) for index in range(11))
+		for path in paths:
+			path.write_bytes(b'keep')
+		captured = self.engine.capture(tuple(as_url(path) for path in paths))
+		mapping = tuple(range(11))
+		entries = self.engine.plan(captured, '{d}.txt', mapping)
+		self.assertTrue(any(entry.problem == 'Duplicate target' for entry in entries))
+		self.assertEqual(entries, self.engine.plan(captured, '{d}.txt', mapping))
+		with self.assertRaises(ValueError):
+			self.engine.preflight(captured, entries)
+		with patch.object(self.engine, 'Random') as generator:
+			generator.return_value.choices.return_value = ['7']
+			occupied = replace(self.captured, occupied=self.captured.occupied | {'7.txt'})
+			entry = self.engine.plan(occupied, '{d}{ext}', (0, None))[0]
+			self.assertEqual('7.txt', entry.target)
+			self.assertEqual('Target exists', entry.problem)
+			generator.assert_called_once()
+
+	def test_random_preview_targets_are_used_without_rerolling_at_execution(self):
+		from fman.fs import RenameResult
+		template = '{name}_{c}{c}{d}{d}{ext}'
+		rows = self.engine.preview(self.captured, template, (1, 0))
+		entries = self.engine.plan(self.captured, template, (1, 0))
+		rename = Mock(side_effect=lambda source, target: RenameResult(source, target, True))
+		with patch.object(self.engine, 'Random', side_effect=AssertionError('No reroll after preview')):
+			self.engine.preflight(self.captured, entries)
+			report, confirmed = self.engine.execute(self.captured, entries, rename)
+		expected = tuple(as_url(self.root / row.cells[4]) for row in reversed(rows))
+		self.assertEqual(expected, confirmed)
+		self.assertEqual(expected, tuple(call.args[1] for call in rename.call_args_list))
+		self.assertTrue(all(outcome == 'Renamed' for old, current, outcome in report))
+
+	def test_random_fields_reject_formats_and_keep_existing_limits(self):
+		for template in ('{c:4}', '{d:02d}', '{c!r}', '{d!s}', '{c + 1}', '{d + 1}', '{c:{d}}'):
+			with self.subTest(template=template), self.assertRaises(ValueError):
+				self.engine.parse(template)
+		with patch.object(self.engine, 'Random', side_effect=AssertionError('No random fields in this template')):
+			self.engine.plan(self.captured, '{{c}}_{{d}}_{name}{ext}', (0, 1))
+			self.engine.plan(self.captured, '{name}_{index}{ext}', (0, 1))
+			self.engine.plan(self.captured, '{c}{d}', (None, None))
+		entries = self.engine.plan(self.captured, '{c}' * 256, (0, None))
+		self.assertEqual(256, len(entries[0].display))
+		self.assertIn('Name too long', entries[0].problem)
+		with patch.object(self.engine, 'MAX_PREVIEW_BYTES', 300), self.assertRaisesRegex(ValueError, '16 MiB'):
+			self.engine.plan(self.captured, '{c}' * 256, (0, 1))
+
 	def test_syntax_and_identity(self):
 		rows = self.engine.preview(self.captured, '{name}{ext}', (0, 1))
 		self.assertTrue(all(row.cells[5] == '\u2713 Unchanged' for row in rows))

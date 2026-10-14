@@ -7,8 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Batch File Renamer supports `{c}` for a random ASCII letter and `{d}` for a
+  random digit. Repeat fields for longer strings. Values stay fixed per file
+  during the session, so preview and execution agree; collisions remain blocked.
+
+### Changed
+
+- QuickBoard opens at 900 x 600, with compact numeric columns and more width for
+  filename columns. Batch File Renamer's hint line now includes `{c}` and `{d}`.
+
 ### Fixed
 
+- Batch File Renamer is now included in frozen builds instead of requiring
+  separate installation. It remains an independent public API plug-in. Remove
+  any manually installed duplicate when upgrading to a bundled build.
 - **Copy file path** now displays the current path-copy shortcut (`F11` by
   default) in its context menu, preserving single-item visibility and existing
   keyboard behavior. A direct custom binding for the action takes precedence.

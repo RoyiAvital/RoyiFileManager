@@ -57,6 +57,8 @@
 - [x] FEATURE: Add a preset for [`ecode`](https://github.com/SpartanJ/ecode) editor. Use `--zen-mode` for edit and `--zen-mode --read-only` for view.
 - [ ] FEATURE: Copy the status callback in `QuickBoard` to `QuickTable` and `QuickList`. Add modes like callouts (Error, Alert, Text).
 - [x] FEATURE: Add `Copy file name` and `Copy file path` to file or dir right menu (_Context Menu_).
+- [x] CHANGE: Bundle Batch File Renamer in the frozen application while keeping its public plug-in API implementation.
+- [x] FEATURE: Add random letter (`{c}`) and digit (`{d}`) fields to the rename tool.
 
 ## Performance
 

@@ -153,9 +153,18 @@ class ExternalPluginTest(TestCase):
 
 class BatchFileRenamerPluginIT(qt_tests.QuickBoardFixture):
 	def test_installed_public_only_command_renames_only_visible_files(self):
+		self._exercise_renamer(bundled=False)
+
+	def test_spec_bundled_command_renames_only_visible_files(self):
+		self._exercise_renamer(bundled=True)
+
+	def test_random_preview_matches_bundled_command_execution(self):
+		self._exercise_renamer(bundled=True, random_fields=True)
+
+	def _exercise_renamer(self, bundled, random_fields=False):
 		from pathlib import Path
 		from tempfile import TemporaryDirectory
-		from shutil import copytree
+		from shutil import copy2, copytree
 		from unittest.mock import Mock, patch
 		from fman_unittest.batch_file_renamer_fixture import PLUGIN_ROOT
 		from fman.impl.ui.table_filters import compile_filter
@@ -166,8 +175,31 @@ class BatchFileRenamerPluginIT(qt_tests.QuickBoardFixture):
 		self.addCleanup(fixture.tearDown)
 		with TemporaryDirectory() as directory:
 			root = Path(directory).resolve()
-			installed = root / 'Third-party/BatchFileRenamer'
-			copytree(PLUGIN_ROOT, installed)
+			if bundled:
+				import build
+				from runpy import run_path
+				from PyInstaller.building.utils import format_binaries_and_datas
+				from fman.impl.plugins.discover import find_plugin_dirs
+				with patch('PyInstaller.utils.hooks.collect_all', return_value=([], [], [])):
+					specification = run_path(str(build.ROOT / 'application.spec'), init_globals={
+						'SPECPATH': str(build.ROOT), 'Analysis': Mock(), 'PYZ': Mock(), 'EXE': Mock(), 'COLLECT': Mock()})
+				self.assertIn('string', specification['hidden_imports'])
+				self.assertIn('random', specification['hidden_imports'])
+				data = [entry for entry in specification['datas'] if entry[1] == 'resources/Plugins/BatchFileRenamer']
+				self.assertTrue(data, 'Batch File Renamer must be included in the frozen resources')
+				for destination, source in format_binaries_and_datas(data, workingdir=str(build.ROOT)):
+					target = root / '_internal' / destination
+					target.parent.mkdir(parents=True, exist_ok=True)
+					copy2(source, target)
+				installed = root / '_internal/resources/Plugins/BatchFileRenamer'
+				self.assertTrue((installed / 'batch_file_renamer/engine.py').is_file())
+				discovered = find_plugin_dirs(str(root / '_internal/resources/Plugins'),
+					str(root / 'Third-party'), str(root / 'User'))
+				self.assertIn(str(installed), discovered)
+				self.assertFalse((root / 'Third-party').exists())
+			else:
+				installed = root / 'Third-party/BatchFileRenamer'
+				copytree(PLUGIN_ROOT, installed)
 			files = root / 'files'
 			files.mkdir()
 			for name in ('IMG_2.txt', 'IMG_10.txt', 'occupied.txt'):
@@ -194,20 +226,40 @@ class BatchFileRenamerPluginIT(qt_tests.QuickBoardFixture):
 					finished, result = self.start_call(BatchFileRenamer(pane))
 					board = self.window_for()
 					self.settled(board)
-					self.run_in_app(board.input.setText, 'renamed_{index}{ext}')
+					self.assertIn('{c} random letter', self.run_in_app(lambda: board.summary.content))
+					self.assertIn('{d} random digit', self.run_in_app(lambda: board.summary.content))
+					self.assertEqual((900, 600), self.run_in_app(lambda: (board.width(), board.height())))
+					widths = self.run_in_app(lambda: tuple(board.table.view.columnWidth(index) for index in range(6)))
+					for index in (0, 1, 5):
+						self.assertLess(widths[index], min(widths[2], widths[4]))
+					template = 'renamed_{index}_{c}{c}{d}{d}{ext}' if random_fields else 'renamed_{index}{ext}'
+					self.run_in_app(board.input.setText, template)
 					self.settled(board)
+					if random_fields:
+						initial = self.run_in_app(lambda: tuple(row.cells[4] for row in board.table.rows))
+						self.run_in_app(board.input.setText, 'edited_' + template)
+						self.settled(board)
+						self.assertEqual(tuple('edited_' + name for name in initial),
+							self.run_in_app(lambda: tuple(row.cells[4] for row in board.table.rows)))
 					self.run_in_app(board.table.set_column_filter, 2, compile_filter(board.schema.columns[2], 2, 'substring', 'IMG_10'))
 					self.settled(board)
 					self.assertEqual((None, 0), board.mapping)
+					expected_name = self.run_in_app(lambda: board.table.rows[1].cells[4])
+					if random_fields:
+						self.assertRegex(expected_name, r'^edited_renamed_0_[a-zA-Z]{2}[0-9]{2}\.txt$')
+						self.assertEqual(initial[1].removeprefix('renamed_1_'),
+							expected_name.removeprefix('edited_renamed_0_'))
+					else:
+						self.assertEqual('renamed_0.txt', expected_name)
 					self.run_in_app(board.request_accept)
 					report = self.wait_table()
 					self.assertTrue((files / 'IMG_2.txt').exists())
 					self.assertFalse((files / 'IMG_10.txt').exists())
-					self.assertEqual('IMG_10.txt', (files / 'renamed_0.txt').read_text())
+					self.assertEqual('IMG_10.txt', (files / expected_name).read_text())
 					self.assertIn('1 renamed; 1 excluded', self.run_in_app(lambda: report.summary.content))
 					self.run_in_app(report.close)
 					self.assertTrue(finished.wait(5))
-					pane.select.assert_called_once_with((as_url(files / 'renamed_0.txt'),))
+					pane.select.assert_called_once_with((as_url(files / expected_name),))
 					self.assertFalse(callbacks)
 			finally:
 				fixture._plugin.unload()

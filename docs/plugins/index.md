@@ -55,5 +55,8 @@ There is no built-in downloader, and no `Plugin.json` installation metadata is r
 
 The independent [Batch File Renamer](https://github.com/RoyiAvital/RoyiFileManager/tree/main/plugins/BatchFileRenamer)
 demonstrates mapped QuickBoard previews, optional caller status and public
-no-overwrite renaming. Install it manually as described above; it is not bundled
-automatically. Its README lists the required host API and template syntax.
+no-overwrite renaming. New frozen builds include it automatically. Source runs
+and older compatible builds can install it manually as described above. Remove
+any old manual duplicate when upgrading to a bundled build. Its README lists the
+required host API and template syntax.
+For the user guide and examples, see [Batch File Renamer](../tools.md#batch-file-renamer).

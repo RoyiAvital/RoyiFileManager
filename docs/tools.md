@@ -241,6 +241,95 @@ The sort is remembered the next time the manager opens.
 
 See [Favorites usage](https://github.com/RoyiAvital/RoyiFileManager/blob/main/src/main/resources/base/Plugins/Favorites/README.md).
 
+## Batch File Renamer
+
+Select files in one local folder, open Command Center with ++ctrl+shift+p++, and
+run **Batch File Renamer**. With no selection, it uses the file under the cursor.
+
+Type a template, then review **New Name** and **Valid Name**. Sort or filter the
+source columns to choose the order and files to rename. Press ++enter++ to apply
+the visible results, or ++esc++ to cancel. Files hidden by a filter are untouched;
+files merely scrolled out of view are still included.
+
+<figure class="product-shot" markdown>
+  ![Batch File Renamer previewing numbered names with a random letter and digit](assets/royifilemanager-batch-renamer.png)
+  <figcaption>A numbered prefix and random suffix applied to eight sample filenames.</figcaption>
+</figure>
+
+### Template Fields
+
+Use braces around field names.
+Ordinary text is copied directly into the new name.
+
+!!! info " _Python_ `f strings`"
+    The syntax is inspired by _Python_ `f-strings`.  
+    There are predefined variables to be used in the renaming pattern.
+
+| Field            | Meaning                                                        |
+| ---------------- | -------------------------------------------------------------- |
+| `{name}`         | Original filename without its final extension                  |
+| `{ext}`          | Final extension, including the dot                             |
+| `{index}`        | Position among the current visible results, starting at 0      |
+| `{file_index}`   | Fixed natural-order position among all regular folder files    |
+| `{current_date}` | Local date/time when this rename session opened                |
+| `{file_date}`    | File's last-modified date/time, in local time                  |
+| `{c}`            | One random letter: `a-z` or `A-Z`                              |
+| `{d}`            | One random digit: `0-9`                                        |
+
+Both indices start at zero. Sorting and filtering change `{index}`; `{file_index}`
+keeps its captured value and includes hidden and unselected regular files.
+Keep `{ext}` to retain the extension; leaving it out removes the extension.
+
+### Template Examples
+
+These examples use `report.txt`, visible index **0**, folder index **2**, and a
+file modified on **2026-03-15 at 10:30:00**. The session date is **2026-10-14**.
+Random characters in the examples are illustrative.
+
+| Template                                 | Example Result                 |
+| ---------------------------------------- | ------------------------------ |
+| `{name}{ext}`                            | `report.txt`                   |
+| `Copy_{name}{ext}`                       | `Copy_report.txt`              |
+| `{index:03d}_{name}{ext}`                | `000_report.txt`               |
+| `{(index + 1):03d}_{name}{ext}`          | `001_report.txt`               |
+| `{(file_index + 1):03d}_{name}{ext}`     | `003_report.txt`               |
+| `{file_date:%Y%m%d}_{name}{ext}`         | `20260315_report.txt`          |
+| `{file_date:%Y-%m-%d_%H-%M-%S}{ext}`     | `2026-03-15_10-30-00.txt`      |
+| `{current_date}_{name}{ext}`             | `2026-10-14_report.txt`        |
+| `{name}_{c}{c}{d}{d}{ext}`               | `report_aB07.txt`              |
+| `{{draft}}_{name}{ext}`                  | `{draft}_report.txt`           |
+
+### Formatting Rules
+
+- **Numbering:** add a positive integer to `{index}` or `{file_index}` to choose
+  the starting number. Use `:03d` for at least three digits with leading zeros.
+  Plain values and `:d` are also supported; widths may be 1-32 and never truncate.
+- **Dates:** the default is `YYYY-MM-DD`. Supported codes are `%Y` (four-digit
+  year), `%y` (two-digit year), `%m` (month), `%d` (day), `%H` (24-hour hour),
+  `%M` (minute), `%S` (second), and `%%` (literal percent). Use hyphens instead of
+  colons in times, because Windows filenames cannot contain `:`.
+- **Random text:** repeat `{c}` or `{d}` for more characters. Each occurrence is
+  a separate draw, so characters can repeat. The sequences stay with each file
+  through edits, sorting and filtering; the rename matches the preview. Reopening
+  generates a new set. Random names are not guaranteed unique.
+- **Literal braces:** write `{{` and `}}` to include `{` and `}` in a filename.
+- **Limits:** this is f-string-like syntax, not Python code. Function calls,
+  attribute access, conversions such as `!r`, subtraction and nested fields are
+  unsupported. Only index fields allow arithmetic; name, extension and random
+  fields accept no format specifications.
+
+!!! warning "Review Before Renaming"
+    Invalid or conflicting names block the rename; existing files are never
+    overwritten. Cancellation during execution keeps changes already completed.
+    There is no automatic undo or rollback.
+
+The tool supports up to 25,000 regular files, within the preview size limit.
+Folders, links, junctions, files with multiple hard links, UNC network paths and
+archive entries are not supported. Sparse files and cloud placeholders are allowed.
+Case-only renames and swapping occupied names are not supported.
+
+See [availability and further details](https://github.com/RoyiAvital/RoyiFileManager/tree/main/plugins/BatchFileRenamer).
+
 ## Robocopy
 
 Use Windows' multithreaded Robocopy for large folder trees, batches of files or

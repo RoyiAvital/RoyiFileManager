@@ -1,7 +1,11 @@
 # Batch File Renamer
 
-Copy this folder to `UserSettings/Plugins/Third-party/BatchFileRenamer`, then
-reload plug-ins or restart. This is an independent plug-in, not bundled host code.
+Included automatically in newly frozen application builds. It remains an
+independent public-API plug-in, not part of Core's internal implementation.
+
+For source runs or older compatible frozen builds, copy this folder to
+`UserSettings/Plugins/Third-party/BatchFileRenamer`, then reload plug-ins or restart.
+Remove a manually installed duplicate when upgrading to a build that bundles it.
 It requires a host with the mapped QuickBoard API and `fman.fs.rename_no_replace`.
 Version numbers are compared numerically (minimum source API version 0.14.0);
 older released 0.14.0 hosts lacking these features are rejected.
@@ -18,7 +22,8 @@ the command does not silently truncate the preview or apply a partial set.
 
 Variables: `{current_date}`, `{file_date}` (modified time), `{index}` (visible
 zero-based order), `{file_index}` (captured natural position among all regular
-folder files, including hidden/unselected ones), `{name}` and `{ext}` (with dot).
+folder files, including hidden/unselected ones), `{name}`, `{ext}` (with dot),
+`{c}` (one random letter, `a-z` or `A-Z`) and `{d}` (one random digit, `0-9`).
 Folder numbering ignores link counts, so unselected hard-linked names still
 consume an index. Selected files are checked separately and hard links refused.
 
@@ -29,9 +34,17 @@ Examples:
 Trip_{(index + 1):03d}{ext}
 {file_date:%Y%m%d}_{(index + 5):03d}{ext}
 {(file_index + 1):03d}_{name}{ext}
+{name}_{c}{c}{d}{d}{ext}
 ```
 
-Only addition of a positive integer is allowed. No Python expressions, calls,
+For example, the last template could produce `photo_aB07.jpg`. Repeat `{c}` or
+`{d}` to control length; each occurrence is an independent draw and may repeat.
+The sequences stay with each file during the session, including template edits,
+sorting and filtering. The actual rename matches the preview. Reopening starts
+a new random set. Names are not guaranteed unique: collisions are reported,
+not silently regenerated. Random fields accept no format widths or arithmetic.
+
+Only index fields allow addition of a positive integer. No Python expressions, calls,
 subtraction, conversions or nested fields. Date directives: `%Y`, `%y`, `%m`,
 `%d`, `%H`, `%M`, `%S`, `%%`; the default is `%Y-%m-%d`. Index widths are 1-32;
 padding is a minimum, so `02d` does not truncate 149. Use `{{`/`}}` for braces.

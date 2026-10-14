@@ -24,6 +24,7 @@ checksum_native_destination = 'resources/Plugins/ChecksumFiles/checksum_files/_v
 
 datas = [
 	('src/main/resources/base', 'resources'),
+	('plugins/BatchFileRenamer', 'resources/Plugins/BatchFileRenamer'),
 	('src/build/settings/base.json', 'resources/build-settings'),
 	('src/main/resources/windows', 'resources'),
 	('src/main/icons/Icon.ico', 'resources'),
@@ -44,7 +45,7 @@ binaries = winpty_binaries + send2trash_binaries + pdfium_binaries + pdfium_raw_
 	if path.suffix == '.pyd'
 ]
 hidden_imports = [
-	'adodbapi', 'ctypes.wintypes', 'uuid', 'win32com.shell.shell',
+	'adodbapi', 'ctypes.wintypes', 'random', 'string', 'uuid', 'win32com.shell.shell',
 	'win32com.shell.shellcon', 'win32gui', 'win32wnet', 'win32process',
 	'fman.ui', 'fman.impl.ui.quicklist', 'fman.impl.ui.panel',
 	'fman.impl.ui.session', 'fman.impl.ui.output', 'fman.impl.navigation',

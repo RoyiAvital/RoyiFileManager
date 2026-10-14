@@ -43,7 +43,7 @@ class BatchFileRenamer(fman.DirectoryPaneCommand):
 			text, accepted, mapping = ui.show_quick_board(columns=engine.COLUMNS,
 				get_rows=lambda text, mapping: engine.preview(captured, text, mapping, with_status=True),
 				text=engine.DEFAULT_TEMPLATE, title='Batch File Renamer',
-				summary='%d candidates; visible rows only | {(index + 1):03d} | {file_index} | {file_date:%%Y%%m%%d}' % len(captured.sources))
+				summary='%d candidates; visible rows only | {(index + 1):03d} | {file_index} | {file_date:%%Y%%m%%d} | {c} random letter | {d} random digit' % len(captured.sources))
 			if not accepted:
 				return
 			entries = engine.plan(captured, text, mapping)

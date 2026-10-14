@@ -6,6 +6,7 @@ Both use isolated settings and only show ``C:\\`` and ``C:\\Windows`` locations.
 The Robocopy picker shows an example destination and is canceled before transfer.
 The text preview uses a generated Python sample with a neutral location label.
 Checksum captures verify generated sample files and show only relative paths.
+The batch renamer previews generated sample names and is canceled without renaming.
 Generated PNG files remain ignored by Git. The Pages workflow generates them
 before building its deployment artifact.
 
@@ -46,11 +47,14 @@ SOURCE_CAPTURES = (
 	'overview', 'go-to', 'context-menu', 'filter-pane', 'quick-view', 'quick-view-text',
 	'fuzzy-find', 'everything-search', 'everything-folders',
 	'search-files', 'find-files', 'favorites', 'directory-size', 'file-hash',
-	'checksum-files', 'process-pane', 'pack-archive', 'quick-table', 'quick-board', 'robocopy'
+	'checksum-files', 'process-pane', 'pack-archive', 'quick-table', 'quick-board', 'batch-renamer', 'robocopy'
 )
 QUICK_BOARD_SAMPLE = dict(text='Archive_', title='Compose a file-name prefix',
 	summary='3 captured names; preview only')
 QUICK_BOARD_NAMES = ('report.txt', 'notes.md', 'photo.jpg')
+BATCH_RENAMER_NAMES = ('draft_01.txt', 'draft_02.txt', 'invoice_01.txt', 'invoice_02.txt',
+	'notes.txt', 'report_01.txt', 'report_02.txt', 'report_10.txt')
+BATCH_RENAMER_TEMPLATE = 'Archive_{(index + 1):03d}_{c}{d}{ext}'
 PYTHON_SAMPLE = '''from dataclasses import dataclass
 from pathlib import Path
 
@@ -267,6 +271,16 @@ def _grab_window_with_sample_location(window, location_bar):
 
 def _source_capture_paths(capture):
 	root, windows = _public_paths()
+	if capture == 'batch-renamer':
+		from datetime import datetime
+		folder = WORK_DIR / 'source-batch-renamer' / 'sample'
+		folder.mkdir(parents=True, exist_ok=True)
+		modified = datetime(2026, 3, 15, 10, 30).timestamp()
+		for name in BATCH_RENAMER_NAMES:
+			path = folder / name
+			path.write_text('Documentation sample: ' + name + '\n', encoding='utf-8')
+			os.utime(path, (modified, modified))
+		return folder, windows
 	if capture == 'checksum-files':
 		from checksum_files import engine
 		folder = WORK_DIR / 'source-checksum-files' / 'sample'
@@ -344,6 +358,7 @@ def _source_outputs(output_dir, capture):
 			'royifilemanager-ui-quicktable-filter.png',
 		),
 		'quick-board': ('royifilemanager-ui-quickboard.png',),
+		'batch-renamer': ('royifilemanager-batch-renamer.png',),
 		'robocopy': ('royifilemanager-robocopy-destination.png',),
 	}
 	return tuple(output_dir / name for name in names[capture])
@@ -379,6 +394,9 @@ def _capture_source_child(args):
 	settings = Path(os.environ['ROYIFILEMANAGER_USER_SETTINGS'])
 	_initialize_session_settings(settings)
 	_seed_settings(settings, args._capture)
+	if args._capture == 'batch-renamer':
+		shutil.copytree(ROOT / 'plugins/BatchFileRenamer', settings / 'Plugins/Third-party/BatchFileRenamer',
+			ignore=shutil.ignore_patterns('__pycache__'))
 	left_path, right_path = _source_capture_paths(args._capture)
 	sys.argv = [sys.argv[0], str(left_path), str(right_path)]
 
@@ -829,6 +847,37 @@ def _capture_source_child(args):
 						tuple(row.cells for row in window.table.model.rows) != tuple(
 							(name, QUICK_BOARD_SAMPLE['text'] + name) for name in QUICK_BOARD_NAMES)):
 					raise RuntimeError('QuickBoard example arguments or preview differ from the documentation')
+				finish(window.grab(), outputs[0], window.close)
+			elif args._capture == 'batch-renamer':
+				from fman.impl.ui.quick_board import QuickBoardWindow
+				if not state['started']:
+					pane.clear_selection()
+					pane.select(tuple(as_url(str(left_path / name)) for name in BATCH_RENAMER_NAMES))
+					if len(pane.get_selected_files()) != len(BATCH_RENAMER_NAMES):
+						raise RuntimeError('Batch renamer sample selection is incomplete')
+					pane.focus()
+					state.update(started=True, settled=0)
+					pane.run_command('batch_file_renamer')
+					return
+				window = next((candidate for candidate in context.main_window.findChildren(QuickBoardWindow)
+					if candidate.isVisible() and candidate.windowTitle() == 'Batch File Renamer'), None)
+				if window is None:
+					state['settled'] = 0
+					return
+				if 'template_set' not in state:
+					window.input.setText(BATCH_RENAMER_TEMPLATE)
+					state.update(template_set=True, settled=0)
+					return
+				if window.preview_error:
+					raise RuntimeError(window.preview_error)
+				if window.pending or not window.table.settled or state['settled'] < 3:
+					return
+				rows = window.table.model.rows
+				if (tuple(row.cells[2] for row in rows) != BATCH_RENAMER_NAMES or
+						window.caller_status_text != '%d files ready to rename.' % len(BATCH_RENAMER_NAMES) or
+						not all(row.cells[4].startswith('Archive_%03d_' % (index + 1))
+							and row.cells[4].endswith('.txt') for index, row in enumerate(rows))):
+					raise RuntimeError('Batch renamer example preview is incomplete or invalid')
 				finish(window.grab(), outputs[0], window.close)
 			elif args._capture == 'process-pane':
 				filter_bar = pane._widget._filter_bar

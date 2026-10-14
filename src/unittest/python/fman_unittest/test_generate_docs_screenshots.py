@@ -402,6 +402,7 @@ assert not context.main_window.isVisible(), 'Capture left its main window open'
 			'royifilemanager-ui-quicktable.png',
 			'royifilemanager-ui-quicktable-filter.png',
 			'royifilemanager-ui-quickboard.png',
+			'royifilemanager-batch-renamer.png',
 			'royifilemanager-robocopy-destination.png',
 		), outputs)
 
@@ -488,6 +489,60 @@ screenshots._validate_image(screenshots._source_outputs(args.output_dir, 'quick-
 '''
 		with TemporaryDirectory() as directory, patch.object(screenshots, 'WORK_DIR', Path(directory)):
 			settings = screenshots._prepare_settings('quick-board')
+			environment = screenshots._source_environment(settings)
+			environment['QT_QPA_PLATFORM'] = 'windows'
+			result = subprocess.run([sys.executable, '-B', '-X', 'faulthandler', '-c', dedent(script.expandtabs(4)),
+				str(SCRIPT.parent), str(settings.parent / 'output')], cwd=ROOT, env=environment,
+				capture_output=True, text=True, timeout=45)
+			self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
+	def test_batch_renamer_capture_previews_samples_without_renaming(self):
+		script = '''
+import os, re, sys
+from pathlib import Path
+from unittest.mock import patch
+sys.path.insert(0, sys.argv[1])
+import generate_docs_screenshots as screenshots
+import fman.fs
+from fman.impl.ui.quick_board import QuickBoardWindow
+from fman.impl.widgets import MainWindow
+from PyQt5.QtGui import QScreen
+
+screenshots.WORK_DIR = Path(os.environ['ROYIFILEMANAGER_USER_SETTINGS']).parent.parent
+closed, captured = [], []
+original_grab, original_close = QuickBoardWindow.grab, MainWindow.closeEvent
+def grab(window):
+	assert window.windowTitle() == 'Batch File Renamer'
+	assert (window.width(), window.height()) == (900, 600)
+	assert window.input.text() == screenshots.BATCH_RENAMER_TEMPLATE
+	assert '{c}' in window.summary.content and '{d}' in window.summary.content
+	assert window.summary.text() == window.summary.content
+	rows = window.table.model.rows
+	assert tuple(row.cells[2] for row in rows) == screenshots.BATCH_RENAMER_NAMES
+	for index, row in enumerate(rows):
+		assert re.fullmatch(r'Archive_%03d_[a-zA-Z][0-9][.]txt' % (index + 1), row.cells[4])
+	captured.append(True)
+	return original_grab(window)
+def close(window, event):
+	closed.append(True)
+	return original_close(window, event)
+args = screenshots._parse_args([
+	'--_source-child', '--_capture', 'batch-renamer', '--output-dir', sys.argv[2]
+])
+with patch.object(QuickBoardWindow, 'grab', grab), patch.object(MainWindow, 'closeEvent', close), \\
+		patch.object(QScreen, 'grabWindow', side_effect=AssertionError('Desktop capture forbidden')), \\
+		patch.object(fman.fs, 'rename_no_replace', side_effect=AssertionError('Screenshot must not rename')) as rename:
+	assert screenshots._capture_source_child(args) == 0
+	rename.assert_not_called()
+assert captured == [True] and closed == [True], 'Capture or normal shutdown missing'
+sample = screenshots.WORK_DIR / 'source-batch-renamer/sample'
+assert sorted(path.name for path in sample.iterdir()) == sorted(screenshots.BATCH_RENAMER_NAMES)
+for path in sample.iterdir():
+	assert path.read_text(encoding='utf-8') == 'Documentation sample: ' + path.name + '\\n'
+screenshots._validate_image(screenshots._source_outputs(args.output_dir, 'batch-renamer')[0])
+'''
+		with TemporaryDirectory() as directory, patch.object(screenshots, 'WORK_DIR', Path(directory)):
+			settings = screenshots._prepare_settings('source-batch-renamer', initialize=False)
 			environment = screenshots._source_environment(settings)
 			environment['QT_QPA_PLATFORM'] = 'windows'
 			result = subprocess.run([sys.executable, '-B', '-X', 'faulthandler', '-c', dedent(script.expandtabs(4)),

@@ -4,6 +4,9 @@ Status: Implemented and source-validated on 2026-10-06. The latest user decision
 add optional caller status, 100 ms text debounce and a measured 25,000-row /
 16-column QuickBoard limit. Portable-artifact, CI and physical mixed-DPI checks
 remain unverified. Performance observations and limitations are recorded below.
+On 2026-10-14 frozen-build packaging was corrected to include the independent
+plug-in automatically. Spec-staged discovery and rename tests pass; a newly
+frozen executable has not been built or launched for this follow-up.
 
 ## Review Integration
 
@@ -66,7 +69,7 @@ The application owns a shared no-overwrite Rename operation, not a plug-in bypas
   or junctions." Sparse files and cloud placeholders remain allowed, including
   cloud-backed parent folders. Windows name-surrogate tags identify redirects;
   the reparse attribute alone does not make a file a link.
-- Six variables, date formatting, zero-based indices and positive constant index
+- Eight fields, date formatting, zero-based indices and positive constant index
   offsets. No Python evaluation, regex replacement, transformations, presets,
   counter controls, recursion, undo or saved session state.
 - No overwrites, swaps, rename chains through occupied names, case-only batch
@@ -89,6 +92,8 @@ Enter the template without an `f` prefix or surrounding quotes.
 | `{file_index}`   | Fixed whole-folder natural-order position        |
 | `{name}`         | Original name without its final extension        |
 | `{ext}`          | Final extension, including its leading dot       |
+| `{c}`            | One session-stable random ASCII letter           |
+| `{d}`            | One session-stable random digit                  |
 
 - Default template: `{name}{ext}`. Use `os.path.splitext`: `archive.tar.gz` splits
   into `archive.tar` and `.gz`; `.gitignore` and extensionless files have empty
@@ -108,7 +113,13 @@ Enter the template without an `f` prefix or surrounding quotes.
   repeated addition, other operators, reversed operands and nested parentheses.
 - Support literal braces through `{{` and `}}`. Reject unknown/empty/positional
   fields, conversions, attribute/index access, nested fields and function calls.
-  Name and extension accept no format specification.
+  Name, extension and random fields accept no format specification.
+- `{c}` draws from `a-z` and `A-Z`; `{d}` draws from `0-9`. Repeat fields for
+  length. Each file has separate repeatable letter/digit sequences; occurrences
+  consume successive values of their kind. Editing literals, adding the other
+  kind, sorting or filtering does not reroll the existing sequence. Reopening
+  starts a fresh random set. Random names are not guaranteed unique; existing
+  case-insensitive collision checks reject conflicts without automatic retries.
 
 Use `string.Formatter.parse()` plus a strict field/specification allowlist and
 direct recognition of the small offset grammar. Do not use `eval`, `exec`,
@@ -122,9 +133,10 @@ generated f-string source or unrestricted field lookup.
 | `{(file_index + 1):03d}_{name}{ext}`        | `003_report.txt`        |
 | `{current_date}_{name}{ext}`                | `2026-10-06_report.txt` |
 | `{file_date:%Y%m%d}_{(index + 1):03d}{ext}` | `20260930_001.txt`      |
+| `{name}_{c}{c}{d}{d}{ext}`                  | `report_aB07.txt`       |
 
 Examples use `report.txt`, visible index 0, file_index 2, current date 2026-10-06
-and modification date 2026-09-30.
+and modification date 2026-09-30. The random suffix is illustrative.
 
 ### Candidate Capture and Indices
 
@@ -358,8 +370,11 @@ replacement race. Do not claim transactional or adversarial filesystem safety.
 Source home: `plugins/BatchFileRenamer/batch_file_renamer/`, containing the root
 command and a pure engine module. A short README covers variables, filtered
 scope, ordering, safety, installation and the minimum compatible host version.
-Install the outer plug-in folder under `UserSettings/Plugins/Third-party`.
-Do not bundle it automatically or copy host code into its package.
+Frozen builds include the outer folder at `resources/Plugins/BatchFileRenamer`
+through [application.spec](../application.spec). Source runs and older compatible
+builds can install it under `UserSettings/Plugins/Third-party`; remove that manual
+duplicate when using a bundled build. Keep the public-API package independent;
+do not copy host code into it.
 
 Check the documented minimum source API version 0.14.0 numerically together with
 public feature availability before opening the command. Released 0.14.0 builds
@@ -370,8 +385,9 @@ reads may capture local metadata; every mutation uses the public host API.
 Keep `build._environment()` unchanged. Pure tests load the engine from its known
 source path using a test-only `importlib` fixture with temporary `sys.modules`
 registration and cleanup. Integration tests copy the whole package to a temporary
-third-party directory and use the real loader/command registry. Host inspection
-is confined to test harnesses; the installed package uses no private host API.
+third-party directory or stage the spec's frozen data entries, then use the real
+discovery/loader/command registry. Host inspection is confined to test harnesses;
+the delivered package uses no private host API.
 
 No saved templates, numbering state, history or plug-in background service in v1.
 QuickBoard workers only compute immutable rows; the command/Task worker captures
@@ -395,6 +411,12 @@ and renames files. Qt owns widgets/models. Mutable installed state belongs under
 
 - Uninvoked: normal registration/import only; no scan, worker, timer or recurring
   subscription. No new dependency, parser process or custom plug-in worker pool.
+- Capture includes one immutable 16-byte random seed. It is generated even for
+  the initial non-random template so later edits need no entropy I/O or shared
+  mutable state on preview workers. No random generator is constructed for
+  templates without random fields or for filtered-out files. Random templates
+  use at most two temporary generators per visible file and retain no growing
+  cross-preview cache; existing template, name and preview limits still apply.
 - Capture: one fresh parent enumeration, classification and selected metadata
   reads; no recursion/content reads. Natural ordering is O(D log D) for D folder
   files; storage is O(D) occupied/index data plus O(N) candidate records.
@@ -1503,3 +1525,179 @@ Validation by this review, through `build._environment()` with
   freeze/package, new dependencies/environments, staging or commit. Unrelated
   user edits were retained. Live-cloud, legacy archive collision, privileged
   symbolic-link, packaged/CI and physical mixed-monitor gaps remain unverified.
+
+## Frozen-Build Packaging Fix
+
+### 2026_10_14 - GitHub Copilot
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Extra High
+- Context Window: 1M
+- Outcome: Added the existing independent Batch File Renamer package to frozen
+  resources. It was absent because the spec only included the bundled resource
+  tree, while this package lives under `plugins/BatchFileRenamer`. Added the
+  template parser's `string` dependency to hidden imports. No plug-in API or
+  rename behavior changed, and no duplicate source package was created.
+
+### Delivery and Runtime
+
+- The same source folder is copied to `resources/Plugins/BatchFileRenamer` during
+  freeze. Normal shipped plug-in discovery registers the command without a manual
+  third-party install. Source runs keep the existing manual-install option.
+- Retaining one package and adding a spec data mapping was preferred over moving
+  it into Core or copying its implementation. It remains a public-API example and
+  independently installable. No new dependencies, settings or background work;
+  normal plug-in registration runs at startup, and scanning/preview begins only
+  when the command is invoked.
+- Existing frozen executables are not modified by this source change. Rebuild
+  using `python build.py freeze`; older compatible builds can install the folder
+  manually. Remove a prior manual duplicate when switching to a bundled build.
+
+### Validation Results
+
+- Immediate build-spec gate: `fman_unittest.test_app_name.BuildNamingTest`, three
+  passed. New `BatchFileRenamerPluginIT` bundled case stages the actual spec data
+  with PyInstaller's `format_binaries_and_datas`, verifies package files and
+  hidden import, and confirms normal shipped discovery without a third-party
+  directory. The real loader registers the command and QuickBoard renames only
+  the filter-visible file, preserving excluded content and restoring selection.
+  The standalone installation case remains covered. Focused command:
+
+  ```powershell
+  python -B -c "import build, os, subprocess, sys; env=build._environment(); env.update(QT_QPA_PLATFORM='windows',QT_QPA_FONTDIR=os.path.join(os.environ['WINDIR'],'Fonts')); sys.exit(subprocess.run([sys.executable,'-B','-X','faulthandler','-m','unittest','fman_integrationtest.impl.plugins.test_plugin.BatchFileRenamerPluginIT','-q'],env=env,timeout=120).returncode)"
+  ```
+
+- Final focused gate: 33 tests passed on each platform, no skips. Native Windows
+  3.681 s; offscreen 3.662 s. Commands:
+
+  ```powershell
+  python -B -c "import build, os, subprocess, sys; env=build._environment(); env.update(QT_QPA_PLATFORM='windows',QT_QPA_FONTDIR=os.path.join(os.environ['WINDIR'],'Fonts')); sys.exit(subprocess.run([sys.executable,'-B','-X','faulthandler','-m','unittest','fman_unittest.test_app_name.BuildNamingTest','fman_unittest.test_batch_file_renamer','fman_integrationtest.impl.plugins.test_plugin','fman_integrationtest.test_qt.BatchFileRenamerIT','-q'],env=env,timeout=180).returncode)"
+  python -B -c "import build, os, subprocess, sys; env=build._environment(); env.update(QT_QPA_PLATFORM='offscreen',QT_QPA_FONTDIR=os.path.join(os.environ['WINDIR'],'Fonts')); sys.exit(subprocess.run([sys.executable,'-B','-X','faulthandler','-m','unittest','fman_unittest.test_app_name.BuildNamingTest','fman_unittest.test_batch_file_renamer','fman_integrationtest.impl.plugins.test_plugin','fman_integrationtest.test_qt.BatchFileRenamerIT','-q'],env=env,timeout=180).returncode)"
+  ```
+
+- These are spec-staged resource and source-host checks, not a fresh frozen
+  executable launch. No freeze/package, full suite, installations, git staging
+  or commit was run. Frozen startup and hosted CI remain unverified for this change.
+- `python -B -m mkdocs build --strict --site-dir target/batch-renamer-bundling-docs`
+  is blocked by the existing missing generated Robocopy destination screenshot
+  referenced by `docs/tools.md`. The historical PyQt mockup link also points to
+  a removed local artifact. Neither unrelated reference was changed. Editor
+  diagnostics, required task sections, command fences, newly added links and
+  append-only review history checks passed.
+
+## Random Template Fields
+
+### 2026_10_14 - GitHub Copilot
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Extra High
+- Context Window: 1M
+- Outcome: Implemented the user-approved `{c}` letter and `{d}` digit fields.
+  Repeated occurrences are independent draws, stable per captured file and field
+  kind during one session. Preview recomputation, filtering, sorting and final
+  validation do not reroll names. Existing collision and no-overwrite rules remain.
+
+### Implementation
+
+- The immutable capture owns one seed. `plan` seeds local standard-library
+  `Random` instances with that seed, the fixed file index and field kind, then
+  generates only the occurrences needed by the current template. `render`
+  consumes those values; preflight/execution never generate random values.
+- Fresh captures get fresh seeds. No mutable generator or growing name cache is
+  shared between preview workers. Ordinary templates and excluded rows do not
+  construct generators. Existing 4,096-unit template, 255-unit filename and
+  16 MiB preview limits also cover random fields.
+- Kept the initial syntax to bare fields and repetition; width/count syntax,
+  random arithmetic, a regenerate button and collision-driven retries are not
+  implemented. Values are filename decoration, not a promise of unique names.
+- Added the `random` hidden import for the data-loaded frozen plug-in; no new
+  package or host API. Updated README syntax/examples, changelog and TODO.
+
+### Validation Results
+
+- The first focused random-field test failed at the old parser, then passed after
+  implementation. The renamer/build-spec unit gate passed 30 tests. Six random
+  unit tests cover alphabet/length, independent repetitions, stable edits/views,
+  fresh capture seeds, unchanged global RNG state, no preview entropy reads,
+  exact execution targets, unsupported syntax, escaped braces, existing limits
+  and deterministic collision refusal (11 digit-only targets guarantee a clash).
+- Three plug-in integration cases passed natively, including the spec-staged
+  random case: read actual QuickBoard cells, edit a literal prefix, filter one
+  source out, accept, verify exact renamed bytes/name and selection restoration.
+  The packaging test checks both `string` and `random` hidden imports. Command:
+
+  ```powershell
+  python -B -c "import build, os, subprocess, sys; env=build._environment(); env.update(QT_QPA_PLATFORM='windows',QT_QPA_FONTDIR=os.path.join(os.environ['WINDIR'],'Fonts')); sys.exit(subprocess.run([sys.executable,'-B','-X','faulthandler','-m','unittest','fman_integrationtest.impl.plugins.test_plugin.BatchFileRenamerPluginIT','-q'],env=env,timeout=120).returncode)"
+  ```
+
+- Offscreen focused gate: 40 tests passed, no skips, 3.819 s:
+
+  ```powershell
+  python -B -c "import build, os, subprocess, sys; env=build._environment(); env.update(QT_QPA_PLATFORM='offscreen',QT_QPA_FONTDIR=os.path.join(os.environ['WINDIR'],'Fonts')); sys.exit(subprocess.run([sys.executable,'-B','-X','faulthandler','-m','unittest','fman_unittest.test_app_name.BuildNamingTest','fman_unittest.test_batch_file_renamer','fman_integrationtest.impl.plugins.test_plugin','fman_integrationtest.test_qt.BatchFileRenamerIT','-q'],env=env,timeout=180).returncode)"
+  ```
+
+- The first combined native gate, run alongside offscreen, timed out after 180 s
+  without identifying the active test. The isolated diagnostic rerun passed all
+  40 tests, no skips, in 3.987 s. The timeout cause is unresolved; no assertions
+  were removed and the retry did not increase the timeout. Exact passing retry:
+
+  ```powershell
+  @'
+  import build, os, subprocess, sys
+  code = r'''
+  import faulthandler
+  import unittest
+  faulthandler.dump_traceback_later(30)
+  try:
+      unittest.main(module=None, argv=['random-renamer-tests',
+          'fman_unittest.test_app_name.BuildNamingTest',
+          'fman_unittest.test_batch_file_renamer',
+          'fman_integrationtest.impl.plugins.test_plugin',
+          'fman_integrationtest.test_qt.BatchFileRenamerIT', '-v'])
+  finally:
+      faulthandler.cancel_dump_traceback_later()
+  '''
+  env = build._environment()
+  env.update(QT_QPA_PLATFORM='windows', QT_QPA_FONTDIR=os.path.join(os.environ['WINDIR'], 'Fonts'))
+  sys.exit(subprocess.run([sys.executable, '-B', '-X', 'faulthandler', '-c', code], env=env, timeout=120).returncode)
+  '@ | python -B -
+  ```
+
+- No full suite, new large performance run, freeze/package, dependency installation,
+  staging or commit. Spec-staged tests do not establish frozen executable startup;
+  the earlier packaging documentation blockers remain recorded above.
+
+## Compact Layout Follow-Up
+
+### 2026_10_14 - GitHub Copilot
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Extra High
+- Context Window: 1M
+- Outcome: Applied the user's 900 x 600 QuickBoard size, replacing 820 x 520.
+  Numeric columns are compact; file/folder-name columns share spare width instead
+  of stretching the last status column. Added `{c}` and `{d}` to the renamer hint.
+  No API, caller sizing options or shared QuickTable layout changes.
+- Validation: four focused native layout/public-call tests passed; 25 offscreen
+  QuickBoard/mapping/renamer tests passed. Eight-file source smoke passed with
+  all names, contents and selection verified. The 900 x 600 screenshot at
+  [target/batch-file-renamer-source.png](../target/batch-file-renamer-source.png)
+  was visually checked for complete hints and compact utility/wide name columns.
+
+  ```powershell
+  python -B -c "import build, os, subprocess, sys; env=build._environment(); env.update(QT_QPA_PLATFORM='windows',QT_QPA_FONTDIR=os.path.join(os.environ['WINDIR'],'Fonts')); sys.exit(subprocess.run([sys.executable,'-B','-X','faulthandler','-m','unittest','fman_integrationtest.impl.plugins.test_plugin.BatchFileRenamerPluginIT','fman_integrationtest.test_qt.QuickBoardIT.test_public_worker_and_qt_callers_preserve_text_and_theme','-q'],env=env,timeout=90).returncode)"
+  python -B -c "import build, os, subprocess, sys; env=build._environment(); env.update(QT_QPA_PLATFORM='offscreen',QT_QPA_FONTDIR=os.path.join(os.environ['WINDIR'],'Fonts')); sys.exit(subprocess.run([sys.executable,'-B','-X','faulthandler','-m','unittest','fman_integrationtest.test_qt.QuickBoardIT','fman_integrationtest.test_qt.QuickBoardMappingIT','fman_integrationtest.impl.plugins.test_plugin.BatchFileRenamerPluginIT','-q'],env=env,timeout=90).returncode)"
+  python -B -c "import build, os, subprocess, sys; env=build._environment(); env.update(QT_QPA_PLATFORM='windows',QT_QPA_FONTDIR=os.path.join(os.environ['WINDIR'],'Fonts')); sys.exit(subprocess.run([sys.executable,'-B','-X','faulthandler','-m','fman_integrationtest.batch_file_renamer_smoke','--count','8'],env=env,timeout=120).returncode)"
+  ```
+
+- No full suite, freeze/package, installation or commit. Existing frozen builds
+  need rebuilding to include this layout.

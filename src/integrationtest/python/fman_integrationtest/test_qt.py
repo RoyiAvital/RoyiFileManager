@@ -7154,7 +7154,7 @@ class QuickBoardIT(QuickBoardFixture):
 			self.assertTrue(window.table.counts.isHidden())
 			self.assertEqual('0 / 0 rows', window.status.content)
 			self.assertEqual(window.table.layout().spacing(), window.table.view.y() - window.input.geometry().bottom() - 1)
-			self.assertEqual((820, 520), (window.width(), window.height()))
+			self.assertEqual((900, 600), (window.width(), window.height()))
 			self.assertFalse(window.styleSheet())
 			self.assertEqual('<literal & summary>', window.summary.content)
 			self.assertEqual(Qt.PlainText, window.summary.textFormat())

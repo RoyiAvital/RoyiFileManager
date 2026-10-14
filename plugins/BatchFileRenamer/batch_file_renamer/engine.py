@@ -1,11 +1,12 @@
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 import ntpath
 import os
+from random import Random
 import re
 import stat
-from string import Formatter
+from string import Formatter, ascii_letters, digits
 
 from fman.ui import QuickTableColumn, QuickTableRow
 from fman.url import as_human_readable, as_url, splitscheme
@@ -16,6 +17,7 @@ MAX_FILES = 25000
 MAX_PREVIEW_BYTES = 16 * 1024 * 1024
 DEFAULT_TEMPLATE = '{name}{ext}'
 REPARSE_NAME_SURROGATE = 0x20000000
+RANDOM_ALPHABETS = {'c': ascii_letters, 'd': digits}
 COLUMNS = (
 	QuickTableColumn('Index', 'numeric', sortable=False, filterable=False, missing=''),
 	QuickTableColumn('File Index', 'numeric'),
@@ -72,6 +74,7 @@ class Capture:
 	sources: tuple
 	occupied: frozenset
 	current_date: datetime
+	random_seed: bytes = field(default_factory=lambda: os.urandom(16), repr=False)
 
 
 def capture(urls, check=lambda: None):
@@ -131,7 +134,7 @@ def parse(template):
 		if field is not None:
 			if conversion is not None or '{' in specification or '}' in specification:
 				raise ValueError('Conversions and nested replacement fields are not supported.')
-			if field not in ('name', 'ext', 'current_date', 'file_date', 'index', 'file_index'):
+			if field not in ('name', 'ext', 'current_date', 'file_date', 'index', 'file_index', 'c', 'd'):
 				expression = field.strip(' \t')
 				if expression.startswith('(') and expression.endswith(')'):
 					expression = expression[1:-1].strip(' \t')
@@ -147,7 +150,7 @@ def parse(template):
 				if len(specification) > 128 or re.search(r'%(?:[^YymdHMS%]|$)', specification.replace('%%', '')):
 					raise ValueError('Date formats allow %Y, %y, %m, %d, %H, %M, %S and %%.')
 			elif specification:
-				raise ValueError('Name and extension do not accept format specifications.')
+				raise ValueError('Name, extension and random fields do not accept format specifications.')
 		result.append((literal, field, specification, offset))
 	return tuple(result)
 
@@ -157,7 +160,10 @@ def render(parts, values):
 	for literal, field, specification, offset in parts:
 		chunks = [literal]
 		if field is not None:
-			value = values[field] + offset if field in ('index', 'file_index') else values[field]
+			if field in RANDOM_ALPHABETS:
+				value = next(values[field])
+			else:
+				value = values[field] + offset if field in ('index', 'file_index') else values[field]
 			chunks.append(format(value, specification))
 		for chunk in chunks:
 			length += len(chunk.encode('utf-16-le', 'surrogatepass')) // 2
@@ -185,6 +191,7 @@ class Candidate:
 
 def plan(captured, template, mapping):
 	parts = parse(template)
+	random_counts = Counter(field for literal, field, specification, offset in parts if field in RANDOM_ALPHABETS)
 	if not isinstance(mapping, tuple) or len(mapping) != len(captured.sources):
 		raise ValueError('Invalid row mapping.')
 	visible = [position for position in mapping if position is not None]
@@ -202,6 +209,9 @@ def plan(captured, template, mapping):
 		name, extension = os.path.splitext(source.name)
 		values = dict(name=name, ext=extension, index=index, file_index=source.file_index,
 			current_date=captured.current_date, file_date=source.date)
+		for field, count in random_counts.items():
+			generator = Random(captured.random_seed + ('/%d/%s' % (source.file_index, field)).encode('ascii'))
+			values[field] = iter(generator.choices(RANDOM_ALPHABETS[field], k=count))
 		target, display, problem = render(parts, values)
 		preview_bytes += len(display.encode('utf-8'))
 		if preview_bytes > MAX_PREVIEW_BYTES:

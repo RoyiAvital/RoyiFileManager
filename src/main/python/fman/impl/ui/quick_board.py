@@ -10,7 +10,7 @@ from fman.impl.ui.table_data import TableSchema, _validate_columns, text as chec
 from fman.impl.util.qt.thread import is_in_main_thread, run_in_main_thread
 from PyQt5.QtCore import QEvent, QEventLoop, Qt, QTimer
 from PyQt5.QtGui import QKeySequence
-from PyQt5.QtWidgets import QApplication, QHBoxLayout, QLineEdit, QMenu, QShortcut, QVBoxLayout, QWidget
+from PyQt5.QtWidgets import QApplication, QHeaderView, QHBoxLayout, QLineEdit, QMenu, QShortcut, QVBoxLayout, QWidget
 
 
 _slots = BoundedSemaphore(2)
@@ -107,7 +107,7 @@ class QuickBoardWindow(ToolWindow):
 			self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
 			self.setWindowModality(Qt.WindowModal)
 			self.setWindowTitle(title or 'QuickBoard')
-			self.resize(820, 520)
+			self.resize(900, 600)
 			self.setMinimumSize(460, 280)
 			layout = QVBoxLayout(self)
 			layout.setContentsMargins(14, 12, 14, 12)
@@ -126,9 +126,19 @@ class QuickBoardWindow(ToolWindow):
 			self.table = Table(schema, (), self, text_filter=None)
 			for index, column in enumerate(schema.columns):
 				if column.policy == 'number':
-					self.table.view.setColumnWidth(index, max(90, self.fontMetrics().horizontalAdvance(column.label) + 64))
+					padding = 40 if column.sortable or column.filterable else 24
+					self.table.view.setColumnWidth(index, max(60, self.fontMetrics().horizontalAdvance(column.label) + padding))
 			if not schema.columns[0].typed:
 				self.table.view.setColumnWidth(0, 300)
+			name_columns = [index for index, column in enumerate(schema.columns) if column.kind in ('file_name', 'folder_name')]
+			if name_columns:
+				header = self.table.view.horizontalHeader()
+				header.setStretchLastSection(False)
+				for index, column in enumerate(schema.columns):
+					if index in name_columns:
+						header.setSectionResizeMode(index, QHeaderView.Stretch)
+					elif column.policy == 'text' and not column.sortable and not column.filterable:
+						self.table.view.setColumnWidth(index, max(110, self.fontMetrics().horizontalAdvance(column.label) + 24))
 			for shortcut in self.table.findChildren(QShortcut):
 				if shortcut.key().toString() == 'Ctrl+F':
 					shortcut.setEnabled(False)
