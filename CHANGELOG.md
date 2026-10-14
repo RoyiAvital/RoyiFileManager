@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.3] - 2026-10-14
+
 ### Added
 
 - Batch File Renamer supports `{c}` for a random ASCII letter and `{d}` for a
