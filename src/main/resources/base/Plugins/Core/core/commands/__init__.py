@@ -98,9 +98,14 @@ class MoveToTrash(DirectoryPaneCommand):
 		description = _describe(urls, 'these %d files')
 		msg = "Do you really want to move %s to the Recycle Bin?" % description
 		if show_alert(msg, YES | NO, YES) & YES:
-			submit_task(_Delete(urls, prepare_trash, prepare_delete))
+			submit_task(_Delete(urls, prepare_trash, _TRASH_UNSUPPORTED))
 	def is_visible(self):
 		return bool(self.pane.get_file_under_cursor())
+
+_TRASH_UNSUPPORTED = (
+	'The Recycle Bin is not available in %s. Nothing was deleted. '
+	'Use Delete permanently instead.'
+)
 
 class DeletePermanently(DirectoryPaneCommand):
 	def __call__(self, urls=None):
@@ -117,22 +122,19 @@ class DeletePermanently(DirectoryPaneCommand):
 			submit_task(_Delete(urls, prepare_delete))
 
 class _Delete(Task):
-	def __init__(self, urls, prepare_fn, fallback=None):
+	def __init__(self, urls, prepare_fn, unsupported='Deleting files in %s is not supported.'):
 		super().__init__('Deleting ' + _describe(urls))
 		self._urls = urls
 		self._num_urls_prepared = 0
 		self._prepare_fn = prepare_fn
-		self._fallback = fallback
+		self._unsupported = unsupported
 		self._tasks = []
 	def __call__(self):
 		try:
 			self._gather_tasks()
 		except (UnsupportedOperation, NotImplementedError):
 			failing_url = self._urls[self._num_urls_prepared]
-			self.show_alert(
-				'Deleting files in %s is not supported.'
-				% splitscheme(failing_url)[0]
-			)
+			self.show_alert(self._unsupported % splitscheme(failing_url)[0])
 			return
 		ignore_errors = False
 		for i, task in enumerate(self._tasks):
@@ -165,12 +167,7 @@ class _Delete(Task):
 						ignore_errors = True
 	def _gather_tasks(self):
 		for url in self._urls:
-			try:
-				self._prepare(url, self._prepare_fn)
-			except (NotImplementedError, UnsupportedOperation):
-				if self._fallback is None:
-					raise
-				self._prepare(url, self._fallback)
+			self._prepare(url, self._prepare_fn)
 			self._num_urls_prepared += 1
 		self.set_size(sum(t.get_size() for t in self._tasks))
 	def _prepare(self, url, prepare_fn):
@@ -695,6 +692,16 @@ class Copy(_TreeCommand):
 	_defer_preparation = True
 	def _call(self, files, dest_dir, dest_name=None):
 		submit_task(CopyFiles(files, dest_dir, dest_name))
+
+class DuplicateFile(Copy):
+	aliases = ('Create a duplicate file', 'Copy file here', 'Duplicate file')
+
+	def __call__(self):
+		super().__call__(dest_dir=self.pane.get_path())
+
+	@classmethod
+	def _verb(cls):
+		return 'copy'
 
 class Move(_TreeCommand):
 	_defer_preparation = True
@@ -1651,7 +1658,7 @@ class Pack(DirectoryPaneCommand):
 			if scheme == 'file://' and re.fullmatch('[A-Za-z]:', path):
 				folder_name = path[0]
 			dest_name = (folder_name or 'archive') + '.zip'
-		dest_dir = _get_opposite_pane(self.pane).get_path()
+		dest_dir = self._get_dest_dir()
 		dest_url = join(dest_dir, dest_name)
 		suggested_dst, selection_start, selection_end = \
 			get_dest_suggestion(dest_url)
@@ -1677,8 +1684,16 @@ class Pack(DirectoryPaneCommand):
 				if not answer & YES:
 					return
 			submit_task(_Pack(files, dest_rewritten))
+	def _get_dest_dir(self):
+		return _get_opposite_pane(self.pane).get_path()
 	def is_visible(self):
 		return bool(self.pane.get_file_under_cursor())
+
+class PackHere(Pack):
+	aliases = ('Pack here', 'Compress here')
+
+	def _get_dest_dir(self):
+		return self.pane.get_path()
 
 class _Pack(Task):
 	def __init__(self, files, archive_url):

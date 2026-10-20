@@ -10,8 +10,10 @@
 	{ "caption": "-", "id": "file_operations" },
 	{ "command": "move_to_trash", "caption": "&Delete" },
 	{ "command": "rename", "caption": "Rena&me" },
+	{ "command": "duplicate_file", "caption": "Create a duplicate file..." },
 	{ "caption": "-", "id": "archive" },
 	{ "command": "pack", "caption": "Add to archive..." },
+	{ "command": "pack_here", "caption": "Pack here..." },
 	{ "caption": "-", "id": "properties" },
 	{ "command": "show_explorer_properties", "caption": "P&roperties" }
 ]

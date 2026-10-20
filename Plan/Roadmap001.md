@@ -16,9 +16,9 @@ extensible Windows experience while defining the first stable release's scope.
 - Record recommended priorities, optional additions and the release-quality bar.
 - Keep independent features in their own reviewed tasks. This roadmap does not
   authorize implementation, API breaks, cache changes or release builds.
-- Batch Rename remains a separate proposed third-party plug-in. Its reusable
-  QuickBoard prerequisite is now implemented in
-  [UIElements003](../Done/UIElements003.md); the renamer itself is not.
+- Batch File Renamer is delivered: an independent public-API plug-in added in
+  0.15.0 and bundled since 0.16.3. See [BatchFileRenamer](../Done/BatchFileRenamer.md).
+  It builds on the QuickBoard from [UIElements003](../Done/UIElements003.md).
 - Use the requested target label `1.0.000` without changing application version
   metadata or the repository's release-numbering policy.
 
@@ -169,7 +169,8 @@ build/freeze is authorized by this roadmap request.
    as the suggested starting point; obtain implementation approval separately.
 3. Plan tracking/results, local refresh and API compatibility independently;
    reuse the existing link-policy task.
-4. Prioritize Batch Rename and optional additions separately. Investigate Flat
+4. Prioritize optional additions separately; Batch File Renamer is already
+   delivered. Investigate Flat
    View/index feasibility before committing to an architecture.
 5. Implement only approved tasks and record focused correctness/performance
    evidence, preserving established workflows.
@@ -202,3 +203,14 @@ build/freeze is authorized by this roadmap request.
 - Outcome: Recorded the pre-1.0 priorities, optional additions, release bar and
   Flat View indexing constraint. Planning recap only; implementation and final
   release scope require separate approval.
+
+### 2026_10_20 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Claude Opus 5.5
+- Effort: High
+- Context Window: 872K
+- Outcome: Corrected the stale Batch Rename status: Batch File Renamer shipped in
+  0.15.0 and is bundled since 0.16.3. Priorities and constraints are unchanged.

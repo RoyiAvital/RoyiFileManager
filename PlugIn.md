@@ -463,7 +463,7 @@ confirmation automatically. Unknown schemes can surface as `FileNotFoundError`.
 | `prepare_copy(src_url, dst_url)` | Return provider-defined tasks for a copy, without running them. |
 | `prepare_move(src_url, dst_url)` | Return provider-defined tasks for a move. |
 | `prepare_delete(url)` | Return provider-defined deletion tasks. |
-| `prepare_trash(url)` | Return provider-defined trash tasks; see the legacy default caveat below. |
+| `prepare_trash(url)` | Return provider-defined trash tasks. |
 | `notify_file_added(url)` | Announce a created entry to the host. |
 | `notify_file_changed(url)` | Announce a changed entry to subscribed consumers. |
 | `notify_file_removed(url)` | Announce removal so cached listings and consumers can update. |
@@ -501,13 +501,7 @@ receive full source/destination URLs so they can negotiate cross-scheme transfer
 | `copy(src_url, dst_url)` / `move(src_url, dst_url)` | Implement supported transfers; defaults raise `NotImplementedError`. |
 | `prepare_copy(src_url, dst_url)` / `prepare_move(src_url, dst_url)` | Default wraps an implemented operation in a list containing a Task. |
 | `prepare_delete(path)` | Default wraps implemented `delete` in a size-1 Task. |
-| `prepare_trash(path)` | Override for correct trash tasks; see caveat. |
-
-**Legacy caveat:** the current base `FileSystem.prepare_trash` checks that
-`move_to_trash` is implemented but constructs a task calling `delete`. Providers
-must override it to guarantee trash semantics; do not rely on this default to
-protect recoverability. This reference describes the implementation and does
-not silently change that behavior.
+| `prepare_trash(path)` | Default wraps implemented `move_to_trash` in a size-1 Task. Core **Delete** (F8) refuses providers without trash support; it never falls back to permanent deletion. |
 
 ### Snapshot Migration
 

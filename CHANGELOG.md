@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Create a duplicate file** (alias **Copy file here**) uses the existing Copy
+  command with the active pane's folder as its default destination.
+- **Pack here** uses the existing Pack command with the active pane's folder as
+  its default archive destination. Both commands are available in the Command
+  Center and file context menu; prompts, selection, provider support and operation
+  behavior are unchanged.
+
+### Fixed
+
+- Plug-in API: the default `FileSystem.prepare_trash` now moves the item to the
+  trash instead of permanently deleting it. This affects third-party file
+  systems that implement `move_to_trash` without `prepare_trash`; bundled file
+  systems are unchanged.
+- **Delete** (`F8` / `Delete`) no longer permanently deletes items in locations
+  without a Recycle Bin, such as archive entries, after asking to move them to
+  the Recycle Bin. It now refuses and deletes nothing; use **Delete
+  permanently** (`Shift+Delete`) instead.
+
+### Documentation
+
+- Fixed the README link to the Robocopy usage guide.
+
 ## [0.16.3] - 2026-10-14
 
 ### Added

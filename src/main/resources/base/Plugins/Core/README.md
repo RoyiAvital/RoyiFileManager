@@ -303,12 +303,28 @@ path support or change the Windows Registry.
 Avoid changing transfer sources or destinations concurrently. These checks do not
 provide a filesystem transaction or protection against hostile path replacement.
 
+## Duplicate a File
+
+Run **Create a duplicate file** (alias **Copy file here**) from the Command Center
+or file context menu. It uses the existing Copy command with the active pane's
+folder as the default destination. Select files/folders, or leave selection empty
+to use the item under the cursor. Edit the filename or destination in the normal
+Copy prompt. Selection, provider support, overwrite handling and cancellation
+are unchanged. The command ID is `duplicate_file`; no default shortcut is assigned.
+
 ## Pack Archives
 
 Select entries and run **Pack** to choose an archive destination. Multiple entries
 use the current folder name; a drive root such as `C:\` suggests `C.zip`, and a
 nameless root suggests `archive.zip`. A single entry uses its name without the
 extension. The suggested destination is in the opposite pane.
+
+**Pack here** (alias **Compress here**) instead suggests the current folder.
+Use it from the Command Center or file context menu. It uses the same Pack prompt
+and operation for selected files/folders, or the item under the cursor when
+nothing is selected. Only the default destination changes; the name, destination
+and format remain editable. The command ID is `pack_here`; no default shortcut
+is assigned.
 
 ## Archive Transfers
 

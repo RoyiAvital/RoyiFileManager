@@ -137,7 +137,94 @@ class CompareDirectoriesTest(TestCase):
 		pane.get_selected_files.side_effect = lambda: list(selected)
 		return pane
 
+class DuplicateFileTest(TestCase):
+	def setUp(self):
+		from core.commands import DuplicateFile
+		self.pane = Mock()
+		self.pane.get_path.return_value = 'file://C:/reports'
+		self.pane.get_selected_files.return_value = []
+		self.pane.get_file_under_cursor.return_value = 'file://C:/reports/report.txt'
+		self.command = DuplicateFile(self.pane)
+
+	def test_command_name_and_aliases(self):
+		self.assertEqual('duplicate_file', _get_command_name(type(self.command)))
+		self.assertEqual(('Create a duplicate file', 'Copy file here', 'Duplicate file'), self.command.aliases)
+
+	def test_delegates_to_copy_with_active_destination(self):
+		from core.commands import Copy
+		for path in ('file://C:/reports', 'file:////server/share', 'zip://C:/archive.zip'):
+			with self.subTest(path=path), patch.object(Copy, '__call__') as copy:
+				self.pane.get_path.return_value = path
+				self.command()
+				copy.assert_called_once_with(dest_dir=path)
+
+	def test_prompt_matches_copy_for_files_folders_and_multiple_items(self):
+		from core.commands import Copy
+		for path, names, directory in (
+			('file://C:/reports', ('report.txt',), False),
+			('file://C:/reports', ('archive.tar.gz',), False),
+			('file://C:/reports', ('.gitignore',), False),
+			('file://C:/reports', ('folder',), True),
+			('file://C:/reports', ('one.txt', 'two.txt'), False),
+			('file:////server/share', ('report.txt',), False),
+			('zip://C:/archive.zip', ('report.txt',), False),
+		):
+			with self.subTest(path=path, names=names), patch('fman.fs.is_dir', return_value=directory), \
+				patch('fman.show_prompt', return_value=('', False)) as prompt, \
+				patch('core.commands._get_opposite_pane', side_effect=AssertionError('Opposite pane used')), \
+				patch('core.commands.submit_task') as submit:
+				self.pane.get_path.return_value = path
+				self.pane.get_selected_files.return_value = [join(path, name) for name in names]
+				Copy(self.pane)(dest_dir=path)
+				expected = prompt.call_args
+				prompt.reset_mock()
+				self.command()
+				self.assertEqual([expected], prompt.call_args_list)
+				submit.assert_not_called()
+
+	def test_uses_copy_visibility(self):
+		from core.commands import Copy
+		self.assertIs(Copy.is_visible, type(self.command).is_visible)
+
+	def test_accepts_edited_destination_like_copy(self):
+		with patch('fman.fs.is_dir', return_value=False), patch('fman.fs.exists', return_value=False), \
+			patch('fman.show_prompt', return_value=('C:\\elsewhere\\new name.txt', True)), \
+			patch('core.commands.submit_task') as submit:
+			self.command()
+		from core.fileoperations import CopyFiles
+		task = submit.call_args.args[0]
+		self.assertIsInstance(task, CopyFiles)
+		self.assertEqual(['file://C:/reports/report.txt'], task._files)
+		self.assertEqual('file://C:/elsewhere', task._dest_dir)
+		self.assertEqual('new name.txt', task._dest_name)
+
+	def test_cancel_and_empty_name_do_nothing(self):
+		for result in (('copy.txt', False), ('', True)):
+			with self.subTest(result=result), patch('fman.fs.is_dir', return_value=False), \
+				patch('fman.show_prompt', return_value=result), patch('core.commands.submit_task') as submit:
+				self.command()
+				submit.assert_not_called()
+
+	def test_empty_selection_uses_copy_alert(self):
+		self.pane.get_file_under_cursor.return_value = None
+		with patch('fman.show_alert') as alert, patch('fman.show_prompt') as prompt, \
+			patch('core.commands.submit_task') as submit:
+			self.command()
+			alert.assert_called_once_with('No file is selected!')
+			prompt.assert_not_called()
+			submit.assert_not_called()
+
 class PackTest(TestCase):
+	def test_same_folder_commands_are_exported_and_in_context_menu(self):
+		from core import DuplicateFile, PackHere
+		from pathlib import Path
+		menu_path = Path(__file__).resolve().parents[3] / 'File Context Menu (Windows).json'
+		entries = json.loads(menu_path.read_text(encoding='utf-8'))
+		for command_type, caption in ((DuplicateFile, 'Create a duplicate file...'), (PackHere, 'Pack here...')):
+			with self.subTest(command=command_type.__name__):
+				matching = [entry for entry in entries if entry.get('command') == _get_command_name(command_type)]
+				self.assertEqual([{'command': _get_command_name(command_type), 'caption': caption}], matching)
+
 	def test_multi_file_suggestions(self):
 		cases = (
 			(as_url('C:\\'), 'C.zip'),
@@ -155,6 +242,80 @@ class PackTest(TestCase):
 				self._check_suggestion(path, ['file://C:/one', 'file://C:/two'], expected)
 	def test_single_file_suggestion_is_unchanged(self):
 		self._check_suggestion('file://C:', ['file://C:/report.txt'], 'report.zip')
+	def test_pack_here_creates_archive_from_selection_or_cursor(self):
+		from core.commands import PackHere
+		for selected in ([], ['file://C:/reports/one.txt', 'file://C:/reports/two.txt']):
+			for suffix, scheme in (('.zip', 'zip://'), ('.7z', '7z://'), ('.tar', 'tar://')):
+				with self.subTest(selected=selected, suffix=suffix), \
+					patch('core.commands.show_prompt', return_value=('packed' + suffix, True)), \
+					patch('core.commands._get_handler_for_archive', return_value=scheme), \
+					patch('core.commands.mkdir') as make_directory, patch('core.commands.submit_task') as submit:
+					pane = Mock()
+					pane.get_path.return_value = 'file://C:/reports'
+					pane.get_selected_files.return_value = selected
+					pane.get_file_under_cursor.return_value = 'file://C:/reports/cursor.txt'
+					command = PackHere(pane)
+					self.assertTrue(command.is_visible())
+					command()
+					destination = scheme + 'C:/reports/packed' + suffix
+					make_directory.assert_called_once_with(destination)
+					task = submit.call_args.args[0]
+					self.assertEqual(selected or ['file://C:/reports/cursor.txt'], task._files)
+					self.assertEqual(destination, task._archive)
+	def test_pack_here_empty_selection_or_unsupported_format_does_nothing(self):
+		from core.commands import PackHere
+		for files in ([], ['file://C:/reports/file.txt']):
+			with self.subTest(files=files), patch('core.commands.show_alert') as alert, \
+				patch('core.commands.show_prompt', return_value=('packed.invalid', True)), \
+				patch('core.commands._get_handler_for_archive', return_value=None), \
+				patch('core.commands.mkdir') as make_directory, patch('core.commands.submit_task') as submit:
+				pane = Mock()
+				pane.get_path.return_value = 'file://C:/reports'
+				command = PackHere(pane)
+				with patch.object(command, 'get_chosen_files', return_value=files):
+					command()
+				alert.assert_called_once()
+				make_directory.assert_not_called()
+				submit.assert_not_called()
+	def test_pack_here_existing_archive_requires_confirmation(self):
+		from core.commands import PackHere
+		for answer in (NO, YES):
+			with self.subTest(answer=answer), patch('core.commands.show_alert', return_value=answer) as alert, \
+				patch('core.commands.show_prompt', return_value=('packed.zip', True)), \
+				patch('core.commands._get_handler_for_archive', return_value='zip://'), \
+				patch('core.commands.mkdir', side_effect=FileExistsError), patch('core.commands.submit_task') as submit:
+				pane = Mock()
+				pane.get_path.return_value = 'file://C:/reports'
+				pane.get_selected_files.return_value = []
+				pane.get_file_under_cursor.return_value = 'file://C:/reports/file.txt'
+				PackHere(pane)()
+				alert.assert_called_once()
+				self.assertEqual(answer == YES, submit.called)
+	def test_pack_here_uses_pack_call_and_visibility(self):
+		from core.commands import Pack, PackHere
+		self.assertIs(Pack.__call__, PackHere.__call__)
+		self.assertIs(Pack.is_visible, PackHere.is_visible)
+	def test_pack_here_uses_current_folder(self):
+		from core.commands import PackHere
+		for path, files, expected in (
+			('file://C:/reports', ['file://C:/reports/report.txt'], 'report.zip'),
+			('file://C:/reports', ['file://C:/reports/one', 'file://C:/reports/two'], 'reports.zip'),
+			('file://C:/', ['file://C:/one', 'file://C:/two'], 'C.zip'),
+			('zip://C:/archive.zip/folder', ['zip://C:/archive.zip/folder/report.txt'], 'report.zip'),
+		):
+			with self.subTest(path=path, files=files):
+				pane = Mock()
+				pane.get_path.return_value = path
+				command = PackHere(pane)
+				with patch.object(command, 'get_chosen_files', return_value=files), \
+					patch('core.commands._get_opposite_pane', side_effect=AssertionError('Opposite pane used')), \
+					patch('core.commands.show_prompt', return_value=('', False)) as prompt, \
+					patch('core.commands.mkdir') as make_directory, \
+					patch('core.commands.submit_task') as submit:
+					command()
+				self.assertEqual(as_human_readable(join(path, expected)), prompt.call_args.args[1])
+				make_directory.assert_not_called()
+				submit.assert_not_called()
 	def _check_suggestion(self, path, files, expected):
 		from core.commands import Pack
 		pane, opposite = Mock(), Mock()
@@ -170,6 +331,96 @@ class PackTest(TestCase):
 		self.assertEqual(as_human_readable(join('file://D:/output', expected)), prompt.call_args.args[1])
 		make_directory.assert_not_called()
 		submit.assert_not_called()
+
+class SameFolderOperationsTest(TestCase):
+	def setUp(self):
+		from pathlib import Path
+		from tempfile import TemporaryDirectory
+		from core.fs.local import LocalFileSystem
+		from core.fs.zip import ZipFileSystem
+		from fman.impl.plugins.mother_fs import MotherFileSystem
+		temporary = TemporaryDirectory()
+		self.addCleanup(temporary.cleanup)
+		self.root = Path(temporary.name)
+		self.source = self.root / 'report.txt'
+		self.source.write_bytes(b'original\x00\xffpayload')
+		self.pane = Mock()
+		self.pane.get_path.return_value = as_url(self.root)
+		self.pane.get_selected_files.return_value = []
+		self.pane.get_file_under_cursor.return_value = as_url(self.source)
+		filesystem = MotherFileSystem(None)
+		filesystem.add_child('file://', LocalFileSystem())
+		filesystem.add_child('zip://', ZipFileSystem(filesystem, {'.zip'}))
+		patcher = patch('fman.fs._get_mother_fs', return_value=filesystem)
+		patcher.start()
+		self.addCleanup(patcher.stop)
+		for name in ('show_prompt', 'show_alert', 'submit_task', 'load_json'):
+			patcher = patch('core.commands.' + name)
+			setattr(self, name, patcher.start())
+			self.addCleanup(patcher.stop)
+		for name in ('show_prompt', 'show_alert'):
+			patcher = patch('fman.' + name, getattr(self, name))
+			patcher.start()
+			self.addCleanup(patcher.stop)
+		self.load_json.return_value = {'archive_handlers': {'.zip': 'zip://'}}
+		self.submit_task.side_effect = lambda task: task()
+
+	def test_duplicate_creates_byte_identical_file_and_preserves_source(self):
+		from core.commands import DuplicateFile
+		self.show_prompt.return_value = ('report - Copy.txt', True)
+		DuplicateFile(self.pane)()
+		self.assertEqual(b'original\x00\xffpayload', self.source.read_bytes())
+		self.assertEqual(self.source.read_bytes(), (self.root / 'report - Copy.txt').read_bytes())
+		self.assertEqual(2, len(list(self.root.iterdir())))
+		self.show_alert.assert_not_called()
+
+	def test_duplicate_existing_target_uses_copy_confirmation(self):
+		from core.commands import DuplicateFile
+		destination = self.root / 'copy.txt'
+		self.show_prompt.return_value = (destination.name, True)
+		for answer in (NO, YES):
+			with self.subTest(answer=answer), patch('fman.Task.show_alert', return_value=answer) as confirm:
+				destination.write_bytes(b'keep')
+				DuplicateFile(self.pane)()
+				self.assertEqual(b'original\x00\xffpayload', self.source.read_bytes())
+				self.assertEqual(b'keep' if answer == NO else self.source.read_bytes(), destination.read_bytes())
+				confirm.assert_called_once()
+
+	def test_duplicate_cannot_overwrite_its_source(self):
+		from core.commands import DuplicateFile
+		for name in ('report.txt', 'REPORT.TXT'):
+			with self.subTest(name=name), patch('fman.Task.show_alert') as alert:
+				self.show_prompt.return_value = (name, True)
+				DuplicateFile(self.pane)()
+				alert.assert_called_once()
+				self.assertEqual(b'original\x00\xffpayload', self.source.read_bytes())
+				self.assertEqual([self.source], list(self.root.iterdir()))
+
+	def test_duplicate_cancellation_before_transfer_creates_nothing(self):
+		from core.commands import DuplicateFile
+		from fman import Task
+		self.show_prompt.return_value = ('copy.txt', True)
+		with patch('fman.Task.check_canceled', side_effect=Task.Canceled), self.assertRaises(Task.Canceled):
+			DuplicateFile(self.pane)()
+		self.assertEqual(b'original\x00\xffpayload', self.source.read_bytes())
+		self.assertEqual([self.source], list(self.root.iterdir()))
+
+	def test_pack_here_writes_real_zip_with_exact_selection(self):
+		from core.commands import PackHere
+		from zipfile import ZipFile
+		second = self.root / 'second.txt'
+		second.write_bytes(b'second')
+		self.pane.get_selected_files.return_value = [as_url(self.source), as_url(second)]
+		self.pane.get_file_under_cursor.return_value = as_url(self.root / 'unselected.txt')
+		self.show_prompt.return_value = ('packed.zip', True)
+		PackHere(self.pane)()
+		with ZipFile(self.root / 'packed.zip') as archive:
+			self.assertEqual({'report.txt', 'second.txt'}, set(archive.namelist()))
+			self.assertEqual(self.source.read_bytes(), archive.read('report.txt'))
+			self.assertEqual(second.read_bytes(), archive.read('second.txt'))
+		self.assertEqual(b'original\x00\xffpayload', self.source.read_bytes())
+		self.assertEqual(b'second', second.read_bytes())
+		self.show_alert.assert_not_called()
 
 class DeleteTaskTest(TestCase):
 	def test_continue_answers_use_task_alert(self):
@@ -207,6 +458,27 @@ class DeleteTaskTest(TestCase):
 		self.assertEqual(2, run.call_count)
 		alert.assert_not_called()
 		global_alert.assert_not_called()
+	def test_trash_unsupported_refuses_without_permanent_delete(self):
+		from core.commands import MoveToTrash
+		urls = ['file://C:/archive.zip', 'zip://C:/archive.zip/report.txt']
+		local_task = Mock()
+		def prepare_trash(url):
+			if url.startswith('zip://'):
+				raise NotImplementedError()
+			return [local_task]
+		with patch('core.commands.show_alert', return_value=YES), \
+			patch('core.commands.submit_task') as submit, \
+			patch('core.commands.prepare_trash', side_effect=prepare_trash), \
+			patch('core.commands.prepare_delete', side_effect=AssertionError('Permanent delete fallback')):
+			MoveToTrash(Mock())(urls=urls)
+			task = submit.call_args.args[0]
+			with patch.object(task, 'run') as run, patch.object(task, 'show_alert') as alert:
+				task()
+		run.assert_not_called()
+		alert.assert_called_once_with(
+			'The Recycle Bin is not available in zip://. Nothing was deleted. '
+			'Use Delete permanently instead.'
+		)
 
 class CommandCleanupTest(TestCase):
 	def test_clipboard_text_and_messages(self):

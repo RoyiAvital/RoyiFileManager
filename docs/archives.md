@@ -27,6 +27,11 @@ Select files, then press ++alt+f5++.
 - Packing into an existing archive asks before adding or updating files.
 - The Command Center name is **Pack to archive (.zip, .7z, .tar)**.
 
+To pack into the **current folder**, run **Pack here** from the Command Center
+or file context menu. It uses the existing Pack operation with only the default
+destination changed. Selection and provider support are unchanged; the archive
+prompt still lets you change the filename, destination and format.
+
 ## Unpack an Archive
 
 Place the cursor on an archive, then run **Unpack archive** from the Command Center.
@@ -46,6 +51,8 @@ or between two archives of the same format.
   archive contents, then delete originals explicitly.
 - Moving between different archive formats is not supported. Extract and verify
   the files first, then copy them into the destination archive.
+- Archives have no Recycle Bin. ++f8++ (Delete) is refused inside them; use
+  **Delete permanently** (++shift+delete++) to remove archive entries.
 - Extraction shows progress and can be canceled.
 - Moving out of or between archives checks the copied files before removing them from the source. This takes extra time and temporary space.
 - Avoid changing the archive or destination while an operation runs.

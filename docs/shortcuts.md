@@ -15,7 +15,7 @@ Open the Command Center with ++ctrl+shift+p++ to see every command.
 | ++shift+f5++ | Create symbolic link |
 | ++shift+f6++ | Rename |
 | ++f7++ | Create folder |
-| ++f8++ or ++delete++ | Move to Recycle Bin |
+| ++f8++ or ++delete++ | Delete (move to Recycle Bin) |
 | ++shift+delete++ | Delete permanently |
 | ++f11++ | Copy paths to clipboard |
 | ++alt+enter++ | Properties |
@@ -108,7 +108,7 @@ For a Norton Commander or Total Commander style workflow.
 | ++f5++ | Copy |
 | ++f6++ | Move |
 | ++f7++ | Create folder |
-| ++f8++ | Move to Recycle Bin |
+| ++f8++ | Delete (move to Recycle Bin) |
 | ++f9++ | Open terminal |
 | ++f10++ | Open in Explorer |
 | ++f11++ | Copy paths to clipboard |

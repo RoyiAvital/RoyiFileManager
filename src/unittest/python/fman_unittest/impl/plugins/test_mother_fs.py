@@ -48,6 +48,20 @@ class MotherFileSystemTest(TestCase):
 		mother_fs.is_dir('stub://a/b')
 		mother_fs.delete('stub://a')
 		self.assertFalse(mother_fs.exists('stub://a/b'))
+	def test_default_prepare_trash_moves_to_trash(self):
+		fs = TrashOnlyFileSystem()
+		mother_fs = self._create_mother_fs(fs)
+		tasks = mother_fs.prepare_trash('trash://a/b')
+		self.assertEqual(1, len(tasks))
+		self.assertEqual('Deleting b', tasks[0].get_title())
+		tasks[0]()
+		self.assertEqual(['a/b'], fs.trashed)
+		self.assertEqual([], fs.deleted)
+	def test_default_prepare_trash_requires_move_to_trash(self):
+		fs = StubFileSystem({'a': {}})
+		mother_fs = self._create_mother_fs(fs)
+		with self.assertRaises(NotImplementedError):
+			mother_fs.prepare_trash('stub://a')
 	def test_move_updates_pardir(self):
 		fs = StubFileSystem({
 			'a': { 'is_dir': True , 'files': ['b']},
@@ -208,6 +222,19 @@ class LazyFileSystem(FileSystem):
 		for name in self._dirs[path]:
 			self.num_yielded += 1
 			yield name
+
+class TrashOnlyFileSystem(FileSystem):
+
+	scheme = 'trash://'
+
+	def __init__(self):
+		super().__init__()
+		self.trashed = []
+		self.deleted = []
+	def move_to_trash(self, path):
+		self.trashed.append(path)
+	def delete(self, path):
+		self.deleted.append(path)
 
 class CachedIteratorTest(TestCase):
 	def test_simple(self):

@@ -23,7 +23,7 @@ Once you're ready, We'll start adding features.
 
 Your model signature: GPT-6 Astra.
 Your effort level: Extra High.
-Your context window: 272K.
+Your context window: 1M.
 ```
 
 ## Reviewer
@@ -48,7 +48,7 @@ Your onboarding tasks:
 Once you're ready, We'll start reviewing features.
 
 Your model signature: Claude Fable 5.1.
-Your effort level: High.
+Your effort level: Extra High.
 Your context window: 1M.
 ```
 
@@ -82,7 +82,7 @@ Guidelines for documentation:
 
 Your model signature: GPT-6.1 Sol.
 Your effort level: High.
-Your context window: 272K.
+Your context window: 1M.
 ```
 
 ```

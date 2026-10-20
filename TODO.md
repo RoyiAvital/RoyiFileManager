@@ -59,6 +59,8 @@
 - [x] FEATURE: Add `Copy file name` and `Copy file path` to file or dir right menu (_Context Menu_).
 - [x] CHANGE: Bundle Batch File Renamer in the frozen application while keeping its public plug-in API implementation.
 - [x] FEATURE: Add random letter (`{c}`) and digit (`{d}`) fields to the rename tool.
+- [x] FEATURE: Add `Create a duplicate file` with alias `Copy file here`, using the existing Copy command with the active folder as its default destination.
+- [x] FEATURE: Add `Pack here` to pack the selected files / highlighted item into an archive in the current folder by default.
 
 ## Performance
 
