@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.4] - 2026-10-20
+
 ### Added
 
 - **Create a duplicate file** (alias **Copy file here**) uses the existing Copy

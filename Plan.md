@@ -10,7 +10,8 @@
 - [Flat View](Plan/FlatView.md)
 - [PyQt6 Migration](Plan/PyQt6Migration.md)
 - [QuickView 002: Videos and Animated Images](Plan/QuickView002.md)
-- [Roadmap 001: Before 1.0.000](Plan/Roadmap001.md)
+- [Roadmap 001: Tweaks and Tricks](Plan/Roadmap001.md)
+- [Roadmap 002: Before 1.0.000](Plan/Roadmap002.md)
 - [UI Design 001: Application Theme](Plan/UIDesign001.md)
 
 ## Completed
