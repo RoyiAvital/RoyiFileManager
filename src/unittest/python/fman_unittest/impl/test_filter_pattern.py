@@ -6,6 +6,30 @@ from unittest import TestCase
 import re
 import warnings
 
+class SelectionPatternTest(TestCase):
+	def test_seed_anchors_and_escapes_extension(self):
+		from fman.impl.filter_pattern import selection_pattern
+		for name, pattern in (('file.TXT', '*.TXT$'), ('archive.tar.gz', '*.gz$'),
+			('README', '*'), ('.gitignore', '*'), ('name.[x]', r'*.\[x\]$')):
+			self.assertEqual(pattern, selection_pattern(name))
+		self.assertEqual('*', selection_pattern('folder.txt', True))
+		self.assertFalse(compile_filter(selection_pattern('file.txt')).matches('file.txt.bak'))
+		self.assertTrue(compile_filter(selection_pattern('name.[x]')).matches('other.[x]'))
+
+	def test_preview_fixed_baseline_visible_display_names_empty_and_cancellation(self):
+		from fman.impl.filter_pattern import selection_preview
+		from fman.listing import Listing
+		listing = Listing.create('file://C:/root', ('a', 'b', 'c'), labels=('one.txt', 'two.py', 'hidden.txt'))
+		baseline = frozenset({1})
+		self.assertEqual((frozenset({0}), frozenset({0, 1})), selection_preview(listing, (0, 1), baseline, '*.txt$', True, lambda: None))
+		self.assertEqual((frozenset({1}), frozenset()), selection_preview(listing, (0, 1), baseline, '*.py$', False, lambda: None))
+		for selecting in (False, True):
+			self.assertEqual((frozenset(), baseline), selection_preview(listing, (0, 1), baseline, '', selecting, lambda: None))
+		def cancel():
+			raise InterruptedError()
+		with self.assertRaises(InterruptedError):
+			selection_preview(listing, (0, 1), baseline, '*', True, cancel)
+
 
 class FilterPatternTest(TestCase):
 	def test_legacy_matching(self):

@@ -404,7 +404,123 @@ assert not context.main_window.isVisible(), 'Capture left its main window open'
 			'royifilemanager-ui-quickboard.png',
 			'royifilemanager-batch-renamer.png',
 			'royifilemanager-robocopy-destination.png',
+			'royifilemanager-select-preview.png',
+			'royifilemanager-deselect-preview.png',
+			'royifilemanager-select-extension.png',
+			'royifilemanager-duplicate-file.png',
+			'royifilemanager-free-space.png',
 		), outputs)
+
+	def test_selection_capture_shows_previews_and_preserves_sample_files(self):
+		script = '''
+import os, sys
+from pathlib import Path
+from unittest.mock import patch
+sys.path.insert(0, sys.argv[1])
+import generate_docs_screenshots as screenshots
+from core import commands
+from fman.impl.application_context import get_application_context
+from fman.impl.widgets import MainWindow
+from PyQt5.QtGui import QScreen
+
+screenshots.WORK_DIR = Path(os.environ['ROYIFILEMANAGER_USER_SETTINGS']).parent.parent
+context = get_application_context()
+captured = []
+original = MainWindow.grab
+def grab(window):
+	pane = context.window.get_panes()[0]
+	assert pane._widget._location_bar.text() == 'Selection sample'
+	assert pane._widget._model.rowCount() == 10
+	bar = pane._widget._filter_bar
+	if len(captured) < 2:
+		assert bar.isVisible() and bar._selection_label.isVisible()
+		assert bar._selection_session['selecting'] == (len(captured) == 0)
+		assert len(pane.get_selected_files()) == (1 if not captured else 4)
+		assert len(pane._widget._file_view._delegate.preview_rows) == (4 if not captured else 2)
+	else:
+		assert bar._selection_session is None
+		assert {Path(url).name for url in pane.get_selected_files()} == {'README.md', 'archive.tar.gz', 'backup.gz'}
+	captured.append(True)
+	return original(window)
+args = screenshots._parse_args(['--_source-child', '--_capture', 'selection', '--output-dir', sys.argv[2]])
+with patch.object(MainWindow, 'grab', grab), patch.object(QScreen, 'grabWindow',
+		side_effect=AssertionError('Desktop capture forbidden')), patch.object(commands, 'submit_task',
+		side_effect=AssertionError('Selection capture must not transfer files')):
+	assert screenshots._capture_source_child(args) == 0
+assert len(captured) == 3
+sample = screenshots.WORK_DIR / 'source-selection/sample'
+assert {path.name for path in sample.iterdir()} == {*screenshots.SELECTION_NAMES, 'Projects'}
+for name in screenshots.SELECTION_NAMES:
+	assert (sample / name).read_text(encoding='utf-8') == 'Documentation sample: ' + name + '\\n'
+for output in screenshots._source_outputs(args.output_dir, 'selection'):
+	screenshots._validate_image(output)
+'''
+		with TemporaryDirectory() as directory, patch.object(screenshots, 'WORK_DIR', Path(directory)):
+			settings = screenshots._prepare_settings('source-selection', initialize=False)
+			environment = screenshots._source_environment(settings)
+			environment['QT_QPA_PLATFORM'] = 'windows'
+			result = subprocess.run([sys.executable, '-B', '-X', 'faulthandler', '-c', dedent(script),
+				str(SCRIPT.parent), str(settings.parent / 'output')], cwd=ROOT, env=environment,
+				capture_output=True, text=True, timeout=45)
+			self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
+	def test_duplicate_and_free_space_captures_are_real_and_isolated(self):
+		script = '''
+import os, sys
+from pathlib import Path
+from unittest.mock import patch
+sys.path.insert(0, sys.argv[1])
+import generate_docs_screenshots as screenshots
+from core import commands
+from fman.impl.application_context import get_application_context
+from fman.impl.widgets import MainWindow, Prompt
+from PyQt5.QtGui import QScreen
+
+screenshots.WORK_DIR = Path(os.environ['ROYIFILEMANAGER_USER_SETTINGS']).parent.parent
+context = get_application_context()
+capture = sys.argv[3]
+captured = []
+original_window, original_prompt = MainWindow.grab, Prompt.grab
+def grab_window(window):
+	pane = context.window.get_panes()[0]
+	if capture == 'duplicate-file':
+		assert pane._widget._location_bar.text() == 'Duplication sample'
+	else:
+		assert pane.get_path() == 'file://C:/Windows/Web'
+		status = window._single_pane_status
+		assert status.isVisible() and status._free_space.isVisible()
+		assert status._free_space.text().startswith('Free: ') and ' of ' in status._free_space.text()
+	captured.append('window')
+	return original_window(window)
+def grab_prompt(dialog):
+	assert dialog.textValue() == 'report Copy 2.txt'
+	assert 'report.txt' in dialog.labelText()
+	captured.append('prompt')
+	return original_prompt(dialog)
+args = screenshots._parse_args(['--_source-child', '--_capture', capture, '--output-dir', sys.argv[2]])
+with patch.object(MainWindow, 'grab', grab_window), patch.object(Prompt, 'grab', grab_prompt), \\
+		patch.object(QScreen, 'grabWindow', side_effect=AssertionError('Desktop capture forbidden')), \\
+		patch.object(commands, 'submit_task', side_effect=AssertionError('Capture must not copy files')) as transfer:
+	assert screenshots._capture_source_child(args) == 0
+	transfer.assert_not_called()
+assert captured == (['window', 'prompt'] if capture == 'duplicate-file' else ['window'])
+if capture == 'duplicate-file':
+	sample = screenshots.WORK_DIR / 'source-duplicate-file/sample'
+	assert {path.name for path in sample.iterdir()} == {'report.txt', 'report Copy 1.txt'}
+	for path in sample.iterdir():
+		assert path.read_text(encoding='utf-8') == 'Documentation sample: ' + path.name + '\\n'
+screenshots._validate_image(screenshots._source_outputs(args.output_dir, args._capture)[0])
+'''
+		for capture in ('duplicate-file', 'free-space'):
+			with self.subTest(capture=capture), TemporaryDirectory() as directory, \
+					patch.object(screenshots, 'WORK_DIR', Path(directory)):
+				settings = screenshots._prepare_settings('source-' + capture, initialize=False)
+				environment = screenshots._source_environment(settings)
+				environment['QT_QPA_PLATFORM'] = 'windows'
+				result = subprocess.run([sys.executable, '-B', '-X', 'faulthandler', '-c', dedent(script),
+					str(SCRIPT.parent), str(settings.parent / 'output'), capture], cwd=ROOT, env=environment,
+					capture_output=True, text=True, timeout=45)
+				self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
 	def test_robocopy_capture_selects_folder_and_cancels_without_transfer(self):
 		script = '''

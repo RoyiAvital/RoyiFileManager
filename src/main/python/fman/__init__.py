@@ -1,5 +1,6 @@
 from . import clipboard
 from .url import dirname
+from .listing import LocationInfo
 from fbs_runtime.build_settings import get_build_settings
 from .impl.task import StubProgressDialog, ChildProgressDialog
 from contextlib import contextmanager
@@ -138,6 +139,9 @@ class DirectoryPane:
 			else:
 				break
 		return self._command_registry.execute_command(name, args, self)
+	def _cancel_selection_preview(self):
+		if self._widget is not None:
+			self._widget.cancel_pattern_selection()
 	def get_command_aliases(self, command_name):
 		return self._command_registry.get_command_aliases(command_name)
 	def is_command_visible(self, command_name):
@@ -176,6 +180,8 @@ class DirectoryPane:
 		return self._widget.get_location()
 	def get_listing(self):
 		return self._widget.get_listing()
+	def get_location_info(self) -> LocationInfo | None:
+		return self._widget.get_location_info()
 	def find_in_listing(self, search, query='', metadata=False, accepted=None):
 		return self._widget.find_in_listing(search, query, metadata, accepted)
 	# TODO: Rename to set_location(...)

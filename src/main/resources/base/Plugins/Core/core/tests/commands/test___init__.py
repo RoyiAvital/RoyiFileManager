@@ -19,6 +19,147 @@ import json
 import os
 import os.path
 
+class CommandSynonymsTest(TestCase):
+	def test_synonyms_preserve_primary_aliases_and_command_ids(self):
+		from core.commands import UnpackArchive
+		from core.quick_view import ToggleQuickView
+		from favorites import ShowFavorites
+		for command, primary, synonym, identity in (
+			(ShowFavorites, 'Open favorites manager', 'Bookmarks', 'show_favorites'),
+			(UnpackArchive, 'Unpack archive', 'Extract archive', 'unpack_archive'),
+			(ToggleQuickView, 'Toggle QuickView', 'Preview', 'toggle_quick_view')):
+			with self.subTest(command=identity):
+				self.assertEqual(primary, command.aliases[0])
+				self.assertIn(synonym, command.aliases)
+				self.assertEqual(identity, _get_command_name(command))
+
+class GoToClipboardPathTest(TestCase):
+	def test_supported_formats_dispatch_existing_navigation_once(self):
+		from core.commands import GoToClipboardPath
+		for text, url in (
+			('C:\\Users\\..\\Windows', 'file://C:/Windows'),
+			('C:/Work//folder/../file.txt', 'file://C:/Work/file.txt'),
+			('file://C:\\Windows', 'file://C:/Windows'),
+			('file://C:/Work/../Windows', 'file://C:/Windows'),
+			('file://\\\\server\\share\\folder\\..\\a%20b', 'file:////server/share/a%20b'),
+			('\\\\server\\share\\folder\\..\\file.txt', 'file:////server/share/file.txt'),
+			('file:////server/share/folder/../a%20b', 'file:////server/share/a%20b'),
+			('file://C:/folder/..', 'file://C:'),
+			('network://server/../other', 'network://server/../other'),
+			('\r\n C:\\Work \r\n', 'file://C:/Work'),
+			('  "C:\\Work\\a b.txt"  ', 'file://C:/Work/a b.txt'),
+			('\\\\server\\share\\folder', 'file:////server/share/folder'),
+			('file://C:', 'file://C:'),
+			('file://C:/literal%20name.txt', 'file://C:/literal%20name.txt'),
+			('file:////server/share/a%20b', 'file:////server/share/a%20b'),
+			('network://', 'network://'), ('zip://C:/archive.zip', 'zip://C:/archive.zip')):
+			with self.subTest(text=text), patch('core.commands.clipboard.get_text', return_value=text) as read:
+				pane = Mock()
+				GoToClipboardPath(pane)()
+				read.assert_called_once_with()
+				pane.run_command.assert_called_once_with('open_directory', {'url': url})
+
+	def test_empty_invalid_and_multiline_do_not_navigate(self):
+		from core.commands import GoToClipboardPath
+		for text in ('', '   ', 'relative', 'C:relative', 'file://C:Work',
+			'file://server/share/file', 'file:///C:/a%20b.txt', 'C:\\one\nC:\\two',
+			'\\\\?\\C:\\Work', '""'):
+			with self.subTest(text=text), patch('core.commands.clipboard.get_text', return_value=text), \
+					patch('core.commands.show_alert'), patch('core.commands.show_status_message'):
+				pane = Mock()
+				GoToClipboardPath(pane)()
+				pane.run_command.assert_not_called()
+
+class GoToLinkTargetTest(TestCase):
+	def setUp(self):
+		from core.commands import GoToLinkTarget
+		self.pane = Mock()
+		self.pane.get_file_under_cursor.return_value = 'file://C:/links/highlighted'
+		self.pane.get_selected_files.return_value = ['file://C:/elsewhere/marked']
+		self.command = GoToLinkTarget(self.pane)
+
+	def test_visibility_has_no_io_and_uses_highlight(self):
+		with patch('core.commands.os.lstat', side_effect=AssertionError), patch('core.commands.os.path.islink', side_effect=AssertionError):
+			self.assertTrue(self.command.is_visible())
+			self.pane.get_file_under_cursor.return_value = 'zip://C:/archive.zip/file'
+			self.assertFalse(self.command.is_visible())
+			self.pane.get_file_under_cursor.return_value = None
+			self.assertFalse(self.command.is_visible())
+
+	def test_invocation_navigation_and_refusals(self):
+		for link, target, failure in ((False, 'C:\\target', None), (True, 'C:\\target\\file.txt', None),
+			(True, '\\\\server\\share\\folder', None), (True, 'C:\\missing', FileNotFoundError),
+			(True, 'C:\\private', PermissionError), (True, '\\\\?\\Volume{fixture}\\', None),
+			(True, '\\\\?\\C:\\target', None), (True, '\\\\?\\UNC\\server\\share', None)):
+			with self.subTest(target=target, link=link), patch('core.commands.os.lstat'), \
+					patch('core.commands.os.path.islink', return_value=link), patch('core.commands.os.path.isjunction', return_value=False), \
+					patch('core.commands.os.path.realpath', return_value=target) as resolve_target, \
+					patch('core.commands.os.stat', side_effect=failure) as check, patch('core.commands.show_alert') as alert, \
+					patch('core.commands.show_status_message'):
+				self.pane.reset_mock()
+				self.command()
+				if link and failure is None and not target.startswith('\\\\?\\'):
+					self.pane.run_command.assert_called_once_with('open_directory', {'url': as_url(target)})
+				else:
+					self.pane.run_command.assert_not_called()
+				if not link:
+					resolve_target.assert_not_called()
+				if target.startswith('\\\\?\\'):
+					check.assert_not_called()
+				if failure is FileNotFoundError:
+					self.assertIn('Broken link', alert.call_args.args[0])
+				if failure is PermissionError:
+					self.assertIn('Could not resolve link target', alert.call_args.args[0])
+
+	def test_os_errors_report_reason_once_without_navigation(self):
+		import ctypes
+		for operation in ('lstat', 'realpath', 'stat'):
+			for error in (FileNotFoundError('entry vanished'), PermissionError('access denied'), ctypes.WinError(1921)):
+				with self.subTest(operation=operation, error=error), patch('core.commands.os.lstat') as inspect, \
+						patch('core.commands.os.path.islink', return_value=True), \
+						patch('core.commands.os.path.realpath', return_value='C:\\target') as resolve_target, \
+						patch('core.commands.os.stat') as target_stat, patch('core.commands.show_alert') as alert, \
+						patch('core.commands.as_url') as convert:
+					{'lstat': inspect, 'realpath': resolve_target, 'stat': target_stat}[operation].side_effect = error
+					self.pane.reset_mock()
+					self.command()
+					alert.assert_called_once()
+					self.pane.run_command.assert_not_called()
+					convert.assert_not_called()
+					if isinstance(error, FileNotFoundError):
+						if operation == 'lstat':
+							self.assertIn('The highlighted item no longer exists', alert.call_args.args[0])
+							self.assertNotIn('Broken link', alert.call_args.args[0])
+							resolve_target.assert_not_called()
+							target_stat.assert_not_called()
+						else:
+							self.assertIn('Broken link', alert.call_args.args[0])
+					else:
+						self.assertNotIn('Broken link', alert.call_args.args[0])
+						self.assertIn(str(error), alert.call_args.args[0])
+
+class SwapPanesTest(TestCase):
+	def test_captured_locations_noop_refusal_and_no_focus_change(self):
+		from core.commands import SwapPanes
+		for paths in (('file://C:/left', 'file://D:/right'), ('file://C:', 'file://C:'), ('null://', 'file://C:')):
+			left, right = Mock(), Mock()
+			left.window.get_panes.return_value = [left, right]
+			left.get_path.return_value, right.get_path.return_value = paths
+			with patch('core.commands.show_status_message'):
+				SwapPanes(left)()
+			if paths[0] != paths[1] and 'null://' not in paths:
+				left.set_path.assert_called_once_with(paths[1])
+				right.set_path.assert_called_once_with(paths[0])
+			else:
+				left.set_path.assert_not_called()
+				right.set_path.assert_not_called()
+			left.focus.assert_not_called()
+			right.focus.assert_not_called()
+		left.window.get_panes.return_value = [left]
+		self.assertFalse(SwapPanes(left).is_visible())
+		with patch('core.commands.show_status_message'):
+			SwapPanes(left)()
+
 class HiddenFileFilterTest(TestCase):
 	def test_unchanged_sort_settings_do_not_write(self):
 		from core.commands import RememberSortSettings
@@ -145,6 +286,11 @@ class DuplicateFileTest(TestCase):
 		self.pane.get_selected_files.return_value = []
 		self.pane.get_file_under_cursor.return_value = 'file://C:/reports/report.txt'
 		self.command = DuplicateFile(self.pane)
+		for target, options in (('core.commands.os.lstat', {'side_effect': FileNotFoundError}),
+			('fman.fs.exists', {'return_value': False})):
+			patcher = patch(target, **options)
+			patcher.start()
+			self.addCleanup(patcher.stop)
 
 	def test_command_name_and_aliases(self):
 		self.assertEqual('duplicate_file', _get_command_name(type(self.command)))
@@ -158,16 +304,19 @@ class DuplicateFileTest(TestCase):
 				self.command()
 				copy.assert_called_once_with(dest_dir=path)
 
-	def test_prompt_matches_copy_for_files_folders_and_multiple_items(self):
+	def test_numbered_suggestions_and_unchanged_multiple_selection(self):
 		from core.commands import Copy
-		for path, names, directory in (
-			('file://C:/reports', ('report.txt',), False),
-			('file://C:/reports', ('archive.tar.gz',), False),
-			('file://C:/reports', ('.gitignore',), False),
-			('file://C:/reports', ('folder',), True),
-			('file://C:/reports', ('one.txt', 'two.txt'), False),
-			('file:////server/share', ('report.txt',), False),
-			('zip://C:/archive.zip', ('report.txt',), False),
+		for path, names, directory, expected in (
+			('file://C:/reports', ('report.txt',), False, 'report Copy 1.txt'),
+			('file://C:/reports', ('archive.tar.gz',), False, 'archive Copy 1.tar.gz'),
+			('file://C:/reports', ('.gitignore',), False, '.gitignore Copy 1'),
+			('file://C:/reports', ('README',), False, 'README Copy 1'),
+			('file://C:/reports', ('folder.v1',), True, 'folder.v1 Copy 1'),
+			('file://C:/reports', ('report Copy 2.txt',), False, 'report Copy 3.txt'),
+			('file://C:/reports', ('folder.v1 Copy 2',), True, 'folder.v1 Copy 3'),
+			('file://C:/reports', ('one.txt', 'two.txt'), False, None),
+			('file:////server/share', ('report.txt',), False, 'report Copy 1.txt'),
+			('zip://C:/archive.zip', ('report.txt',), False, 'report Copy 1.txt'),
 		):
 			with self.subTest(path=path, names=names), patch('fman.fs.is_dir', return_value=directory), \
 				patch('fman.show_prompt', return_value=('', False)) as prompt, \
@@ -175,12 +324,18 @@ class DuplicateFileTest(TestCase):
 				patch('core.commands.submit_task') as submit:
 				self.pane.get_path.return_value = path
 				self.pane.get_selected_files.return_value = [join(path, name) for name in names]
-				Copy(self.pane)(dest_dir=path)
-				expected = prompt.call_args
-				prompt.reset_mock()
 				self.command()
-				self.assertEqual([expected], prompt.call_args_list)
+				self.assertEqual(as_human_readable(join(path, expected)) if expected else as_human_readable(path), prompt.call_args.args[1])
 				submit.assert_not_called()
+
+	def test_candidate_gaps_and_lookup_errors(self):
+		with patch('core.commands.os.lstat', side_effect=[Mock(), Mock(), FileNotFoundError]), \
+				patch('fman.fs.is_dir', return_value=False), patch('fman.show_prompt', return_value=('', False)) as prompt:
+			self.command()
+			self.assertTrue(prompt.call_args.args[1].endswith('report Copy 3.txt'))
+		with patch('core.commands.os.lstat', side_effect=PermissionError('denied')), \
+				patch('fman.fs.is_dir', return_value=False), self.assertRaises(PermissionError):
+			self.command()
 
 	def test_uses_copy_visibility(self):
 		from core.commands import Copy
@@ -374,6 +529,16 @@ class SameFolderOperationsTest(TestCase):
 		self.assertEqual(2, len(list(self.root.iterdir())))
 		self.show_alert.assert_not_called()
 
+	def test_duplicate_enter_accepts_available_numbered_name_and_reuses_gap(self):
+		from core.commands import DuplicateFile
+		(self.root / 'report Copy 1.txt').mkdir()
+		(self.root / 'report Copy 3.txt').write_bytes(b'keep')
+		self.show_prompt.side_effect = lambda message, default, *args: (default, True)
+		DuplicateFile(self.pane)()
+		self.assertEqual(self.source.read_bytes(), (self.root / 'report Copy 2.txt').read_bytes())
+		self.assertEqual(b'keep', (self.root / 'report Copy 3.txt').read_bytes())
+		self.show_alert.assert_not_called()
+
 	def test_duplicate_existing_target_uses_copy_confirmation(self):
 		from core.commands import DuplicateFile
 		destination = self.root / 'copy.txt'
@@ -557,7 +722,7 @@ class CopyItemTextTest(TestCase):
 						command()
 					clear.assert_called_once_with()
 					set_text.assert_called_once_with(text)
-					status.assert_called_once_with('Copied %s to the clipboard' % text, timeout_secs=3)
+					status.assert_called_once_with('Copied %s to the clipboard' % path, timeout_secs=3)
 					pane.get_path.assert_not_called()
 	def test_cursor_fallback_and_invalid_selection_counts(self):
 		from core.commands import CopyFileName, CopyFilePath
@@ -565,7 +730,7 @@ class CopyItemTextTest(TestCase):
 			for selected, cursor, visible in (
 				([], 'file://C:/folder', True),
 				([], None, False),
-				(['file://C:/one', 'file://C:/two'], 'file://C:/one', False),
+				(['file://C:/one', 'file://C:/two'], 'file://C:/one', command_type is CopyFileName),
 			):
 				with self.subTest(command=command_type.__name__, selected=selected, cursor=cursor):
 					pane = Mock()
@@ -578,7 +743,7 @@ class CopyItemTextTest(TestCase):
 						self.assertEqual(visible, command.is_visible())
 						command()
 					if visible:
-						set_text.assert_called_once_with('folder' if command_type is CopyFileName else 'C:\\folder')
+						set_text.assert_called_once_with(('one\ntwo' if selected else 'folder') if command_type is CopyFileName else 'C:\\folder')
 					else:
 						clear.assert_not_called()
 						set_text.assert_not_called()
@@ -593,10 +758,13 @@ class CopyItemTextTest(TestCase):
 			self.assertTrue(command.is_visible())
 			pane.get_selected_files.return_value = ['file://C:/one', 'file://C:/two']
 			with patch('core.commands.clipboard.clear') as clear, \
-				patch('core.commands.clipboard.set_text') as set_text:
+				patch('core.commands.clipboard.set_text') as set_text, patch('core.commands.show_status_message'):
 				command()
-			clear.assert_not_called()
-			set_text.assert_not_called()
+			if command_type is CopyFileName:
+				set_text.assert_called_once_with('one\ntwo')
+			else:
+				clear.assert_not_called()
+				set_text.assert_not_called()
 
 class ExternalAppConfigurationTest(TestCase):
 	def test_edit_app_uses_windows_picker_and_keeps_associations(self):
@@ -812,6 +980,22 @@ class CommandPaletteRecentTest(TestCase):
 		self.palette = CommandPalette(self.pane)
 	def seed(self, *identities):
 		self.document['recent'] = [{'kind': kind, 'name': name} for kind, name in identities]
+	def test_roadmap_synonyms_match_once_dispatch_and_keep_identity(self):
+		from core.commands import UnpackArchive
+		from core.quick_view import ToggleQuickView
+		from favorites import ShowFavorites
+		for name, command, synonym in (('show_favorites', ShowFavorites, 'Bookmarks'),
+			('unpack_archive', UnpackArchive, 'Extract archive'), ('toggle_quick_view', ToggleQuickView, 'Preview')):
+			with self.subTest(command=name):
+				self.aliases = {name: command.aliases}
+				self.pane.get_command_aliases.side_effect = self.aliases.__getitem__
+				self.seed()
+				items = self.open(synonym)
+				self.assertEqual([synonym], [item.title for item in items])
+				self.open(synonym, (synonym, items[0].value))
+				self.pane.run_command.assert_called_with(name)
+				self.assertEqual((('pane', name),), _recent_commands())
+				self.assertEqual(1, [item.title for item in self.open('')].count(command.aliases[0]))
 	def open(self, query='', result=None):
 		items = []
 		def show(provider, **kwargs):

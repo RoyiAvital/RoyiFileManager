@@ -7,6 +7,25 @@ from unittest.mock import patch
 
 from fman.listing import Listing, reconcile
 
+class LocationInfoTest(TestCase):
+	def test_classification_is_immutable_pure_and_location_bound(self):
+		from fman.listing import LocationInfo, NATIVE_LOCAL, NETWORK, UNKNOWN
+		from fman.impl.location_info import location_info
+		known = (123, b'1' * 16)
+		for location, scope, expected in (
+			('file://C:/native', known, NATIVE_LOCAL), ('file://E:/usb', known, NATIVE_LOCAL),
+			('file:////server/share', known, NETWORK), ('network://', (0, bytes(16)), NETWORK),
+			('file://Z:/mapped', (0, bytes(16)), UNKNOWN), ('zip://C:/file.zip', known, UNKNOWN),
+			('file://C:/fallback', (0, bytes(16)), UNKNOWN), ('process://', (0, bytes(16)), UNKNOWN)):
+			with self.subTest(location=location), patch('os.stat', side_effect=AssertionError('No I/O')):
+				listing = Listing.create(location, (), scope=scope)
+				info = location_info(location, listing)
+				self.assertEqual(LocationInfo(location, expected), info)
+				with self.assertRaises(FrozenInstanceError):
+					info.access_hint = UNKNOWN
+				self.assertIsNone(location_info(location, None))
+				self.assertIsNone(location_info(location + '/other', listing))
+
 
 class ListingTest(TestCase):
 	def test_status_entries_are_complete_displayed_rows_during_pending_scan(self):

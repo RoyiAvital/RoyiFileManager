@@ -40,6 +40,10 @@ class FileListView(
 		self._view_generation = 0
 		self._pending_snapshot_restore = None
 		self._pending_cursor = None
+		self._delegate.preview_rows = None
+	def set_selection_preview(self, rows):
+		self._delegate.preview_rows = rows
+		self.viewport().update()
 	def contextMenuEvent(self, event):
 		index = self.indexAt(event.pos())
 		updated_selection = False
@@ -99,8 +103,10 @@ class FileListView(
 	def select(self, file_urls, ignore_errors=False):
 		if isinstance(file_urls, str):
 			raise ValueError('It should be select([file]) not select(file).')
+		self._change_selections(file_urls, QISM.Select, ignore_errors)
+	def _change_selections(self, file_urls, action, ignore_errors):
 		model, selection = self.model(), QItemSelection()
-		first = last = None
+		rows = set()
 		try:
 			for url in file_urls:
 				try:
@@ -109,6 +115,10 @@ class FileListView(
 					if ignore_errors:
 						continue
 					raise
+				rows.add(row)
+		finally:
+			first = last = None
+			for row in sorted(rows):
 				if first is None:
 					first = last = row
 				elif row == last + 1:
@@ -116,18 +126,16 @@ class FileListView(
 				else:
 					selection.select(model.index(first, 0), model.index(last, model.columnCount() - 1))
 					first = last = row
-		finally:
 			if first is not None:
 				selection.select(model.index(first, 0), model.index(last, model.columnCount() - 1))
 			if selection:
-				self.selectionModel().select(selection, QISM.Select | QISM.Rows)
+				self.selectionModel().select(selection, action | QISM.Rows)
 	def deselect(self, file_urls, ignore_errors=False):
 		if isinstance(file_urls, str):
 			raise ValueError(
 				'It should be deselect([file]) not deselect(file).'
 			)
-		for url in file_urls:
-			self._change_selection(url, QISM.Deselect, ignore_errors)
+		self._change_selections(file_urls, QISM.Deselect, ignore_errors)
 	def _change_selection(self, file_url, action, ignore_errors=False):
 		try:
 			row = self.model().find(file_url)
@@ -349,6 +357,7 @@ def set_selection(qlineedit, selection_start, selection_end=None):
 class FileListItemDelegate(QStyledItemDelegate):
 
 	editor_shown = pyqtSignal(QLineEdit)
+	preview_rows = None
 
 	def paint_item(self, painter, option, index):
 		highlights = index.data(Qt.UserRole + 1)
@@ -404,6 +413,11 @@ class FileListItemDelegate(QStyledItemDelegate):
 				return True
 		return False
 	def adapt_style_option(self, option, index):
+		if self.preview_rows is not None:
+			if index.row() in self.preview_rows:
+				option.state |= QStyle.State_Selected
+			else:
+				option.state &= ~QStyle.State_Selected
 		# We want to be able to style the first and last columns with QSS.
 		# However, unlike QTreeView::item, QTableView::item has no :first or
 		# :last selectors. We work around this by setting the fake

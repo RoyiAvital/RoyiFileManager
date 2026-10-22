@@ -1,5 +1,8 @@
 from collections import namedtuple
 from concurrent.futures import ThreadPoolExecutor
+from fman.impl.location_info import native_local_scope
+from fman.url import as_human_readable
+import shutil
 from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot, QTimer
 from PyQt5.QtWidgets import QWidget, QHBoxLayout, QLabel
 
@@ -22,12 +25,29 @@ StatusSummary = namedtuple(
 		'directory_count', 'file_count', 'size_bytes', 'size_complete',
 		'size_supported', 'size_limited', 'selected_directory_count',
 		'selected_file_count', 'selected_size_bytes',
-		'selected_size_complete'
-	)
+		'selected_size_complete', 'free_bytes', 'total_bytes'
+	), defaults=(None, None)
 )
 PaneStatusSnapshot = namedtuple(
-	'PaneStatusSnapshot', ('location', 'entries', 'all_rows_loaded', 'show_hidden')
+	'PaneStatusSnapshot', ('location', 'entries', 'all_rows_loaded', 'show_hidden', 'free_space_path'), defaults=(None,)
 )
+
+def free_space_path(location, listing):
+	return as_human_readable(location) if native_local_scope(location, listing) else None
+
+
+def calculate_status_snapshot(snapshot, query_size, max_entries, is_cancelled):
+	result = calculate_status_summary(snapshot.entries, query_size, snapshot.all_rows_loaded, max_entries, is_cancelled)
+	if result is None or is_cancelled():
+		return None
+	if snapshot.free_space_path:
+		try:
+			usage = shutil.disk_usage(snapshot.free_space_path)
+		except OSError:
+			pass
+		else:
+			result = result._replace(free_bytes=usage.free, total_bytes=usage.total)
+	return None if is_cancelled() else result
 
 
 def validate_status_bar_settings(value):
@@ -157,9 +177,9 @@ class StatusCalculationService(QObject):
 		self._shutdown = False
 	def submit(self, owner_id, generation, snapshot, max_entries, token):
 		future = self._executor.submit(
-			calculate_status_summary, snapshot.entries,
+			calculate_status_snapshot, snapshot,
 			lambda url: self._fs.query(url, 'size_bytes'),
-			snapshot.all_rows_loaded, max_entries,
+			max_entries,
 			lambda: token.cancelled
 		)
 		future.add_done_callback(
@@ -197,6 +217,7 @@ class PaneStatusWidget(QWidget):
 		self._files = QLabel(self)
 		self._size = QLabel(self)
 		self._selection = QLabel(self)
+		self._free_space = QLabel(self)
 		layout = QHBoxLayout(self)
 		layout.setContentsMargins(4, 1, 4, 1)
 		layout.setSpacing(8)
@@ -206,6 +227,7 @@ class PaneStatusWidget(QWidget):
 		):
 			layout.addWidget(label)
 		layout.addStretch()
+		layout.addWidget(self._free_space)
 		self._timer = QTimer(self)
 		self._timer.setInterval(150)
 		self._timer.setSingleShot(True)
@@ -225,6 +247,7 @@ class PaneStatusWidget(QWidget):
 			self.schedule_refresh()
 	def schedule_refresh(self):
 		self._cancel()
+		self._free_space.clear()
 		self._timer.start()
 	def deactivate(self):
 		self._timer.stop()
@@ -259,6 +282,8 @@ class PaneStatusWidget(QWidget):
 			return
 		self._render(summary)
 	def _render(self, summary):
+		self._free_space.setText('' if summary.free_bytes is None else 'Free: %s of %s' % (
+			format_size(summary.free_bytes, self._size_divisor), format_size(summary.total_bytes, self._size_divisor)))
 		self._directories.setText('%d dirs' % summary.directory_count)
 		self._files.setText('%d files' % summary.file_count)
 		if not summary.size_supported:
@@ -291,6 +316,6 @@ class PaneStatusWidget(QWidget):
 	def _clear(self):
 		for label in (
 			self._hidden, self._directories, self._files, self._size,
-			self._selection
+			self._selection, self._free_space
 		):
 			label.clear()

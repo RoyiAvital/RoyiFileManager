@@ -27,7 +27,7 @@ def switch_quick_view(pane, pane_index):
 
 
 class ToggleQuickView(DirectoryPaneCommand):
-	aliases = ('Toggle QuickView',)
+	aliases = ('Toggle QuickView', 'Preview')
 
 	@run_in_main_thread
 	def __call__(self):

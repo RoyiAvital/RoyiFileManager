@@ -13,6 +13,7 @@ from fman.fs import exists, touch, mkdir, is_dir, delete, samefile, \
 	iterdir, resolve, prepare_copy, prepare_move, prepare_delete, \
 	FileSystem, prepare_trash, query, makedirs, notify_file_added
 from fman.impl.product import APP_NAME
+from fman.impl.util.qt.thread import run_in_main_thread
 from fman.url import splitscheme, as_url, join, basename, as_human_readable, \
 	dirname, relpath, normalize
 from fman.url import basename as url_basename
@@ -26,6 +27,7 @@ from subprocess import Popen
 
 import errno
 import fman.fs
+import ntpath
 import os
 import os.path
 import re
@@ -589,6 +591,9 @@ class _TreeCommand(DirectoryPaneCommand):
 				dest_url = join(dest_dir, dest_name)
 				suggested_dst, selection_start, selection_end = \
 					get_dest_suggestion(dest_url)
+			suggested_dst, selection_start, selection_end = cls._suggest_destination(
+				file_, dest_dir, exists_and_is_dir, fs,
+				(suggested_dst, selection_start, selection_end))
 		else:
 			files_descr = '%d files' % len(files)
 			suggested_dst = as_human_readable(dest_dir)
@@ -637,6 +642,9 @@ class _TreeCommand(DirectoryPaneCommand):
 					)
 					if choice & YES:
 						return dest_url, None
+	@classmethod
+	def _suggest_destination(cls, source, destination, directory, fs, default):
+		return default
 	@classmethod
 	def _verb(cls):
 		return cls.__name__.lower()
@@ -698,6 +706,33 @@ class DuplicateFile(Copy):
 
 	def __call__(self):
 		super().__call__(dest_dir=self.pane.get_path())
+
+	@classmethod
+	def _suggest_destination(cls, source, destination, directory, fs, default):
+		name = url_basename(source)
+		extension_start = None if directory else _find_extension_start(name)
+		if extension_start == 0:
+			extension_start = None
+		stem, extension = name[:extension_start], name[extension_start:] if extension_start is not None else ''
+		series = re.fullmatch(r'(.+) Copy ([1-9][0-9]*)', stem)
+		sequence = 1
+		if series:
+			stem, sequence = series[1], int(series[2]) + 1
+		while True:
+			candidate = join(destination, '%s Copy %d%s' % (stem, sequence, extension))
+			if splitscheme(candidate)[0] == 'file://':
+				try:
+					os.lstat(as_human_readable(candidate))
+				except FileNotFoundError:
+					occupied = False
+				else:
+					occupied = True
+			else:
+				occupied = fs.exists(candidate)
+			if not occupied:
+				text, start, end = get_dest_suggestion(candidate)
+				return text, start, None if directory else end
+			sequence += 1
 
 	@classmethod
 	def _verb(cls):
@@ -944,11 +979,89 @@ class CopyPathsToClipboard(DirectoryPaneCommand):
 		clipboard.set_text('\n'.join(map(as_human_readable, to_copy)))
 		_report_clipboard_action('Copied', to_copy, ' to the clipboard', 'path')
 
+class GoToClipboardPath(DirectoryPaneCommand):
+	aliases = ('Go to clipboard path', 'Open clipboard location')
+
+	def __call__(self):
+		text = clipboard.get_text()
+		if not text or not text.strip():
+			show_status_message('The clipboard contains no path.', timeout_secs=3)
+			return
+		try:
+			url = _clipboard_location(text)
+		except ValueError as error:
+			show_alert(str(error))
+			return
+		self.pane.run_command('open_directory', {'url': url})
+
+class GoToLinkTarget(DirectoryPaneCommand):
+	aliases = ('Go to link target', 'Reveal link target')
+
+	def is_visible(self):
+		url = self.pane.get_file_under_cursor()
+		return bool(url and url.startswith('file://'))
+
+	def __call__(self):
+		url = self.pane.get_file_under_cursor()
+		if not url or not url.startswith('file://'):
+			show_status_message('Highlight a filesystem link.', timeout_secs=3)
+			return
+		path = as_human_readable(url)
+		source_inspected = False
+		try:
+			os.lstat(path)
+			source_inspected = True
+			if not (os.path.islink(path) or os.path.isjunction(path)):
+				show_status_message('The highlighted item is not a symbolic link or junction.', timeout_secs=3)
+				return
+			target = os.path.realpath(path)
+			if target.startswith('\\\\?\\'):
+				show_alert('This link resolves to an unsupported Windows namespace.')
+				return
+			os.stat(target)
+		except FileNotFoundError:
+			message = 'Broken link: ' if source_inspected else 'The highlighted item no longer exists: '
+			show_alert(message + escape(path))
+			return
+		except OSError as error:
+			show_alert('Could not resolve link target: %s\n%s' % (escape(path), escape(str(error))))
+			return
+		self.pane.run_command('open_directory', {'url': as_url(target)})
+
+def _clipboard_location(text):
+	text = text.strip()
+	if any(char in text for char in '\r\n\x00'):
+		raise ValueError('Use one absolute path or application URL, not multiple lines.')
+	if len(text) >= 2 and text.startswith('"') and text.endswith('"'):
+		text = text[1:-1]
+	try:
+		scheme, path = splitscheme(text)
+	except ValueError:
+		scheme, path = None, text
+	if scheme not in (None, 'file://'):
+		return text
+	if scheme == 'file://' and path.startswith('/') and not path.startswith('//'):
+		raise ValueError('Use an absolute path or application URL, not a standard file URI.')
+	if scheme == 'file://' and re.fullmatch('[A-Za-z]:', path):
+		return text
+	path = path.replace('/', '\\')
+	drive, tail = ntpath.splitdrive(path)
+	local = re.fullmatch('[A-Za-z]:', drive) is not None and tail.startswith('\\')
+	parts = drive.split('\\')
+	unc = len(parts) == 4 and parts[:2] == ['', ''] and all(parts[2:]) and parts[2] not in ('?', '.')
+	if not (local or unc) or '"' in path:
+		raise ValueError('Use an absolute drive or UNC path, or an application URL.')
+	return as_url(ntpath.normpath(path))
+
 class CopyFileName(DirectoryPaneCommand):
 	def __call__(self):
-		_copy_single_item_text(self.get_chosen_files(), url_basename)
+		files = self.get_chosen_files()
+		if files:
+			clipboard.clear()
+			clipboard.set_text('\n'.join(map(url_basename, files)))
+			_report_clipboard_action('Copied', files, ' to the clipboard', 'name')
 	def is_visible(self):
-		return len(self.get_chosen_files()) == 1
+		return bool(self.get_chosen_files())
 
 class CopyFilePath(DirectoryPaneCommand):
 	def __call__(self):
@@ -1031,13 +1144,46 @@ class Deselect(DirectoryPaneCommand):
 		self.pane.clear_selection()
 
 class InvertSelection(DirectoryPaneCommand):
+	@run_in_main_thread
 	def __call__(self, *args, **kwargs):
-		url = self.pane.get_path()
-		all_files = (join(url, fname) for fname in iterdir(url))
-		to_deselect = set(self.pane.get_selected_files())
-		to_select = (f for f in all_files if f not in to_deselect)
-		self.pane.deselect(to_deselect)
-		self.pane.select(to_select)
+		selected = self.pane.get_selected_files()
+		self.pane.select_all()
+		self.pane.deselect(selected)
+
+class SelectSameExtension(DirectoryPaneCommand):
+	aliases = ('Select same extension', 'Select files with the same extension')
+
+	def __call__(self):
+		self._select(self.pane.get_file_under_cursor())
+
+	@run_in_main_thread
+	def _select(self, cursor):
+		listing = self.pane.get_listing()
+		if listing is None or not cursor or dirname(cursor) != listing.location:
+			show_status_message('Highlight a file with an extension.', timeout_secs=3)
+			return
+		try:
+			index = listing.names.index(url_basename(cursor))
+		except ValueError:
+			return
+		extension = os.path.splitext(listing.names[index])[1].casefold()
+		if listing.is_dir[index] or not extension:
+			show_status_message('Highlight a file with an extension.', timeout_secs=3)
+			return
+		self.pane.select([join(listing.location, name) for name, directory in zip(listing.names, listing.is_dir)
+			if not directory and os.path.splitext(name)[1].casefold() == extension])
+
+class SelectByPattern(DirectoryPaneCommand):
+	aliases = ('Select by pattern', 'Select group')
+
+	def __call__(self):
+		self.pane._widget.begin_pattern_selection(True)
+
+class DeselectByPattern(DirectoryPaneCommand):
+	aliases = ('Deselect by pattern', 'Deselect group')
+
+	def __call__(self):
+		self.pane._widget.begin_pattern_selection(False)
 
 class ToggleHiddenFiles(DirectoryPaneCommand):
 
@@ -1553,7 +1699,7 @@ except ImportError as e:
 			)
 
 class UnpackArchive(DirectoryPaneCommand):
-	aliases = ('Unpack archive',)
+	aliases = ('Unpack archive', 'Extract archive')
 	def __call__(self):
 		directory = self.pane.get_path()
 		chosen = self.get_chosen_files()
@@ -1776,6 +1922,25 @@ class SyncPaneLocation(DirectoryPaneCommand):
 
 	def is_visible(self):
 		return len(self.pane.window.get_panes()) > 1
+
+class SwapPanes(DirectoryPaneCommand):
+	aliases = ('Swap pane locations',)
+
+	def is_visible(self):
+		return len(self.pane.window.get_panes()) > 1
+
+	def __call__(self):
+		if not self.is_visible():
+			show_status_message('No other pane to swap.', timeout_secs=3)
+			return
+		left, right = self.pane.window.get_panes()[:2]
+		left_url, right_url = left.get_path(), right.get_path()
+		if 'null://' in (left_url, right_url):
+			show_status_message('Both panes need a location to swap.', timeout_secs=3)
+			return
+		if left_url != right_url:
+			left.set_path(right_url)
+			right.set_path(left_url)
 
 class SortByColumn(DirectoryPaneCommand):
 

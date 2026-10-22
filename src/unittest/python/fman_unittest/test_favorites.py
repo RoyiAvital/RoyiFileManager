@@ -197,7 +197,7 @@ class FavoriteCommandTest(TestCase):
 			)
 		})
 		self.assertEqual(
-			('Open favorites manager', 'Favorites Manager', 'Favorites', 'Show favorites'),
+			('Open favorites manager', 'Favorites Manager', 'Favorites', 'Show favorites', 'Bookmarks'),
 			ShowFavorites.aliases
 		)
 

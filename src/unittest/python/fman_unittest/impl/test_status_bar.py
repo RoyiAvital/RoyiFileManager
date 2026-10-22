@@ -50,13 +50,31 @@ class PaneStatusSnapshotTest(TestCase):
 		model.get_status_entries.return_value = entries
 		model.get_location.return_value = 'file:///root'
 		pane = SimpleNamespace(_model=model, _hidden_files_shown=True,
-			get_selected_files=Mock(return_value=['file:///root/selected']))
+			get_selected_files=Mock(return_value=['file:///root/selected']), get_listing=Mock(return_value=None))
 		self.assertEqual(PaneStatusSnapshot('file:///root', entries, True, True),
 			DirectoryPaneWidget.get_status_snapshot(pane))
 		model.get_status_entries.assert_called_once_with({'file:///root/selected'})
 
 
 class StatusBarSettingsTest(TestCase):
+	def test_free_space_gate_query_skip_error_and_cancellation(self):
+		from fman.impl.status_bar import free_space_path, calculate_status_snapshot
+		from fman.listing import Listing
+		from unittest.mock import Mock, patch
+		listing = Listing.create('file://C:/mount', (), scope=(1, b'1' * 16))
+		self.assertEqual('C:\\mount', free_space_path(listing.location, listing))
+		for location in ('file:////server/share', 'file://Z:/mapped', 'zip://C:/archive.zip'):
+			self.assertIsNone(free_space_path(location, Listing.create(location, ())))
+		for path in (None, 'C:\\mount'):
+			for failure in (None, PermissionError):
+				with patch('fman.impl.status_bar.shutil.disk_usage', return_value=Mock(free=100, total=200), side_effect=failure) as usage:
+					result = calculate_status_snapshot(PaneStatusSnapshot(listing.location, (), True, False, path), Mock(), 5000, lambda: False)
+					self.assertEqual(100 if path and not failure else None, result.free_bytes)
+					self.assertEqual(bool(path), usage.called)
+		with patch('fman.impl.status_bar.shutil.disk_usage') as usage:
+			self.assertIsNone(calculate_status_snapshot(PaneStatusSnapshot(listing.location, (), True, False, 'C:\\mount'), Mock(), 5, lambda: True))
+			usage.assert_not_called()
+
 	def test_defaults_and_mode_cycle(self):
 		self.assertEqual(DEFAULT_SETTINGS, validate_status_bar_settings(None))
 		self.assertEqual(ACTIVE_PANE, next_status_bar_mode(DISABLED))

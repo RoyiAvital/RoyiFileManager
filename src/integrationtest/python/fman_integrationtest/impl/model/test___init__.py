@@ -15,6 +15,66 @@ import sys
 
 class SortedFileSystemModelAT: # Instantiated in fman_integrationtest.test_qt
 
+	def test_selection_ranges_sort_deduplicate_and_preserve_errors(self):
+		from fman.impl.view import FileListView
+		from unittest.mock import patch
+		self._set_location('stub://')
+		def check():
+			view = FileListView(None, lambda *args: None)
+			view.setModel(self._model)
+			try:
+				selection = view.selectionModel()
+				for deselecting in (False, True):
+					with self.subTest(deselecting=deselecting):
+						view.clearSelection()
+						if deselecting:
+							view.select(['stub://1', 'stub://2', 'stub://3'])
+						operation = view.deselect if deselecting else view.select
+						with patch.object(selection, 'select', wraps=selection.select) as commit:
+							operation(['stub://3', 'stub://1', 'stub://2', 'stub://2'])
+							commit.assert_called_once()
+							self.assertEqual(1, len(commit.call_args.args[0]))
+						self.assertEqual(set() if deselecting else {'stub://1', 'stub://2', 'stub://3'}, set(view.get_selected_files()))
+						with patch.object(selection, 'select', wraps=selection.select) as commit:
+							operation([])
+							commit.assert_not_called()
+				view.clearSelection()
+				def interrupted():
+					yield 'stub://3'
+					yield 'stub://1'
+					raise OSError('iteration failed')
+				with self.assertRaisesRegex(OSError, 'iteration failed'):
+					view.select(interrupted())
+				self.assertEqual({'stub://1', 'stub://3'}, set(view.get_selected_files()))
+				with self.assertRaises(ValueError):
+					view.deselect(['stub://3', 'stub://missing', 'stub://1'])
+				self.assertEqual(['stub://1'], view.get_selected_files())
+			finally:
+				view.deleteLater()
+		self.run_in_app(check)
+
+	def test_batched_deselect_preserves_successful_prefix_and_ignores_missing(self):
+		from fman.impl.view import FileListView
+		self._set_location('stub://')
+		def check():
+			view = FileListView(None, lambda *args: None)
+			view.setModel(self._model)
+			try:
+				view.select(['stub://1', 'stub://2', 'stub://3'])
+				changes = []
+				view.selectionModel().selectionChanged.connect(lambda *args: changes.append(True))
+				with self.assertRaises(ValueError):
+					view.deselect(['stub://1', 'stub://missing', 'stub://2'])
+				self.assertEqual({'stub://2', 'stub://3'}, set(view.get_selected_files()))
+				self.assertEqual(1, len(changes))
+				changes.clear()
+				view.deselect(['stub://2', 'stub://missing', 'stub://3'], ignore_errors=True)
+				self.assertEqual([], view.get_selected_files())
+				self.assertEqual(1, len(changes))
+			finally:
+				view.deleteLater()
+		self.run_in_app(check)
+
 	_NUM_FILES = 100
 	_NUM_VISIBLE_ROWS = 10
 

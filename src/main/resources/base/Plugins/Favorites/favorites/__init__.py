@@ -57,7 +57,7 @@ class AddCurrentFolderToFavorites(DirectoryPaneCommand):
 
 
 class ShowFavorites(DirectoryPaneCommand):
-	aliases = ('Open favorites manager', 'Favorites Manager', 'Favorites', 'Show favorites')
+	aliases = ('Open favorites manager', 'Favorites Manager', 'Favorites', 'Show favorites', 'Bookmarks')
 
 	def __call__(self, query=''):
 		show_manager(self.pane, query)

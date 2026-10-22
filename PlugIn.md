@@ -195,6 +195,7 @@ construct them with internal widgets yourself.
 | `get_file_under_cursor()`                                          | Current file URL, or no current value.                                                                                                                                                                                                                                            |
 | `get_path()`                                                       | Current directory URL, not a native path.                                                                                                                                                                                                                                         |
 | `get_listing()`                                                    | Current immutable `fman.listing.Listing`, or `None` before commit. Retaining it retains that snapshot's memory.                                                                                                                                                                   |
+| `get_location_info()` | Return immutable `fman.listing.LocationInfo(location, access_hint)`, or `None` without a matching committed listing. Captured together on Qt; no I/O. |
 | `find_in_listing(search, query='', metadata=False, accepted=None)` | Start in-pane Find; return false if no snapshot is ready. `search(listing, query, check_canceled)` runs on a worker and returns `(entry_indices, highlights_by_entry)` with UTF-16 highlight offsets. `accepted(url)` runs on Qt after accepting and restoring normal projection. |
 | `set_path(dir_url, callback=None, onerror=host_default)`           | Request a directory change, honoring location rewrite listeners. `callback()` signals initialization; do not treat it as a complete navigation outcome.                                                                                                                           |
 | `reload(on_done=None)`                                             | Reload the pane; an optional no-argument callback runs on Qt after a fresh successful scan and projection settle. Failed scans leave it pending for a successful retry; navigation/closure cancels it.                                                                            |
@@ -230,6 +231,26 @@ pane is still alive, and do not hold a lock needed by the UI during registration
 It does not call back on registration; read `get_path()` for the initial URL.
 Callbacks must be fast and may read the current path or update plain UI handles.
 Unsubscribe when the owning tool closes. No polling or new worker is created.
+
+### Location Access Hint
+
+Import `LocationInfo`, `NATIVE_LOCAL`, `NETWORK` and `UNKNOWN` from `fman.listing`.
+`pane.get_location_info()` can be called on Qt or a command worker. It captures
+the current location and committed listing together, without filesystem queries.
+
+- `NETWORK`: explicit `network://` or application UNC location.
+- `NATIVE_LOCAL`: a filesystem location with Core's known native local NTFS/ReFS scope.
+- `UNKNOWN`: fallback local, mapped drives without retained network information,
+  archives and other virtual locations.
+- `None`: no committed listing, or a location/listing mismatch. Treat conservatively
+  as unknown. During initial navigation the old location can still be returned;
+  after model replacement, `None` lasts until the new listing commits.
+
+This is advisory and provisional, not a speed, permission or identity guarantee.
+USB NTFS/ReFS can be `NATIVE_LOCAL`; other USB paths remain unknown. Classification
+depends on existing native scanner scope semantics. No discovery, caching, signals,
+provider changes or pane-load work is added. It does not authorize I/O on Qt or
+replace operation-time checks. The `Listing` provider contract is unchanged.
 
 ### Window
 

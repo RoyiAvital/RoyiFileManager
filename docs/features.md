@@ -2,6 +2,24 @@
 
 {{ app_name }} is a fast, keyboard-focused file manager for Windows.
 
+For step-by-step examples, see [Everyday Workflows](workflows.md).
+
+## Availability
+
+Some guides describe the current development build, not just the latest release.
+
+| Capability | Available In |
+| --- | --- |
+| Bundled Robocopy | 0.16.0 and newer |
+| Bundled Batch File Renamer, including random letter/digit fields | 0.16.3 and newer |
+| Create a duplicate file and Pack here | 0.16.4 and newer |
+| Pane swapping, pattern selection and keypad selection shortcuts | Unreleased development builds |
+| Select same extension, clipboard/link navigation and Command Center synonyms | Unreleased development builds |
+| Numbered duplicate suggestions, copying multiple names and local free-space display | Unreleased development builds |
+
+Check the [release notes](https://github.com/RoyiAvital/RoyiFileManager/blob/main/CHANGELOG.md)
+for your installed version. An Unreleased instruction may not work in a released build.
+
 ## Dual-Pane Workflow
 
 - View a source and destination together.
@@ -42,6 +60,9 @@ See [QuickView](tools.md#quickview), [Directory Size](tools.md#directory-size), 
 - Pack and unpack archives.
 - Move or copy files into and out of archives.
 - Copy full paths to the clipboard.
+- Rename a filtered, ordered group with [Batch File Renamer](tools.md#batch-file-renamer).
+- Copy or move with [Robocopy](tools.md#robocopy) as an alternative to F5/F6,
+  using its different native overwrite and skip policies.
 
 See [Archives](archives.md).
 

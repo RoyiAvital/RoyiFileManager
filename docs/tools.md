@@ -7,6 +7,19 @@ Press ++ctrl+q++.
 QuickView previews the file under the cursor over the other pane.
 Both folder locations stay unchanged.
 
+### QuickView Or An External Program?
+
+| Need | Use From The File Pane |
+| --- | --- |
+| Inspect supported files without launching another program | ++ctrl+q++ for QuickView |
+| View a file in your chosen program | ++f3++ for the configured viewer |
+| Edit a file | ++f4++ for the configured editor |
+
+Press ++tab++ to focus QuickView; ++tab++ or ++esc++ returns to the pane.
+++ctrl+q++ closes it. Inside a text preview, ++f3++ finds the next match instead
+of launching the external viewer. Configure F3/F4 through
+[Text Editor and Viewer](configuration.md#text-editor-and-viewer).
+
 !!! danger "QuickView Availability"
     QuickView previews files on local drives and network shares, not inside archives
     or other virtual file systems.
@@ -339,6 +352,17 @@ network transfers. It provides an alternative to ++F5++/++F6++ which is optimize
     Robocopy handles overwrites, skipped files, links and interruptions differently
     from built-in Copy/Move. See [Robocopy policies](file-system-operations.md#operations-with-robocopy).
 
+### F5/F6 Or Robocopy?
+
+| Need | Choose |
+| --- | --- |
+| Built-in conflict prompts and staged regular-file copies | ++f5++ / ++f6++ |
+| Move within one volume without copying file contents when possible | ++f6++ |
+| Native multithreaded transfers, accepting Robocopy's merge/overwrite/skip behavior | Copy with robocopy / Move with robocopy |
+
+Robocopy is an alternative, not a guarantee of greater speed. Native skips can
+leave Move sources behind, and interruption can leave partial output.
+
 Select files or folders, open Command Center with ++ctrl+shift+p++, and run
 **Copy with robocopy** or **Move with robocopy**. Choose the destination folder.
 
@@ -357,6 +381,17 @@ See [advanced usage, native overwrite behavior, settings and logs](https://githu
 Press ++ctrl+shift+d++.
 
 Folder totals appear in the Size column of both panes.
+
+### One-Time Or Automatic Totals?
+
+| Need | Use | Result |
+| --- | --- | --- |
+| Total only the chosen directories | ++ctrl+shift+enter++ | One-time status message; automatic mode stays unchanged |
+| Compare directory sizes while browsing | ++ctrl+shift+d++ | Progressive Size cells in both panes; mode is remembered |
+
+With no marks, the one-time command uses the directory under the cursor.
+It does not populate Size cells. Automatic totals can take longer because they
+calculate all listed directories, not only the chosen ones.
 
 <figure class="product-shot" markdown>
   ![Directory sizes in the Size column](assets/royifilemanager-directory-size.png)

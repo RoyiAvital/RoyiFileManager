@@ -120,6 +120,7 @@ class PaneCommandRegistry(CommandRegistry):
 			return command.is_visible()
 	def _execute_command(self, command, args, pane, file_under_cursor):
 		class_name = command.__class__.__name__
+		pane._cancel_selection_preview()
 		self._callback.before_command(class_name)
 		with self._set_context(pane, file_under_cursor):
 			msg_on_err = 'Command %r raised error.' % class_name

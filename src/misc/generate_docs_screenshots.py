@@ -7,6 +7,8 @@ The Robocopy picker shows an example destination and is canceled before transfer
 The text preview uses a generated Python sample with a neutral location label.
 Checksum captures verify generated sample files and show only relative paths.
 The batch renamer previews generated sample names and is canceled without renaming.
+Selection captures use disposable sample files and change marks only.
+Duplicate captures cancel the normal Copy prompt; free-space captures query a public local folder.
 Generated PNG files remain ignored by Git. The Pages workflow generates them
 before building its deployment artifact.
 
@@ -47,7 +49,8 @@ SOURCE_CAPTURES = (
 	'overview', 'go-to', 'context-menu', 'filter-pane', 'quick-view', 'quick-view-text',
 	'fuzzy-find', 'everything-search', 'everything-folders',
 	'search-files', 'find-files', 'favorites', 'directory-size', 'file-hash',
-	'checksum-files', 'process-pane', 'pack-archive', 'quick-table', 'quick-board', 'batch-renamer', 'robocopy'
+	'checksum-files', 'process-pane', 'pack-archive', 'quick-table', 'quick-board', 'batch-renamer', 'robocopy',
+	'selection', 'duplicate-file', 'free-space'
 )
 QUICK_BOARD_SAMPLE = dict(text='Archive_', title='Compose a file-name prefix',
 	summary='3 captured names; preview only')
@@ -55,6 +58,8 @@ QUICK_BOARD_NAMES = ('report.txt', 'notes.md', 'photo.jpg')
 BATCH_RENAMER_NAMES = ('draft_01.txt', 'draft_02.txt', 'invoice_01.txt', 'invoice_02.txt',
 	'notes.txt', 'report_01.txt', 'report_02.txt', 'report_10.txt')
 BATCH_RENAMER_TEMPLATE = 'Archive_{(index + 1):03d}_{c}{d}{ext}'
+SELECTION_NAMES = ('archive.tar.gz', 'backup.gz', 'draft notes.txt', 'draft report.txt',
+	'invoice.csv', 'photo.jpg', 'README.md', 'report.txt', 'report.txt.bak')
 PYTHON_SAMPLE = '''from dataclasses import dataclass
 from pathlib import Path
 
@@ -80,7 +85,7 @@ RIGHT_PANE_CAPTURES = (
 	'context-menu', 'filter-pane', 'search-files', 'find-files', 'file-hash',
 	'process-pane', 'pack-archive', 'quick-table'
 )
-DIALOG_CAPTURES = ('overview', 'go-to', 'fuzzy-find', 'everything-search', 'pack-archive', 'robocopy')
+DIALOG_CAPTURES = ('overview', 'go-to', 'fuzzy-find', 'everything-search', 'pack-archive', 'robocopy', 'duplicate-file')
 EVERYTHING_QUERIES = (
 	'ext:jpg;png size:>100kb !img0',
 	'path:Fonts\\ <consola|segoe> ext:ttf !*b.ttf',
@@ -213,6 +218,8 @@ def _seed_settings(settings, capture):
 		]}}
 	elif capture == 'directory-size':
 		documents = {'DirectorySize (Windows).json': {'enabled': True}}
+	elif capture == 'free-space':
+		documents = {'Status Bar (Windows).json': {'mode': 'single'}}
 	elif capture in ('everything-search', 'everything-folders'):
 		documents = {'Everything (Windows).json': {
 			'folders': [str(windows / 'Web'), str(windows / 'Fonts')],
@@ -260,17 +267,35 @@ def _grab_window_with_dialog(window, dialog):
 	return pixmap
 
 
-def _grab_window_with_sample_location(window, location_bar):
+def _grab_window_with_sample_location(window, location_bar, label='Python sample', dialog=None):
 	original = location_bar.text()
-	location_bar.setText('Python sample')
+	location_bar.setText(label)
 	try:
-		return window.grab()
+		return window.grab() if dialog is None else _grab_window_with_dialog(window, dialog)
 	finally:
 		location_bar.setText(original)
 
 
 def _source_capture_paths(capture):
 	root, windows = _public_paths()
+	if capture == 'duplicate-file':
+		folder = WORK_DIR / 'source-duplicate-file' / 'sample'
+		folder.mkdir(parents=True, exist_ok=True)
+		for name in ('report.txt', 'report Copy 1.txt'):
+			(folder / name).write_text('Documentation sample: ' + name + '\n', encoding='utf-8')
+		return folder, windows
+	if capture == 'selection':
+		from datetime import datetime
+		folder = WORK_DIR / 'source-selection' / 'sample'
+		folder.mkdir(parents=True, exist_ok=True)
+		modified = datetime(2026, 3, 15, 10, 30).timestamp()
+		for name in SELECTION_NAMES:
+			path = folder / name
+			path.write_text('Documentation sample: ' + name + '\n', encoding='utf-8')
+			os.utime(path, (modified, modified))
+		(folder / 'Projects').mkdir(exist_ok=True)
+		os.utime(folder / 'Projects', (modified, modified))
+		return folder, windows
 	if capture == 'batch-renamer':
 		from datetime import datetime
 		folder = WORK_DIR / 'source-batch-renamer' / 'sample'
@@ -304,7 +329,7 @@ def _source_capture_paths(capture):
 		return folder, windows
 	if capture in ('fuzzy-find', 'robocopy'):
 		return windows / 'Web', windows
-	if capture in ('everything-search', 'everything-folders'):
+	if capture in ('everything-search', 'everything-folders', 'free-space'):
 		return windows / 'Web', windows / 'Fonts'
 	if capture == 'directory-size':
 		web = windows / 'Web'
@@ -360,6 +385,10 @@ def _source_outputs(output_dir, capture):
 		'quick-board': ('royifilemanager-ui-quickboard.png',),
 		'batch-renamer': ('royifilemanager-batch-renamer.png',),
 		'robocopy': ('royifilemanager-robocopy-destination.png',),
+		'selection': ('royifilemanager-select-preview.png', 'royifilemanager-deselect-preview.png',
+			'royifilemanager-select-extension.png'),
+		'duplicate-file': ('royifilemanager-duplicate-file.png',),
+		'free-space': ('royifilemanager-free-space.png',),
 	}
 	return tuple(output_dir / name for name in names[capture])
 
@@ -451,6 +480,16 @@ def _capture_source_child(args):
 			return
 		def capture_overview_dialog():
 			try:
+				if args._capture == 'duplicate-file':
+					from PyQt5.QtWidgets import QLineEdit
+					if dialog.textValue() != str(left_path / 'report Copy 2.txt'):
+						raise RuntimeError('Duplicate did not skip the occupied Copy 1 name')
+					dialog.setTextValue('report Copy 2.txt')
+					dialog.findChild(QLineEdit).setSelection(0, len('report Copy 2'))
+					QApplication.processEvents()
+					finish(_grab_window_with_sample_location(context.main_window,
+						context.window.get_panes()[0]._widget._location_bar, 'Duplication sample', dialog), outputs[0])
+					return
 				if args._capture == 'robocopy':
 					destination = str(_public_paths()[0] / 'Backups' / 'Wallpapers')
 					dialog._query.setText(destination)
@@ -532,6 +571,22 @@ def _capture_source_child(args):
 				pane.focus()
 				state['started'] = True
 				pane.run_command('copy_with_robocopy')
+			elif args._capture == 'duplicate-file':
+				if state['started']:
+					return
+				pane.clear_selection()
+				pane.place_cursor_at(as_url(str(left_path / 'report.txt')))
+				pane.focus()
+				state['started'] = True
+				pane.run_command('duplicate_file')
+			elif args._capture == 'free-space':
+				if not state['started']:
+					pane.focus()
+					state.update(started=True, settled=0)
+					return
+				status = context.main_window._single_pane_status
+				if status is not None and status._free_space.text().startswith('Free: ') and state['settled'] >= 3:
+					finish(context.main_window.grab(), outputs[0])
 			elif args._capture == 'context-menu':
 				from PyQt5.QtGui import QContextMenuEvent
 				from PyQt5.QtWidgets import QMenu
@@ -586,6 +641,61 @@ def _capture_source_child(args):
 					finish(
 						context.main_window.grab(), outputs[0], filter_bar.close
 					)
+			elif args._capture == 'selection':
+				from PyQt5.QtTest import QTest
+				bar = pane._widget._filter_bar
+				url = lambda name: as_url(str(left_path / name))
+				baseline = {url('README.md')}
+				selected = baseline | {url(name) for name in SELECTION_NAMES if name.endswith('.txt')}
+				if not state['started']:
+					pane.clear_selection()
+					pane.select(baseline)
+					pane.place_cursor_at(url('report.txt'))
+					pane.focus()
+					state.update(started=True, settled=0, phase='select')
+					pane.run_command('select_by_pattern')
+					return
+				if pane._widget._model.rowCount() != len(SELECTION_NAMES) + 1:
+					raise RuntimeError('Selection capture hid or changed sample rows')
+				phase = state['phase']
+				if phase in ('select', 'deselect'):
+					session = bar._selection_session
+					if session is None:
+						return
+					if phase == 'deselect' and not state.get('query_set'):
+						bar._input.setText('^draft')
+						state.update(query_set=True, settled=0)
+						return
+					if session['result'] is None or state['settled'] < 3:
+						return
+					preview = {url(session['listing'].names[session['visible'][row]])
+						for row in session['result'][1]}
+					expected = selected if phase == 'select' else {url('README.md'), url('report.txt')}
+					if (preview != expected or set(pane.get_selected_files()) != (baseline if phase == 'select' else selected)
+							or session['selecting'] != (phase == 'select')
+							or bar._input.text() != ('*.txt$' if phase == 'select' else '^draft')):
+						raise RuntimeError('Selection preview or committed marks differ from the documented example')
+					_save_pixmap(_grab_window_with_sample_location(context.main_window,
+						pane._widget._location_bar, 'Selection sample'), outputs[0 if phase == 'select' else 1])
+					QTest.keyClick(pane._widget._file_view, Qt.Key_Return if phase == 'select' else Qt.Key_Escape)
+					if bar._selection_session is not None or set(pane.get_selected_files()) != selected:
+						raise RuntimeError('Enter or Escape did not preserve the documented selection')
+					state.update(phase='deselect' if phase == 'select' else 'invert', settled=0)
+					pane.run_command('deselect_by_pattern' if phase == 'select' else 'invert_selection')
+					return
+				if phase == 'invert':
+					expected = {url(name) for name in (*SELECTION_NAMES, 'Projects')} - selected
+					if set(pane.get_selected_files()) != expected:
+						return
+					pane.clear_selection()
+					pane.select(baseline)
+					pane.place_cursor_at(url('archive.tar.gz'))
+					state.update(phase='extension', settled=0)
+					pane.run_command('select_same_extension')
+					return
+				if set(pane.get_selected_files()) == baseline | {url('archive.tar.gz'), url('backup.gz')} and state['settled'] >= 3:
+					finish(_grab_window_with_sample_location(context.main_window,
+						pane._widget._location_bar, 'Selection sample'), outputs[2])
 			elif args._capture in ('quick-view', 'quick-view-text'):
 				text_capture = args._capture == 'quick-view-text'
 				file_url = as_url(str(

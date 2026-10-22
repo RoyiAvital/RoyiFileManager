@@ -1,5 +1,14 @@
 # Tweaks and Tricks
 
+Status: Implemented the approved scope on 2026-10-22. Only rows marked
+**Implement** were included. Pass/Deferred decisions and historical review records
+remain unchanged. Pattern selection has its own canonical task below.
+
+Opus's implementation findings R1-R4 and input/performance recommendations are
+addressed in [Implementation Review Resolutions](#implementation-review-resolutions).
+Review 2 findings N1/N2 are addressed in
+[Implementation Review 2 Resolutions](#implementation-review-2-resolutions).
+
 | #   | Feature                         | Why it fits                                                                  | Size          | Decision by Royi |
 | --- | ------------------------------- | ---------------------------------------------------------------------------- | ------------- | ---------------- |
 | 1   | Swap pane locations             | Exchange the two folder locations without moving files or pane objects.      | Very small    | Implement        |
@@ -25,6 +34,66 @@ Items 2, 3 and 9 share selection behavior, but their approval is independent;
 implementing item 3 does not require adding items 2 or 9. Pass and Deferred
 decisions remain unchanged.
 
+## Task
+
+Deliver the approved navigation, selection, clipboard, discovery and location-hint
+improvements without changing unrelated file-operation policies.
+
+## Scope
+
+Implemented items 1, 2, 3, 5, 6, 7, 9, 11, 13, 14 and 16. Items 4 and 10 remain
+Pass; items 8, 12 and 15 remain Deferred. Item 6's historical record said completed,
+but its runtime code was absent from this checkout; the approved simple design
+was supplied and tested with the shared item 16 predicate.
+
+## Design
+
+The numbered sections are the canonical designs, except item 2, which links to
+its dedicated task. Core reuses existing navigation, Copy prompts and selection
+APIs. The host owns preview painting/input and the thin public location getter.
+Filesystem checks occur only on command/status workers; widgets remain on Qt.
+
+## Alternatives
+
+Preserve existing aliases, command IDs, transfer/conflict paths and snapshot
+contracts instead of adding new command registries, transfer engines or storage
+discovery. Unapproved alternatives remain Pass/Deferred. Per-item deselection
+was measured before the existing selection range builder was reused to batch it.
+
+## Runtime Effects
+
+No new pane-load scans, metadata queries, persistent queues or idle services.
+Clipboard/link/duplicate work is invocation-only. Location classification is pure
+and on demand. Free space uses one eligible query on the existing status worker;
+disabled extended status performs none. Pattern matching is bounded and cancellable;
+its dedicated task records memory, input routing and idle behavior.
+
+## Tests
+
+Exact focused commands and outcomes are in Validation Results. Tests cover new
+commands plus existing Copy/Move/Pack, aliases/history, clipboard, filters, native
+snapshot selection, status workers and public API compatibility. Native symlink
+privilege and a disposable mounted-volume fixture are unavailable; those checks
+are explicitly unverified rather than inferred from mocks.
+
+## Implementation Steps
+
+1. Add synonyms and clipboard-path navigation; validate existing dispatch/history.
+2. Add numbered duplicate suggestions, link-target navigation and pane swapping.
+3. Implement immediate visible-selection commands and multi-name copying.
+4. Add the shared scope predicate, public location hint and approved status behavior.
+5. Extract and implement pattern selection, then measure preview/commit behavior.
+6. Run focused native/offscreen gates and update usage/API documentation.
+
+## Acceptance Criteria
+
+- All Implement rows are represented in code and focused regression coverage.
+- Pass/Deferred rows, F10 and ordinary Copy/Move conflict policies are unchanged.
+- Preview marks never leak into committed selection or file-operation dispatch.
+- Keypad bindings distinguish ordinary keys; no new filesystem work occurs on Qt.
+- Public location hints remain advisory, location-bound and provisional.
+- Validation records include actual counts, measured costs, skips and unrun checks.
+
 ## 1. Swap Pane Locations
 
 1. Add `SwapPanes(DirectoryPaneCommand)` beside `SyncPaneLocation` in
@@ -41,78 +110,19 @@ decisions remain unchanged.
 
 ## 2. Select / Deselect by Pattern
 
-Before implementation, extract this live-preview design into a dedicated task
-document with explicit input routing, lifecycle and performance checks. Keep the
-roadmap as a reference once that document exists; do not maintain duplicate designs.
-
-1. Add `SelectByPattern` and `DeselectByPattern` commands. Aliases: *Select group*,
-   *Deselect group*. Open host-owned Select/Deselect modes in the existing inline
-   Filter Bar UI in [widgets](../src/main/python/fman/impl/widgets.py), reusing its
-   placement, styling and input. No modal prompt or QuickSearch results list.
-2. Bind numeric keypad `+` / `-` with Qt strings `Num++` / `Num+-`, verified with
-   the current `QtKeyEvent` matcher. Clearly label the active mode **Select** or
-   **Deselect**; keep both commands in Command Center.
-3. Reuse `compile_filter` from
-   [filter_pattern.py](../src/main/python/fman/impl/filter_pattern.py). Same syntax
-   as the Filter Bar: `*`, `?`, `[...]`, `^`, `$`, `!`. Initially suggest `*.<ext>$`
-   of the cursor file, escaping literal extension characters; use `*` when there
-   is no extension. Keep the existing input-length limit. The end anchor excludes
-   names such as `.txt.bak` when selecting `.txt`.
-4. On Qt, capture the committed listing, visible entry indices, original marks
-   and current filter presentation. Match the listing's display names; use entry
-   names only to construct action URLs. Candidates include only currently visible
-   rows. Do not change the normal filter, row order, cursor or scroll position.
-5. Typing previews marks directly in the pane without hiding entries. Select
-   previews the original marks plus current matches; Deselect previews the
-   original marks minus current matches. Recompute from that fixed baseline on
-   every edit, never from the previous preview. An empty input previews the
-   original selection, not all entries. Show a clearly identified preview count.
-6. Keep preview state separate from committed selection: paint the prospective
-   marks without calling selection APIs on each keystroke. `get_selected_files`,
-   status calculations and Copy/Delete must not consume temporary matches.
-   File commands or other selection edits dismiss the preview before their normal
-   dispatch; they do not implicitly commit it. Pattern-editing keys stay in the input.
-   Route active-mode input before ordinary pane shortcuts in `_on_key_pressed`:
-   Space and keypad punctuation must edit the pattern rather than toggle marks or
-   reopen a command. Enter/Esc belong to the mode; ordinary Filter Bar routing
-   outside this mode remains unchanged.
-7. **Enter** commits the current completed preview and exits the mode, including
-   zero matches. While matching is pending, wait for that exact input revision;
-   another edit cancels the pending acceptance. **Esc** cancels immediately without
-   changing committed marks. On exit, restore the previous Filter Bar presentation
-   and pane focus; an existing normal filter stays applied throughout.
-8. Use the existing bounded latest-job mechanism for worker-side matching over
-   immutable plain data, with cancellation checkpoints and at most one running
-   job plus one replaceable pending query per session. Deliver only current
-   results to Qt; all widgets, preview painting and selection commits stay on Qt.
-   A matching failure is reported and cannot commit a stale preview.
-9. Commit through existing `pane.select` / `pane.deselect` behavior, preserving
-   unrelated marks. Selection already batches Qt changes; deselection currently
-   updates entries individually. Measure before promising batched deselection or
-   adding a commit optimization. Do not retain hidden selections across ordinary
-   filter changes or change the public selection/operation contract.
-10. Cancel the session on navigation, closure, a replacement listing, or an external
-    change to sorting, filtering or selection. Drop late results; do not restore an
-    old selection/filter over the newer state. Reopening a mode starts from the
-    current committed state. No nested or concurrent preview sessions in one pane.
-11. Reuse host input and matching code, keeping preview ownership in the pane/view.
-    Memory is limited to the active snapshot, baseline and matching index sets.
-    No enumeration, metadata I/O, persistence, directory scans or idle preview work.
-    Close/cancel releases session state without waiting for workers on Qt.
-12. Test additive/subtractive previews, pattern corrections, empty input, anchored
-    and escaped patterns, Enter/Esc, pending acceptance and matching errors. Add Qt
-    checks for an existing filter, unchanged row visibility/order and unrelated
-    marks, restoration of bar/focus, rapid typing and stale results, navigation/
-    refresh/close cleanup, and Copy/Delete seeing only committed selection.
-    Also test mode-local Space, keypad `+`/`-`/`*`, Backspace, Enter/Esc and editing
-    shortcuts before pane-command dispatch, and verify keypad bindings do not
-    capture ordinary non-keypad keys.
-    Measure query-to-preview, typing responsiveness and commit cost on large listings.
+Canonical design and validation: [Select And Deselect By Pattern](PatternSelection.md).
+Extracted before implementation as required. This roadmap does not duplicate the
+session design; item 2 remains approved independently of items 3 and 9.
 
 ## 3. Bind Invert Selection
 
 1. Bind `invert_selection` to keypad `*` using `Num+*`. The current Qt matcher
    accepts this spelling, not `Num*`; test keypad versus ordinary `*`.
+   With the Filter Bar open, non-empty printable keypad input edits the bar before shortcut
+   dispatch. With it closed, keypad `*` inverts, while keypad `+` / `-` open the
+   selection modes. Ordinary punctuation can still start a filter. Space retains
+   its normal toggle-selection behavior outside pattern-selection mode.
+   Empty-text NumLock-off navigation and Insert still dispatch their normal actions.
 2. Replace enumeration with existing selection behavior: capture the selected
    URLs, call `pane.select_all()`, then `pane.deselect(previously_selected)`.
    Keep the read/modify sequence on Qt so a model change cannot interleave it.
@@ -199,9 +209,12 @@ deferred work under item 15.
    with `\\?\` (for example `\\?\Volume{GUID}\...`), report an unsupported target
    without navigation, before further target checks or URL conversion. Do not
    strip the namespace prefix to guess a usable path. Explicitly check a supported
-   resolved target before dispatch: `realpath()` alone does not prove it exists. A missing
-   target reports *Broken link* without navigation; access failures retain normal
-   error handling rather than being mislabeled as broken links. Windows `.lnk` shortcuts,
+   resolved target before dispatch: `realpath()` alone does not prove it exists.
+   If initial `lstat` fails because the highlighted item vanished, report that it
+   no longer exists. Reserve *Broken link* for a missing target after the source
+   was inspected. Neither case navigates. Catch other `OSError`
+   failures across inspection, resolution and target checks, and show their reason
+   without navigation; do not label access errors or cycles as broken links. Windows `.lnk` shortcuts,
    hardlinks and other reparse types are outside this feature's scope.
    Junctions and volume mount points follow the same supported-target rule; this
    is not a blanket refusal of mounts. Add no special mount-opening fallback,
@@ -252,6 +265,10 @@ deferred work under item 15.
    or a new visible-row helper. Do not enumerate or stat files.
 4. Apply one batched `pane.select(urls)` call. Keep the current filter and
    unrelated marks; do not newly mark hidden or filtered rows.
+   The shared view builder sorts/deduplicates resolved row indices before grouping
+   adjacent ranges. Input/listing order must not create one range per file when
+   the view is sorted differently. Preserve successful-prefix effects on lookup
+   or iterator failure and the existing missing-row behavior.
 5. With no cursor file, a folder or no extension, show a short status message
    without changing selection. Add no default shortcut.
 6. Unit test mixed case, compound names, extensionless files, folders,
@@ -287,7 +304,7 @@ deferred work under item 15.
 
 ## 12. Optional ISO Date Display
 
-1. Continue [DateFormat](DateFormat.md), the canonical design; do not create a
+1. Continue [DateFormat](../Plan/DateFormat.md), the canonical design; do not create a
    second task or duplicate its implementation plan here.
 2. Offer locale formatting (default) or `yyyy-MM-dd HH:mm` for the built-in
    Modified column. Keep timestamps, sorting and other date surfaces unchanged.
@@ -317,6 +334,10 @@ deferred work under item 15.
    a scheme delimiter alone does not make the path absolute. Leave non-file URL
    rules to existing provider/navigation validation: valid virtual URLs such as
    `network://` must not be rejected by Windows drive/UNC checks.
+   After validation, normalize native paths and `file://` path portions with
+   `ntpath.normpath`, then convert with `as_url`. This collapses dot components
+   and canonicalizes backslash file URLs without filesystem work or percent
+   decoding. Non-file provider URLs pass through unchanged.
 3. Dispatch `pane.run_command('open_directory', {'url': url})`. Reuse its folder
    navigation, file-parent navigation with cursor placement, and error handling;
    do not add a separate filesystem-check or navigation path.
@@ -372,7 +393,7 @@ deferred work under item 15.
 ## 15. Link Indicators in File Rows
 
 Decision: Deferred. The canonical concept is
-[UI Design 001: Deferred Link Indicators](UIDesign001.md#deferred-link-indicators).
+[UI Design 001: Deferred Link Indicators](../Plan/UIDesign001.md#deferred-link-indicators).
 
 1. Explore visual hints identifying symlinks and junctions in file rows, with
    accessible appearance and metadata acquisition to be designed before implementation.
@@ -791,6 +812,75 @@ public getter is not implemented and its Qt lifecycle tests have not been run.
    valid virtual schemes. Corrected item 2 indentation. All decisions and earlier
    records are preserved; design changes only, no application implementation.
 
+### 2026_10_22 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Extra High
+- Context Window: 1M
+- Outcome: Verified approved item boundaries against current code and prior reviews.
+   Item 2 was extracted before implementation. Item 6's documented code was absent
+   in this checkout, so the approved simple implementation was included. Native
+   and offscreen gates pass; this is implementer verification, not an independent review.
+
+### 2026_10_22 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Claude Opus 5.5
+- Effort: Extra High
+- Context Window: 872K
+- Outcome: Request changes for two P2 regressions, both reproduced. Keypad `*`,
+   `-` and `+` run commands instead of typing into an open Filter Bar (R1).
+   Select same extension took 2.3 s on Qt for 20,000 matches sorted by date (R2).
+   Other approved items match their designs; both focused gates pass. See
+   Implementation Review.
+
+### 2026_10_22 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Extra High
+- Context Window: 1M
+- Outcome: Addressed all four Opus findings and recommendations. Preserved closed-bar
+   keypad shortcuts while restoring open-bar editing; reproduced and fixed fragmented
+   selection ranges; added native link-cycle/deleted-entry and normalized-navigation
+   checks. Reproduced the reported combined-process clipboard teardown warning and
+   validated test-owned clipboard cleanup. Original reviews and excluded decisions
+   remain unchanged; this is implementer verification, not independent re-review.
+
+### 2026_10_22 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Claude Opus 5.5
+- Effort: Extra High
+- Context Window: 872K
+- Outcome: R1-R4 and the teardown warning are resolved and verified. Request one
+   change: the R1 fix swallows NumLock-off keypad navigation while the Filter Bar
+   is open, because empty key text counts as printable (N1, reproduced). Gates
+   pass with fatal-output detection. See Implementation Review 2.
+
+### 2026_10_22 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Extra High
+- Context Window: 1M
+- Outcome: Addressed both Review 2 findings and the recommended regression extension.
+   The real-Controller test reproduced seven swallowed empty-text keypad actions;
+   requiring non-empty printable text restored navigation and Insert while retaining
+   R1 punctuation behavior. Missing-source reporting is now distinct from broken
+   target reporting. Original Opus records and previous results remain historical.
+
 ## Implementer
 
 ### 2026_10_21 - GitHub Copilot
@@ -806,3 +896,295 @@ public getter is not implemented and its Qt lifecycle tests have not been run.
    Split the public LocationInfo design into Deferred item 16. Validation:
    `fman_unittest.impl.test_status_bar` (18 tests) and
    `SnapshotFilterBarIT.test_status_snapshots_are_complete_for_visible_entries` pass.
+
+### 2026_10_22 - GitHub Copilot
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Extra High
+- Context Window: 1M
+- Outcome: Implemented only approved rows, including the dedicated PatternSelection
+   task. Reused Core navigation/Copy behavior, immutable snapshots, existing status
+   worker and public APIs. Added no storage-discovery service or deferred feature.
+   Final gates: 317 unit tests passed; 89 native Qt tests with one expected symlink
+   skip; 18 offscreen tests with the same skip. Usage, shortcuts, API reference,
+   README and application changelog updated. No full suite or freeze.
+
+### 2026_10_22 - GitHub Copilot
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Extra High
+- Context Window: 1M
+- Outcome: Fixed R1-R4 in the owning input-routing, shared selection and Core command
+   paths. Added regressions and concise documentation. The 20k Modified-order case
+   now produces one range instead of 20,000; native cycle/stale-highlight errors are
+   reported without navigation. Unit gate: 318 passed; native aggregate: 95 tests,
+   one expected symlink skip, no post-test fatal output after test-only clipboard
+   ownership cleanup. No application clipboard policy or unapproved feature changed.
+
+### 2026_10_22 - GitHub Copilot
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: GPT-6 Astra
+- Effort: Extra High
+- Context Window: 1M
+- Outcome: Fixed N1 with an explicit non-empty keypad-text guard and extended tests
+   to generic/Windows Core bindings, cursor movement and Insert mark toggling. Fixed
+   N2 by distinguishing failed source inspection from missing target resolution.
+   Unit gate: 318 passed. Native Qt: 106 tests, one expected symlink skip. Sequential
+   offscreen replay: 33 tests, one expected skip; an earlier concurrent run timed out
+   and remains an unattributed transient. Documentation updated; no full suite/freeze.
+
+## Validation Results
+
+### Commands
+
+```powershell
+python -B -c "import build, os, subprocess, sys; env=build._environment(); env['QT_QPA_PLATFORM']='windows'; sys.exit(subprocess.run([sys.executable,'-B','-X','faulthandler','-m','unittest','core.tests.commands.test___init__','core.tests.commands.test_unpack_archive','fman_unittest.test_favorites','fman_unittest.test_quick_view','fman_unittest.test_listing','fman_unittest.impl.test_filter_pattern','fman_unittest.impl.test_status_bar','fman_unittest.test_portable.PluginApiCompatibilityTest','fman_unittest.impl.plugins.test_plugin','fman_unittest.impl.plugins.test_key_bindings','fman_unittest.impl.plugins.test_context_menu','-q'],env=env,timeout=240).returncode)"
+python -B -c "import build, os, subprocess, sys; env=build._environment(); env['QT_QPA_PLATFORM']='windows'; sys.exit(subprocess.run([sys.executable,'-B','-X','faulthandler','-m','unittest','fman_integrationtest.test_qt.RoadmapCommandsIT','fman_integrationtest.test_qt.PatternSelectionIT','fman_integrationtest.test_qt.SnapshotFilterBarIT','fman_integrationtest.test_qt.SortedFileSystemModelIT','fman_integrationtest.test_qt.ClipboardCommandsIT','fman_integrationtest.test_qt.CommandPaletteRecentIT','fman_integrationtest.impl.plugins.test_plugin.PluginTest','-q'],env=env,timeout=240).returncode)"
+python -B -c "import build, os, subprocess, sys; env=build._environment(); env.update(QT_QPA_PLATFORM='offscreen',QT_QPA_FONTDIR=os.path.join(os.environ['WINDIR'],'Fonts')); sys.exit(subprocess.run([sys.executable,'-B','-X','faulthandler','-m','unittest','fman_integrationtest.test_qt.RoadmapCommandsIT','fman_integrationtest.test_qt.PatternSelectionIT','fman_integrationtest.test_qt.ClipboardCommandsIT','-q'],env=env,timeout=180).returncode)"
+```
+
+- Unit/command gate: **317 passed**, 20.079 s.
+- Native Qt gate: **89 tests, 88 passed, one expected skip**, 9.777 s.
+- Offscreen gate: **18 tests, 17 passed, one expected skip**, 2.968 s. An initial
+   run without `QT_QPA_FONTDIR` failed geometry with missing-font warnings; the
+   configured rerun passed. No test failure was ignored.
+- Expected skip: Windows symlink creation privilege unavailable. Real junction
+   navigation, clipboard file highlighting and native local scope/free-space checks
+   ran. Still-extended drive/UNC/Volume targets and access failures use unit tests.
+- Item 7: no disposable mounted-volume fixture was available; native mount behavior
+   remains unverified. No privileged mount creation or user-data mutation was attempted.
+- Actual inversion notifications: one for none-to-all, one for all-to-none, two
+   for partial inversion. The exact Qt test passed after the final count assertions.
+- Public location getter: immutable exported record/constants, no filesystem calls,
+   worker/Qt reads, and controlled old-location / None / new-location transitions pass.
+- Syntax/render/link checks cover edited usage and API docs. Editor diagnostics
+   are clear. No packages, environments, full test suite, clean, freeze or release build.
+
+### Measured Scope
+
+- Synthetic committed listing: 10,000 rows; 5,000 matches. Native final run:
+   next-input processing 14.7 ms; query-to-preview 15.0 ms; Select commit 108.2 ms;
+   Deselect commit 327.5 ms. Both commits emit one selection notification.
+- Before batching, the same Deselect test measured 2936.0 ms and 5,000 notifications.
+   These are local UI timings, not filesystem-transfer or general performance claims.
+- Three alternating link-command registration pairs on small native fixture panes:
+   first populated paint median 7.3 -> 7.4 ms; navigation paint 7.0 -> 8.9 ms.
+   The command's visibility and invocation were forbidden during loading. This
+   bounded sample passed the regression guard; it is not a complete startup benchmark.
+- Focused tests found and fixed deleted-view preview cleanup. No late worker
+   traceback remained. Existing clipboard and alias tests were updated only for
+   the explicitly approved multi-name and synonym behavior.
+
+## Implementation Review (2026_10_22, Opus)
+
+Request changes for R1 and R2. Items 1, 3, 5, 6, 11, 14 and 16 match their
+designs. Item 2 is reviewed only where it meets keypad routing; its canonical
+review belongs to [PatternSelection](PatternSelection.md).
+
+### Findings
+
+- **R1 [P2] Keypad `*`, `-` and `+` no longer type into the Filter Bar.**
+  `_on_key_pressed` checks shortcuts before the Filter Bar, except in pattern mode.
+  Probe through the real `Controller` and Core bindings, with the filter holding
+  `re`: keypad `*`, `-` and `+` ran `invert_selection`, `deselect_by_pattern` and
+  `select_by_pattern`; the filter text stayed `re`. Before these bindings,
+  keypad `*` typed `*.pdf`-style patterns.
+  - Risk: inversion silently marks every visible row, and the next command acts
+    on those marks.
+  - Fix: while the Filter Bar is open, let keypad text keys edit it, as pattern
+    mode does. Add a regression beside the Space test in `FilterBarIT`.
+  - Decide whether keypad `*` should still start a filter when the bar is closed.
+- **R2 [P2] Select same extension can freeze the UI in large folders.** The URL
+  list follows listing order, and `_change_selections` merges only rows that are
+  consecutive in input order. Probe, 20,000 matches on Qt: sorted by Name,
+  117 ms and 1 range; sorted by a shuffled Modified time, 2,330 ms and 19,999
+  ranges. Sort the collected rows before building ranges in
+  `_change_selections`. Every `select`/`deselect` caller benefits.
+- **R3 [P3] Go to link target can end in an unhandled error.** A two-junction
+  cycle makes `os.stat(target)` raise WinError 1921. A highlighted item deleted
+  since display makes `os.lstat` raise. Catch `OSError` and report the reason;
+  keep *Broken link* for `FileNotFoundError`.
+- **R4 [P3] Clipboard paths are not normalized.** `C:\Users\..\Windows` becomes
+  `file://C:/Users/../Windows`, and `file://C:\Windows` keeps its backslashes.
+  Open Directory passes the URL unchanged, so it becomes the pane location,
+  history entry and sort-settings key. Normalize native paths with
+  `ntpath.normpath` before `as_url`, and convert or refuse backslashes in
+  `file://` input.
+
+### Verified
+
+- Swap captures both URLs before navigating, refuses `null://` and ignores
+  equal locations. `Ctrl+U` has no other Core binding.
+- Invert runs as one Qt sequence; its Deselect input is in row order, so ranges
+  merge.
+- Duplicate: series continuation, dotfiles, compound extensions and dotted
+  folder names follow the design. Local candidates use `lstat`; multiple
+  selections keep the Copy prompt.
+- `native_local_scope` is shared. The public getter does not call
+  `free_space_path`. `disk_usage` runs only on the status worker.
+- The location hint is captured on Qt with its listing. A mismatch returns
+  `None`; UNC and `network://` are syntactic.
+- Broken junctions, including a missing target parent, report *Broken link*.
+  A junction loop resolves to a real folder.
+- PlugIn.md, Core README, user docs, README and changelog match the code.
+
+### Validation Results
+
+- Unit/command gate (command above): 317 tests, OK, 20.1 s.
+- Native Qt gate (command above): 89 tests, OK, one expected skip, 14.8 s. In
+  that run, after `OK`, faulthandler printed `Windows fatal exception: code
+  0x80010108` (RPC_E_DISCONNECTED) from a thread without a Python frame. It did
+  not recur in `ClipboardCommandsIT`, `RoadmapCommandsIT` or
+  `PatternSelectionIT` alone. Exit code 0; not attributed.
+- Ad-hoc probes outside the repository: keypad routing with an open filter,
+  same-extension cost at 20,000 rows, link cycles and broken junctions, and
+  clipboard parser inputs.
+- No source change, full suite, benchmark, freeze or package.
+
+## Implementation Review Resolutions
+
+| Finding / Recommendation | Resolution |
+| --- | --- |
+| R1: keypad shortcuts interrupt filtering | An open Filter Bar receives printable keypad text before Core shortcuts. Real Controller/Core-binding tests cover `*`, `-`, `+`, ordinary punctuation and retained marks. Existing Space and pattern-mode tests pass. |
+| R1: decide closed-bar keypad `*` | Retain the approved Invert selection binding. It does not start a filter when the bar is closed; ordinary `*` can. Use Command Center to invoke selection commands while an existing filter is open. Documented in Basics, Shortcuts and Core README. |
+| R2: selection ranges depend on input order | The shared Select/Deselect builder sorts unique resolved view rows and coalesces adjacent ranges. Lookup/iterator failure still commits only the resolved prefix; empty input and ignored missing rows retain their behavior. No filesystem scans or selection API changes. |
+| R2: large sorted-folder regression | Added one bounded 20k-row fixture, Name and shuffled Modified order, Select and Deselect. Assert one Qt submission and one range, plus the exact selected set. Timings below are local observations, not a new benchmark suite or general speed claim. |
+| R3: uncaught link failures | Catch missing paths and other `OSError` failures from initial inspection, chain resolution and target verification. Missing paths keep Broken link; other errors show their reason. Native two-junction cycle (WinError 1921) and deleted highlighted entry tests pass without navigation. |
+| R4: unnormalized clipboard locations | Validate then normalize native drive/UNC paths and file-URL path portions with `ntpath.normpath`/`as_url`. Backslashes become canonical application separators; dot components collapse. Literal percent sequences and non-file provider URLs remain intact. Real file-parent navigation/highlighting tests pass. |
+| Native teardown warning | The combined gate reproduced `0x80010108` after unittest OK and was counted as failed. Individual Qt groups were clean. A test-only ownership-checked clipboard clear before fixture teardown removed the reproduced warning; the final aggregate is clean. No MIME cloning, OLE proxy restoration, production clipboard changes or exception suppression. This does not certify every external clipboard/COM environment. |
+
+### Review Fix Validation
+
+The launchers capture child output and reject native fatal diagnostics or Python
+tracebacks even if unittest itself reports OK and returns zero:
+
+```powershell
+python -B -c "import build, os, subprocess, sys; env=build._environment(); env.update(QT_QPA_PLATFORM='windows',QT_QPA_FONTDIR=os.path.join(os.environ['WINDIR'],'Fonts')); result=subprocess.run([sys.executable,'-B','-X','faulthandler','-m','unittest','core.tests.commands.test___init__','core.tests.commands.test_unpack_archive','fman_unittest.test_favorites','fman_unittest.test_quick_view','fman_unittest.test_listing','fman_unittest.impl.test_filter_pattern','fman_unittest.impl.test_status_bar','fman_unittest.test_portable.PluginApiCompatibilityTest','fman_unittest.impl.plugins.test_plugin','fman_unittest.impl.plugins.test_key_bindings','fman_unittest.impl.plugins.test_context_menu','-q'],env=env,timeout=240,capture_output=True,text=True); output=result.stdout+result.stderr; print(output); sys.exit(result.returncode or int(any(marker in output for marker in ('Windows fatal exception','Fatal Python error','Traceback (most recent call last):'))))"
+python -B -c "import build, os, subprocess, sys; env=build._environment(); env.update(QT_QPA_PLATFORM='windows',QT_QPA_FONTDIR=os.path.join(os.environ['WINDIR'],'Fonts')); result=subprocess.run([sys.executable,'-B','-X','faulthandler','-m','unittest','fman_integrationtest.test_qt.RoadmapCommandsIT','fman_integrationtest.test_qt.PatternSelectionIT','fman_integrationtest.test_qt.SnapshotFilterBarIT','fman_integrationtest.test_qt.SortedFileSystemModelIT','fman_integrationtest.test_qt.ClipboardCommandsIT','fman_integrationtest.test_qt.CommandPaletteRecentIT','fman_integrationtest.impl.plugins.test_plugin.PluginTest','-q'],env=env,timeout=240,capture_output=True,text=True); output=result.stdout+result.stderr; print(output); sys.exit(result.returncode or int(any(marker in output for marker in ('Windows fatal exception','Fatal Python error','Traceback (most recent call last):'))))"
+```
+
+Final offscreen replay:
+
+```powershell
+python -B -c "import build, os, subprocess, sys; env=build._environment(); env.update(QT_QPA_PLATFORM='offscreen',QT_QPA_FONTDIR=os.path.join(os.environ['WINDIR'],'Fonts')); result=subprocess.run([sys.executable,'-B','-X','faulthandler','-m','unittest','fman_integrationtest.test_qt.RoadmapCommandsIT','fman_integrationtest.test_qt.PatternSelectionIT','fman_integrationtest.test_qt.FilterBarIT.test_open_filter_owns_keypad_text_before_core_shortcuts','fman_integrationtest.test_qt.ClipboardCommandsIT','-q'],env=env,timeout=180,capture_output=True,text=True); output=result.stdout+result.stderr; print(output); sys.exit(result.returncode or int(any(marker in output for marker in ('Windows fatal exception','Fatal Python error','Traceback (most recent call last):'))))"
+```
+
+- Unit/command gate: **318 passed**, 20.790 s.
+- Final native aggregate: **95 tests, 94 passed, one expected symlink-privilege
+   skip**, 15.753 s. No fatal/traceback diagnostics after test-owned clipboard cleanup.
+- Final configured offscreen replay: **23 tests, 22 passed, the same expected
+   symlink-privilege skip**, 5.389 s. No fatal/traceback diagnostics. Edited Markdown
+   renders and local links resolve; editor diagnostics are clear.
+- Before that cleanup, all 94 assertions finished but teardown emitted WinError
+   `0x80010108`; that run was rejected, not treated as a pass. Fresh-process groups
+   (changed workflows, clipboard, snapshot/model, palette) passed independently.
+- R2 baseline: Name order 113.1 ms Select / 105.8 ms Deselect, one range each;
+   Modified order 2242.0 ms / 8254.5 ms, 20,000 ranges each. After the fix, the same
+   focused check measured 118.3 / 104.6 ms for Name and 119.2 / 108.8 ms for Modified,
+   one range each. Setup, file verification and clipboard work are not included.
+- The final combined native run also measured Name 119.2 / 109.7 ms and Modified
+   117.7 / 109.1 ms. Structural range assertions are the stable regression gate;
+   these single-run local timings are not filesystem throughput claims.
+- Native junction-cycle and deleted-highlight checks ran on disposable files.
+   Symlink privilege and disposable mounted-volume limitations remain as previously
+   recorded. No elevation, user-data fixtures, new packages/environments, full suite,
+   clean, freeze or release build. Original implementation validation remains historical.
+
+## Implementation Review 2 (2026_10_22, Opus)
+
+R1-R4 are fixed. Request one change: N1 is a regression introduced by the R1 fix.
+
+### Findings
+
+- **N1 [P2] Keypad navigation stops working while filtering.** With NumLock off,
+  keypad arrows, Page Up/Down, Home, End and Insert send an empty `event.text()`.
+  `''.isprintable()` is `True`, so `keypad_text` routes them to the Filter Bar,
+  which ignores them, and `_on_key_pressed` still returns `True`.
+  - Probe through the real `Controller` and the Core `Num+` bindings: with the
+    filter closed, the six keys ran `move_cursor_*`; with the filter holding
+    `re`, they ran nothing. Num+Insert also stopped toggling marks.
+  - Fix: require non-empty text (`event.text() and event.text().isprintable()`).
+  - Extend `test_open_filter_owns_keypad_text_before_core_shortcuts` with
+    Num+Down and Num+Insert while the filter is open.
+- **N2 [P3] A deleted highlighted file is reported as a broken link.** The
+  `FileNotFoundError` from `os.lstat` shares the *Broken link* message. Report that
+  the highlighted item no longer exists; keep *Broken link* for a missing target.
+
+### Verified
+
+- R1: keypad `*`, `-` and `+` extend an open filter and run no command. With the
+  bar closed they still invoke their commands, and ordinary keys still type. The
+  docs record that behavior.
+- R2: rows are de-duplicated, sorted and coalesced, and a lookup failure still
+  commits the resolved prefix. 20,000 matches: Name 120.1 / 107.5 ms and Modified
+  122.7 / 110.1 ms for Select / Deselect, one range each.
+- R3: a two-junction cycle reports WinError 1921 without navigating.
+- R4: `..`, `.`, backslashes in `file://` input and UNC `..` normalize; literal
+  `%20`, provider URLs and `file://C:` pass through unchanged.
+- The clipboard teardown clears only a clipboard the test owns.
+
+### Validation Results
+
+- Unit/command gate with fatal-output rejection: 318 tests, OK, 20.1 s.
+- Native Qt aggregate plus all of `FilterBarIT`, with fatal-output rejection: 106
+  tests, OK, one expected symlink skip, 19.1 s. No fatal or traceback lines.
+- Probes outside the repository: NumLock-off keypad keys with and without a
+  filter; `_clipboard_location` on eight inputs.
+- No source change, full suite, benchmark, freeze or package.
+
+## Implementation Review 2 Resolutions
+
+- **N1:** Require non-empty printable keypad text before routing it into the normal
+   Filter Bar. Expanded the existing real-Controller regression to load generic and
+   Windows Core bindings. Keypad Down, Up, Page Down, Page Up, Home, End and Insert
+   now dispatch with empty text in both open and closed filter states. Tests verify
+   actual Down movement and Insert marks as well as unchanged filter text. Printable
+   `*`, `-`, `+`, ordinary punctuation, Space and pattern-mode editing still pass.
+- **N2:** Initial `lstat` disappearance reports **The highlighted item no longer
+   exists**. Missing paths during subsequent resolution/target checks retain
+   **Broken link**. Unit tests distinguish all stages; the native deleted-highlight
+   test verifies no navigation and no misleading broken-link message. Access errors,
+   WinError 1921 cycles and normal junction-target navigation are unchanged.
+- Updated Basics, Shortcuts and Core README. No new bindings, filesystem probes,
+   preview-policy changes or separate fixes entry for these unreleased features.
+
+### Validation
+
+N1's extended test first failed on all seven empty-text keypad cases with an open
+filter, then passed after the guard. N2's focused unit/native check passed five
+tests. Final gates retained fatal/traceback-output rejection.
+
+```powershell
+python -B -c "import build, os, subprocess, sys; env=build._environment(); env.update(QT_QPA_PLATFORM='windows',QT_QPA_FONTDIR=os.path.join(os.environ['WINDIR'],'Fonts')); result=subprocess.run([sys.executable,'-B','-X','faulthandler','-m','unittest','core.tests.commands.test___init__','core.tests.commands.test_unpack_archive','fman_unittest.test_favorites','fman_unittest.test_quick_view','fman_unittest.test_listing','fman_unittest.impl.test_filter_pattern','fman_unittest.impl.test_status_bar','fman_unittest.test_portable.PluginApiCompatibilityTest','fman_unittest.impl.plugins.test_plugin','fman_unittest.impl.plugins.test_key_bindings','fman_unittest.impl.plugins.test_context_menu','-q'],env=env,timeout=240,capture_output=True,text=True); output=result.stdout+result.stderr; print(output); sys.exit(result.returncode or int(any(marker in output for marker in ('Windows fatal exception','Fatal Python error','Traceback (most recent call last):'))))"
+python -B -c "import build, os, subprocess, sys; env=build._environment(); env.update(QT_QPA_PLATFORM='windows',QT_QPA_FONTDIR=os.path.join(os.environ['WINDIR'],'Fonts')); result=subprocess.run([sys.executable,'-B','-X','faulthandler','-m','unittest','fman_integrationtest.test_qt.RoadmapCommandsIT','fman_integrationtest.test_qt.PatternSelectionIT','fman_integrationtest.test_qt.FilterBarIT','fman_integrationtest.test_qt.SnapshotFilterBarIT','fman_integrationtest.test_qt.SortedFileSystemModelIT','fman_integrationtest.test_qt.ClipboardCommandsIT','fman_integrationtest.test_qt.CommandPaletteRecentIT','fman_integrationtest.impl.plugins.test_plugin.PluginTest','-q'],env=env,timeout=240,capture_output=True,text=True); output=result.stdout+result.stderr; print(output); sys.exit(result.returncode or int(any(marker in output for marker in ('Windows fatal exception','Fatal Python error','Traceback (most recent call last):'))))"
+```
+
+- Unit/command gate: **318 passed**, 20.968 s.
+- Native gate including all FilterBarIT: **106 tests, 105 passed, one expected
+   symlink-privilege skip**, 17.950 s; no fatal or traceback output.
+- The first offscreen aggregate, launched alongside the other gates, timed out at
+   180 seconds; its child was terminated. No cause was established. Isolated verbose
+   FilterBarIT then passed **11 tests** in 0.575 s. A sequential verbose aggregate
+   of RoadmapCommandsIT, PatternSelectionIT, FilterBarIT and ClipboardCommandsIT
+   passed **33 tests, 32 passed and one expected skip**, in 6.320 s.
+- The diagnostic replay used the same `build._environment()`, offscreen platform
+   and Windows font directory. Child command:
+
+```text
+python -B -X faulthandler -c "import faulthandler, unittest; faulthandler.dump_traceback_later(30); unittest.main(module=None)" fman_integrationtest.test_qt.RoadmapCommandsIT fman_integrationtest.test_qt.PatternSelectionIT fman_integrationtest.test_qt.FilterBarIT fman_integrationtest.test_qt.ClipboardCommandsIT -v
+```
+
+The replay was bounded to 75 seconds, captured stdout/stderr, and rejected fatal,
+traceback and 30-second timeout-dump markers. None occurred. This is not a claim
+that the initial timeout's root cause was fixed. Expected Qt offscreen capability
+notices only. Docs render and editor diagnostics pass. No full suite, freeze,
+package installation or change to previous unverified native-mount limitations.

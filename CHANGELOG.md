@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-10-22
+
+This release focuses on improvements to selection capabilities.  
+It imitates teh File Filter in order to add or remove from current 
+selection with live preview. It also adds a shortcut to invert selection
+and select files with teh same file extension as teh current highlighted
+file. 
+
+### Added
+
+- `Ctrl+U` swaps pane locations. **Go to clipboard path** opens one copied path;
+  **Go to link target** resolves the highlighted symbolic link or junction on demand.
+- Keypad `+` / `-` preview Select/Deselect by pattern in the inline Filter Bar.
+  Enter commits; Esc or another command cancels. Keypad `*` inverts visible marks;
+  **Select same extension** marks visible files matching the highlighted suffix.
+- Command Center synonyms: **Bookmarks**, **Extract archive** and **Preview**.
+- Extended status shows available/total space for known local NTFS/ReFS locations,
+  using its existing worker. Disabled status adds no free-space work.
+- Public `DirectoryPane.get_location_info()` returns immutable
+  `LocationInfo(location, access_hint)` with `NATIVE_LOCAL`, `NETWORK` or `UNKNOWN`,
+  or `None` without a matching committed listing. The no-I/O hint is provisional
+  and depends on native scanner scope; it is not measured speed or an access guarantee.
+
+### Changed
+
+- `Shift+F11` copies all chosen names, one per line. Copy file path stays single-item.
+- Duplicate suggests available `name Copy N.ext` names for one file/folder, keeping
+  the editable Copy prompt and normal late-conflict handling.
+- Select and Deselect coalesce rows in current view order, avoiding fragmented
+  Qt selection updates when many matching entries are sorted by another column.
+
 ## [0.16.4] - 2026-10-20
 
 ### Added

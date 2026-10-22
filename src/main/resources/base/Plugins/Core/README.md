@@ -32,6 +32,29 @@ Other command messages can replace the count until the next update.
 navigating clears the filter and resets its status message to `Ready.`.
 `Space` still toggles selection, even while filtering. Multiple-term AND
 matching is not implemented; spaces supplied as filter text remain literal.
+Printable keypad keys edit an open Filter Bar before shortcuts are considered.
+Empty-text NumLock-off navigation keys and Insert retain their normal actions.
+Keypad `*` starts Invert selection only when the bar is closed, not a new filter.
+
+## Pattern Selection
+
+With the Filter Bar closed, keypad `+` / `-` open **Select by pattern** / **Deselect by pattern** (aliases
+**Select group** / **Deselect group**) in the inline Filter Bar. The current
+filter stays applied; typing previews marks without changing committed selection.
+The initial pattern uses the highlighted file's escaped final extension, anchored
+with `$`, or `*`. Empty input previews the original marks.
+With an existing filter open, invoke either command from Command Center; keypad
+`+` / `-` edit that filter instead.
+
+Enter commits the latest completed query; Esc cancels. Space, keypad punctuation
+and editing shortcuts edit the pattern. Other commands dismiss it and use the
+committed marks. Navigation, refresh, sort/filter/selection changes and closure
+cancel the preview. Matching uses visible display names and the Filter Bar syntax.
+
+With the Filter Bar closed, keypad `*` inverts visible marks. **Select same extension** immediately selects
+visible files with the cursor file's final extension, case-insensitively. Both
+preserve normal filtering; neither scans the filesystem. No default shortcut is
+assigned to same-extension selection.
 
 ## Hidden Files
 
@@ -45,14 +68,14 @@ metadata or identity checks.
 
 ## Clipboard Text
 
-Right-click one file or folder for **Copy file name** and **Copy file path**.
-Both commands also appear in Command Center when exactly one item is chosen:
-the marked item, or the cursor item when nothing is marked. They are hidden
-for multiple chosen items and do nothing if invoked without exactly one item.
+**Copy file name** copies all chosen basenames, one per line. With no marks it
+uses the cursor item; with no chosen item it leaves the clipboard unchanged.
+**Copy file path** remains single-item. Both appear in Command Center and the
+file context menu when their selection requirements are met.
 Right-clicking an unmarked row targets that row; right-clicking a marked row
 preserves the marked group.
 
-`Shift+F11` copies the name, including a file's extension. Copy file path copies
+`Shift+F11` copies names, including file extensions. Copy file path copies
 the full Windows path, including UNC paths; nonlocal providers retain their URL.
 Both copy plain text without quotes or file-transfer clipboard data.
 
@@ -62,6 +85,37 @@ Copy paths to clipboard unless Copy file path has its own binding.
 `F11` remains **Copy paths to clipboard**: it copies all chosen paths, one per
 line, or the current directory when no item is chosen. `Ctrl+C` still copies
 items for file transfer.
+
+## Navigation Commands
+
+`Ctrl+U` / **Swap pane locations** exchanges the two locations, not pane objects,
+selections or histories. Focus stays on the same side. Equal locations are a no-op;
+uninitialized locations are refused.
+
+**Go to clipboard path** (alias **Open clipboard location**) accepts one absolute
+drive/UNC path, one quoted Explorer path, or an unescaped application URL. Relative,
+multi-line and standard percent-encoded file URIs are refused. Literal percent
+sequences in application URLs are preserved. Paste is unchanged.
+Native paths and `file://` path portions normalize separators and dot components
+before navigation. Backslash file URLs become canonical forward-slash application
+URLs. Other provider URLs are passed through unchanged; normalization does no I/O.
+
+**Go to link target** (alias **Reveal link target**) checks only the highlighted
+filesystem entry, on invocation. It resolves symlinks/junctions and chains. Ordinary
+items show a status message. A vanished highlighted item reports that it no longer
+exists; a missing target reports Broken link. Cycles, access failures and other
+filesystem errors show their reason without navigating.
+Retained `\\?\`
+namespaces are refused. `.lnk` shortcuts and hard-link aliases are outside its scope.
+Both navigation commands reuse Open Directory: folders open; files are highlighted
+in their parent folder. No default shortcut or new context-menu entry is added.
+
+**Bookmarks**, **Extract archive** and **Preview** are additional Command Center
+aliases for Favorites, Unpack archive and Toggle QuickView.
+
+Extended status (`Ctrl+S`) shows local NTFS/ReFS free space via the existing status
+worker. Unknown/network scopes are skipped; disabling extended status performs no
+free-space queries. Mounted folders report the volume containing that folder.
 
 ## QuickView
 
@@ -311,6 +365,13 @@ folder as the default destination. Select files/folders, or leave selection empt
 to use the item under the cursor. Edit the filename or destination in the normal
 Copy prompt. Selection, provider support, overwrite handling and cancellation
 are unchanged. The command ID is `duplicate_file`; no default shortcut is assigned.
+
+One chosen item suggests its first available ` Copy N` name. Files keep recognized
+compound extensions: `backup.tar.gz` becomes `backup Copy 1.tar.gz`. Folders append
+the suffix to the whole name. Existing ` Copy N` names continue from N + 1, and
+numbering gaps are reused. Hidden entries, folders and dangling local links occupy
+names. Nothing is reserved or created before confirmation; a later collision uses
+ordinary Copy conflict handling. Multiple selections keep the folder prompt.
 
 ## Pack Archives
 

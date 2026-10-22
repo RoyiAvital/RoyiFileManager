@@ -1,9 +1,30 @@
 from dataclasses import dataclass
 
+import ntpath
 import re
 
 
 MAX_FILTER_LENGTH = 255
+
+def selection_pattern(name, directory=False):
+	extension = '' if directory else ntpath.splitext(name)[1]
+	if not extension:
+		return '*'
+	return '*' + ''.join('\\' + char if char in '\\*?[]^$!' else char for char in extension) + '$'
+
+
+def selection_preview(listing, visible, baseline, text, selecting, check):
+	check()
+	matches = set()
+	if text:
+		matcher = compile_filter(text)
+		for row, entry in enumerate(visible):
+			if row % 256 == 0:
+				check()
+			if matcher.matches(listing.display_names[entry]):
+				matches.add(row)
+	check()
+	return frozenset(matches), frozenset(baseline | matches if selecting else baseline - matches)
 
 
 @dataclass(frozen=True)

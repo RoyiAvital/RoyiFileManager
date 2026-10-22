@@ -1,6 +1,16 @@
 from collections import Counter
 from dataclasses import dataclass, fields
 
+NATIVE_LOCAL = 'native_local'
+NETWORK = 'network'
+UNKNOWN = 'unknown'
+
+
+@dataclass(frozen=True, slots=True)
+class LocationInfo:
+	location: str
+	access_hint: str
+
 
 @dataclass(frozen=True, slots=True)
 class Listing:

@@ -1,5 +1,5 @@
 from fman import OK
-from fman.impl.filter_pattern import compile_filter, MAX_FILTER_LENGTH
+from fman.impl.filter_pattern import compile_filter, MAX_FILTER_LENGTH, selection_pattern, selection_preview
 from fman.impl.model import SortedFileSystemModel
 from fman.impl.product import APP_NAME
 from fman.impl.quicksearch import Quicksearch
@@ -82,39 +82,56 @@ class DirectoryPaneWidget(QWidget):
 		self._filter_bar.reposition()
 	@run_in_main_thread
 	def move_cursor_up(self, toggle_selection=False):
+		if toggle_selection:
+			self.cancel_pattern_selection()
 		self._file_view.move_cursor_up(toggle_selection)
 	@run_in_main_thread
 	def move_cursor_down(self, toggle_selection=False):
+		if toggle_selection:
+			self.cancel_pattern_selection()
 		self._file_view.move_cursor_down(toggle_selection)
 	@run_in_main_thread
 	def move_cursor_home(self, toggle_selection=False):
+		if toggle_selection:
+			self.cancel_pattern_selection()
 		self._file_view.move_cursor_home(toggle_selection)
 	@run_in_main_thread
 	def move_cursor_end(self, toggle_selection=False):
+		if toggle_selection:
+			self.cancel_pattern_selection()
 		self._file_view.move_cursor_end(toggle_selection)
 	@run_in_main_thread
 	def move_cursor_page_up(self, toggle_selection=False):
+		if toggle_selection:
+			self.cancel_pattern_selection()
 		self._file_view.move_cursor_page_up(toggle_selection)
 	@run_in_main_thread
 	def move_cursor_page_down(self, toggle_selection=False):
+		if toggle_selection:
+			self.cancel_pattern_selection()
 		self._file_view.move_cursor_page_down(toggle_selection)
 	@run_in_main_thread
 	def focus(self):
 		self.setFocus()
 	@run_in_main_thread
 	def select_all(self):
+		self.cancel_pattern_selection()
 		self._file_view.selectAll()
 	@run_in_main_thread
 	def clear_selection(self):
+		self.cancel_pattern_selection()
 		self._file_view.clearSelection()
 	@run_in_main_thread
 	def toggle_selection(self, file_url):
+		self.cancel_pattern_selection()
 		self._file_view.toggle_selection(file_url)
 	@run_in_main_thread
 	def select(self, file_urls, ignore_errors=False):
+		self.cancel_pattern_selection()
 		self._file_view.select(file_urls, ignore_errors)
 	@run_in_main_thread
 	def deselect(self, file_urls, ignore_errors=False):
+		self.cancel_pattern_selection()
 		self._file_view.deselect(file_urls, ignore_errors)
 	@run_in_main_thread
 	def get_selected_files(self):
@@ -128,6 +145,16 @@ class DirectoryPaneWidget(QWidget):
 	@run_in_main_thread
 	def get_listing(self):
 		return getattr(self._model.sourceModel(), '_displayed', None)
+	@run_in_main_thread
+	def get_location_info(self):
+		from fman.impl.location_info import location_info
+		return location_info(self._model.get_location(), self.get_listing())
+	@run_in_main_thread
+	def begin_pattern_selection(self, selecting=True):
+		return self._filter_bar.begin_selection(selecting)
+	@run_in_main_thread
+	def cancel_pattern_selection(self):
+		self._filter_bar.finish_selection()
 	@run_in_main_thread
 	def find_in_listing(self, search, query='', metadata=False, accepted=None):
 		return self._filter_bar.begin_search(search, query, metadata, accepted)
@@ -181,9 +208,11 @@ class DirectoryPaneWidget(QWidget):
 		self._file_view.edit_name(file_url, selection_start, selection_end)
 	@run_in_main_thread
 	def add_filter(self, filter_):
+		self.cancel_pattern_selection()
 		self._model.add_filter(filter_)
 	@run_in_main_thread
 	def remove_filter(self, filter_):
+		self.cancel_pattern_selection()
 		self._model.remove_filter(filter_)
 	@run_in_main_thread
 	def is_filtering(self):
@@ -198,10 +227,12 @@ class DirectoryPaneWidget(QWidget):
 	def hidden_files_shown(self):
 		return self._hidden_files_shown
 	def get_status_snapshot(self):
+		from fman.impl.status_bar import free_space_path
 		selected_urls = set(self.get_selected_files())
 		entries = self._model.get_status_entries(selected_urls)
+		location = self._model.get_location()
 		return PaneStatusSnapshot(
-			self._model.get_location(), entries, True, self._hidden_files_shown
+			location, entries, True, self._hidden_files_shown, free_space_path(location, self.get_listing())
 		)
 	def enable_status_tracking(self):
 		if self._status_tracking:
@@ -232,6 +263,7 @@ class DirectoryPaneWidget(QWidget):
 		]
 	@run_in_main_thread
 	def set_sort_column(self, column, ascending=True):
+		self.cancel_pattern_selection()
 		column_index = self.get_columns().index(column)
 		order = Qt.AscendingOrder if ascending else Qt.DescendingOrder
 		self._file_view.sortByColumn(column_index, order)
@@ -305,15 +337,21 @@ class DirectoryPaneWidget(QWidget):
 		location = self.get_location()
 		self._model.refresh_files(tuple(url for url in urls if dirname(url) == location))
 	def _on_doubleclicked(self, index):
+		self.cancel_pattern_selection()
 		if self._filter_bar._search_session is not None:
 			self._filter_bar.finish_search(True)
 			return
 		self._controller.on_doubleclicked(self, self._model.url(index))
 	def _on_key_pressed(self, event):
+		if self._filter_bar._selection_session is not None:
+			if self._filter_bar.selection_keypress(event):
+				return True
 		if self._filter_bar._search_session is not None and event.key() in (Qt.Key_Return, Qt.Key_Enter, Key_Escape):
 			self._filter_bar.finish_search(event.key() != Key_Escape)
 			return True
-		if self._filter_bar.isVisible() and event.key() == Key_Backspace:
+		keypad_text = bool(event.modifiers() & Qt.KeypadModifier and event.text() and event.text().isprintable() and
+			not event.modifiers() & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))
+		if self._filter_bar.isVisible() and (event.key() == Key_Backspace or keypad_text):
 			self._filter_bar.handle_keypress(event)
 			return True
 		if self._controller.handle_shortcut(self, event):
@@ -329,6 +367,7 @@ class DirectoryPaneWidget(QWidget):
 	def _on_files_dropped(self, *args):
 		self._controller.on_files_dropped(self, *args)
 	def _on_location_changed(self, url):
+		self._filter_bar.finish_selection()
 		self._filter_bar.finish_search(restore=False)
 		self._filter_bar.close()
 		self._location_bar.setText(as_human_readable(url))
@@ -343,6 +382,7 @@ class DirectoryPaneWidget(QWidget):
 class FilterBar(QFrame):
 	filter_changed = pyqtSignal(str, int, int)
 	filter_cleared = pyqtSignal()
+	_selection_ready = pyqtSignal(object, int, object, object)
 
 	def __init__(self, parent, model, file_view):
 		super().__init__(parent)
@@ -364,6 +404,9 @@ class FilterBar(QFrame):
 		self._active = False
 		self._search_session = None
 		self._accepted_search = None
+		self._selection_session = None
+		self._selection_jobs = None
+		self._selection_label = None
 		self._model.add_filter(self.snapshot_filter)
 		self._model.files_changed.connect(self.publish_count)
 		self._model.snapshot_committed.connect(self._search_committed)
@@ -372,7 +415,140 @@ class FilterBar(QFrame):
 		)
 	def is_active(self):
 		return self._active
+	def begin_selection(self, selecting):
+		from fman.impl.model.listing import LatestJobs
+		self.finish_selection()
+		self.finish_search()
+		source = self._model.sourceModel()
+		listing = getattr(source, '_displayed', None)
+		if listing is None:
+			return False
+		if self._selection_jobs is None:
+			self._selection_jobs = LatestJobs(cooperative=True)
+			self.destroyed.connect(self._selection_jobs.close)
+			self._selection_ready.connect(self._selection_result, Qt.QueuedConnection)
+			self._selection_label = QLabel(self)
+			self._selection_label.setTextFormat(Qt.PlainText)
+			self.layout().insertWidget(0, self._selection_label)
+		view = self._file_view
+		baseline = frozenset(index.row() for index in view.selectionModel().selectedRows(0))
+		visible = tuple(source._visible)
+		current = view.currentIndex()
+		entry = visible[current.row()] if current.isValid() and current.row() < len(visible) else None
+		query = selection_pattern(listing.names[entry], listing.is_dir[entry]) if entry is not None else '*'
+		session = dict(source=source, listing=listing, visible=visible, baseline=baseline, selecting=selecting,
+			text=self._input.text(), shown=self.isVisible(), placeholder=self._input.placeholderText(),
+			revision=0, result=None, accept=None, connections=[])
+		self._selection_session = session
+		def cancel(*args):
+			self.finish_selection()
+		for signal in (self._model.snapshot_about_to_commit, self._model.sort_order_changed,
+			self._model.location_changed, view.selectionModel().selectionChanged):
+			signal.connect(cancel)
+			session['connections'].append((signal, cancel))
+		window = QWidget.window(self)
+		if isinstance(window, MainWindow):
+			window.closed.connect(cancel)
+			session['connections'].append((window.closed, cancel))
+		self._input.setPlaceholderText('Select' if selecting else 'Deselect')
+		self._input.blockSignals(True)
+		self._input.setText(query)
+		self._input.selectAll()
+		self._input.blockSignals(False)
+		self._selection_label.show()
+		self.show()
+		self._preview_selection(query)
+		self.adjustSize()
+		self.reposition()
+		view.setFocus()
+		return True
+	def _preview_selection(self, text):
+		session = self._selection_session
+		session['revision'] += 1
+		revision = session['revision']
+		session['accept'] = session['result'] = None
+		self._file_view.set_selection_preview(session['baseline'])
+		mode = 'Select' if session['selecting'] else 'Deselect'
+		self._selection_label.setText(mode + ' preview: matching...')
+		self._selection_label.setToolTip('')
+		listing, visible, baseline, selecting = (session[name] for name in ('listing', 'visible', 'baseline', 'selecting'))
+		def deliver(result, error):
+			try:
+				self._selection_ready.emit(session, revision, result, error)
+			except RuntimeError:
+				pass
+		try:
+			self._selection_jobs.submit(lambda check: selection_preview(listing, visible, baseline, text, selecting, check), deliver)
+		except Exception as error:
+			deliver(None, error)
+	def _selection_result(self, session, revision, result, error):
+		if session is not self._selection_session or revision != session['revision']:
+			return
+		mode = 'Select' if session['selecting'] else 'Deselect'
+		if error is not None:
+			session['accept'] = None
+			self._selection_label.setText(mode + ' preview failed')
+			self._selection_label.setToolTip(str(error))
+			return
+		session['result'] = result
+		self._file_view.set_selection_preview(result[1])
+		self._selection_label.setToolTip('')
+		self._selection_label.setText('%s preview: %d matches, %d marked' % (mode, len(result[0]), len(result[1])))
+		self.adjustSize()
+		self.reposition()
+		if session['accept'] == revision:
+			self.finish_selection(True)
+	def finish_selection(self, accept=False):
+		session = self._selection_session
+		if session is None:
+			return
+		if accept and session['result'] is None:
+			session['accept'] = session['revision']
+			return
+		self._selection_session = None
+		self._selection_jobs.cancel()
+		for signal, callback in session['connections']:
+			try:
+				signal.disconnect(callback)
+			except (RuntimeError, TypeError):
+				pass
+		if sip.isdeleted(self) or sip.isdeleted(self._file_view) or sip.isdeleted(self._input):
+			return
+		self._file_view.set_selection_preview(None)
+		self._selection_label.hide()
+		self._input.blockSignals(True)
+		self._input.setText(session['text'])
+		self._input.setPlaceholderText(session['placeholder'])
+		self._input.blockSignals(False)
+		self.setVisible(session['shown'])
+		self.adjustSize()
+		self.reposition()
+		if accept and self._model.sourceModel() is session['source'] and session['source']._displayed is session['listing']:
+			from fman.url import join
+			matches = session['result'][0]
+			urls = [join(session['listing'].location, session['listing'].names[session['visible'][row]]) for row in sorted(matches)]
+			operation = self.parent().select if session['selecting'] else self.parent().deselect
+			operation(urls, ignore_errors=True)
+		self._file_view.setFocus()
+	def selection_keypress(self, event):
+		from fman.impl.util.qt.key_event import QtKeyEvent
+		if QtKeyEvent(event.key(), event.modifiers()).is_modifier_only():
+			return True
+		key = event.key()
+		if key in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Escape):
+			self.finish_selection(key != Qt.Key_Escape)
+			return True
+		modifiers = event.modifiers() & ~Qt.KeypadModifier
+		editing = key in (Qt.Key_Backspace, Qt.Key_Delete, Qt.Key_Left, Qt.Key_Right, Qt.Key_Home, Qt.Key_End) or \
+			bool(event.text() and not modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) or \
+			bool(modifiers & Qt.ControlModifier and key in (Qt.Key_A, Qt.Key_C, Qt.Key_V, Qt.Key_X, Qt.Key_Z, Qt.Key_Y))
+		if editing:
+			self._input.keyPressEvent(event)
+			return True
+		self.finish_selection()
+		return False
 	def begin_search(self, search, query, metadata, accepted):
+		self.finish_selection()
 		source = self._model.sourceModel()
 		if getattr(source, '_displayed', None) is None:
 			return False
@@ -430,6 +606,7 @@ class FilterBar(QFrame):
 		self.setVisible(bool(query) or self._search_session is not None)
 		return result
 	def close(self):
+		self.finish_selection()
 		if self._search_session is not None:
 			self.finish_search()
 			return
@@ -447,6 +624,9 @@ class FilterBar(QFrame):
 	def _on_scroll_range_changed(self, min_, max_):
 		self.reposition(scroll_bar_visible=min_ or max_)
 	def _on_text_changed(self, text):
+		if self._selection_session is not None:
+			self._preview_selection(text)
+			return
 		was_active = self._active
 		self._matcher = compile_filter(text)
 		self._active = bool(text) or self._search_session is not None

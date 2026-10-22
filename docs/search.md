@@ -11,10 +11,14 @@ This hides non-matching names in the current pane.
 | Query | Meaning |
 | --- | --- |
 | `report` | Contains `report` |
-| `*.pdf` | Matches the glob |
+| `*.pdf` | Contains a match for the pattern, including `report.pdf.bak` |
+| `*.pdf$` | Ends in `.pdf`, excluding `report.pdf.bak` |
 | `^report` | Starts with `report` |
 | `.py$` | Ends with `.py` |
 | `!tmp` | Does not contain `tmp` |
+
+See the [side-by-side extension example](basics.md#match-an-exact-extension).
+This is pane-filter syntax; other search tools have their own Glob rules.
 
 Press ++esc++ to clear it.
 
@@ -119,6 +123,11 @@ the filter box must all appear; use `"quotes"` for a phrase.
 _Search Files_ and _Find files with `fd`_ show their results in a table.
 The table holds the results of one run. Narrow it down, then jump to a file.
 It never reruns the search: close it to change the form and search again.
+
+Filtered table rows are not marks in a file pane. They do not become a group
+for F5, F6 or Delete. Use Go To for one result, then choose targets in the pane.
+See [which items will change](workflows.md#which-items-will-change) and the
+[find-and-edit workflow](workflows.md#find-and-edit-matching-content).
 
 | Key | Effect |
 | --- | --- |
