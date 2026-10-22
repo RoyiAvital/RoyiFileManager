@@ -84,6 +84,27 @@ class ReleaseNotesTest(TestCase):
 
 
 class ReleaseProductNameTest(TestCase):
+	def test_artifact_upload_uses_node24_pin_and_preserves_handoff(self):
+		import yaml
+		workflow = yaml.safe_load((ROOT / '.github/workflows/release.yml').read_text(encoding='utf-8'))
+		uploads = [step for step in workflow['jobs']['build']['steps']
+			if step.get('uses', '').startswith('actions/upload-artifact@')]
+		self.assertEqual(1, len(uploads))
+		upload = uploads[0]
+		self.assertEqual('actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f', upload['uses'])
+		self.assertEqual('${{ steps.version.outputs.artifact-name }}', upload['with']['name'])
+		self.assertEqual([
+			'${{ steps.package.outputs.archive }}',
+			'${{ steps.package.outputs.archive }}.sha256',
+			'target/release-notes.md'
+		], upload['with']['path'].splitlines())
+		self.assertEqual('error', upload['with']['if-no-files-found'])
+		publish = workflow['jobs']['publish']
+		download = next(step for step in publish['steps']
+			if step.get('uses', '').startswith('actions/download-artifact@'))
+		self.assertEqual('${{ needs.build.outputs.artifact-name }}', download['with']['name'])
+		self.assertEqual('target/release', download['with']['path'])
+
 	def test_everything_runtime_gate_runs_between_freeze_and_package(self):
 		import yaml
 		workflow = yaml.safe_load((ROOT / '.github/workflows/release.yml').read_text(encoding='utf-8'))

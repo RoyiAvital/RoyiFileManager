@@ -182,6 +182,22 @@ git tag -f -a vX.Y.Z -m "RoyiFileManager vX.Y.Z"
 git push --force origin refs/tags/vX.Y.Z
 ```
 
+An alternative:
+
+```powershell
+$token = Read-Host "GitHub token" -AsSecureString
+$credential = New-Object System.Net.NetworkCredential('', $token)
+
+Invoke-RestMethod -Method Post `
+  -Uri 'https://api.github.com/repos/RoyiAvital/RoyiFileManager/actions/workflows/release.yml/dispatches' `
+  -Headers @{
+    Authorization = "Bearer $($credential.Password)"
+    Accept = 'application/vnd.github+json'
+  } `
+  -ContentType 'application/json' `
+  -Body '{"ref":"vX.Y.Z"}'
+```
+
 ## Miscellaneous Scripts
 
 Developer utilities that are not included in release packages live under
