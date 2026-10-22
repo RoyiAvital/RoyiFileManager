@@ -4560,7 +4560,7 @@ class UnpackArchiveIT(QtIT):
 				pane.place_cursor_at(as_url(archive))
 				self.assertEqual(as_url(archive), pane.get_file_under_cursor())
 				self.assertIn('unpack_archive', registry.get_commands())
-				self.assertEqual(('Unpack archive',), registry.get_command_aliases('unpack_archive'))
+				self.assertEqual(('Unpack archive', 'Extract archive'), registry.get_command_aliases('unpack_archive'))
 				with patch('core.commands.load_json', return_value={'archive_handlers': {'.zip': 'zip://'}}), \
 					patch('core.commands.samefile', side_effect=filesystem.samefile), \
 					patch('core.commands.is_dir', side_effect=filesystem.is_dir), \

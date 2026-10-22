@@ -51,3 +51,5 @@ class StubDirectoryPaneWidget:
 		callback()
 	def get_file_under_cursor(self):
 		return None
+	def cancel_pattern_selection(self):
+		pass
