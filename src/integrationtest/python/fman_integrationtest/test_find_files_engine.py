@@ -193,3 +193,12 @@ class FindFilesEngineTest(TestCase):
 			self.assertFalse(result.complete)
 			self.assertIn('traversal warning', result.reason)
 			self.assertEqual('Error' if code else 'Incomplete', result.status)
+
+	def test_many_traversal_errors_are_summarized(self):
+		line = "[fd error]: ./locked: Access is denied. (os error 5)\\n"
+		command = [sys.executable, '-c', "import os; os.write(1,b'match.txt\\0'); os.write(2,b'%s' * 5000)" % line]
+		with patch('find_files.engine.arguments', return_value=command):
+			result = Runner(self.options).run()
+		self.assertEqual('Incomplete', result.status)
+		self.assertEqual(1, result.total)
+		self.assertEqual('5,000 errors; first: ./locked: Access is denied. (os error 5)', result.reason)

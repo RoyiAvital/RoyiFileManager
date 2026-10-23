@@ -70,8 +70,9 @@ metadata or identity checks.
 
 **Copy file name** copies all chosen basenames, one per line. With no marks it
 uses the cursor item; with no chosen item it leaves the clipboard unchanged.
-**Copy file path** remains single-item. Both appear in Command Center and the
-file context menu when their selection requirements are met.
+**Copy file path** remains single-item. Both appear in Command Center and, as
+**Copy name** and **Copy path**, in the file context menu when their selection
+requirements are met.
 Right-clicking an unmarked row targets that row; right-clicking a marked row
 preserves the marked group.
 
@@ -79,7 +80,7 @@ preserves the marked group.
 the full Windows path, including UNC paths; nonlocal providers retain their URL.
 Both copy plain text without quotes or file-transfer clipboard data.
 
-The Copy file path menu entry shows `F11`, following the current binding for
+The Copy path menu entry shows `F11`, following the current binding for
 Copy paths to clipboard unless Copy file path has its own binding.
 
 `F11` remains **Copy paths to clipboard**: it copies all chosen paths, one per

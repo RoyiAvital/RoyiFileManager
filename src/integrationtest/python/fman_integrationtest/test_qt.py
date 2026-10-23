@@ -5586,8 +5586,8 @@ class ClipboardCommandsIT(QtIT):
 				self._select(rows, cursor)
 				titles = self.run_in_app(lambda: [entry[0] for entry in
 					self.provider.get_context_menu(self.pane, self.pane.get_file_under_cursor())])
-				for title in ('Copy file name', 'Copy file path'):
-					self.assertEqual(bool(rows) if title == 'Copy file name' else expected, title in titles)
+				for title in ('Copy name', 'Copy path'):
+					self.assertEqual(bool(rows) if title == 'Copy name' else expected, title in titles)
 		self._select([0])
 		self.assertEqual([], self.run_in_app(lambda: list(self.provider.get_context_menu(self.pane))))
 		self.errors.report.assert_not_called()
@@ -5628,12 +5628,12 @@ class ClipboardCommandsIT(QtIT):
 				clipboard.set_text('unchanged')
 				def inspect(menu, position):
 					actions = {action.text(): action for action in menu.actions()}
-					for title in ('Copy file name', 'Copy file path'):
-						self.assertEqual(True if title == 'Copy file name' else visible, title in actions)
+					for title in ('Copy name', 'Copy path'):
+						self.assertEqual(True if title == 'Copy name' else visible, title in actions)
 					if visible:
-						self.assertEqual('Shift+F11', actions['Copy file name'].shortcut().toString())
-						self.assertEqual('F11', actions['Copy file path'].shortcut().toString())
-						actions['Copy file path'].trigger()
+						self.assertEqual('Shift+F11', actions['Copy name'].shortcut().toString())
+						self.assertEqual('F11', actions['Copy path'].shortcut().toString())
+						actions['Copy path'].trigger()
 				def open_menu():
 					position = self.view.visualRect(self.model.index(target, 0)).center()
 					event = QContextMenuEvent(QContextMenuEvent.Mouse, position,

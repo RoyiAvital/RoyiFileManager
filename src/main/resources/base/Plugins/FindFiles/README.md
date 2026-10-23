@@ -47,7 +47,8 @@ The summary keeps the run's totals; the table footer counts visible rows as
 you filter. Reaching an enabled
 search limit, stopping, or encountering traversal errors marks the total incomplete.
 Any fd traversal warning, even one inaccessible folder with a successful exit,
-marks the result **Incomplete** because matches may be missing. Successfully
+marks the result **Incomplete** because matches may be missing. The status shows
+the error count and the first message. Successfully
 collected entries remain available; no approximate full-tree total is invented.
 Uncapped searches continue traversing after the table fills. Stop stays enabled
 and red, matching Search Files; it cancels an active search and does nothing while

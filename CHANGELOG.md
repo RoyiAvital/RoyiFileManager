@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The file context menu labels **Copy file name** and **Copy file path** are now
+  **Copy name** and **Copy path**. Command Center names are unchanged.
+
+### Fixed
+
+- Find Files (fd) summarizes traversal errors as a count and the first message,
+  such as `1,500 errors; first: ./locked: Access is denied.`, instead of placing
+  up to 64 KiB of raw error output in the status line and results summary.
+
 ## [0.17.0] - 2026-10-22
 
 This release focuses on improvements to selection capabilities.  

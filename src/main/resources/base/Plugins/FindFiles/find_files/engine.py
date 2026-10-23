@@ -19,6 +19,7 @@ MAX_INTEGER = 2**64 - 1
 CHUNK_BYTES = 65536
 RECORD_BYTES = 131072
 STDERR_BYTES = 65536
+ERROR_HEAD_BYTES = 1024
 
 
 def split_list(value, exclusions=False):
@@ -211,6 +212,14 @@ def records(stream):
 		raise ValueError('Incomplete fd output record.')
 
 
+def error_summary(head, count):
+	lines = [line.strip() for line in head.decode('utf-8', errors='ignore').splitlines() if line.strip()]
+	if not lines:
+		return ''
+	first = lines[0].removeprefix('[fd error]:').strip()
+	return first if count <= 1 else '{:,} errors; first: {}'.format(count, first)
+
+
 @dataclass(frozen=True, slots=True)
 class Hit:
 	path: str
@@ -280,7 +289,9 @@ class Cancelled(Exception):
 class Child:
 	def __init__(self, runner):
 		self.runner = runner
-		self.tail = bytearray()
+		self.head = bytearray()
+		self.error_lines = 0
+		self.error_open = False
 		self.reader = None
 		command = arguments(runner.options)
 		with runner.lock:
@@ -303,8 +314,9 @@ class Child:
 	def read_errors(self):
 		try:
 			while chunk := self.process.stderr.read(CHUNK_BYTES):
-				self.tail.extend(chunk)
-				del self.tail[:-STDERR_BYTES]
+				self.head.extend(chunk[:max(0, ERROR_HEAD_BYTES - len(self.head))])
+				self.error_lines += chunk.count(b'\n')
+				self.error_open = not chunk.endswith(b'\n')
 		finally:
 			self.process.stderr.close()
 
@@ -323,7 +335,7 @@ class Child:
 		self.process.stderr.close()
 		with self.runner.lock:
 			self.runner.child = None
-		return code, bytes(self.tail).decode('utf-8', errors='replace')
+		return code, error_summary(bytes(self.head), self.error_lines + self.error_open)
 
 
 class Runner:

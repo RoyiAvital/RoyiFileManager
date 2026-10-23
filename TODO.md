@@ -42,7 +42,7 @@
 - [x] CHANGE: Update the structure of the "About" box.
 - [x] CHANGE: Use `app_version` and `APP_VERSION` instead of `fman_version` and `FMAN_VERSION`.
 - [x] CHANGE: Rename the command "Show processes" to "Show OS' processes".
-- [ ] FEATURE: Add _synonyms_to commands in _Command Palette_ for better search. For example, searching "Bookmarks" should give the "Favorites" result.
+- [x] FEATURE: Add _synonyms_to commands in _Command Palette_ for better search. For example, searching "Bookmarks" should give the "Favorites" result.
 - [ ] CHANGE: Update to Everything 1.5 when released. It supports tags on Windows files.
 - [ ] CHANGE: Update to Everything 1.5 when released. It supports searching for duplicates.
 - [ ] FEATURE: _Folder Diff_ based on names, dates and hash.
@@ -62,6 +62,9 @@
 - [x] FEATURE: Add random letter (`{c}`) and digit (`{d}`) fields to the rename tool.
 - [x] FEATURE: Add `Create a duplicate file` with alias `Copy file here`, using the existing Copy command with the active folder as its default destination.
 - [x] FEATURE: Add `Pack here` to pack the selected files / highlighted item into an archive in the current folder by default.
+- [x] CHANGE: Rename the right click menu item: `Copy file name` to `Copy name`.
+- [x] CHANGE: Rename the right click menu item: `Copy file path` to `Copy path`.
+- [x] BUG: Running the `fd` based search on `C:\` and all sub folders raised access issues and gabbled text.
 
 ## Performance
 
