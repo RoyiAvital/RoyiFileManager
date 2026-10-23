@@ -44,6 +44,7 @@
 - [x] CHANGE: Rename the command "Show processes" to "Show OS' processes".
 - [ ] FEATURE: Add _synonyms_to commands in _Command Palette_ for better search. For example, searching "Bookmarks" should give the "Favorites" result.
 - [ ] CHANGE: Update to Everything 1.5 when released. It supports tags on Windows files.
+- [ ] CHANGE: Update to Everything 1.5 when released. It supports searching for duplicates.
 - [ ] FEATURE: _Folder Diff_ based on names, dates and hash.
 - [ ] FEATURE: Candidates for presets as text viewer / editor: [Editpad](https://github.com/imluyg/editpad), [Dan](https://github.com/dfallman/dan), [FastPad](https://github.com/coccor/Fastpad), [Lite Anvil](https://github.com/danpozmanter/lite-anvil), [Noter](https://github.com/blisspixel/noter), [Token](https://github.com/HelgeSverre/token), [Fulgur](https://github.com/fulgur-app/Fulgur).
 - [x] CHANGE: Remove the extended status bar for 2 panes. Leave only the option for a single pane (Active pane).
