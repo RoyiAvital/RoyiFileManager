@@ -65,6 +65,8 @@
 - [x] CHANGE: Rename the right click menu item: `Copy file name` to `Copy name`.
 - [x] CHANGE: Rename the right click menu item: `Copy file path` to `Copy path`.
 - [x] BUG: Running the `fd` based search on `C:\` and all sub folders raised access issues and gabbled text.
+- [ ] FEATURE: Add support in QuickView for viewing `CSV` and `TSV` as tables with `RAW` as view potion for text.
+- [ ] FEATURE: Add support for `Royi Text Editor` as a text editor / viewer. Use the flag `--read-only` for view mode.
 
 ## Performance
 
