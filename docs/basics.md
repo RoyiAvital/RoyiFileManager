@@ -106,11 +106,11 @@ With NumLock off, keypad navigation and Insert retain their normal actions.
 Pane patterns search within names unless anchored. A trailing `$` means the end
 of the name. Compare the same three entries:
 
-| Name | `*.pdf` | `*.pdf$` |
-| --- | --- | --- |
-| `report.pdf` | Matches | Matches |
-| `report.pdf.bak` | Matches | No match |
-| `report.txt` | No match | No match |
+| Name             | `*.pdf`  | `*.pdf$` |
+| ---------------- | -------- | -------- |
+| `report.pdf`     | Matches  | Matches  |
+| `report.pdf.bak` | Matches  | No match |
+| `report.txt`     | No match | No match |
 
 Use `*.pdf$` when you want only `.pdf` endings. The same rule applies to
 Select/Deselect by pattern, not to every search tool's Glob mode.
@@ -142,12 +142,12 @@ with `draft`. Unrelated marks stay. Enter applies; Esc cancels.
   <figcaption>Removing the two draft marks would leave two marked files.</figcaption>
 </figure>
 
-| Pattern | Matches |
-| --- | --- |
-| `*.txt$` | Names ending in `.txt`, ignoring case |
-| `^draft` | Names beginning with `draft` |
-| `!*.txt$` | Names not ending in `.txt` |
-| Empty input | Keep the original marks |
+| Pattern     | Matches                               |
+| ----------- | ------------------------------------- |
+| `*.txt$`    | Names ending in `.txt`, ignoring case |
+| `^draft`    | Names beginning with `draft`          |
+| `!*.txt$`   | Names not ending in `.txt`            |
+| Empty input | Keep the original marks               |
 
 Only visible rows participate, including folders. Existing filters stay applied.
 Space and keypad punctuation edit the pattern while a preview is open.

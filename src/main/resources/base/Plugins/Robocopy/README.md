@@ -75,16 +75,16 @@ Defaults are in [Robocopy.json](Robocopy.json). Put only your overrides in
 Settings are captured when a command starts; changing them does not alter an active
 transfer. Unknown options and invalid types/ranges are rejected.
 
-| Setting | Default | Effect |
-| --- | --- | --- |
-| `threads` | `8` | Integer 1-32; `/MT`. More threads are not always faster. |
-| `retries` | `1` | Integer 0-10; retries per failed native operation. |
-| `retry_wait_seconds` | `1` | Integer 0-30; wait between retries. |
-| `restartable` | `false` | `/Z`; useful for interrupted network transfers, with overhead. No automatic queue/resume UI. |
-| `unbuffered` | `false` | `/J`; generally intended for large-file I/O. |
-| `log_enabled` | `false` | Write one Unicode log for the transfer. |
-| `open_log_on_finish` | `false` | Open the log externally after cleanup; requires logging. |
-| `log_retention_count` | `20` | Integer 1-100; current log plus newest recognized completed logs. |
+| Setting               | Default | Effect                                                                                       |
+| --------------------- | ------- | -------------------------------------------------------------------------------------------- |
+| `threads`             | `8`     | Integer 1-32; `/MT`. More threads are not always faster.                                     |
+| `retries`             | `1`     | Integer 0-10; retries per failed native operation.                                           |
+| `retry_wait_seconds`  | `1`     | Integer 0-30; wait between retries.                                                          |
+| `restartable`         | `false` | `/Z`; useful for interrupted network transfers, with overhead. No automatic queue/resume UI. |
+| `unbuffered`          | `false` | `/J`; generally intended for large-file I/O.                                                 |
+| `log_enabled`         | `false` | Write one Unicode log for the transfer.                                                      |
+| `open_log_on_finish`  | `false` | Open the log externally after cleanup; requires logging.                                     |
+| `log_retention_count` | `20`    | Integer 1-100; current log plus newest recognized completed logs.                            |
 
 No arbitrary switches, executable override, mirroring, purge, backup mode, monitoring
 or Registry settings are exposed. Jobs run sequentially; `/MT` supplies native

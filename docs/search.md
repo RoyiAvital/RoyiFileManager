@@ -8,14 +8,14 @@ Start typing.
 
 This hides non-matching names in the current pane.
 
-| Query | Meaning |
-| --- | --- |
-| `report` | Contains `report` |
-| `*.pdf` | Contains a match for the pattern, including `report.pdf.bak` |
-| `*.pdf$` | Ends in `.pdf`, excluding `report.pdf.bak` |
-| `^report` | Starts with `report` |
-| `.py$` | Ends with `.py` |
-| `!tmp` | Does not contain `tmp` |
+| Query     | Meaning                                                      |
+| --------- | ------------------------------------------------------------ |
+| `report`  | Contains `report`                                            |
+| `*.pdf`   | Contains a match for the pattern, including `report.pdf.bak` |
+| `*.pdf$`  | Ends in `.pdf`, excluding `report.pdf.bak`                   |
+| `^report` | Starts with `report`                                         |
+| `.py$`    | Ends with `.py`                                              |
+| `!tmp`    | Does not contain `tmp`                                       |
 
 See the [side-by-side extension example](basics.md#match-an-exact-extension).
 This is pane-filter syntax; other search tools have their own Glob rules.
@@ -32,13 +32,13 @@ Both commands use the active pane's hidden-file visibility when the search start
 
 Results use fuzzy matching. Try `rpt pdf` to find `annual report.pdf`.
 
-| Query | Meaning |
-| --- | --- |
-| `'report` | Exact text |
-| `^src` | Starts with `src` |
-| `.py$` | Ends with `.py` |
-| `!tmp` | Exclude exact text |
-| `report pdf` | Match both terms |
+| Query        | Meaning            |
+| ------------ | ------------------ |
+| `'report`    | Exact text         |
+| `^src`       | Starts with `src`  |
+| `.py$`       | Ends with `.py`    |
+| `!tmp`       | Exclude exact text |
+| `report pdf` | Match both terms   |
 
 ## Search Indexed Folders with Everything
 
@@ -129,15 +129,15 @@ for F5, F6 or Delete. Use Go To for one result, then choose targets in the pane.
 See [which items will change](workflows.md#which-items-will-change) and the
 [find-and-edit workflow](workflows.md#find-and-edit-matching-content).
 
-| Key | Effect |
-| --- | --- |
-| Typing in the filter box | Keep the rows that match |
-| ++ctrl+f++ | Focus the filter box |
-| ++up++ / ++down++ in the filter box | Move to the rows |
-| ++ctrl+enter++, double-click | Go To the file or folder of a path cell |
-| ++alt+down++ | Filter menu of the current column |
-| ++enter++, ++esc++ | Close the results and return to the Panel |
-| Right-click | Copy, Go To and filter commands of the cell |
+| Key                                 | Effect                                      |
+| ----------------------------------- | ------------------------------------------- |
+| Typing in the filter box            | Keep the rows that match                    |
+| ++ctrl+f++                          | Focus the filter box                        |
+| ++up++ / ++down++ in the filter box | Move to the rows                            |
+| ++ctrl+enter++, double-click        | Go To the file or folder of a path cell     |
+| ++alt+down++                        | Filter menu of the current column           |
+| ++enter++, ++esc++                  | Close the results and return to the Panel   |
+| Right-click                         | Copy, Go To and filter commands of the cell |
 
 **Go To** opens the folder of a file and highlights it, or enters a folder. It
 closes the results and focuses the pane. ++enter++ does nothing while no row is
@@ -153,11 +153,11 @@ instead, and `"quotes"` keep a phrase together.
 **Column filters:** click a header's funnel, or press ++alt+down++. The funnel
 is highlighted while its filter is active.
 
-| Column | Filters |
-| --- | --- |
-| Path, Snippet | Fuzzy or Contains text |
-| Size | `=`, `<`, `≤`, `>`, `≥`, Between, Missing; B, KiB, MiB or GiB |
-| Modified, Date Modified | On, Before, After, Between, Missing; `YYYY-MM-DD` |
+| Column                  | Filters                                                       |
+| ----------------------- | ------------------------------------------------------------- |
+| Path, Snippet           | Fuzzy or Contains text                                        |
+| Size                    | `=`, `<`, `≤`, `>`, `≥`, Between, Missing; B, KiB, MiB or GiB |
+| Modified, Date Modified | On, Before, After, Between, Missing; `YYYY-MM-DD`             |
 
 A row is shown when it passes the filter box and every column filter.
 **Clear All Filters** in the menu resets them. Missing sizes and dates sort

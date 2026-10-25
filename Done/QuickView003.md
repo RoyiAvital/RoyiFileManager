@@ -70,11 +70,11 @@ and `pymdown-extensions`. Use Python-Markdown and Pygments for the initial pipel
 PyMdown is available but no extra extension is needed for basic previews.
 Do not install packages or edit environment/lock files as part of this design.
 
-| Input | HTML conversion |
-| --- | --- |
-| Plain text or Markdown Source | `setPlainText` in the same QTextBrowser; do not interpret Markdown punctuation. |
-| Markdown Rendered | Python-Markdown with `fenced_code`, `tables` and `codehilite`. |
-| Source/configuration code | Wrap in a fenced block with a trusted language identifier, then use that same Markdown converter. |
+| Input                         | HTML conversion                                                                                   |
+| ----------------------------- | ------------------------------------------------------------------------------------------------- |
+| Plain text or Markdown Source | `setPlainText` in the same QTextBrowser; do not interpret Markdown punctuation.                   |
+| Markdown Rendered             | Python-Markdown with `fenced_code`, `tables` and `codehilite`.                                    |
+| Source/configuration code     | Wrap in a fenced block with a trusted language identifier, then use that same Markdown converter. |
 
 Create a fresh Markdown converter for each conversion; documents must not share
 references or parser state. Configure `codehilite` with `noclasses=True`,

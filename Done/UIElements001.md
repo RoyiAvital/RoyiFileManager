@@ -45,16 +45,16 @@ QuickTableColumn(label, kind='text', sortable=True, filterable=True, searchable=
 QuickTableRow(cells, highlights=(), targets=())
 ```
 
-| Argument | Meaning |
-| --- | --- |
-| `columns` | 1-64 `QuickTableColumn` descriptors. |
-| `rows` | Iterable of `QuickTableRow`, validated once: at most 10,000 rows, 16 MiB text (plus 8 bytes per typed cell), 128 highlight spans per cell. Optional `targets`: one absolute path or `None` per column (name/path columns only), used by Copy Path and Go To instead of the cell text. |
-| `pane` | Go To target. Without it Go To is disabled; Copy still works. |
-| `title`, `summary` | Window title; one elided line above the table. |
-| `modal` | `True` (default) blocks the main window; `False` keeps it usable. |
-| `text_filter` | `'fuzzy'`, `'substring'`, `None` (no filter box) or `compile(query) -> predicate(cells) -> bool`. |
-| `base_path` | Base for relative path cells; default: the pane's local folder at call time. |
-| `truncated` | `True` adds `· truncated` to the row count; `False`/`None` add nothing. |
+| Argument           | Meaning                                                                                                                                                                                                                                                                               |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `columns`          | 1-64 `QuickTableColumn` descriptors.                                                                                                                                                                                                                                                  |
+| `rows`             | Iterable of `QuickTableRow`, validated once: at most 10,000 rows, 16 MiB text (plus 8 bytes per typed cell), 128 highlight spans per cell. Optional `targets`: one absolute path or `None` per column (name/path columns only), used by Copy Path and Go To instead of the cell text. |
+| `pane`             | Go To target. Without it Go To is disabled; Copy still works.                                                                                                                                                                                                                         |
+| `title`, `summary` | Window title; one elided line above the table.                                                                                                                                                                                                                                        |
+| `modal`            | `True` (default) blocks the main window; `False` keeps it usable.                                                                                                                                                                                                                     |
+| `text_filter`      | `'fuzzy'`, `'substring'`, `None` (no filter box) or `compile(query) -> predicate(cells) -> bool`.                                                                                                                                                                                     |
+| `base_path`        | Base for relative path cells; default: the pane's local folder at call time.                                                                                                                                                                                                          |
+| `truncated`        | `True` adds `· truncated` to the row count; `False`/`None` add nothing.                                                                                                                                                                                                               |
 
 The call blocks until the window closes. A worker thread waits on its own
 window's event, so modeless tables opened from different workers return in
@@ -64,13 +64,13 @@ input positions of the visible rows in **input order** (not display order), or
 
 ### Keys
 
-| Key | Effect |
-| --- | --- |
+| Key                         | Effect                            |
+| --------------------------- | --------------------------------- |
 | Enter (table or filter box) | Close and return the visible rows |
-| Escape, window close | Close and return `None` |
-| Ctrl+Enter, double-click | Go To the current name/path cell |
-| Alt+Down | Filter menu of the current column |
-| Ctrl+F | Focus the filter box |
+| Escape, window close        | Close and return `None`           |
+| Ctrl+Enter, double-click    | Go To the current name/path cell  |
+| Alt+Down                    | Filter menu of the current column |
+| Ctrl+F                      | Focus the filter box              |
 
 - Enter is ignored while a projection is pending, after a filter error and
   when no row is visible, so `None` always means cancelled.
@@ -83,14 +83,14 @@ input positions of the visible rows in **input order** (not display order), or
 
 ### Columns
 
-| Kind | Cell value | Sort | Column filter | Go To |
-| --- | --- | --- | --- | --- |
-| `text` | `str` | Case-insensitive | Fuzzy / Contains | - |
-| `file_name`, `file_path` | `str` | Natural | Fuzzy / Contains | File |
-| `folder_name`, `folder_path` | `str` | Natural | Fuzzy / Contains | Folder |
-| `entry_path` | `str` | Natural | Fuzzy / Contains | File or folder |
-| `numeric` | `int`, finite `float` or `None` | By value | `=`, `<`, `≤`, `>`, `≥`, Between, Missing | - |
-| `date` | `int` UTC epoch ns or `None` | By value | On, Before, After, Between, Missing | - |
+| Kind                         | Cell value                      | Sort             | Column filter                             | Go To          |
+| ---------------------------- | ------------------------------- | ---------------- | ----------------------------------------- | -------------- |
+| `text`                       | `str`                           | Case-insensitive | Fuzzy / Contains                          | -              |
+| `file_name`, `file_path`     | `str`                           | Natural          | Fuzzy / Contains                          | File           |
+| `folder_name`, `folder_path` | `str`                           | Natural          | Fuzzy / Contains                          | Folder         |
+| `entry_path`                 | `str`                           | Natural          | Fuzzy / Contains                          | File or folder |
+| `numeric`                    | `int`, finite `float` or `None` | By value         | `=`, `<`, `≤`, `>`, `≥`, Between, Missing | -              |
+| `date`                       | `int` UTC epoch ns or `None`    | By value         | On, Before, After, Between, Missing       | -              |
 
 - `unit='bytes'` (numeric only): nonnegative integers shown as `12,345 B`,
   filters offer B/KiB/MiB/GiB. `format` (numeric only) supplies display text.
@@ -138,11 +138,11 @@ input positions of the visible rows in **input order** (not display order), or
 
 ### Consumers
 
-| Consumer | Mode | Result use |
-| --- | --- | --- |
-| Search Files | Modal; root and run summary in `summary`; Extended mode adds Size and Date Modified and a phrase/AND `text_filter` | Ignored |
-| Find Files | Modal; root and counts in `summary` | Ignored |
-| Checksum Files | Modeless, so files can be inspected; `targets` carry each verified raw path (display cells escape non-printable characters), diagnostic rows have none | Ignored |
+| Consumer       | Mode                                                                                                                                                   | Result use |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------- |
+| Search Files   | Modal; root and run summary in `summary`; Extended mode adds Size and Date Modified and a phrase/AND `text_filter`                                     | Ignored    |
+| Find Files     | Modal; root and counts in `summary`                                                                                                                    | Ignored    |
+| Checksum Files | Modeless, so files can be inspected; `targets` carry each verified raw path (display cells escape non-printable characters), diagnostic rows have none | Ignored    |
 
 ## Alternatives
 

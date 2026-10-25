@@ -45,11 +45,11 @@ show_panel(owner=owner, pane=pane, rows=((Action('rename', 'Rename'),
 	on_action=session.on_action, on_closed=handle.close)
 ```
 
-| Action | Trigger | Behavior |
-| --- | --- | --- |
-| Go To | Panel, Enter, double-click | One chosen favorite (one selected, or the highlighted one). From the Panel the list stays open until navigation succeeds. Enter closes the list first. A failure shows an alert. Several chosen: status "Select one favorite for Go To". |
-| Delete | Panel | Chosen favorites; no confirmation, as today. |
-| Rename | Panel | Highlighted favorite, through `show_prompt`. |
+| Action | Trigger                    | Behavior                                                                                                                                                                                                                                 |
+| ------ | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Go To  | Panel, Enter, double-click | One chosen favorite (one selected, or the highlighted one). From the Panel the list stays open until navigation succeeds. Enter closes the list first. A failure shows an alert. Several chosen: status "Select one favorite for Go To". |
+| Delete | Panel                      | Chosen favorites; no confirmation, as today.                                                                                                                                                                                             |
+| Rename | Panel                      | Highlighted favorite, through `show_prompt`.                                                                                                                                                                                             |
 
 - Actions read `handle.snapshot()`, change the store on a worker and call
   `handle.set_items`. Go To keeps today's folder checks (`exists`, `is_dir`) on

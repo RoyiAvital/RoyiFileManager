@@ -59,19 +59,19 @@ This is separate from the pane Filter Bar, which retains substring/glob matching
 with `*`, `?`, character classes, `^`/`$` anchors, leading `!` and backslash escapes.
 The Filter Bar does not interpret fuzzy subsequences, term AND/OR or quote operators.
 
-| Query | Meaning |
-| --- | --- |
-| `report pdf` | Both fuzzy terms must match |
-| `'report` | Exact substring |
-| `^src` | Relative path starts with `src` |
-| `.py$` | Relative path ends with `.py` |
-| `^report.txt$` | Entire relative path matches |
-| `!tmp` | Exclude an exact substring |
-| `!^src`, `!.py$`, `!^report.txt$` | Negated anchors |
-| `!'rpt` | Exclude a fuzzy subsequence |
-| `'word'`, `!'word'` | Require or exclude an exact word; underscore is a boundary |
-| `^src .py$ \| .rb$` | Require `^src` AND either suffix |
-| `'annual\ report` | Exact phrase containing a space |
+| Query                             | Meaning                                                    |
+| --------------------------------- | ---------------------------------------------------------- |
+| `report pdf`                      | Both fuzzy terms must match                                |
+| `'report`                         | Exact substring                                            |
+| `^src`                            | Relative path starts with `src`                            |
+| `.py$`                            | Relative path ends with `.py`                              |
+| `^report.txt$`                    | Entire relative path matches                               |
+| `!tmp`                            | Exclude an exact substring                                 |
+| `!^src`, `!.py$`, `!^report.txt$` | Negated anchors                                            |
+| `!'rpt`                           | Exclude a fuzzy subsequence                                |
+| `'word'`, `!'word'`               | Require or exclude an exact word; underscore is a boundary |
+| `^src .py$ \| .rb$`               | Require `^src` AND either suffix                           |
+| `'annual\ report`                 | Exact phrase containing a space                            |
 
 Only standalone `|` joins adjacent alternatives; there are no parentheses.
 Backslash escapes spaces only. Other backslashes are literal, so
@@ -98,17 +98,17 @@ No fzf executable runs in the application.
 Use `Ctrl+Shift+F` for examples spanning subfolders. All paths below are
 relative to the active pane's folder; terms are case-insensitive.
 
-| Goal | Query | Example result or exclusion |
-| --- | --- | --- |
-| Find a PDF report using initials | `rpt pdf` | Finds `docs\annual report.pdf` with ordinary fuzzy matching |
-| Find PDF reports outside temporary paths | `'report .pdf$ !tmp` | Keeps `docs\annual report.pdf`; excludes `tmp\report.pdf` |
+| Goal                                              | Query                     | Example result or exclusion                                                    |
+| ------------------------------------------------- | ------------------------- | ------------------------------------------------------------------------------ |
+| Find a PDF report using initials                  | `rpt pdf`                 | Finds `docs\annual report.pdf` with ordinary fuzzy matching                    |
+| Find PDF reports outside temporary paths          | `'report .pdf$ !tmp`      | Keeps `docs\annual report.pdf`; excludes `tmp\report.pdf`                      |
 | Find Python or Ruby source files, excluding tests | `^src .py$ \| .rb$ !test` | Keeps `src\core.py` and `src\tools\build.rb`; excludes paths containing `test` |
-| Match a phrase with an actual space | `'annual\ report .pdf$` | Finds `docs\annual report.pdf`, not `docs\annual-report.pdf` |
-| Find one exact relative path | `^src\core.py$` | Finds `src\core.py`, not `docs\core.py` or `src\core.pyc` |
-| Match a whole word in text filenames | `'report' .txt$` | Finds `report_notes.txt`, not `annualreport.txt` |
-| Exclude a fuzzy subsequence | `.txt$ !'bkp` | Removes `backup.txt` and any other path containing `b`, `k`, `p` in order |
-| Search a filename starting with `!` | `'!important` | Finds `!important.txt` without treating `!` as negation |
-| Find a README at the search root only | `^README.md$` | Finds `README.md`, not `docs\README.md` |
+| Match a phrase with an actual space               | `'annual\ report .pdf$`   | Finds `docs\annual report.pdf`, not `docs\annual-report.pdf`                   |
+| Find one exact relative path                      | `^src\core.py$`           | Finds `src\core.py`, not `docs\core.py` or `src\core.pyc`                      |
+| Match a whole word in text filenames              | `'report' .txt$`          | Finds `report_notes.txt`, not `annualreport.txt`                               |
+| Exclude a fuzzy subsequence                       | `.txt$ !'bkp`             | Removes `backup.txt` and any other path containing `b`, `k`, `p` in order      |
+| Search a filename starting with `!`               | `'!important`             | Finds `!important.txt` without treating `!` as negation                        |
+| Find a README at the search root only             | `^README.md$`             | Finds `README.md`, not `docs\README.md`                                        |
 
 In the source-file example, `^src` AND (`.py$` OR `.rb$`) AND `!test` must
 all succeed. `^src` is a text prefix, so it also includes `src-old\core.py`.
@@ -128,10 +128,10 @@ Measured **additional time per query**, compared with the old matcher, on a
 synthetic Windows index with 100 returned results:
 
 | Indexed files | Ordinary queries | Broad queries using operators |
-| ---: | ---: | ---: |
-| 1,000 | About 1-1.5 ms | About 1.5-2 ms |
-| 10,000 | About 1-1.5 ms | About 6-8 ms |
-| 50,000 | About 1-2.5 ms | About 30-40 ms |
+| ------------: | ---------------: | ----------------------------: |
+| 1,000         | About 1-1.5 ms   | About 1.5-2 ms                |
+| 10,000        | About 1-1.5 ms   | About 6-8 ms                  |
+| 50,000        | About 1-2.5 ms   | About 30-40 ms                |
 
 The operator comparisons used `report !missing`, `rpt !missing` and `^src rpt`
 on paths where the added condition rejected nothing. Every comparison returned

@@ -90,12 +90,12 @@ double-click goes to the file.
 The filter box uses [query.py](../src/main/resources/base/Plugins/SearchFiles/search_files/query.py)
 through `show_quick_table(text_filter=compile_text_filter)`. It sees only File Path and Snippet.
 
-| Query | Meaning |
-| --- | --- |
-| `report` | Substring in File Path or Snippet, case-insensitive |
-| `annual report` | Both substrings must match; they may match different columns |
-| `"annual report"` | One contiguous phrase |
-| `"say ""hi"""` | Phrase containing `say "hi"` |
+| Query             | Meaning                                                      |
+| ----------------- | ------------------------------------------------------------ |
+| `report`          | Substring in File Path or Snippet, case-insensitive          |
+| `annual report`   | Both substrings must match; they may match different columns |
+| `"annual report"` | One contiguous phrase                                        |
+| `"say ""hi"""`    | Phrase containing `say "hi"`                                 |
 
 - Whitespace outside double quotes separates ANDed terms. Backslashes and other
   characters are literal. Unterminated quotes are errors shown inline.

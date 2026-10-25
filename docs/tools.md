@@ -9,11 +9,11 @@ Both folder locations stay unchanged.
 
 ### QuickView Or An External Program?
 
-| Need | Use From The File Pane |
-| --- | --- |
-| Inspect supported files without launching another program | ++ctrl+q++ for QuickView |
-| View a file in your chosen program | ++f3++ for the configured viewer |
-| Edit a file | ++f4++ for the configured editor |
+| Need                                                      | Use From The File Pane           |
+| --------------------------------------------------------- | -------------------------------- |
+| Inspect supported files without launching another program | ++ctrl+q++ for QuickView         |
+| View a file in your chosen program                        | ++f3++ for the configured viewer |
+| Edit a file                                               | ++f4++ for the configured editor |
 
 Press ++tab++ to focus QuickView; ++tab++ or ++esc++ returns to the pane.
 ++ctrl+q++ closes it. Inside a text preview, ++f3++ finds the next match instead
@@ -43,13 +43,13 @@ of launching the external viewer. Configure F3/F4 through
 - A bundled helper process renders the pages. No PDF reader is needed.
 - Password-protected and damaged files show an error.
 
-| Key | Action |
-| --- | --- |
-| ++f++ | Fit the page |
-| ++w++ | Fit the width |
-| ++plus++ / ++minus++ or ++ctrl++ + wheel | Zoom from 25% to 400% |
+| Key                                                     | Action                              |
+| ------------------------------------------------------- | ----------------------------------- |
+| ++f++                                                   | Fit the page                        |
+| ++w++                                                   | Fit the width                       |
+| ++plus++ / ++minus++ or ++ctrl++ + wheel                | Zoom from 25% to 400%               |
 | Arrows, ++page-up++ / ++page-down++, ++home++ / ++end++ | Scroll, or jump to the start or end |
-| ++tab++ or ++esc++ | Return to the file pane |
+| ++tab++ or ++esc++                                      | Return to the file pane             |
 
 Files are limited to 64 MiB and 2,000 pages.
 Text selection, search, forms and printing are not available.
@@ -113,16 +113,16 @@ Opening the manager does not start Everything or check target availability.
   <figcaption>Manage indexed roots using the existing pane selection, filtering and sorting controls.</figcaption>
 </figure>
 
-| Action | Behavior |
-| --- | --- |
-| Type / ++ctrl+f++ | Filter the list / fuzzy-find folder names |
-| Click a column header | Sort by Name or Path |
-| ++enter++ / double-click | Open the real folder; unavailable roots stay listed |
-| ++f11++ | Copy the selected roots' real paths |
-| ++f8++ / ++delete++ / ++shift+delete++ | Remove selected roots after confirmation, never their files |
-| ++f5++ from the other pane | Add selected local folders to the index without copying files |
-| Drop folders onto the manager | Add them to the index, including drops onto an existing row |
-| ++ctrl+r++ | Reload the configured root list |
+| Action                                 | Behavior                                                      |
+| -------------------------------------- | ------------------------------------------------------------- |
+| Type / ++ctrl+f++                      | Filter the list / fuzzy-find folder names                     |
+| Click a column header                  | Sort by Name or Path                                          |
+| ++enter++ / double-click               | Open the real folder; unavailable roots stay listed           |
+| ++f11++                                | Copy the selected roots' real paths                           |
+| ++f8++ / ++delete++ / ++shift+delete++ | Remove selected roots after confirmation, never their files   |
+| ++f5++ from the other pane             | Add selected local folders to the index without copying files |
+| Drop folders onto the manager          | Add them to the index, including drops onto an existing row   |
+| ++ctrl+r++                             | Reload the configured root list                               |
 
 Each batch is normalized and saved once. Open manager panes refresh together,
 preserving surviving selections. Removing the last root stops the managed process.
@@ -235,12 +235,12 @@ Favorites keeps a list of frequently used locations.
 
 ### Sorting Favorites
 
-| Key | Sorts by |
-| --- | --- |
-| ++ctrl+f1++ | Name |
-| ++ctrl+f2++ | Path |
-| ++ctrl+f3++ | Added |
-| ++ctrl+f4++ | Last opened |
+| Key         | Sorts by       |
+| ----------- | -------------- |
+| ++ctrl+f1++ | Name           |
+| ++ctrl+f2++ | Path           |
+| ++ctrl+f3++ | Added          |
+| ++ctrl+f4++ | Last opened    |
 | ++ctrl+f5++ | Opened (count) |
 
 Each key cycles through three states:
@@ -278,16 +278,16 @@ Ordinary text is copied directly into the new name.
     The syntax is inspired by _Python_ `f-strings`.  
     There are predefined variables to be used in the renaming pattern.
 
-| Field            | Meaning                                                        |
-| ---------------- | -------------------------------------------------------------- |
-| `{name}`         | Original filename without its final extension                  |
-| `{ext}`          | Final extension, including the dot                             |
-| `{index}`        | Position among the current visible results, starting at 0      |
-| `{file_index}`   | Fixed natural-order position among all regular folder files    |
-| `{current_date}` | Local date/time when this rename session opened                |
-| `{file_date}`    | File's last-modified date/time, in local time                  |
-| `{c}`            | One random letter: `a-z` or `A-Z`                              |
-| `{d}`            | One random digit: `0-9`                                        |
+| Field            | Meaning                                                     |
+| ---------------- | ----------------------------------------------------------- |
+| `{name}`         | Original filename without its final extension               |
+| `{ext}`          | Final extension, including the dot                          |
+| `{index}`        | Position among the current visible results, starting at 0   |
+| `{file_index}`   | Fixed natural-order position among all regular folder files |
+| `{current_date}` | Local date/time when this rename session opened             |
+| `{file_date}`    | File's last-modified date/time, in local time               |
+| `{c}`            | One random letter: `a-z` or `A-Z`                           |
+| `{d}`            | One random digit: `0-9`                                     |
 
 Both indices start at zero. Sorting and filtering change `{index}`; `{file_index}`
 keeps its captured value and includes hidden and unselected regular files.
@@ -299,18 +299,18 @@ These examples use `report.txt`, visible index **0**, folder index **2**, and a
 file modified on **2026-03-15 at 10:30:00**. The session date is **2026-10-14**.
 Random characters in the examples are illustrative.
 
-| Template                                 | Example Result                 |
-| ---------------------------------------- | ------------------------------ |
-| `{name}{ext}`                            | `report.txt`                   |
-| `Copy_{name}{ext}`                       | `Copy_report.txt`              |
-| `{index:03d}_{name}{ext}`                | `000_report.txt`               |
-| `{(index + 1):03d}_{name}{ext}`          | `001_report.txt`               |
-| `{(file_index + 1):03d}_{name}{ext}`     | `003_report.txt`               |
-| `{file_date:%Y%m%d}_{name}{ext}`         | `20260315_report.txt`          |
-| `{file_date:%Y-%m-%d_%H-%M-%S}{ext}`     | `2026-03-15_10-30-00.txt`      |
-| `{current_date}_{name}{ext}`             | `2026-10-14_report.txt`        |
-| `{name}_{c}{c}{d}{d}{ext}`               | `report_aB07.txt`              |
-| `{{draft}}_{name}{ext}`                  | `{draft}_report.txt`           |
+| Template                             | Example Result            |
+| ------------------------------------ | ------------------------- |
+| `{name}{ext}`                        | `report.txt`              |
+| `Copy_{name}{ext}`                   | `Copy_report.txt`         |
+| `{index:03d}_{name}{ext}`            | `000_report.txt`          |
+| `{(index + 1):03d}_{name}{ext}`      | `001_report.txt`          |
+| `{(file_index + 1):03d}_{name}{ext}` | `003_report.txt`          |
+| `{file_date:%Y%m%d}_{name}{ext}`     | `20260315_report.txt`     |
+| `{file_date:%Y-%m-%d_%H-%M-%S}{ext}` | `2026-03-15_10-30-00.txt` |
+| `{current_date}_{name}{ext}`         | `2026-10-14_report.txt`   |
+| `{name}_{c}{c}{d}{d}{ext}`           | `report_aB07.txt`         |
+| `{{draft}}_{name}{ext}`              | `{draft}_report.txt`      |
 
 ### Formatting Rules
 
@@ -354,10 +354,10 @@ network transfers. It provides an alternative to ++F5++/++F6++ which is optimize
 
 ### F5/F6 Or Robocopy?
 
-| Need | Choose |
-| --- | --- |
-| Built-in conflict prompts and staged regular-file copies | ++f5++ / ++f6++ |
-| Move within one volume without copying file contents when possible | ++f6++ |
+| Need                                                                               | Choose                                  |
+| ---------------------------------------------------------------------------------- | --------------------------------------- |
+| Built-in conflict prompts and staged regular-file copies                           | ++f5++ / ++f6++                         |
+| Move within one volume without copying file contents when possible                 | ++f6++                                  |
 | Native multithreaded transfers, accepting Robocopy's merge/overwrite/skip behavior | Copy with robocopy / Move with robocopy |
 
 Robocopy is an alternative, not a guarantee of greater speed. Native skips can
@@ -384,10 +384,10 @@ Folder totals appear in the Size column of both panes.
 
 ### One-Time Or Automatic Totals?
 
-| Need | Use | Result |
-| --- | --- | --- |
-| Total only the chosen directories | ++ctrl+shift+enter++ | One-time status message; automatic mode stays unchanged |
-| Compare directory sizes while browsing | ++ctrl+shift+d++ | Progressive Size cells in both panes; mode is remembered |
+| Need                                   | Use                  | Result                                                   |
+| -------------------------------------- | -------------------- | -------------------------------------------------------- |
+| Total only the chosen directories      | ++ctrl+shift+enter++ | One-time status message; automatic mode stays unchanged  |
+| Compare directory sizes while browsing | ++ctrl+shift+d++     | Progressive Size cells in both panes; mode is remembered |
 
 With no marks, the one-time command uses the directory under the cursor.
 It does not populate Size cells. Automatic totals can take longer because they

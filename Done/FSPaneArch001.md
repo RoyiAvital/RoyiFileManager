@@ -30,18 +30,18 @@ Proof of concept: [src/misc/pane_arch_poc.py](../src/misc/pane_arch_poc.py),
 tests in [test_pane_arch_poc.py](../src/performancetest/python/fman_performancetest/test_pane_arch_poc.py).
 Measured on the reference folder, real Windows platform plug-in, warm cache:
 
-| Phase | Today (PaneRendering001 "after") | PoC |
-| --- | ---: | ---: |
-| Enumeration | 555 ms | 180 ms (scandir + own attributes) |
-| Sort by name, natural order, dirs first | part of 4.9 s worker prepare | 153 ms |
-| Hide hidden entries | part of the above | 4 ms |
-| Model construction + first populated paint | 1.17 s commit + paint | 14 ms + 65 ms |
-| **Scan → first paint** | **6.1 s** (plus a 6.5 s metadata tail) | **0.42 s**, no tail |
-| Filter Bar keystroke (202k → 142k rows) | ~1 s (three `QFileInfo` passes fixed, still Python row filter + diff) | 4–6 ms filter + 4–6 ms reset/paint |
-| Fuzzy keystroke, worst case full scan | 19–103 ms per 75k entries (current matcher) | ≤ 31 ms for 202k, then 0.3–10 ms incremental |
-| Sort by size / modified / name descending | seconds (reload of sort values per row) | 79 / 26 / 174 ms |
-| Full refresh after a file operation | incremental `RecordFiles` on the Qt thread, seconds for large folders | 334 ms (rescan + sort) |
-| Process working set after paint | 807 MiB | 131 MiB (37 MiB baseline) |
+| Phase                                      | Today (PaneRendering001 "after")                                      | PoC                                          |
+| ------------------------------------------ | --------------------------------------------------------------------: | -------------------------------------------: |
+| Enumeration                                | 555 ms                                                                | 180 ms (scandir + own attributes)            |
+| Sort by name, natural order, dirs first    | part of 4.9 s worker prepare                                          | 153 ms                                       |
+| Hide hidden entries                        | part of the above                                                     | 4 ms                                         |
+| Model construction + first populated paint | 1.17 s commit + paint                                                 | 14 ms + 65 ms                                |
+| **Scan → first paint**                     | **6.1 s** (plus a 6.5 s metadata tail)                                | **0.42 s**, no tail                          |
+| Filter Bar keystroke (202k → 142k rows)    | ~1 s (three `QFileInfo` passes fixed, still Python row filter + diff) | 4–6 ms filter + 4–6 ms reset/paint           |
+| Fuzzy keystroke, worst case full scan      | 19–103 ms per 75k entries (current matcher)                           | ≤ 31 ms for 202k, then 0.3–10 ms incremental |
+| Sort by size / modified / name descending  | seconds (reload of sort values per row)                               | 79 / 26 / 174 ms                             |
+| Full refresh after a file operation        | incremental `RecordFiles` on the Qt thread, seconds for large folders | 334 ms (rescan + sort)                       |
+| Process working set after paint            | 807 MiB                                                               | 131 MiB (37 MiB baseline)                    |
 
 Later reviews disproved the original inference that these PoC timings establish
 application performance. Adoption depends on the real application checks below.
@@ -277,14 +277,14 @@ The recursive variant (`Ctrl+Shift+F`) retains its own indexer and Quicksearch U
 
 ### Plug-in API (breaking)
 
-| Today | New | Why |
-| --- | --- | --- |
+| Today                                                                                                      | New                                                                                                                                          | Why                                          |
+| ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
 | `FileSystem.iterdir(path) -> names`, `stat/is_dir/size_bytes/modified_datetime(path)` per entry, `@cached` | `FileSystem.scan(path) -> Listing` (required); the per-path query methods remain for operations only and are no longer called during listing | One call, one object, no cache to invalidate |
-| `Column.get_str(url)`, `Column.get_sort_value(url, ascending)` | `Column.text(listing, i)`, `Column.keys(listing)` | Vectorised, no per-row URL/query round trips |
-| `pane.get_file_under_cursor()`, `get_selected_files()` return URLs | Unchanged signatures, implemented as `listing.names[cursor]` joined to `listing.path` | Same for commands |
-| `DirectoryPaneListener.before_location_change` etc. | Unchanged | — |
-| `fs.query(url, 'stat')` during display | Not called by the pane; still available to commands | Display never stats |
-| Third-party `FileSystem` without `scan` | Adapter: `scan` built from `iterdir` + per-entry `is_dir/size_bytes/modified_datetime` (slow path, correct) | Keeps old providers working, just not fast |
+| `Column.get_str(url)`, `Column.get_sort_value(url, ascending)`                                             | `Column.text(listing, i)`, `Column.keys(listing)`                                                                                            | Vectorised, no per-row URL/query round trips |
+| `pane.get_file_under_cursor()`, `get_selected_files()` return URLs                                         | Unchanged signatures, implemented as `listing.names[cursor]` joined to `listing.path`                                                        | Same for commands                            |
+| `DirectoryPaneListener.before_location_change` etc.                                                        | Unchanged                                                                                                                                    | —                                            |
+| `fs.query(url, 'stat')` during display                                                                     | Not called by the pane; still available to commands                                                                                          | Display never stats                          |
+| Third-party `FileSystem` without `scan`                                                                    | Adapter: `scan` built from `iterdir` + per-entry `is_dir/size_bytes/modified_datetime` (slow path, correct)                                  | Keeps old providers working, just not fast   |
 
 The adapter is the migration path: shipped providers (`zip://`, `7z://`,
 `tar://`, `drives://`, `network://`, `process://`) either implement `scan`
@@ -578,18 +578,18 @@ adoption. The PoC is a performance experiment, not a compatibility implementatio
 
 These supplement, rather than replace, the Tests and Acceptance Criteria above:
 
-| Area | Required discriminating coverage |
-| --- | --- |
-| Query correctness | Existing Filter Bar and Fuzzy Find goldens; incremental/full equality for all editing transitions; Unicode normalization and UTF-16 highlights; independent hidden-search setting; untruncated candidates. |
-| Input latency | Bounded adversarial fuzzy cases; actual key-to-cursor/completed-paint p95 and maximum during filtering, sorting, refresh and icon misses; empty and very broad results. |
-| Identity/selection | Real Qt cursor/marks and chosen command URLs across sort/filter/refresh, rename, case-only rename, delete/recreate, same names in different folders, hardlinks and aliases; 200k select-all; editing and drag/drop. |
-| Worker lifecycle | Event-barrier stale-result cases in finding 5; slow/blocked provider, close during scan, iteration failure, latest-only queue, bounded memory and exactly-once completion; no Qt access by worker. |
-| Operations | Native temporary create/edit-new/mkdir/rename/copy/move/delete, same/cross-provider transfers, partial failure/cancel, both affected panes, ancestor removal and fresh full-stat operation checks. |
-| Local paths | Read-only `C:` and `C:/` plus a non-system drive; child/root Qt visibility parity; UNC/share roots, drive-relative/noncanonical paths, long/Unicode paths, unplugged drives and permission changes. |
-| Special entries | Visible/hidden/broken/looping symlinks and junctions, reparse target errors, offline/cloud placeholders, sparse/compressed files, system-only/dot-prefixed names; own attributes versus followed metadata; disappearance during scan. |
-| Provider contract | Name-only legacy provider, Process/PID, drives/network, native/adapter archive including virtual directories, custom columns, nullable/unsupported metadata, malformed immutable snapshots and plug-in reload/unload. |
-| Application integration | Enabled/disabled QuickView, status and directory totals; existing filter/fuzzy command modes and preferences; model reset signal order, persistent-index invalidation, view editing, selection, focus and navigation callbacks. |
-| Performance | Reference folder, System32, WinSxS and C root; three alternating fresh-process A/B pairs with isolated settings and retained raw results; hidden on/off, optional features off/on, warm-cache limits, mixed names and slow-backend fixtures. |
+| Area                    | Required discriminating coverage                                                                                                                                                                                                             |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Query correctness       | Existing Filter Bar and Fuzzy Find goldens; incremental/full equality for all editing transitions; Unicode normalization and UTF-16 highlights; independent hidden-search setting; untruncated candidates.                                   |
+| Input latency           | Bounded adversarial fuzzy cases; actual key-to-cursor/completed-paint p95 and maximum during filtering, sorting, refresh and icon misses; empty and very broad results.                                                                      |
+| Identity/selection      | Real Qt cursor/marks and chosen command URLs across sort/filter/refresh, rename, case-only rename, delete/recreate, same names in different folders, hardlinks and aliases; 200k select-all; editing and drag/drop.                          |
+| Worker lifecycle        | Event-barrier stale-result cases in finding 5; slow/blocked provider, close during scan, iteration failure, latest-only queue, bounded memory and exactly-once completion; no Qt access by worker.                                           |
+| Operations              | Native temporary create/edit-new/mkdir/rename/copy/move/delete, same/cross-provider transfers, partial failure/cancel, both affected panes, ancestor removal and fresh full-stat operation checks.                                           |
+| Local paths             | Read-only `C:` and `C:/` plus a non-system drive; child/root Qt visibility parity; UNC/share roots, drive-relative/noncanonical paths, long/Unicode paths, unplugged drives and permission changes.                                          |
+| Special entries         | Visible/hidden/broken/looping symlinks and junctions, reparse target errors, offline/cloud placeholders, sparse/compressed files, system-only/dot-prefixed names; own attributes versus followed metadata; disappearance during scan.        |
+| Provider contract       | Name-only legacy provider, Process/PID, drives/network, native/adapter archive including virtual directories, custom columns, nullable/unsupported metadata, malformed immutable snapshots and plug-in reload/unload.                        |
+| Application integration | Enabled/disabled QuickView, status and directory totals; existing filter/fuzzy command modes and preferences; model reset signal order, persistent-index invalidation, view editing, selection, focus and navigation callbacks.              |
+| Performance             | Reference folder, System32, WinSxS and C root; three alternating fresh-process A/B pairs with isolated settings and retained raw results; hidden on/off, optional features off/on, warm-cache limits, mixed names and slow-backend fixtures. |
 
 The current command unit tests are not sufficient unchanged-pane evidence: many
 use mocks. Native workflow tests must exercise the real replacement pane and
@@ -676,11 +676,11 @@ Three alternating pairs per folder, warm cache, one process, garbage collection
 outside timing. All columns matched by exact name on the three large folders.
 These are scan/sort/filter measurements, not application first-paint timings:
 
-| Folder | Entries | PoC median [min-max], ms | With IDs median [min-max], ms |
-| --- | --- | --- | --- |
-| CelebAAligned | 202603 | 330.65 [328.80-335.17] | 365.47 [362.93-366.74] |
-| System32 | 4757 | 7.13 [6.98-7.40] | 8.51 [8.29-8.64] |
-| WinSxS | 24315 | 115.38 [115.22-115.63] | 96.93 [95.36-97.51] |
+| Folder        | Entries | PoC median [min-max], ms | With IDs median [min-max], ms |
+| ------------- | ------- | ------------------------ | ----------------------------- |
+| CelebAAligned | 202603  | 330.65 [328.80-335.17]   | 365.47 [362.93-366.74]        |
+| System32      | 4757    | 7.13 [6.98-7.40]         | 8.51 [8.29-8.64]              |
+| WinSxS        | 24315   | 115.38 [115.22-115.63]   | 96.93 [95.36-97.51]           |
 
 Per-pair values before -> after (ms): CelebAAligned 335.17 -> 365.47,
 330.65 -> 366.74, 328.80 -> 362.93; System32 6.98 -> 8.64, 7.13 -> 8.29,
@@ -712,14 +712,14 @@ opaque object ID, its identity scope/lifetime, and operation capabilities.
 The packed 128-bit column is a Windows optimization, not the generic provider
 format. A provider may return strings or no reliable object identity at all.
 
-| Storage | Enumeration and identity policy | Limits / required behavior |
-| --- | --- | --- |
-| USB mass-storage disk with NTFS | Same filesystem provider and capability-tested bulk-ID path as a local disk. Scope IDs to the volume/mount instance. | USB transport is not an identity scheme. Unplug/replug, drive-letter reuse and a different volume invalidate continuity. |
-| USB FAT/exFAT or unsupported filesystem | Ordinary enumeration remains supported; enable native IDs only with a verified stability contract. Otherwise identity is unknown beyond the snapshot. | FAT IDs can change on rename; do not assume NTFS behavior for exFAT or an arbitrary driver. Keep fast listing without a per-file-stat fallback. |
-| MTP phone/camera | Separate Windows Portable Devices provider. Entry keys use current WPD object IDs; persistent IDs can support reconciliation when reliably supplied/resolved, scoped to device/storage. | Object IDs can change across connection sessions. MTP is not an `os.scandir` filesystem and no bundled MTP provider exists today; browsing and transfers need a separate implementation. Missing dates/sizes remain unknown. |
-| Local cloud-sync folder | Filesystem provider can enumerate placeholder names/metadata and local entry IDs, with cloud/reparse-aware handling. | Inspect reparse tags; do not follow every reparse point or fetch content/icons/thumbnails merely to list it. Directory enumeration may still request remote metadata. Hydration/eviction/resync can change local identity; do not equate it with a remote cloud object ID. |
-| SMB/UNC or mapped network drive | Use the provider's supported bulk enumeration; accept IDs only within the verified server/share/connection scope. Fall back to ordinary listing if unsupported. | Reconnect, failover, disconnect, permissions and unsupported ID classes need explicit behavior. A mapped drive letter does not imply a local NTFS backend. |
-| WebDAV/SFTP/remote-only cloud | Provider-specific listing and opaque IDs if available; same snapshot consumer. | Not automatically supported by the Win32 backend. Provider implementation, authentication, transfer and cancellation semantics are separate work. |
+| Storage                                 | Enumeration and identity policy                                                                                                                                                         | Limits / required behavior                                                                                                                                                                                                                                                 |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| USB mass-storage disk with NTFS         | Same filesystem provider and capability-tested bulk-ID path as a local disk. Scope IDs to the volume/mount instance.                                                                    | USB transport is not an identity scheme. Unplug/replug, drive-letter reuse and a different volume invalidate continuity.                                                                                                                                                   |
+| USB FAT/exFAT or unsupported filesystem | Ordinary enumeration remains supported; enable native IDs only with a verified stability contract. Otherwise identity is unknown beyond the snapshot.                                   | FAT IDs can change on rename; do not assume NTFS behavior for exFAT or an arbitrary driver. Keep fast listing without a per-file-stat fallback.                                                                                                                            |
+| MTP phone/camera                        | Separate Windows Portable Devices provider. Entry keys use current WPD object IDs; persistent IDs can support reconciliation when reliably supplied/resolved, scoped to device/storage. | Object IDs can change across connection sessions. MTP is not an `os.scandir` filesystem and no bundled MTP provider exists today; browsing and transfers need a separate implementation. Missing dates/sizes remain unknown.                                               |
+| Local cloud-sync folder                 | Filesystem provider can enumerate placeholder names/metadata and local entry IDs, with cloud/reparse-aware handling.                                                                    | Inspect reparse tags; do not follow every reparse point or fetch content/icons/thumbnails merely to list it. Directory enumeration may still request remote metadata. Hydration/eviction/resync can change local identity; do not equate it with a remote cloud object ID. |
+| SMB/UNC or mapped network drive         | Use the provider's supported bulk enumeration; accept IDs only within the verified server/share/connection scope. Fall back to ordinary listing if unsupported.                         | Reconnect, failover, disconnect, permissions and unsupported ID classes need explicit behavior. A mapped drive letter does not imply a local NTFS backend.                                                                                                                 |
+| WebDAV/SFTP/remote-only cloud           | Provider-specific listing and opaque IDs if available; same snapshot consumer.                                                                                                          | Not automatically supported by the Win32 backend. Provider implementation, authentication, transfer and cancellation semantics are separate work.                                                                                                                          |
 
 Without reliable identity, sorting/filtering within a snapshot still preserve
 cursor/marks by index. On a new scan, cursor may fall back by entry key/name, but
@@ -759,18 +759,18 @@ Platform references checked: [bulk directory IDs](https://learn.microsoft.com/en
 
 Verdict per finding, measured where a claim could be checked on this machine:
 
-| Finding | Verdict | Resolution kept simple |
-| --- | --- | --- |
-| 1 Incremental narrowing is not monotone for the grammar; `casefold` differs from `re.IGNORECASE` | **Valid** | Drop incremental narrowing except for one case: substring mode, plain literal (no operator characters), query extended by appended characters. Everything else re-evaluates from `order`; a full pass costs 6 ms (substring) / ~25 ms (fuzzy) at 202k, so the optimisation was never needed for the gate. Case handling: one rule for both modes, decided explicitly (Unicode casefold is the better one; `IGNORECASE` parity is the conservative one). |
-| 2 `.*?` fuzzy regex backtracks (`'a'*64` vs `'a'*16+'b'` timed out) | **Valid** | Build the subsequence pattern as `[^a]*a[^b]*b[^c]*c` (each class excludes the next character): no backtracking beyond linear scanning. Probe: adversarial case 0.12 ms instead of >2 s; 202k throughput 29 ms vs 24 ms for the lazy pattern. It yields the greedy-earliest match; compute tight spans for ranking only on displayed rows. |
-| 3 Names are not identity | **Valid**, with the caveat below | Adopt object IDs on NTFS/ReFS via the 128-bit bulk enumeration (see next section). Minimal reconciliation: match `(id, name)`; else `id` if unique in both snapshots; else drop the mark, cursor falls back to the same name or the neighbouring row. Operation-known renames map explicitly. No hard-link group logic beyond that. |
-| 4 Commands place the cursor right after a mutation; rescan is asynchronous | **Valid, important** | `place_cursor_at(url)` stores a pending target on the pane; the next commit applies it. Mutation events set one dirty flag; one scan runs at a time; a dirty flag set during a scan triggers exactly one more. No timer; the 200 ms wording is withdrawn. |
-| 5 `scan(path)` has no cancellation; a blocked UNC scan holds the worker | **Valid** | `scan(path, check_canceled)` like the repository `Task` convention; the coordinator drops stale results by generation and may start one replacement worker while a blocked one retires (the QuickView loader pattern, bounded to two threads). |
-| 6 Fixed schema breaks Process/drives providers; lists are mutable | **Valid** | Optional vectors (`sizes`/`mtimes` may be `None` per provider), `extra: dict[str, tuple]` for provider columns, `tuple` storage. Validation of equal lengths at publication. |
-| 7 Sort/format goldens differ (`file999999` vs `file1000000`, KiB vs KB, descending dirs) | **Valid** | The PoC's natural order is the correct one (today's `%06d` padding mis-sorts 7-digit runs); the rest must reuse `format_size` and today's directional rules. Accept the one fix explicitly, keep the others identical. |
-| 8 Shell icon extraction at paint can block | **Partially** | Extraction happens at paint today as well (`QIcon` engines are lazy; Windows resolves on `pixmap()`), so this is not a regression. Bound it: per-suffix cache for ordinary files, per-file only for `.exe/.lnk/.ico/.url` in visible rows. An async icon service is a later refinement, not an adoption gate. |
-| 9 QuickView clears on `modelAboutToBeReset` | **Valid** | QuickView compares the cursor URL after reset and keeps the image when unchanged; a five-line change in `fman/impl/quick_view.py`. |
-| Storage Capabilities table (MTP, WebDAV, SFTP, cloud) | **Over-scoped** | No MTP/WebDAV/SFTP provider exists in this application; these rows are not adoption gates. Keep: local NTFS/ReFS, removable NTFS/ReFS, UNC (scandir path, unknown identity), cloud placeholders (reparse tag, not followed). FAT32/exFAT: deferred by the user; unknown identity, name fallback. |
+| Finding                                                                                          | Verdict                          | Resolution kept simple                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ------------------------------------------------------------------------------------------------ | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 Incremental narrowing is not monotone for the grammar; `casefold` differs from `re.IGNORECASE` | **Valid**                        | Drop incremental narrowing except for one case: substring mode, plain literal (no operator characters), query extended by appended characters. Everything else re-evaluates from `order`; a full pass costs 6 ms (substring) / ~25 ms (fuzzy) at 202k, so the optimisation was never needed for the gate. Case handling: one rule for both modes, decided explicitly (Unicode casefold is the better one; `IGNORECASE` parity is the conservative one). |
+| 2 `.*?` fuzzy regex backtracks (`'a'*64` vs `'a'*16+'b'` timed out)                              | **Valid**                        | Build the subsequence pattern as `[^a]*a[^b]*b[^c]*c` (each class excludes the next character): no backtracking beyond linear scanning. Probe: adversarial case 0.12 ms instead of >2 s; 202k throughput 29 ms vs 24 ms for the lazy pattern. It yields the greedy-earliest match; compute tight spans for ranking only on displayed rows.                                                                                                              |
+| 3 Names are not identity                                                                         | **Valid**, with the caveat below | Adopt object IDs on NTFS/ReFS via the 128-bit bulk enumeration (see next section). Minimal reconciliation: match `(id, name)`; else `id` if unique in both snapshots; else drop the mark, cursor falls back to the same name or the neighbouring row. Operation-known renames map explicitly. No hard-link group logic beyond that.                                                                                                                     |
+| 4 Commands place the cursor right after a mutation; rescan is asynchronous                       | **Valid, important**             | `place_cursor_at(url)` stores a pending target on the pane; the next commit applies it. Mutation events set one dirty flag; one scan runs at a time; a dirty flag set during a scan triggers exactly one more. No timer; the 200 ms wording is withdrawn.                                                                                                                                                                                               |
+| 5 `scan(path)` has no cancellation; a blocked UNC scan holds the worker                          | **Valid**                        | `scan(path, check_canceled)` like the repository `Task` convention; the coordinator drops stale results by generation and may start one replacement worker while a blocked one retires (the QuickView loader pattern, bounded to two threads).                                                                                                                                                                                                          |
+| 6 Fixed schema breaks Process/drives providers; lists are mutable                                | **Valid**                        | Optional vectors (`sizes`/`mtimes` may be `None` per provider), `extra: dict[str, tuple]` for provider columns, `tuple` storage. Validation of equal lengths at publication.                                                                                                                                                                                                                                                                            |
+| 7 Sort/format goldens differ (`file999999` vs `file1000000`, KiB vs KB, descending dirs)         | **Valid**                        | The PoC's natural order is the correct one (today's `%06d` padding mis-sorts 7-digit runs); the rest must reuse `format_size` and today's directional rules. Accept the one fix explicitly, keep the others identical.                                                                                                                                                                                                                                  |
+| 8 Shell icon extraction at paint can block                                                       | **Partially**                    | Extraction happens at paint today as well (`QIcon` engines are lazy; Windows resolves on `pixmap()`), so this is not a regression. Bound it: per-suffix cache for ordinary files, per-file only for `.exe/.lnk/.ico/.url` in visible rows. An async icon service is a later refinement, not an adoption gate.                                                                                                                                           |
+| 9 QuickView clears on `modelAboutToBeReset`                                                      | **Valid**                        | QuickView compares the cursor URL after reset and keeps the image when unchanged; a five-line change in `fman/impl/quick_view.py`.                                                                                                                                                                                                                                                                                                                      |
+| Storage Capabilities table (MTP, WebDAV, SFTP, cloud)                                            | **Over-scoped**                  | No MTP/WebDAV/SFTP provider exists in this application; these rows are not adoption gates. Keep: local NTFS/ReFS, removable NTFS/ReFS, UNC (scandir path, unknown identity), cloud placeholders (reparse tag, not followed). FAT32/exFAT: deferred by the user; unknown identity, name fallback.                                                                                                                                                        |
 
 The review is correct on substance and its test matrix is the right one; where
 it adds machinery (multi-stage hard-link reconciliation, per-medium identity
@@ -886,12 +886,12 @@ warm OS caches, no cache flushing. Full scan of each one-level folder, no 50k
 application index cap. Default fuzzy limit 100. Query vectors below include
 extensions, deletions and misses; each is followed by an empty-query reset.
 
-| Folder | Filter queries, in order | Fuzzy queries, in order |
-| --- | --- | --- |
+| Folder        | Filter queries, in order                    | Fuzzy queries, in order                     |
+| ------------- | ------------------------------------------- | ------------------------------------------- |
 | CelebAAligned | 1, 12, 123, 1234, 12345, 1234, 12, no-match | 1, 19, 199, 1998, 19981, 1998, 19, no-match |
-| System32 | s, sy, sys, syst, system, sys, no-match | s, sh, shl, shll, shl, no-match |
-| WinSxS | m, mi, mic, micro, microsoft, mic, no-match | m, mc, mcs, mcso, mcsof, mcs, no-match |
-| C root | p, pr, pro, program, pr, no-match | p, pg, pgf, pg, no-match |
+| System32      | s, sy, sys, syst, system, sys, no-match     | s, sh, shl, shll, shl, no-match             |
+| WinSxS        | m, mi, mic, micro, microsoft, mic, no-match | m, mc, mcs, mcso, mcsof, mcs, no-match      |
+| C root        | p, pr, pro, program, pr, no-match           | p, pg, pgf, pg, no-match                    |
 
 ### Results
 
@@ -899,12 +899,12 @@ Matching medians pool nonempty query steps over the three runs, in milliseconds.
 Setup/paint/memory values are medians over runs. These are sampled costs, not
 worst-case bounds; the two algorithm modes have deliberately different semantics.
 
-| Folder / entries | Filter simple -> current | Fuzzy simple -> current | Current fuzzy setup | Current match + paint median (Filter / Fuzzy) |
-| --- | ---: | ---: | ---: | ---: |
-| CelebAAligned / 202603 | 2.99 -> 23.51 | 17.08 -> 152.15 | 427.52 | 26.61 / 155.42 |
-| System32 / 4757 | 0.10 -> 1.07 | 0.78 -> 6.04 | 12.97 | 4.99 / 14.59 |
-| WinSxS / 24315 | 0.59 -> 5.41 | 5.61 -> 53.73 | 230.36 | 10.69 / 58.87 |
-| C root / 19 (9 pane candidates) | 0.003 -> 0.038 | 0.043 -> 0.080 | 0.043 | 0.30 / 0.56 |
+| Folder / entries                | Filter simple -> current | Fuzzy simple -> current | Current fuzzy setup | Current match + paint median (Filter / Fuzzy) |
+| ------------------------------- | -----------------------: | ----------------------: | ------------------: | --------------------------------------------: |
+| CelebAAligned / 202603          | 2.99 -> 23.51            | 17.08 -> 152.15         | 427.52              | 26.61 / 155.42                                |
+| System32 / 4757                 | 0.10 -> 1.07             | 0.78 -> 6.04            | 12.97               | 4.99 / 14.59                                  |
+| WinSxS / 24315                  | 0.59 -> 5.41             | 5.61 -> 53.73           | 230.36              | 10.69 / 58.87                                 |
+| C root / 19 (9 pane candidates) | 0.003 -> 0.038           | 0.043 -> 0.080          | 0.043               | 0.30 / 0.56                                   |
 
 For 202603 entries, first completed paint was 454.4 -> 458.9 ms, excluding fuzzy
 setup. Working set after matcher setup was 141.1 -> 208.2 MiB, not peak memory.
@@ -918,16 +918,16 @@ row counts, memory and setup measurements are in the local generated JSON report
 under `target/diagnostics/pane-current-algorithms/` (`paired-results.json`,
 `scope-results.json`, `highlight-cost.json`); these are not release artifacts.
 
-| Folder | Mode | Pair 1 | Pair 2 | Pair 3 |
-| --- | --- | --- | --- | --- |
-| CelebAAligned | simple | 454.4 / 3.0 / 17.0 | 455.2 / 2.8 / 17.3 | 453.0 / 2.9 / 17.1 |
+| Folder        | Mode    | Pair 1               | Pair 2               | Pair 3               |
+| ------------- | ------- | -------------------- | -------------------- | -------------------- |
+| CelebAAligned | simple  | 454.4 / 3.0 / 17.0   | 455.2 / 2.8 / 17.3   | 453.0 / 2.9 / 17.1   |
 | CelebAAligned | current | 462.1 / 23.5 / 152.7 | 454.7 / 23.6 / 151.6 | 458.9 / 23.4 / 152.2 |
-| System32 | simple | 98.7 / 0.1 / 0.8 | 100.2 / 0.1 / 0.8 | 102.5 / 0.1 / 0.8 |
-| System32 | current | 99.7 / 1.0 / 6.1 | 97.4 / 1.1 / 6.1 | 105.3 / 1.1 / 6.0 |
-| WinSxS | simple | 226.1 / 0.6 / 5.6 | 204.8 / 0.5 / 5.6 | 217.4 / 0.6 / 5.7 |
-| WinSxS | current | 221.2 / 5.4 / 51.1 | 213.8 / 5.4 / 50.4 | 209.5 / 10.1 / 56.8 |
-| C root | simple | 110.5 / <0.1 / <0.1 | 109.7 / <0.1 / <0.1 | 107.7 / <0.1 / <0.1 |
-| C root | current | 110.2 / <0.1 / 0.1 | 113.6 / <0.1 / 0.1 | 108.5 / <0.1 / 0.1 |
+| System32      | simple  | 98.7 / 0.1 / 0.8     | 100.2 / 0.1 / 0.8    | 102.5 / 0.1 / 0.8    |
+| System32      | current | 99.7 / 1.0 / 6.1     | 97.4 / 1.1 / 6.1     | 105.3 / 1.1 / 6.0    |
+| WinSxS        | simple  | 226.1 / 0.6 / 5.6    | 204.8 / 0.5 / 5.6    | 217.4 / 0.6 / 5.7    |
+| WinSxS        | current | 221.2 / 5.4 / 51.1   | 213.8 / 5.4 / 50.4   | 209.5 / 10.1 / 56.8  |
+| C root        | simple  | 110.5 / <0.1 / <0.1  | 109.7 / <0.1 / <0.1  | 107.7 / <0.1 / <0.1  |
+| C root        | current | 110.2 / <0.1 / 0.1   | 113.6 / <0.1 / 0.1   | 108.5 / <0.1 / 0.1   |
 
 Additional three-pair scopes:
 
@@ -1180,17 +1180,17 @@ collects garbage outside each timer and discards results between samples.
   of it and executes identically on every platform — a Windows-only focus does
   not remove it, it only means it can be optimised without parity concerns.
 
-  | Overhead | Measured | Removal | Saves |
-  | --- | ---: | --- | ---: |
-  | `iterdir` still runs `scandir` + `cache.put` per entry for `_pane_hidden_state` (PaneRendering001 leftover; the pane reads `listing.attributes`) | 539 ms per `iterdir` call | Revert to `os.listdir`; delete `_EntryAttributesCache` and the URL branch of `_hidden_file_filter` | 539 ms per caller (Search plug-ins, `fs.iterdir`) |
-  | Hidden filter via `all(predicate(...) for predicate in filters)` in `project()` | 44.6 ms per projection (every keystroke, sort, rescan) | No filters → `visible = order`; let a filter expose a vector form so hidden becomes `[i for i in order if not attributes[i] & 2]` (5.5 ms) | ~40 ms per keystroke |
-  | `Name.keys` regex `sub` + lambda per name | 131 ms per sort/rescan | Cheaper key with identical order (`re.split` + `int`) or cache keys per listing | 60–80 ms per rescan |
-  | `Modified.keys` builds 202k `datetime`s | 59 ms | Raw `mtimes_ns` ints, `-1` for `None` (10.5 ms, same order) | ~50 ms |
-  | `Listing.__post_init__` validation (8 full passes) | 45 ms per scan | Trust bundled scanners; validate third-party providers only; keep the length check | ~40 ms per scan |
-  | `reconcile()` on an unchanged rescan (16-byte slices + tuple compares per entry) | 60 ms per refresh | Short-circuit when `names`, `identities`, `created_ns` are equal (4 ms) → identity mapping | ~55 ms per refresh |
-  | `check_canceled()` per record in `scan()` | 20–30 ms | Once per 64 KiB batch, as `batches()` already does | ~25 ms |
-  | `ListingIcons.key()` with `PureWindowsPath(name).suffix`, computed twice per painted cell | ~3 µs × cells per repaint | `rpartition('.')`, compute once | paint-path hygiene |
-  | `ScanObservation`/`FileWatcher.start()` per navigation | one worker→Qt `run_in_main_thread` round trip | Skip on Windows: the watcher is a stub | removes a sync point |
+  | Overhead                                                                                                                                         | Measured                                               | Removal                                                                                                                                    | Saves                                             |
+  | ------------------------------------------------------------------------------------------------------------------------------------------------ | -----------------------------------------------------: | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------: |
+  | `iterdir` still runs `scandir` + `cache.put` per entry for `_pane_hidden_state` (PaneRendering001 leftover; the pane reads `listing.attributes`) | 539 ms per `iterdir` call                              | Revert to `os.listdir`; delete `_EntryAttributesCache` and the URL branch of `_hidden_file_filter`                                         | 539 ms per caller (Search plug-ins, `fs.iterdir`) |
+  | Hidden filter via `all(predicate(...) for predicate in filters)` in `project()`                                                                  | 44.6 ms per projection (every keystroke, sort, rescan) | No filters → `visible = order`; let a filter expose a vector form so hidden becomes `[i for i in order if not attributes[i] & 2]` (5.5 ms) | ~40 ms per keystroke                              |
+  | `Name.keys` regex `sub` + lambda per name                                                                                                        | 131 ms per sort/rescan                                 | Cheaper key with identical order (`re.split` + `int`) or cache keys per listing                                                            | 60–80 ms per rescan                               |
+  | `Modified.keys` builds 202k `datetime`s                                                                                                          | 59 ms                                                  | Raw `mtimes_ns` ints, `-1` for `None` (10.5 ms, same order)                                                                                | ~50 ms                                            |
+  | `Listing.__post_init__` validation (8 full passes)                                                                                               | 45 ms per scan                                         | Trust bundled scanners; validate third-party providers only; keep the length check                                                         | ~40 ms per scan                                   |
+  | `reconcile()` on an unchanged rescan (16-byte slices + tuple compares per entry)                                                                 | 60 ms per refresh                                      | Short-circuit when `names`, `identities`, `created_ns` are equal (4 ms) → identity mapping                                                 | ~55 ms per refresh                                |
+  | `check_canceled()` per record in `scan()`                                                                                                        | 20–30 ms                                               | Once per 64 KiB batch, as `batches()` already does                                                                                         | ~25 ms                                            |
+  | `ListingIcons.key()` with `PureWindowsPath(name).suffix`, computed twice per painted cell                                                        | ~3 µs × cells per repaint                              | `rpartition('.')`, compute once                                                                                                            | paint-path hygiene                                |
+  | `ScanObservation`/`FileWatcher.start()` per navigation                                                                                           | one worker→Qt `run_in_main_thread` round trip          | Skip on Windows: the watcher is a stub                                                                                                     | removes a sync point                              |
 
   Only the last row and the `_scan_entries` dot-name branch are actually
   platform-specific. Reference for `sorted()` itself once keys exist: 7.9 ms —
@@ -1470,13 +1470,13 @@ no files change and no input is injected during reload. Both sizes include no
 marks, first/middle/last single marks, a 10% middle block, 100 scattered marks,
 all except the cursor, and all entries. All work remains demand-only.
 
-| Refresh Result | Measured Value |
-| --- | ---: |
-| Mean of 16 case medians | 482.95 ms |
-| Small-folder case-median range | 8.22-10.15 ms |
-| Large-folder case-median range | 938.85-978.24 ms |
-| Large-folder all-selected Qt commit median | 29.58 ms |
-| Large-folder all-selected process peak median | 307.41 MiB |
+| Refresh Result                                | Measured Value   |
+| --------------------------------------------- | ---------------: |
+| Mean of 16 case medians                       | 482.95 ms        |
+| Small-folder case-median range                | 8.22-10.15 ms    |
+| Large-folder case-median range                | 938.85-978.24 ms |
+| Large-folder all-selected Qt commit median    | 29.58 ms         |
+| Large-folder all-selected process peak median | 307.41 MiB       |
 
 The process peak includes startup and preceding cases, not isolated refresh
 allocation. Full row-text fingerprinting is omitted before these cases to avoid
@@ -1521,13 +1521,13 @@ per registration/removal pair from a worker while Qt services its event loop.
 The all-selected commit probe executes the real Qt model reset/restore path,
 with icon loading disabled equally in both variants:
 
-| Measurement | Retained Baseline | Merged |
-| --- | ---: | ---: |
-| Identity preparation, one selected entry | 22.067 ms | 2.955 ms |
-| Identity preparation plus lookup, all selected | 31.638 ms | 9.913 ms |
-| Actual Qt commit, all selected | 24.388 ms | 19.303 ms |
-| Watch registration/removal pair | 0.0615 ms | 0.0005 ms |
-| Remap shallow object size | 10,485,848 bytes | 16 bytes (`None` singleton) |
+| Measurement                                    | Retained Baseline | Merged                      |
+| ---------------------------------------------- | ----------------: | --------------------------: |
+| Identity preparation, one selected entry       | 22.067 ms         | 2.955 ms                    |
+| Identity preparation plus lookup, all selected | 31.638 ms         | 9.913 ms                    |
+| Actual Qt commit, all selected                 | 24.388 ms         | 19.303 ms                   |
+| Watch registration/removal pair                | 0.0615 ms         | 0.0005 ms                   |
+| Remap shallow object size                      | 10,485,848 bytes  | 16 bytes (`None` singleton) |
 
 All 200,000 marks, cursor and scroll survive each Qt commit. The avoided roughly
 10 MiB dictionary is an object-size result, not a measured process-peak reduction.
@@ -1563,22 +1563,22 @@ corrected and rerun successfully. No failures are hidden by skips.
 
 Disposition of the implementation findings and all nine overhead proposals:
 
-| Area | Decision |
-| --- | --- |
-| Followed-link failures | Catch target `OSError` in both scanners and retain own metadata; directory enumeration failures still propagate. |
-| Metadata delivery | Name/Modified repaint without worker projection or model reset. Size and custom columns default to reprojection through `keys_depend_on_external_data=True`. Cursor/marks are covered by Qt tests. |
-| Name keys | Split/rejoin numeric runs into the same `%06d` strings, including Unicode digits, leading zeros and long numbers. Do not replace historical order with integer natural sorting. |
-| Modified keys | Bind the datetime converter once. Raw nanoseconds change local-time/DST order and microsecond ties; `-1` is not below every valid pre-epoch timestamp. Dictionary and adjacent-value caches were tried and discarded after 26% and 11% distinct-timestamp regressions. |
-| Size keys | Retain direction-dependent code-point tuples and DirectorySize ranks. Plain lowercase strings change descending directory order and cannot replace the mixed rank contract directly. |
-| Enumeration cache | Delete `_EntryAttributesCache`, `_pane_hidden_state` and its URL-filter branch. `iterdir` uses `os.listdir`; operation caches remain independent. Historical benchmark-only code remains isolated. |
-| Projection/hidden filtering | No-filter projections reuse cached order. Optional batch predicates remove per-row generator overhead. Scalar cancellation counts visited rows, not entry IDs; hidden batches check every 256 rows. Preserve the Mac root `/Volumes` exception. |
-| Listing validation | Retain validation for bundled and third-party providers. Trusting bundled output bypasses the shared immutability/type/name safety boundary for a speed-only gain. |
-| Reconciliation | Fast-path equal names, packed IDs and creation times after checking scope/location. Exclude unknown IDs, preserve exact-name hardlinks and check cancellation every 256 entries. |
-| Native scan checkpoints | Check each 64 KiB batch and every followed link, instead of every ordinary record. Blocking native calls still cannot be interrupted mid-call. |
-| Icons | Compute suffix/key once and avoid full paths for shared extension icons. Retain `PureWindowsPath` semantics rather than introduce another suffix parser. Shell arguments and queue bounds are tested. |
-| Scan observation/watchers | Retain subscriptions and handoff. The Windows OS watcher stub does not remove application file-added/removed notifications or other providers' change callbacks. |
-| POSIX names | Document the Windows-first rejection of literal backslashes in `PlugIn.md`; no expansion of platform scope. |
-| Validation counts | Current gates are 184 Qt and 410 unit/provider/command checks, seven skips. Private-cache tests were removed/replaced; historical counts below are not current claims. |
+| Area                        | Decision                                                                                                                                                                                                                                                               |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Followed-link failures      | Catch target `OSError` in both scanners and retain own metadata; directory enumeration failures still propagate.                                                                                                                                                       |
+| Metadata delivery           | Name/Modified repaint without worker projection or model reset. Size and custom columns default to reprojection through `keys_depend_on_external_data=True`. Cursor/marks are covered by Qt tests.                                                                     |
+| Name keys                   | Split/rejoin numeric runs into the same `%06d` strings, including Unicode digits, leading zeros and long numbers. Do not replace historical order with integer natural sorting.                                                                                        |
+| Modified keys               | Bind the datetime converter once. Raw nanoseconds change local-time/DST order and microsecond ties; `-1` is not below every valid pre-epoch timestamp. Dictionary and adjacent-value caches were tried and discarded after 26% and 11% distinct-timestamp regressions. |
+| Size keys                   | Retain direction-dependent code-point tuples and DirectorySize ranks. Plain lowercase strings change descending directory order and cannot replace the mixed rank contract directly.                                                                                   |
+| Enumeration cache           | Delete `_EntryAttributesCache`, `_pane_hidden_state` and its URL-filter branch. `iterdir` uses `os.listdir`; operation caches remain independent. Historical benchmark-only code remains isolated.                                                                     |
+| Projection/hidden filtering | No-filter projections reuse cached order. Optional batch predicates remove per-row generator overhead. Scalar cancellation counts visited rows, not entry IDs; hidden batches check every 256 rows. Preserve the Mac root `/Volumes` exception.                        |
+| Listing validation          | Retain validation for bundled and third-party providers. Trusting bundled output bypasses the shared immutability/type/name safety boundary for a speed-only gain.                                                                                                     |
+| Reconciliation              | Fast-path equal names, packed IDs and creation times after checking scope/location. Exclude unknown IDs, preserve exact-name hardlinks and check cancellation every 256 entries.                                                                                       |
+| Native scan checkpoints     | Check each 64 KiB batch and every followed link, instead of every ordinary record. Blocking native calls still cannot be interrupted mid-call.                                                                                                                         |
+| Icons                       | Compute suffix/key once and avoid full paths for shared extension icons. Retain `PureWindowsPath` semantics rather than introduce another suffix parser. Shell arguments and queue bounds are tested.                                                                  |
+| Scan observation/watchers   | Retain subscriptions and handoff. The Windows OS watcher stub does not remove application file-added/removed notifications or other providers' change callbacks.                                                                                                       |
+| POSIX names                 | Document the Windows-first rejection of literal backslashes in `PlugIn.md`; no expansion of platform scope.                                                                                                                                                            |
+| Validation counts           | Current gates are 184 Qt and 410 unit/provider/command checks, seven skips. Private-cache tests were removed/replaced; historical counts below are not current claims.                                                                                                 |
 
 Final before/after records, both `Unreleased`, on the same machine, NTFS,
 fixtures, harness and configuration:
@@ -1588,18 +1588,18 @@ fixtures, harness and configuration:
 - Intermediate experiment: `c37bdd5b-a158-4aff-9a90-c4978299f70a`, retained but
   superseded after removing timestamp caching. No harness changes during comparison.
 
-| Overview Median | Before ms | Final ms | Change |
-| --- | ---: | ---: | ---: |
-| Small pane first paint | 42.04 | 44.14 | +5.0% |
-| Large pane first paint | 1218.72 | 1030.26 | -15.5% |
-| Small Filter Bar, slowest query | 9.38 | 9.72 | +3.6% |
-| Large Filter Bar, slowest query | 374.67 | 332.28 | -11.3% |
-| Small Fuzzy Find, slowest query | 10.78 | 11.68 | +8.4% |
-| Large Fuzzy Find, slowest query | 486.90 | 476.94 | -2.0% |
-| Recursive Find, slowest query | 91.10 | 89.82 | -1.4% |
-| Small QuickView first preview | 116.98 | 109.73 | -6.2% |
-| Large QuickView first preview | 122.56 | 118.74 | -3.1% |
-| Navigation aggregate | 7.15 | 6.79 | -5.0% |
+| Overview Median                 | Before ms | Final ms | Change |
+| ------------------------------- | --------: | -------: | -----: |
+| Small pane first paint          | 42.04     | 44.14    | +5.0%  |
+| Large pane first paint          | 1218.72   | 1030.26  | -15.5% |
+| Small Filter Bar, slowest query | 9.38      | 9.72     | +3.6%  |
+| Large Filter Bar, slowest query | 374.67    | 332.28   | -11.3% |
+| Small Fuzzy Find, slowest query | 10.78     | 11.68    | +8.4%  |
+| Large Fuzzy Find, slowest query | 486.90    | 476.94   | -2.0%  |
+| Recursive Find, slowest query   | 91.10     | 89.82    | -1.4%  |
+| Small QuickView first preview   | 116.98    | 109.73   | -6.2%  |
+| Large QuickView first preview   | 122.56    | 118.74   | -3.1%  |
+| Navigation aggregate            | 7.15      | 6.79     | -5.0%  |
 
 All eight large Filter Bar query medians improve by 11.3%-40.4%. Other small
 movements are not conclusive from three process samples: QuickView was slower
@@ -1615,14 +1615,14 @@ algorithms. Unchanged reconciliation excludes the old no-op checkpoint overhead.
 Timestamp probes use eleven pairs on repeated and distinct synthetic values.
 These timings isolate function costs, not complete user interactions:
 
-| Hot Path | Before ms | Final ms |
-| --- | ---: | ---: |
-| `iterdir` | 531.68 | 82.87 |
-| Name keys | 730.46 | 545.09 |
-| Hidden filtering | 34.81 | 6.04 |
-| Unchanged reconciliation | 52.43 | 20.70 |
-| Modified keys, repeated timestamps | 49.93 | 43.58 |
-| Modified keys, distinct timestamps | 49.32 | 43.37 |
+| Hot Path                           | Before ms | Final ms |
+| ---------------------------------- | --------: | -------: |
+| `iterdir`                          | 531.68    | 82.87    |
+| Name keys                          | 730.46    | 545.09   |
+| Hidden filtering                   | 34.81     | 6.04     |
+| Unchanged reconciliation           | 52.43     | 20.70    |
+| Modified keys, repeated timestamps | 49.93     | 43.58    |
+| Modified keys, distinct timestamps | 49.32     | 43.37    |
 
 Exact focused commands, from the existing application Python environment:
 
@@ -1676,12 +1676,12 @@ resources come from `56e840a72e4eda0cf957c1b1bd19fe905f00dcd0` in temporary stor
 not a production compatibility switch. All 24 ordered row/text fingerprints
 matched, settings were isolated and error lists were empty.
 
-| Folder | Entries | First Paint ms, Old/New | Metadata Ready ms, Old/New | Settled MiB, Old/New |
-| --- | ---: | ---: | ---: | ---: |
-| CelebAAligned | 202,603 | 5663.4 / 583.4 | 11497.9 / 570.6 | 771.3 / 165.6 |
-| System32 | 4,757 | 219.4 / 53.9 | 345.8 / 41.1 | 116.2 / 89.0 |
-| WinSxS | 24,315 | 862.9 / 218.9 | 1607.4 / 203.5 | 197.0 / 98.7 |
-| C root | 19 | 86.2 / 31.6 | 88.0 / 24.5 | 96.6 / 87.3 |
+| Folder        | Entries | First Paint ms, Old/New | Metadata Ready ms, Old/New | Settled MiB, Old/New |
+| ------------- | ------: | ----------------------: | -------------------------: | -------------------: |
+| CelebAAligned | 202,603 | 5663.4 / 583.4          | 11497.9 / 570.6            | 771.3 / 165.6        |
+| System32      | 4,757   | 219.4 / 53.9            | 345.8 / 41.1               | 116.2 / 89.0         |
+| WinSxS        | 24,315  | 862.9 / 218.9           | 1607.4 / 203.5             | 197.0 / 98.7         |
+| C root        | 19      | 86.2 / 31.6             | 88.0 / 24.5                | 96.6 / 87.3          |
 
 Reference-folder post-paint Qt commit work: 1511.0 ms to zero; metadata tail:
 5834.5 ms to zero. These are folder-loading, not application-startup timings.
@@ -1691,15 +1691,15 @@ A separate full-candidate interaction run retained all 202,603 marks, with no
 errors. Default Find cap is 50,000 inspected entries; this stress run raises it
 to one million and therefore indexes all reference entries.
 
-| Phase | Completed Paint ms | Arrow-to-Paint p95 ms | Maximum ms |
-| --- | ---: | ---: | ---: |
-| Filter | 259.1 | 17.0 | 28.8 |
-| Clear filter | 137.0 | 11.4 | 15.6 |
-| Full-candidate Find | 1142.8 | 12.0 | 38.1 |
-| Exit Find | 141.1 | 14.2 | 15.4 |
-| Modified sort | 191.3 | 20.3 | 57.5 |
-| Refresh | 830.7 | 14.8 | 125.7 |
-| Name sort, all marked | 287.0 | 36.2 | 134.1 |
+| Phase                 | Completed Paint ms | Arrow-to-Paint p95 ms | Maximum ms |
+| --------------------- | -----------------: | --------------------: | ---------: |
+| Filter                | 259.1              | 17.0                  | 28.8       |
+| Clear filter          | 137.0              | 11.4                  | 15.6       |
+| Full-candidate Find   | 1142.8             | 12.0                  | 38.1       |
+| Exit Find             | 141.1              | 14.2                  | 15.4       |
+| Modified sort         | 191.3              | 20.3                  | 57.5       |
+| Refresh               | 830.7              | 14.8                  | 125.7      |
+| Name sort, all marked | 287.0              | 36.2                  | 134.1      |
 
 Idle arrow-to-paint p95: 6.7 ms. Interaction peak: 285.1 MiB, down from the
 earlier 332.2 MiB run after avoiding full identity ambiguity tables on ordinary

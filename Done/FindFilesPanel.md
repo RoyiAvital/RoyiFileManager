@@ -116,11 +116,11 @@ accurate tooltips for this engine. Do not add explanatory text inside the form.
 
 Compact `show_panel` bands; keep paired bounds together when reflowing:
 
-| Row | Controls |
-| --- | --- |
-| 1 | Name Pattern, mode icons, Case, Full path, Extensions, Exclude, Type |
-| 2 | Modification Date Start/End, File Size Min/Max with unit dropdowns, Max Results |
-| 3 | Root on the left; traversal toggles and Search/Stop aligned right |
+| Row | Controls                                                                        |
+| --- | ------------------------------------------------------------------------------- |
+| 1   | Name Pattern, mode icons, Case, Full path, Extensions, Exclude, Type            |
+| 2   | Modification Date Start/End, File Size Min/Max with unit dropdowns, Max Results |
+| 3   | Root on the left; traversal toggles and Search/Stop aligned right               |
 
 User approved using the available width to match Search Files' height. Both
 measure 111 logical pixels at 1280/1440 widths; the refined Find Files panel
@@ -179,20 +179,20 @@ descriptor contracts and styling; no plug-in-created widgets on worker threads.
 
 ### Filter Mapping
 
-| Requested feature | `fd 10.5.0` mapping and semantics |
-| --- | --- |
-| Literal / Glob / Regex | `--fixed-strings` / `--glob` / `--regex`. Literal is substring matching, Glob whole-name matching, Regex uses fd's regex engine. No Python regex interpretation. |
-| Modification date | Start/end day conversion below; no flag for an unset bound. |
-| Size | Inclusive minimum `--size=+<bytes>b`, maximum `--size=-<bytes>b`; no flag for an unset bound. |
-| Hidden off/on | `--no-hidden` / `--hidden`; independent of ignore rules. Use fd's hidden-entry semantics, not an extra Python filter. |
-| Honor .gitignore off/on | `--no-ignore-vcs` / `--ignore-vcs --no-require-git`. On honors rules even outside a Git worktree; off bypasses VCS rules. `.ignore`, `.fdignore` and fd's own global ignore rules remain active in both modes. Do not use the broader `--no-ignore` under this label. |
-| Recursive off/on | Off: `--max-depth=1`; on: no depth flag. No separate depth input. |
-| Exclude | One `--exclude=<glob>` per entry; exclusions are independent of the main pattern mode and still apply with gitignore disabled. |
-| Sensitive / Insensitive / Smart | `--case-sensitive` / `--ignore-case` / neither. Smart lets fd determine case from uppercase characters in the pattern; do not lowercase user input. |
-| Type dropdown | All entries (no flag), Files (`f`), Folders (`d`), Symbolic links (`l`), Executables (`x`), Empty files (`e` + `f`), Empty folders (`e` + `d`), Sockets (`s`), Named pipes (`p`), Block devices (`b`), Character devices (`c`), using repeated `--type`. Non-native Windows types may have no matches. |
-| Follow symbolic links off/on | `--no-follow` / `--follow`. Delegate traversal, type matching and cycle handling to fd; on can traverse targets outside the root. Preserve returned link paths rather than resolving/deduplicating aliases. |
-| Extensions | One `--extension=<ext>` per value; multiple values are ORed. Normalize one leading dot, preserve compound extensions (`tar.gz`), reject empty internal tokens and wildcards/separators. fd can match extension-suffixed directories too; the Type filter controls this. |
-| Full path | Off matches the entry name; on adds `--full-path` and matches the absolute path, as fd defines it. |
+| Requested feature               | `fd 10.5.0` mapping and semantics                                                                                                                                                                                                                                                                      |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Literal / Glob / Regex          | `--fixed-strings` / `--glob` / `--regex`. Literal is substring matching, Glob whole-name matching, Regex uses fd's regex engine. No Python regex interpretation.                                                                                                                                       |
+| Modification date               | Start/end day conversion below; no flag for an unset bound.                                                                                                                                                                                                                                            |
+| Size                            | Inclusive minimum `--size=+<bytes>b`, maximum `--size=-<bytes>b`; no flag for an unset bound.                                                                                                                                                                                                          |
+| Hidden off/on                   | `--no-hidden` / `--hidden`; independent of ignore rules. Use fd's hidden-entry semantics, not an extra Python filter.                                                                                                                                                                                  |
+| Honor .gitignore off/on         | `--no-ignore-vcs` / `--ignore-vcs --no-require-git`. On honors rules even outside a Git worktree; off bypasses VCS rules. `.ignore`, `.fdignore` and fd's own global ignore rules remain active in both modes. Do not use the broader `--no-ignore` under this label.                                  |
+| Recursive off/on                | Off: `--max-depth=1`; on: no depth flag. No separate depth input.                                                                                                                                                                                                                                      |
+| Exclude                         | One `--exclude=<glob>` per entry; exclusions are independent of the main pattern mode and still apply with gitignore disabled.                                                                                                                                                                         |
+| Sensitive / Insensitive / Smart | `--case-sensitive` / `--ignore-case` / neither. Smart lets fd determine case from uppercase characters in the pattern; do not lowercase user input.                                                                                                                                                    |
+| Type dropdown                   | All entries (no flag), Files (`f`), Folders (`d`), Symbolic links (`l`), Executables (`x`), Empty files (`e` + `f`), Empty folders (`e` + `d`), Sockets (`s`), Named pipes (`p`), Block devices (`b`), Character devices (`c`), using repeated `--type`. Non-native Windows types may have no matches. |
+| Follow symbolic links off/on    | `--no-follow` / `--follow`. Delegate traversal, type matching and cycle handling to fd; on can traverse targets outside the root. Preserve returned link paths rather than resolving/deduplicating aliases.                                                                                            |
+| Extensions                      | One `--extension=<ext>` per value; multiple values are ORed. Normalize one leading dot, preserve compound extensions (`tar.gz`), reject empty internal tokens and wildcards/separators. fd can match extension-suffixed directories too; the Type filter controls this.                                |
+| Full path                       | Off matches the entry name; on adds `--full-path` and matches the absolute path, as fd defines it.                                                                                                                                                                                                     |
 
 Extension/exclusion inputs use semicolon-delimited entries; trim delimiter
 whitespace, not pattern contents, and omit a completely empty field. Preserve

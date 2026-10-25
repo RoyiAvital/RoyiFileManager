@@ -49,10 +49,10 @@ shape. Existing `cwd`/`shell` options remain honored for legacy mappings.
 
 ### Presets
 
-| Preset | Editor arguments | Viewer arguments |
-| --- | --- | --- |
-| Notepad++ | `[]` | `["-ro"]` |
-| CudaText | `[]` | `["-r"]` |
+| Preset               | Editor arguments             | Viewer arguments             |
+| -------------------- | ---------------------------- | ---------------------------- |
+| Notepad++            | `[]`                         | `["-ro"]`                    |
+| CudaText             | `[]`                         | `["-r"]`                     |
 | Manual configuration | User-entered, defaults empty | User-entered, defaults empty |
 
 Presets are argument conveniences, not a read-only guarantee.

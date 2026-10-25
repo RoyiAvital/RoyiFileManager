@@ -11,11 +11,11 @@ Each field has three mutually exclusive icon buttons: text lines for **Literal**
 an asterisk for **Glob**, and the regex symbol for **RegEx**. Hover for the matching
 rule; field labels and inputs share their tooltips.
 
-| Mode | File Name Pattern | Content Pattern |
-| --- | --- | --- |
-| Literal | Literal text anywhere in the basename. | Literal text anywhere in a line; default. |
-| Glob | Basename masks such as `*.txt;*.md;!secret*`; default. | A glob matched anywhere in a line: `cuda`, `*cuda*` and `cu?a` find `cuda`. |
-| RegEx | One expression searched against the basename. | One expression searched against each line. |
+| Mode    | File Name Pattern                                      | Content Pattern                                                             |
+| ------- | ------------------------------------------------------ | --------------------------------------------------------------------------- |
+| Literal | Literal text anywhere in the basename.                 | Literal text anywhere in a line; default.                                   |
+| Glob    | Basename masks such as `*.txt;*.md;!secret*`; default. | A glob matched anywhere in a line: `cuda`, `*cuda*` and `cu?a` find `cuda`. |
+| RegEx   | One expression searched against the basename.          | One expression searched against each line.                                  |
 
 All modes are case-insensitive and spaces are significant. Leave Content Pattern
 empty to list files by name alone in any name mode, for example `*.log` in Glob

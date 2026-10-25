@@ -660,11 +660,11 @@ navigation.
 - Seven runs per query, median matcher-only timings over 10,000 synthetic
   `Annual Report 2024 ... .pdf` names on the current interpreter:
 
-  | Query | Current regex | Segment prototype |
-  | --- | ---: | ---: |
-  | `rep` | 2.135 ms | 2.701 ms |
-  | `rep*2024` | 2.586 ms | 3.556 ms |
-  | `a*a*a*a*a*a*a*a*Z` | 5.065 ms | 5.501 ms |
+  | Query               | Current regex | Segment prototype |
+  | ------------------- | ------------: | ----------------: |
+  | `rep`               | 2.135 ms      | 2.701 ms          |
+  | `rep*2024`          | 2.586 ms      | 3.556 ms          |
+  | `a*a*a*a*a*a*a*a*Z` | 5.065 ms      | 5.501 ms          |
 
 - Compilation was outside the timed loop. These are illustrative local matcher
   measurements, not application benchmarks, CI guarantees or acceptance results.
@@ -804,13 +804,13 @@ python -c "import build, os, subprocess, sys; sys.exit(subprocess.call([sys.exec
 - VS Code diagnostics: no errors in touched Python files.
 - Native full-key median timings (three runs, synthetic 224-character names):
 
-  | Query | 1,000 rows | 10,000 rows |
-  | --- | ---: | ---: |
-  | `rep` | 5.2 ms | 52.4 ms |
-  | `rep*txt` | 5.8 ms | 60.5 ms |
-  | `?*?*?*?*?*?*?*?Z` | 4.9 ms | 37.9 ms |
-  | `a*a*a*a*a*a*a*a*Z` | 4.4 ms | 38.6 ms |
-  | 100 stars | 4.8 ms | 49.8 ms |
+  | Query               | 1,000 rows | 10,000 rows |
+  | ------------------- | ---------: | ----------: |
+  | `rep`               | 5.2 ms     | 52.4 ms     |
+  | `rep*txt`           | 5.8 ms     | 60.5 ms     |
+  | `?*?*?*?*?*?*?*?Z`  | 4.9 ms     | 37.9 ms     |
+  | `a*a*a*a*a*a*a*a*Z` | 4.4 ms     | 38.6 ms     |
+  | 100 stars           | 4.8 ms     | 49.8 ms     |
 
 - At 10,000 rows, matcher-only medians were 2.5, 11.6, 19.6, 19.7 and
   0.7 ms respectively. The unit adversarial run processed 30,000 255-character

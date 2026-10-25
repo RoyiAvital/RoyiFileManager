@@ -59,12 +59,12 @@ remain unverified, not simulated passes; see Validation Results.
 "Marked" means explicit selection. The cursor is a fallback, not an additional
 selected entry. Apply these rules in order:
 
-| Active pane | Other pane | Result |
-| --- | --- | --- |
-| Exactly two marked entries | Any state | Compare that pair; ignore the other pane. |
-| More than two marked entries | Any state | Reject ambiguous input; no arbitrary pair or batch. |
-| Zero or one marked entry | More than one marked entry | Reject ambiguous opposite-pane input. |
-| Zero or one marked entry | Zero or one marked entry | One candidate per pane: mark if present, otherwise cursor. |
+| Active pane                  | Other pane                 | Result                                                     |
+| ---------------------------- | -------------------------- | ---------------------------------------------------------- |
+| Exactly two marked entries   | Any state                  | Compare that pair; ignore the other pane.                  |
+| More than two marked entries | Any state                  | Reject ambiguous input; no arbitrary pair or batch.        |
+| Zero or one marked entry     | More than one marked entry | Reject ambiguous opposite-pane input.                      |
+| Zero or one marked entry     | Zero or one marked entry   | One candidate per pane: mark if present, otherwise cursor. |
 
 - Require both chosen entries to be existing files. A folder, parent entry, or
   invalid selection is an error, never a reason to fall back to another candidate.
@@ -137,12 +137,12 @@ the launcher passes `[executable, *arguments, left_path, right_path]` without a 
 Select the actual installed `.exe`; executable names below are picker guidance,
 not installation discovery or hard-coded paths.
 
-| Preset | User-selected executable | File arguments | Folder arguments | New-window strategy |
-| --- | --- | --- | --- | --- |
-| Meld | `Meld.exe` | `[]` | `[]` | Default invocation opens a new window; omit `--newtab`. |
-| Beyond Compare | `BCompare.exe` | `["/solo"]` | `["/solo"]` | `/solo` forces a new instance. |
-| WinMerge | `WinMergeU.exe` | `["/s-", "/u"]` | `["/s-", "/u", "/r"]` | `/s-` forces another instance, overriding single-instance preferences. |
-| SmartSynchronize | `smartsynchronize.exe` | `[]` | `[]` | Two-path invocation; no force-new-window switch found in the cited manual. Verify window behavior. |
+| Preset           | User-selected executable | File arguments  | Folder arguments      | New-window strategy                                                                                |
+| ---------------- | ------------------------ | --------------- | --------------------- | -------------------------------------------------------------------------------------------------- |
+| Meld             | `Meld.exe`               | `[]`            | `[]`                  | Default invocation opens a new window; omit `--newtab`.                                            |
+| Beyond Compare   | `BCompare.exe`           | `["/solo"]`     | `["/solo"]`           | `/solo` forces a new instance.                                                                     |
+| WinMerge         | `WinMergeU.exe`          | `["/s-", "/u"]` | `["/s-", "/u", "/r"]` | `/s-` forces another instance, overriding single-instance preferences.                             |
+| SmartSynchronize | `smartsynchronize.exe`   | `[]`            | `[]`                  | Two-path invocation; no force-new-window switch found in the cited manual. Verify window behavior. |
 
 - **Meld:** [CLI help](https://meldmerge.org/help/command-line.html) documents
   `meld file1 file2` and `meld dir1 dir2`. The

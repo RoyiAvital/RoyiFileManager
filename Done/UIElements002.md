@@ -39,17 +39,17 @@ show_quick_list(*, items, title='', summary='', modal=True, filter='fuzzy',
                 sort=None, settings=None, on_open=None) -> tuple[str, ...] | None
 ```
 
-| Argument | Meaning |
-| --- | --- |
-| `items` | `ListItem`s with unique IDs; at most 10,000; title at most 512, hint at most 2,048 characters (metadata limits below). |
-| `title`, `summary` | Window title; one line above the list. |
-| `modal` | `True` (default) blocks the main window; `False` for a list driven by a docked Panel. |
-| `filter` | `'fuzzy'` (default) or `None`. |
-| `query`, `selected` | Initial filter text and selected IDs; unknown IDs raise `ValueError`. |
-| `title_label`, `hint_label` | Sort labels, for example `'Name'`, `'Path'`; `None`: not sortable. |
-| `sort` | Initial `(label, ascending)`; `None`: input order. |
-| `settings` | Plug-in JSON file where the host keeps the sort. |
-| `on_open` | `on_open(handle)`, called once before the list is shown. |
+| Argument                    | Meaning                                                                                                                |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `items`                     | `ListItem`s with unique IDs; at most 10,000; title at most 512, hint at most 2,048 characters (metadata limits below). |
+| `title`, `summary`          | Window title; one line above the list.                                                                                 |
+| `modal`                     | `True` (default) blocks the main window; `False` for a list driven by a docked Panel.                                  |
+| `filter`                    | `'fuzzy'` (default) or `None`.                                                                                         |
+| `query`, `selected`         | Initial filter text and selected IDs; unknown IDs raise `ValueError`.                                                  |
+| `title_label`, `hint_label` | Sort labels, for example `'Name'`, `'Path'`; `None`: not sortable.                                                     |
+| `sort`                      | Initial `(label, ascending)`; `None`: input order.                                                                     |
+| `settings`                  | Plug-in JSON file where the host keeps the sort.                                                                       |
+| `on_open`                   | `on_open(handle)`, called once before the list is shown.                                                               |
 
 - Enter or double-click returns the chosen IDs in input order: the selection
   (including hidden), else the highlighted item. Escape returns `None`.
@@ -59,13 +59,13 @@ show_quick_list(*, items, title='', summary='', modal=True, filter='fuzzy',
 
 ### Handle
 
-| Member | Behavior |
-| --- | --- |
-| `snapshot()` | Immutable state: `selected`, `chosen`, `current`, `query`, `sort`. Also valid after closing. |
-| `set_items(items)` | Replaces the items; keeps query, sort, surviving selection and current item. Returns once applied. |
-| `focus()` | Activates the list window. |
+| Member               | Behavior                                                                                                                 |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `snapshot()`         | Immutable state: `selected`, `chosen`, `current`, `query`, `sort`. Also valid after closing.                             |
+| `set_items(items)`   | Replaces the items; keeps query, sort, surviving selection and current item. Returns once applied.                       |
+| `focus()`            | Activates the list window.                                                                                               |
 | `close(result=None)` | Closes the list; `show_quick_list` returns `result`, which is `None` or a tuple of current item IDs (else `ValueError`). |
-| `is_open` | `False` once closed. |
+| `is_open`            | `False` once closed.                                                                                                     |
 
 Safe from any thread; calls after closing do nothing. The window keeps a plain
 copy of the state under a lock, refreshed on every selection, query and sort
@@ -89,15 +89,15 @@ and detaches in a `finally` after `show_quick_list` returns. If `attach` fails
 This table goes to the QuickList section of
 [docs/plugins/ui-elements.md](../docs/plugins/ui-elements.md).
 
-| Key | Focus | Effect |
-| --- | --- | --- |
-| Space, Insert, Shift+navigation, Ctrl+A, right-click | List | Select |
-| Typing, Space, Ctrl+A | Filter box | Edit the filter, as today |
-| Ctrl+I, Ctrl+Shift+A | Both | Invert, clear the selection |
-| Enter, double-click | Both | Return the chosen items |
-| Escape | Both | Return `None` |
-| `Ctrl+F<n>` | Both | Sort by field *n*; again reverses |
-| Tab, Shift+Tab | Both | Filter box and list; in a modeless list also the docked Panel, and back |
+| Key                                                  | Focus      | Effect                                                                  |
+| ---------------------------------------------------- | ---------- | ----------------------------------------------------------------------- |
+| Space, Insert, Shift+navigation, Ctrl+A, right-click | List       | Select                                                                  |
+| Typing, Space, Ctrl+A                                | Filter box | Edit the filter, as today                                               |
+| Ctrl+I, Ctrl+Shift+A                                 | Both       | Invert, clear the selection                                             |
+| Enter, double-click                                  | Both       | Return the chosen items                                                 |
+| Escape                                               | Both       | Return `None`                                                           |
+| `Ctrl+F<n>`                                          | Both       | Sort by field *n*; again reverses                                       |
+| Tab, Shift+Tab                                       | Both       | Filter box and list; in a modeless list also the docked Panel, and back |
 
 Global Tab is host behavior (R8): each main window keeps a registry of its open
 modeless lists in activation order. The list's Tab boundary goes to the docked
@@ -113,10 +113,10 @@ ListItem('1', 'Projects', 'D:\\Work\\Projects', metadata={'Added': 1, 'Used': ()
 
 Rules for developers (R2, R4); they go to the QuickList section of the docs:
 
-| Value | Meaning |
-| --- | --- |
-| `()` or `[]` | No value: shown empty, sorted last |
-| String or number | Shown and sorted as is |
+| Value              | Meaning                                              |
+| ------------------ | ---------------------------------------------------- |
+| `()` or `[]`       | No value: shown empty, sorted last                   |
+| String or number   | Shown and sorted as is                               |
 | `(sort_key, text)` | Sorted by `sort_key`, shown as `text` (dates, sizes) |
 
 - Every item lists every label; an absent value is `()`.

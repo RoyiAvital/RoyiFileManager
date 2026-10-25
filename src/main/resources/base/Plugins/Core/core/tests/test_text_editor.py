@@ -112,7 +112,7 @@ class TextEditorWizardTest(TestCase):
 		self.assertEqual(expected, reloaded.load_json(SETTINGS))
 
 	def test_all_presets_for_both_independent_roles(self):
-		self.assertEqual(['Notepad++', 'CudaText', 'Notepad 4', 'EmEditor', 'Ecode'],
+		self.assertEqual(['Notepad++', 'CudaText', 'Notepad 4', 'EmEditor', 'Ecode', 'Royi Text Editor'],
 			[preset[0] for preset in PRESETS])
 		self.assertIn(('Notepad++', ('-multiInst', '-nosession', '-notabbar'),
 			('-multiInst', '-nosession', '-notabbar', '-ro')), PRESETS)
@@ -120,6 +120,7 @@ class TextEditorWizardTest(TestCase):
 		self.assertIn(('Notepad 4', ('-ns',), ('-ro', '-ns')), PRESETS)
 		self.assertIn(('EmEditor', ('-nr', '-sp'), ('-nr', '-sp', '-r')), PRESETS)
 		self.assertIn(('Ecode', ('--zen-mode',), ('--zen-mode', '--read-only')), PRESETS)
+		self.assertIn(('Royi Text Editor', (), ('--read-only',)), PRESETS)
 		for role in ('editor', 'viewer'):
 			for name, editor_args, viewer_args in PRESETS:
 				with self.subTest(role=role, preset=name):
@@ -139,6 +140,7 @@ class TextEditorWizardTest(TestCase):
 		self.assertEqual(['CudaText'], [item.value for item in get_items('cuda')])
 		self.assertEqual(['EmEditor'], [item.value for item in get_items('eme')])
 		self.assertEqual(['Ecode'], [item.value for item in get_items('ECODE')])
+		self.assertEqual(['Royi Text Editor'], [item.value for item in get_items('ROYI')])
 
 	def test_clear_role_is_last_and_persists_without_other_dialogs(self):
 		for role in ('editor', 'viewer'):

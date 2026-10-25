@@ -12,11 +12,11 @@ key is compared against).
 
 Targets set by the developer on 2026_10_04: the pane must feel instant.
 
-| Measurement | Today (`0.13.0`) | Target | Perceptual bar |
+| Measurement                                         | Today (`0.13.0`) | Target   | Perceptual bar                     |
 | --------------------------------------------------- | ---------------: | -------: | ---------------------------------- |
-| Suite "Pane Load - Large Folder" (200k, long names) | 759 ms | < 500 ms | ~250 ms is the realistic outcome   |
-| CelebA "First Populated Pane Paint" (202,603)       | 257 ms | ≤ 350 ms | already met; ~130 ms is reachable  |
-| CelebA "Metadata Loading Complete"                  | 244 ms | ≤ 350 ms | already met; same levers           |
+| Suite "Pane Load - Large Folder" (200k, long names) | 759 ms           | < 500 ms | ~250 ms is the realistic outcome   |
+| CelebA "First Populated Pane Paint" (202,603)       | 257 ms           | ≤ 350 ms | already met; ~130 ms is reachable  |
+| CelebA "Metadata Loading Complete"                  | 244 ms           | ≤ 350 ms | already met; same levers           |
 
 "Instant" in HCI terms is ≤ 100 ms perceived latency; 100–300 ms reads as
 "fast". Both datasets have a floor of kernel enumeration + native scan +
@@ -31,17 +31,17 @@ The two datasets differ only in their names: CelebA names are `000001.jpg`
 `ab` × 42, Unicode, several digit runs) plus a 24-hex token and an 8-digit
 counter. That multiplies the key and sort stages, not the scan.
 
-| Stage | CelebA | Suite fixture | Why | Lever |
-| ------------------------------------------- | -----: | ------------: | ----------------------------------------------------- | ----------------------- |
-| Record bytes / 64 KiB batches               | 21.6 MB / 330 | 48.5 MB / 740 | 7.7× longer names                                | —                       |
-| Kernel enumeration                          |  25 ms | ~55 ms (scaled) | 2.2× the bytes                                      | none (OS)               |
-| Native scan (`Columns` + trusted `Listing`) |  22 ms | ~35 ms (est.) | longer UTF-16 decodes                                 | done (R09)              |
-| **Natural keys** (`Name.keys`)              | **94 ms** | **515 ms** | each key walks the whole name, 2–4 digit runs, Unicode | R01 (−20 %), **R10** (→ ~10 % ) |
-| Sort                                        |   4 ms |  63 ms        | 25k names share a 79-char prefix; comparisons walk it | shorter keys (R01/R10)  |
-| Cooperative worker sleep (1 ms per 4 ms)    | ~30 ms | ~100–150 ms   | proportional to projection length                     | R04                     |
-| Hidden filter, row map                      |  18 ms |  ~18 ms       |                                                       | R05 (row map)           |
-| Qt model reset + first paint                | ~80 ms |  ~80 ms       | 200k-row view reset                                   | profile `_commit`       |
-| **Measured total**                          | **257** | **759**      | stages overlap on two threads; sums run high          |                         |
+| Stage                                       | CelebA        | Suite fixture   | Why                                                    | Lever                           |
+| ------------------------------------------- | ------------: | --------------: | ------------------------------------------------------ | ------------------------------- |
+| Record bytes / 64 KiB batches               | 21.6 MB / 330 | 48.5 MB / 740   | 7.7× longer names                                      | —                               |
+| Kernel enumeration                          | 25 ms         | ~55 ms (scaled) | 2.2× the bytes                                         | none (OS)                       |
+| Native scan (`Columns` + trusted `Listing`) | 22 ms         | ~35 ms (est.)   | longer UTF-16 decodes                                  | done (R09)                      |
+| **Natural keys** (`Name.keys`)              | **94 ms**     | **515 ms**      | each key walks the whole name, 2–4 digit runs, Unicode | R01 (−20 %), **R10** (→ ~10 % ) |
+| Sort                                        | 4 ms          | 63 ms           | 25k names share a 79-char prefix; comparisons walk it  | shorter keys (R01/R10)          |
+| Cooperative worker sleep (1 ms per 4 ms)    | ~30 ms        | ~100–150 ms     | proportional to projection length                      | R04                             |
+| Hidden filter, row map                      | 18 ms         | ~18 ms          |                                                        | R05 (row map)                   |
+| Qt model reset + first paint                | ~80 ms        | ~80 ms          | 200k-row view reset                                    | profile `_commit`               |
+| **Measured total**                          | **257**       | **759**         | stages overlap on two threads; sums run high           |                                 |
 
 Key and sort numbers are from `natural_key` over the actual CelebA names and
 over 200,000 names generated with the fixture's stems (`natural_key` list
@@ -51,13 +51,13 @@ fixture folder was not on disk at measurement time.
 
 ### What reaches the targets
 
-| Step | Suite large | CelebA first paint | Note |
-| --------------------------------------------- | ----------: | -----------------: | -------------------------------------------- |
-| Today                                         |     759     |        257         | |
-| R10 native `natural_key` (515 → ~40; 94 → ~10) |   ~285     |        ~170        | the only step that gets the suite under 500 |
-| R04 yield cadence                             |   ~200     |        ~140        | removes most of the worker's sleep time     |
-| R05 per-projection row map                    |   ~190     |        ~130        | |
-| R01 compact keys instead of R10               |   ~650     |        ~225        | not sufficient alone for the suite target   |
+| Step                                           | Suite large | CelebA first paint | Note                                         |
+| ---------------------------------------------- | ----------: | -----------------: | -------------------------------------------- |
+| Today                                          | 759         | 257                |                                              |
+| R10 native `natural_key` (515 → ~40; 94 → ~10) | ~285        | ~170               | the only step that gets the suite under 500  |
+| R04 yield cadence                              | ~200        | ~140               | removes most of the worker's sleep time      |
+| R05 per-projection row map                     | ~190        | ~130               |                                              |
+| R01 compact keys instead of R10                | ~650        | ~225               | not sufficient alone for the suite target    |
 
 R01 is the cheap first move and remains useful as the Python reference the
 native key is compared against, but it cannot deliver < 500 ms on the suite:
@@ -72,15 +72,15 @@ Qt commit, which is the next thing to profile.
 `python src/performancetest/run.py suite --test "pane.load.*" --test "refresh.*" --test "filter.*" --test "fuzzy.*"`,
 medians of three fresh processes, native Qt, warm cache:
 
-| Measurement | Before (`0.13.0`) | After | After IR fixes | Target |
-| ----------------------------------------------------- | ----: | ----: | ----: | ------: |
-| `pane.load.large` first paint (200k, long names)      |  759  |  239  | **262** | < 500 |
-| `pane.load.large` complete                            |  —    |  226  |  247  | |
-| `pane.load.medium` first paint (50k)                  |  —    |   83  |  —    | |
-| `pane.load.small` first paint (256)                   |   38  |   31  |  —    | |
-| `refresh.large` unchanged refresh, none / all marked  | ~356  | 127 / 132 | 123 / 128 | |
-| `refresh.medium` unchanged refresh                    |  —    |   35  |  —    | |
-| `filter.large` substring query paint / heartbeat gap  | 137 / 23 | 114 / 47 | 115 / 38 (17 on the other seven queries) | gap ≤ one frame |
+| Measurement                                           | Before (`0.13.0`) | After     | After IR fixes                           | Target          |
+| ----------------------------------------------------- | ----------------: | --------: | ---------------------------------------: | --------------: |
+| `pane.load.large` first paint (200k, long names)      | 759               | 239       | **262**                                  | < 500           |
+| `pane.load.large` complete                            | —                 | 226       | 247                                      |                 |
+| `pane.load.medium` first paint (50k)                  | —                 | 83        | —                                        |                 |
+| `pane.load.small` first paint (256)                   | 38                | 31        | —                                        |                 |
+| `refresh.large` unchanged refresh, none / all marked  | ~356              | 127 / 132 | 123 / 128                                |                 |
+| `refresh.medium` unchanged refresh                    | —                 | 35        | —                                        |                 |
+| `filter.large` substring query paint / heartbeat gap  | 137 / 23          | 114 / 47  | 115 / 38 (17 on the other seven queries) | gap ≤ one frame |
 
 "After IR fixes" is the final state: the sliced `natural_keys` calls (IR3)
 hand the GIL to Qt during key building, which costs ~20 ms of wall time on
@@ -106,18 +106,18 @@ Measurements below were taken on the 202,603-entry reference folder (warm cache,
 Python 3.14.7, Windows 11) during the FSPaneArch001 and CodeReview004 reviews.
 They size the opportunity; acceptance requires fresh before/after runs.
 
-| Candidate | Owner | Measured cost today | Expected effect |
-| --- | --- | ---: | --- |
-| R01 Compact name-sort keys | `Name.keys` | 131 ms key build per sort/rescan | Fewer per-entry tuples; gate on measured runtime |
-| R02 Selective native record unpacking | `records()` | — | **Superseded**: `records()` is no longer on the scan path (R09 / FSParser) |
-| R03 No-change refresh fast path | `ListingModel._receive` / `_commit` | ~300 ms projection + full model reset per unchanged rescan | Skip projection and reset; keep notifications |
-| R04 Cooperative worker yield cadence | `LatestJobs._run` | 1 ms `sleep` every 4 ms ≈ 113 ms asleep per 300 ms projection | Yield per ~16 ms frame or `sleep(0)` |
-| R05 Per-projection row map | `project()` / `Projection.rows` | 12 ms and ~10 MB per keystroke, sort, refresh | Build only for entries the view asks about |
-| R06 Unchanged-rescan identity map | `reconcile()` fast path | 20 ms identity `dict` per unchanged rescan | Sentinel meaning "same order" |
-| R09 Native record parser (C, abi3) | `records()` and column building in the Windows scanner | 183 ms parse + ~85 ms list/`Listing` build of a 295 ms scan; kernel enumeration itself is 27 ms | **Done** in [Done/FSParser.md](../Done/FSParser.md): post-kernel scan 279 → 22 ms at 202k |
-| R10 Native natural keys (C, abi3) | `natural_key` / `Name.keys` | 94 ms (CelebA) to 515 ms (suite fixture) per sort/rescan | **Done**: `_fsparser.natural_keys` in the same module as R09; 7 ms (CelebA) / 67 ms (fixture) at 200k, parity with Python `natural_key` over every code point |
-| R07 Revisit from a bounded listing cache | — | — | **Refused by the developer**: no caching layer; make the simple path fast instead |
-| R08 Reuse sort keys across rescans | — | — | **Refused by the developer**: same reason; no cross-snapshot state |
+| Candidate                                | Owner                                                  | Measured cost today                                                                             | Expected effect                                                                                                                                               |
+| ---------------------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------: | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R01 Compact name-sort keys               | `Name.keys`                                            | 131 ms key build per sort/rescan                                                                | Fewer per-entry tuples; gate on measured runtime                                                                                                              |
+| R02 Selective native record unpacking    | `records()`                                            | —                                                                                               | **Superseded**: `records()` is no longer on the scan path (R09 / FSParser)                                                                                    |
+| R03 No-change refresh fast path          | `ListingModel._receive` / `_commit`                    | ~300 ms projection + full model reset per unchanged rescan                                      | Skip projection and reset; keep notifications                                                                                                                 |
+| R04 Cooperative worker yield cadence     | `LatestJobs._run`                                      | 1 ms `sleep` every 4 ms ≈ 113 ms asleep per 300 ms projection                                   | Yield per ~16 ms frame or `sleep(0)`                                                                                                                          |
+| R05 Per-projection row map               | `project()` / `Projection.rows`                        | 12 ms and ~10 MB per keystroke, sort, refresh                                                   | Build only for entries the view asks about                                                                                                                    |
+| R06 Unchanged-rescan identity map        | `reconcile()` fast path                                | 20 ms identity `dict` per unchanged rescan                                                      | Sentinel meaning "same order"                                                                                                                                 |
+| R09 Native record parser (C, abi3)       | `records()` and column building in the Windows scanner | 183 ms parse + ~85 ms list/`Listing` build of a 295 ms scan; kernel enumeration itself is 27 ms | **Done** in [Done/FSParser.md](../Done/FSParser.md): post-kernel scan 279 → 22 ms at 202k                                                                     |
+| R10 Native natural keys (C, abi3)        | `natural_key` / `Name.keys`                            | 94 ms (CelebA) to 515 ms (suite fixture) per sort/rescan                                        | **Done**: `_fsparser.natural_keys` in the same module as R09; 7 ms (CelebA) / 67 ms (fixture) at 200k, parity with Python `natural_key` over every code point |
+| R07 Revisit from a bounded listing cache | —                                                      | —                                                                                               | **Refused by the developer**: no caching layer; make the simple path fast instead                                                                             |
+| R08 Reuse sort keys across rescans       | —                                                      | —                                                                                               | **Refused by the developer**: same reason; no cross-snapshot state                                                                                            |
 
 Cost split of a first visit at 202,603 entries (probe, warm): kernel
 enumeration 27 ms, Python record parsing 183 ms, list appends and `Listing`
@@ -831,15 +831,15 @@ Verified correct in this pass:
 All seven findings addressed; paired source/binary now `c77d846e…` /
 `18587c3e…`.
 
-| Finding | Resolution |
-| --- | --- |
-| IR1 | `ListingModel._projecting` tracks a submitted-but-undelivered projection; set in `update()`, cleared in the `view` branch for the current revision on success or error. The unchanged-scan branch skips only while a job is pending; `_revision != _committed_revision` without one now calls `update()` (retry). Test: `test_unchanged_refresh_retries_failed_projection`. |
-| IR2 | `scratch_reserve` allocates at least one element, so `PyUnicode_AsUCS4` never receives NULL. Tests: `NaturalKeysTest.test_empty_names_in_any_position` and `NameTest.test_keys_match_reference_across_native_slices_and_empty_labels` (empty first and last label through the column API). |
-| IR3 | `Name.keys` calls `natural_keys` in `_NATIVE_KEY_SLICE = 4096` slices. Probe: worst Qt gap 66 → 11–13 ms, key time 61 → 68 ms; `pane.load.large` 239 → 262 ms. Recorded in R10 design and the Overview. |
-| IR4 | `test_columns` asserts `'1'`/`'0'` prefixes and the `natural_key` remainder; added to the recorded focused command. |
-| IR5 | Status reworded; R09 section replaced by a pointer to Done/FSParser.md with the superseded claims (GIL release, fallback, version check, MSVC) removed; Runtime Effects rewritten per candidate. |
-| IR6 | `update()` builds `wanted` only when `len(marks) <= ROW_MAP_LIMIT`; otherwise `None` and the worker builds the full map. |
-| IR7 | Runtime Effects state the R03 equality as a GIL-held ~11 ms stall bound at 202k, not as free. |
+| Finding | Resolution                                                                                                                                                                                                                                                                                                                                                                  |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| IR1     | `ListingModel._projecting` tracks a submitted-but-undelivered projection; set in `update()`, cleared in the `view` branch for the current revision on success or error. The unchanged-scan branch skips only while a job is pending; `_revision != _committed_revision` without one now calls `update()` (retry). Test: `test_unchanged_refresh_retries_failed_projection`. |
+| IR2     | `scratch_reserve` allocates at least one element, so `PyUnicode_AsUCS4` never receives NULL. Tests: `NaturalKeysTest.test_empty_names_in_any_position` and `NameTest.test_keys_match_reference_across_native_slices_and_empty_labels` (empty first and last label through the column API).                                                                                  |
+| IR3     | `Name.keys` calls `natural_keys` in `_NATIVE_KEY_SLICE = 4096` slices. Probe: worst Qt gap 66 → 11–13 ms, key time 61 → 68 ms; `pane.load.large` 239 → 262 ms. Recorded in R10 design and the Overview.                                                                                                                                                                     |
+| IR4     | `test_columns` asserts `'1'`/`'0'` prefixes and the `natural_key` remainder; added to the recorded focused command.                                                                                                                                                                                                                                                         |
+| IR5     | Status reworded; R09 section replaced by a pointer to Done/FSParser.md with the superseded claims (GIL release, fallback, version check, MSVC) removed; Runtime Effects rewritten per candidate.                                                                                                                                                                            |
+| IR6     | `update()` builds `wanted` only when `len(marks) <= ROW_MAP_LIMIT`; otherwise `None` and the worker builds the full map.                                                                                                                                                                                                                                                    |
+| IR7     | Runtime Effects state the R03 equality as a GIL-held ~11 ms stall bound at 202k, not as free.                                                                                                                                                                                                                                                                               |
 
 Still unverified, as before: fixed-rate loaded arrow-to-paint p95, two large
 panes with QuickView/status enabled, explicit R05 selection-change-during-

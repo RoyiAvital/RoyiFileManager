@@ -177,14 +177,14 @@ on_change. Settings load/save remains on-demand through existing resources and
 transactions, passing only plain values through the handle. No widget/signal,
 arbitrary parent/layout, QObject, screen coordinates or Qt enum crosses this API.
 
-| Control | Default and meaning |
-| --- | --- |
-| File Name Pattern | Empty selects all eligible files. Literal searches for literal text within the basename. Glob (default) keeps native `;`-separated basename masks, positive masks before exclusions, with no path syntax. RegEx searches one default-engine expression against the basename; anchors may require a whole name. |
-| Filename mode | Exactly one of Literal, Glob and RegEx. Literal/RegEx use bounded basename filtering; neither splits semicolons nor interprets leading `!`. |
-| Content Pattern | Required; preserve spaces. Literal (default) searches for literal text anywhere in a line. Glob matches a whole line. RegEx uses ripgrep's default engine; unsupported lookaround/backreferences are errors. |
-| Content mode | Exactly one of Literal, Glob and RegEx, independent of the filename mode. |
-| Include Subdirectories | On; off searches only immediate files in the captured root. Do not follow directory symlinks/junctions in either mode. |
-| Search / Stop | Search starts an explicit scan; Stop is enabled only while running. Editing inputs or filtering results never starts a scan. |
+| Control                | Default and meaning                                                                                                                                                                                                                                                                                            |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| File Name Pattern      | Empty selects all eligible files. Literal searches for literal text within the basename. Glob (default) keeps native `;`-separated basename masks, positive masks before exclusions, with no path syntax. RegEx searches one default-engine expression against the basename; anchors may require a whole name. |
+| Filename mode          | Exactly one of Literal, Glob and RegEx. Literal/RegEx use bounded basename filtering; neither splits semicolons nor interprets leading `!`.                                                                                                                                                                    |
+| Content Pattern        | Required; preserve spaces. Literal (default) searches for literal text anywhere in a line. Glob matches a whole line. RegEx uses ripgrep's default engine; unsupported lookaround/backreferences are errors.                                                                                                   |
+| Content mode           | Exactly one of Literal, Glob and RegEx, independent of the filename mode.                                                                                                                                                                                                                                      |
+| Include Subdirectories | On; off searches only immediate files in the captured root. Do not follow directory symlinks/junctions in either mode.                                                                                                                                                                                         |
+| Search / Stop          | Search starts an explicit scan; Stop is enabled only while running. Editing inputs or filtering results never starts a scan.                                                                                                                                                                                   |
 
 Filename matching and content matching are case-insensitive initially. Explain
 glob/regex dialects and case behavior in tooltips and eventual README examples.
@@ -290,16 +290,16 @@ themes and elides it, supplies a full tooltip, and removes only that session's
 label when cleared/disposed. It works even when extended pane statistics are
 disabled, without enabling their scans/timers. It performs no work until used.
 
-| Terminal outcome | Presentation |
-| --- | --- |
-| Completed with rows | After process cleanup, stop progress and open the modal Table once with the final counts. |
-| Completed with zero rows | Show `No results` in the status bar; unlock the Panel without opening an empty modal. |
-| Stop with rows | Stop means finish early: kill/reap children, freeze collected rows, then show a modal explicitly marked `Stopped - partial results`. |
-| Stop with zero rows | Show `Stopped`; unlock the Panel without a modal. |
-| Row/text/per-file limit | Finish with a clearly marked `Limited` snapshot and the limiting reason, never an unqualified Complete. |
-| Read errors with usable rows | After cleanup show `Incomplete - read errors` results with bounded error details; do not silently report full coverage. |
-| Validation/startup/protocol failure | No results modal; report an actionable error, retain the form and allow correction. |
-| Panel close, replacement, pane destruction or plug-in unload | Cancel, discard any pending presentation, remove owned status and never show a late modal. |
+| Terminal outcome                                             | Presentation                                                                                                                         |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Completed with rows                                          | After process cleanup, stop progress and open the modal Table once with the final counts.                                            |
+| Completed with zero rows                                     | Show `No results` in the status bar; unlock the Panel without opening an empty modal.                                                |
+| Stop with rows                                               | Stop means finish early: kill/reap children, freeze collected rows, then show a modal explicitly marked `Stopped - partial results`. |
+| Stop with zero rows                                          | Show `Stopped`; unlock the Panel without a modal.                                                                                    |
+| Row/text/per-file limit                                      | Finish with a clearly marked `Limited` snapshot and the limiting reason, never an unqualified Complete.                              |
+| Read errors with usable rows                                 | After cleanup show `Incomplete - read errors` results with bounded error details; do not silently report full coverage.              |
+| Validation/startup/protocol failure                          | No results modal; report an actionable error, retain the form and allow correction.                                                  |
+| Panel close, replacement, pane destruction or plug-in unload | Cancel, discard any pending presentation, remove owned status and never show a late modal.                                           |
 
 Terminal events bypass progress throttling. Owner/generation checks reject late
 progress and duplicate completion before any status change or dialog opening.
@@ -332,14 +332,14 @@ snapshot awaits presentation, so it cannot be replaced silently.
 Use actual upstream SVGs, bundled locally at implementation time, not text
 buttons spelling out `RegEx` or a downloaded icon package. Selected sources:
 
-| Button | SVG | Tooltip / accessible name |
-| --- | --- | --- |
+| Button          | SVG                                                                      | Tooltip / accessible name              |
+| --------------- | ------------------------------------------------------------------------ | -------------------------------------- |
 | File-name regex | [Lucide regex](https://lucide.dev/icons/regex), the familiar `.*` symbol | `Use regular expression for file name` |
-| Content regex | Same regex SVG | `Use regular expression for content` |
-| Recursion | [Lucide folder-tree](https://lucide.dev/icons/folder-tree) | `Include subdirectories` |
-| Search | Lucide `search` + `Search` label | `Search file contents` |
-| Stop | Lucide `square` | `Stop search; keep collected results` |
-| Panel Close | Existing host close icon | `Cancel search and close panel` |
+| Content regex   | Same regex SVG                                                           | `Use regular expression for content`   |
+| Recursion       | [Lucide folder-tree](https://lucide.dev/icons/folder-tree)               | `Include subdirectories`               |
+| Search          | Lucide `search` + `Search` label                                         | `Search file contents`                 |
+| Stop            | Lucide `square`                                                          | `Stop search; keep collected results`  |
+| Panel Close     | Existing host close icon                                                 | `Cancel search and close panel`        |
 
 The host maps Toggle, Choice and Action descriptors to the appropriate controls. It
 may add an internal action-mode option to IconButton while preserving its
@@ -431,21 +431,21 @@ owner or pane is rejected. Without a Panel, the host uses the supplied pane's
 window, or captures the active main window for a data-only Table. It never
 silently captures an active pane as a navigation destination when pane is absent.
 
-| Contract | Definition |
-| --- | --- |
-| `get_rows() -> Iterable[TableRow]` | Required population callback, once on construction and explicit refresh only. Supplies a finite already-available snapshot; never from painting, sorting or filter keystrokes. No I/O, waiting, search process or asynchronous generator. |
-| `num_columns: int` | Required positive integer, excluding bool; fixed for the Table lifetime. |
-| `columns_header: Sequence[str]` | Required nonempty column labels; copied to a tuple. Length must equal `num_columns`. |
-| `TableRow(id, cells, value=None, highlights=())` | Immutable plain record; nonempty stable string ID, exactly num_columns string cells, bounded immutable opaque payload and optional per-cell highlights. Identity never comes from display indices. Path interpretation is opt-in by column, not an assumption about every row. |
-| `file_path_column`, `folder_path_column` | Optional zero-based logical column indices. Each is None or int excluding bool, within range; when both are set they must be distinct. Both None disables all built-in path behavior. Column reordering is not offered initially; resizing/sorting cannot change these roles. |
-| `resolve_path(row, column)` | Optional pure callback returning an absolute native path string or None. Omitted/None selects the default resolver below; it does not disable path behavior. Used only for a designated path cell on menu/activation, never for painting, selection, filtering or sorting. |
-| `base_path` | Optional absolute native directory string. If omitted and a path role is configured, capture the supplied pane's local directory when opening the Table. An explicit value wins and never changes on navigation. No captured local base means relative paths cannot resolve. |
-| `modal: bool` | True by default. Host input modality only; creation always returns the handle without waiting for dismissal. False keeps the associated Panel and panes interactive. |
-| `close_on_navigate` | None defaults to modal: successful Go To closes modal results and retains modeless results. Explicit bool overrides this. Never close on failed, canceled, superseded or stale navigation. |
-| `summary`, `get_details(row, column)` | Optional plain summary text and a fast plain-text details callback for the current cell; no implicit path resolution/I/O. Host renders passive labels, not caller widgets. |
-| `on_activate(row, column)` | Optional ordinary Python callback for non-path cells. Without it, ordinary-cell activation does nothing. Path columns always use host path behavior and never fall through to this hook. |
-| `get_menu(row, column)` | Optional pure callback returning a bounded tuple of `TableAction(id, label, callback)` records. Action callbacks receive captured (row, column). Host owns QMenu, position, focus, accessibility and disposal. No callback means no custom menu; path cells still receive standard Copy Path / Go To. |
-| `on_closed()` | Optional ordinary callback, at most once on ordinary close while the owner is alive. On owner unload, discard plug-in callbacks and release references rather than calling unloaded code. |
+| Contract                                         | Definition                                                                                                                                                                                                                                                                                            |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `get_rows() -> Iterable[TableRow]`               | Required population callback, once on construction and explicit refresh only. Supplies a finite already-available snapshot; never from painting, sorting or filter keystrokes. No I/O, waiting, search process or asynchronous generator.                                                             |
+| `num_columns: int`                               | Required positive integer, excluding bool; fixed for the Table lifetime.                                                                                                                                                                                                                              |
+| `columns_header: Sequence[str]`                  | Required nonempty column labels; copied to a tuple. Length must equal `num_columns`.                                                                                                                                                                                                                  |
+| `TableRow(id, cells, value=None, highlights=())` | Immutable plain record; nonempty stable string ID, exactly num_columns string cells, bounded immutable opaque payload and optional per-cell highlights. Identity never comes from display indices. Path interpretation is opt-in by column, not an assumption about every row.                        |
+| `file_path_column`, `folder_path_column`         | Optional zero-based logical column indices. Each is None or int excluding bool, within range; when both are set they must be distinct. Both None disables all built-in path behavior. Column reordering is not offered initially; resizing/sorting cannot change these roles.                         |
+| `resolve_path(row, column)`                      | Optional pure callback returning an absolute native path string or None. Omitted/None selects the default resolver below; it does not disable path behavior. Used only for a designated path cell on menu/activation, never for painting, selection, filtering or sorting.                            |
+| `base_path`                                      | Optional absolute native directory string. If omitted and a path role is configured, capture the supplied pane's local directory when opening the Table. An explicit value wins and never changes on navigation. No captured local base means relative paths cannot resolve.                          |
+| `modal: bool`                                    | True by default. Host input modality only; creation always returns the handle without waiting for dismissal. False keeps the associated Panel and panes interactive.                                                                                                                                  |
+| `close_on_navigate`                              | None defaults to modal: successful Go To closes modal results and retains modeless results. Explicit bool overrides this. Never close on failed, canceled, superseded or stale navigation.                                                                                                            |
+| `summary`, `get_details(row, column)`            | Optional plain summary text and a fast plain-text details callback for the current cell; no implicit path resolution/I/O. Host renders passive labels, not caller widgets.                                                                                                                            |
+| `on_activate(row, column)`                       | Optional ordinary Python callback for non-path cells. Without it, ordinary-cell activation does nothing. Path columns always use host path behavior and never fall through to this hook.                                                                                                              |
+| `get_menu(row, column)`                          | Optional pure callback returning a bounded tuple of `TableAction(id, label, callback)` records. Action callbacks receive captured (row, column). Host owns QMenu, position, focus, accessibility and disposal. No callback means no custom menu; path cells still receive standard Copy Path / Go To. |
+| `on_closed()`                                    | Optional ordinary callback, at most once on ordinary close while the owner is alive. On owner unload, discard plug-in callbacks and release references rather than calling unloaded code.                                                                                                             |
 
 TableHandle is not a QObject and exposes only `refresh()`, `close()`, `is_open`,
 `current_cell` (immutable (TableRow, logical-column) pair or None), and read/write
@@ -558,19 +558,19 @@ checkboxes. Standard scrolling, column resizing and header sorting remain.
 Keep single whole-row selection for this increment; selecting multiple rows
 and bulk actions require a separate consumer decision.
 
-| Input | Behavior |
-| --- | --- |
-| Left click in any cell | Highlight the row, make the clicked column current and update passive details. No action, even if the row was already selected. |
-| Left double-click in a path cell | File column: reveal the file in its parent; folder column: navigate into the folder. One Go To request; no target means no operation. |
-| Left double-click in an ordinary cell | No built-in operation; call on_activate(row, column) only when explicitly supplied. Never borrow a path from another cell in the row. |
-| Right click in a cell | Make that row and column current. Resolvable path cell: host Copy Path / Go To menu. Ordinary cell: no built-in menu; only explicitly supplied custom actions. No activation or selection toggle. |
-| Click in empty row space | No row action or context menu and no fallback to a previously selected row. Preserve current selection. |
-| Header click / separator drag | Sort / resize the column, without activating or opening a row menu. |
-| Arrow, Home/End, Page Up/Down keys in the view | Normal table current-cell navigation, including Left/Right between columns; highlight one row. Filter focus retains ordinary text editing. |
-| Enter / keypad Enter | Same as double-click on current visible cell, from filter or view. No current means no-op; no fallback to the first path column. Ctrl+Enter has no built-in file-opening action. |
-| Menu key / Shift+F10 | From the view, same menu as right-click on current visible cell; no current means no-op. From the filter, keep its standard text-edit menu. |
-| Ctrl+F | Focus the filter and select its text; editing/clearing it is local and never launches search. The filter retains its normal text-edit context menu. |
-| Escape | Close an open context menu first; otherwise dismiss the Table window (either modality) and return focus to its Panel/pane. The normal window close control also dismisses it. |
+| Input                                          | Behavior                                                                                                                                                                                          |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Left click in any cell                         | Highlight the row, make the clicked column current and update passive details. No action, even if the row was already selected.                                                                   |
+| Left double-click in a path cell               | File column: reveal the file in its parent; folder column: navigate into the folder. One Go To request; no target means no operation.                                                             |
+| Left double-click in an ordinary cell          | No built-in operation; call on_activate(row, column) only when explicitly supplied. Never borrow a path from another cell in the row.                                                             |
+| Right click in a cell                          | Make that row and column current. Resolvable path cell: host Copy Path / Go To menu. Ordinary cell: no built-in menu; only explicitly supplied custom actions. No activation or selection toggle. |
+| Click in empty row space                       | No row action or context menu and no fallback to a previously selected row. Preserve current selection.                                                                                           |
+| Header click / separator drag                  | Sort / resize the column, without activating or opening a row menu.                                                                                                                               |
+| Arrow, Home/End, Page Up/Down keys in the view | Normal table current-cell navigation, including Left/Right between columns; highlight one row. Filter focus retains ordinary text editing.                                                        |
+| Enter / keypad Enter                           | Same as double-click on current visible cell, from filter or view. No current means no-op; no fallback to the first path column. Ctrl+Enter has no built-in file-opening action.                  |
+| Menu key / Shift+F10                           | From the view, same menu as right-click on current visible cell; no current means no-op. From the filter, keep its standard text-edit menu.                                                       |
+| Ctrl+F                                         | Focus the filter and select its text; editing/clearing it is local and never launches search. The filter retains its normal text-edit context menu.                                               |
+| Escape                                         | Close an open context menu first; otherwise dismiss the Table window (either modality) and return focus to its Panel/pane. The normal window close control also dismisses it.                     |
 
 The host creates its QMenu internally and uses popup, never asking the plug-in
 for a position/widget. Capture row/column, resolved target and generation when
@@ -657,10 +657,10 @@ Content search designates `file_path_column=0`, `folder_path_column=None` and
 uses the default resolver with the captured search base. It supplies no custom
 menu or activation callback. This replaces the older row-wide file-action menu.
 
-| Cell | Interaction |
-| --- | --- |
-| File Path | Double-click/Enter: navigate to its parent and highlight the file. Right-click: Copy Path and Go To. |
-| Snippet | Select/update passive details only. No built-in navigation/menu, even if snippet text resembles a path. |
+| Cell      | Interaction                                                                                             |
+| --------- | ------------------------------------------------------------------------------------------------------- |
+| File Path | Double-click/Enter: navigate to its parent and highlight the file. Right-click: Copy Path and Go To.    |
+| Snippet   | Select/update passive details only. No built-in navigation/menu, even if snippet text resembles a path. |
 
 No Open File, Ctrl+Enter association launch, Copy Snippet, delete/rename/write,
 native shell menu or bulk actions are included in the initial search results.
@@ -951,20 +951,20 @@ source implementation task; no freeze or portable execution result is claimed.
   file-pane height while open; layout reflows only on size/font/style changes.
   No recurring geometry timer, extra dock, or layout activity while closed.
 
-| Bound | Initial value / enforcement |
-| --- | --- |
-| Retained result rows | 10,000 matching lines; stop with Limited at cap |
-| Matching lines per file | 200 via `--max-count`; flag potentially incomplete coverage at cap |
-| Retained display/payload text | 16 MiB combined, counting shared text once; cap before publishing; row metadata is additionally bounded by row count |
-| Snippet | 512 code points centered near first match; visible truncation, at most 128 retained highlight ranges per row |
-| File size | 50 MiB eligibility cap, not a bound on files changing during search or on child RSS |
-| Pattern / header length | 4,096 / 128 code points; validate before work |
-| Candidate batch (filename Literal/RegEx) | At most 128 paths and 256 KiB of path data; further split for Windows argv bound; no inventory in glob mode |
-| One encoded JSON record | 1 MiB; kill and report oversized result before parsing, not silent loss |
-| Read chunk / stderr tail | 64 KiB / 64 KiB per live child |
-| Producer-to-Qt delivery | One latest progress record and one immutable capped terminal snapshot; no incremental row queue |
-| Status refresh | At most 5 Hz while searching; terminal events bypass throttling; no timer after settlement/disposal |
-| Qt projection work | Target 8 ms per event-loop turn for filter projection; measure initial snapshot validation/model population and sorting separately |
+| Bound                                    | Initial value / enforcement                                                                                                        |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Retained result rows                     | 10,000 matching lines; stop with Limited at cap                                                                                    |
+| Matching lines per file                  | 200 via `--max-count`; flag potentially incomplete coverage at cap                                                                 |
+| Retained display/payload text            | 16 MiB combined, counting shared text once; cap before publishing; row metadata is additionally bounded by row count               |
+| Snippet                                  | 512 code points centered near first match; visible truncation, at most 128 retained highlight ranges per row                       |
+| File size                                | 50 MiB eligibility cap, not a bound on files changing during search or on child RSS                                                |
+| Pattern / header length                  | 4,096 / 128 code points; validate before work                                                                                      |
+| Candidate batch (filename Literal/RegEx) | At most 128 paths and 256 KiB of path data; further split for Windows argv bound; no inventory in glob mode                        |
+| One encoded JSON record                  | 1 MiB; kill and report oversized result before parsing, not silent loss                                                            |
+| Read chunk / stderr tail                 | 64 KiB / 64 KiB per live child                                                                                                     |
+| Producer-to-Qt delivery                  | One latest progress record and one immutable capped terminal snapshot; no incremental row queue                                    |
+| Status refresh                           | At most 5 Hz while searching; terminal events bypass throttling; no timer after settlement/disposal                                |
+| Qt projection work                       | Target 8 ms per event-loop turn for filter projection; measure initial snapshot validation/model population and sorting separately |
 
 These are transport/result bounds, not a hard process-memory guarantee: ripgrep
 must buffer long source lines and regex state. Record host and child peak RSS,
@@ -1847,11 +1847,11 @@ Warm fixture: 100 directories, 1,000 files each; one seven-byte matching file an
 999 fourteen-byte nonmatching files per directory; 1,399,300 bytes total and
 100 matching lines. No cold-cache flush was attempted. Second run measurements:
 
-| Mode | Total | First engine hit | Process starts | Host peak working set | Largest child peak |
-| --- | --- | --- | --- | --- | --- |
-| Glob | 2.51 s | 103 ms | 2 | 43.1 MiB | 9.6 MiB |
-| Filename regex | 22.29 s | 147 ms | 874 | 43.4 MiB | 55.9 MiB |
-| Equivalent direct rg | 1.35 s | Not measured | 1 | Not measured | Not measured |
+| Mode                 | Total   | First engine hit | Process starts | Host peak working set | Largest child peak |
+| -------------------- | ------- | ---------------- | -------------- | --------------------- | ------------------ |
+| Glob                 | 2.51 s  | 103 ms           | 2              | 43.1 MiB              | 9.6 MiB            |
+| Filename regex       | 22.29 s | 147 ms           | 874            | 43.4 MiB              | 55.9 MiB           |
+| Equivalent direct rg | 1.35 s  | Not measured     | 1              | Not measured          | Not measured       |
 
 The earlier run measured 2.54/29.12 s and 2/877 starts; enumeration order affects
 the number of batches containing accepted names. The filename-regex design is

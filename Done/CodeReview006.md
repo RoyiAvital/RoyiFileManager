@@ -197,18 +197,18 @@ and stale focus widgets (synchronous or already guarded paths).
 
 ## Decisions
 
-| IDs     | Recommendation                                        | Decision |
-| ------- | ----------------------------------------------------- | -------- |
-| F01 mutation | Decide ordering/notifications before batching | Deferred; not approved |
-| F01 readback | Ordered ranges and bulk snapshot URL conversion | Implemented; complete paired comparison unresolved |
-| F01 measurements | Five patterns per small/large folder; revision 5 input-ready metric implemented | Corrected baseline passed |
-| Full medium benchmarks | Opt-in `measure --full` adds all six medium workloads and separate history | Approved |
-| F02     | Fix selectable counts/messages; keep exact names     | Implemented |
-| F02 case matching | Defer provider-aware case-insensitive matching | Deferred |
-| F03     | Fix: `C.zip` at drive roots; `archive.zip` for nameless roots | Implemented |
-| F04     | Fix: use `self.show_alert` with default `YES`         | Implemented |
-| U01-U03 | Keep execution and final-operand guards               | Retained unchanged |
-| U04-U06 | Remove only the unused local, constant locals and stale comment | Implemented |
+| IDs                    | Recommendation                                                                  | Decision                                           |
+| ---------------------- | ------------------------------------------------------------------------------- | -------------------------------------------------- |
+| F01 mutation           | Decide ordering/notifications before batching                                   | Deferred; not approved                             |
+| F01 readback           | Ordered ranges and bulk snapshot URL conversion                                 | Implemented; complete paired comparison unresolved |
+| F01 measurements       | Five patterns per small/large folder; revision 5 input-ready metric implemented | Corrected baseline passed                          |
+| Full medium benchmarks | Opt-in `measure --full` adds all six medium workloads and separate history      | Approved                                           |
+| F02                    | Fix selectable counts/messages; keep exact names                                | Implemented                                        |
+| F02 case matching      | Defer provider-aware case-insensitive matching                                  | Deferred                                           |
+| F03                    | Fix: `C.zip` at drive roots; `archive.zip` for nameless roots                   | Implemented                                        |
+| F04                    | Fix: use `self.show_alert` with default `YES`                                   | Implemented                                        |
+| U01-U03                | Keep execution and final-operand guards                                         | Retained unchanged                                 |
+| U04-U06                | Remove only the unused local, constant locals and stale comment                 | Implemented                                        |
 
 ## Design
 
@@ -374,13 +374,13 @@ Launcher (repository environment, native Windows Qt, 180-second timeout):
 python -c "import build, os, subprocess, sys; env = build._environment(); env['QT_QPA_PLATFORM'] = 'windows'; env['QT_QPA_FONTDIR'] = os.path.join(os.environ['WINDIR'], 'Fonts'); sys.exit(subprocess.run([sys.executable, '-X', 'faulthandler', '-m', 'unittest', '-v'] + sys.argv[1:], env=env, timeout=180).returncode)" <modules>
 ```
 
-| IDs     | Existing modules                                                  | Coverage                                |
-| ------- | ----------------------------------------------------------------- | --------------------------------------------------- |
-| F01 | `fman_integrationtest.test_qt.SortedFileSystemModelIT` | Mutation/readback equivalence, contiguous/scattered rows, duplicates, empty/string input, both error modes, prefix effects, failing iterators, partial-column fallback, signal counts, cursor/scroll and snapshot restore |
-| F02 | `core.tests.commands.test___init__`, `core.tests.test_comparator` | Exact case/Unicode distinctions, mixed/archive providers, hidden opposite matches, unequal filters, no visible differences versus true equality, listing failure preserves selections |
-| F03 | `core.tests.commands.test___init__` | Canonical `as_url('C:\\')`, trailing-slash root, normal folder, UNC share, virtual/nameless root and unchanged single-file suggestion; cancel prompt to avoid archive creation |
-| F04 | `core.tests.commands.test___init__`, `fman_integrationtest.test_qt.FilterBarIT` | Task alert/default/answers; real Qt popup suppression and restoration; no real deletion |
-| U01-U06 | `core.tests.commands.test___init__` | Retained single-pane behavior and symlink guards; unchanged clipboard text and Explorer/Recycle Bin messages without using the system clipboard |
+| IDs     | Existing modules                                                                | Coverage                                                                                                                                                                                                                  |
+| ------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| F01     | `fman_integrationtest.test_qt.SortedFileSystemModelIT`                          | Mutation/readback equivalence, contiguous/scattered rows, duplicates, empty/string input, both error modes, prefix effects, failing iterators, partial-column fallback, signal counts, cursor/scroll and snapshot restore |
+| F02     | `core.tests.commands.test___init__`, `core.tests.test_comparator`               | Exact case/Unicode distinctions, mixed/archive providers, hidden opposite matches, unequal filters, no visible differences versus true equality, listing failure preserves selections                                     |
+| F03     | `core.tests.commands.test___init__`                                             | Canonical `as_url('C:\\')`, trailing-slash root, normal folder, UNC share, virtual/nameless root and unchanged single-file suggestion; cancel prompt to avoid archive creation                                            |
+| F04     | `core.tests.commands.test___init__`, `fman_integrationtest.test_qt.FilterBarIT` | Task alert/default/answers; real Qt popup suppression and restoration; no real deletion                                                                                                                                   |
+| U01-U06 | `core.tests.commands.test___init__`                                             | Retained single-pane behavior and symlink guards; unchanged clipboard text and Explorer/Recycle Bin messages without using the system clipboard                                                                           |
 
 Use the F01 class above immediately after each view edit; add cases to its existing
 `SortedFileSystemModelAT` owner. For F02-F04 and cleanup, run the commands module
@@ -487,12 +487,12 @@ Before mutation implementation, explicitly approve separate operation/paint and 
 budgets and probes for those cases. Proposed limits on the recorded reference
 machine, checked against the maximum of all three fresh-process repetitions:
 
-| Metric | Proposed Maximum |
-| --- | ---: |
-| Select or deselect operation | 100 ms |
-| Selected-file readback | 50 ms |
-| Dispatch to completed pane paint for mutation | 150 ms |
-| Active heartbeat gap or posted-event queue delay | 100 ms |
+| Metric                                           | Proposed Maximum |
+| ------------------------------------------------ | ---------------: |
+| Select or deselect operation                     | 100 ms           |
+| Selected-file readback                           | 50 ms            |
+| Dispatch to completed pane paint for mutation    | 150 ms           |
+| Active heartbeat gap or posted-event queue delay | 100 ms           |
 
 Apply these to every 20,000-URL shape in both status modes, not an average across
 cases. Full-pane select-all/clear/inversion measurements report their actual
@@ -941,11 +941,11 @@ timeout. They reused the existing v1 fixture data, native 1280x800/1x viewport,
 isolated settings, disabled status, hash seed 0 and UTC. Each returned zero with
 no application errors:
 
-| Path | Exact Rows | Checks | Result |
-| --- | ---: | --- | --- |
-| Small selection | 256 | Single, all, contiguous, alternating, scattered; 64 rows for complex patterns | All five passed |
-| Large selection | 200,000 | Same patterns; 1,000 rows for complex patterns | All five passed |
-| Small pane load | 256 | Startup/metadata completion, settled cursor/paint and row fingerprint | Passed |
+| Path            | Exact Rows | Checks                                                                        | Result          |
+| --------------- | ---------: | ----------------------------------------------------------------------------- | --------------- |
+| Small selection | 256        | Single, all, contiguous, alternating, scattered; 64 rows for complex patterns | All five passed |
+| Large selection | 200,000    | Same patterns; 1,000 rows for complex patterns                                | All five passed |
+| Small pane load | 256        | Startup/metadata completion, settled cursor/paint and row fingerprint         | Passed          |
 
 Selection children called the unchanged
 `fman_performancetest.pane_rendering_benchmark.child` with:
@@ -1054,13 +1054,13 @@ passed, including exact membership/state checks. Environment and harness hashes,
 selection definitions and fixtures match baseline
 `49ad1a06-e227-4d64-8e7a-c9d9aa7e9aba`. Three-sample large-folder medians:
 
-| Pattern | Baseline (ms) | Optimized (ms) | Speedup |
-| --- | ---: | ---: | ---: |
-| Single | 0.0569 | 0.0577 | No meaningful change |
-| All 200,000 | 2481.6091 | 66.1746 | 37.50x |
-| Contiguous 1,000 | 19.5302 | 1.1722 | 16.66x |
-| Alternating 1,000 | 18.3473 | 1.2291 | 14.93x |
-| Scattered 1,000 | 20.7411 | 2.1142 | 9.81x |
+| Pattern           | Baseline (ms) | Optimized (ms) | Speedup              |
+| ----------------- | ------------: | -------------: | -------------------: |
+| Single            | 0.0569        | 0.0577         | No meaningful change |
+| All 200,000       | 2481.6091     | 66.1746        | 37.50x               |
+| Contiguous 1,000  | 19.5302       | 1.1722         | 16.66x               |
+| Alternating 1,000 | 18.3473       | 1.2291         | 14.93x               |
+| Scattered 1,000   | 20.7411       | 2.1142         | 9.81x                |
 
 All-selected readback uses 97.33% less time. These are phase observations, not
 statistical significance or normal Select All input latency. The second small
@@ -1104,12 +1104,12 @@ Environment, harness hash and selection definitions/fixtures match. Completed
 readback samples show the following medians; these are provisional phase results,
 not a successful whole-run comparison or permission to bypass compatibility checks.
 
-| Selected Files | Baseline (ms) | Optimized (ms) | Speedup | Samples Before / After |
-| --- | ---: | ---: | ---: | ---: |
-| All 256 | 2.7411 | 0.1421 | 19.29x | 3 / 3 |
-| Contiguous 1,000 | 19.5302 | 1.4053 | 13.90x | 3 / 2 |
-| Scattered 1,000 | 20.7411 | 1.6997 | 12.20x | 3 / 2 |
-| All 200,000 | 2481.6091 | 65.8839 | 37.67x | 3 / 2 |
+| Selected Files   | Baseline (ms) | Optimized (ms) | Speedup | Samples Before / After |
+| ---------------- | ------------: | -------------: | ------: | ---------------------: |
+| All 256          | 2.7411        | 0.1421         | 19.29x  | 3 / 3                  |
+| Contiguous 1,000 | 19.5302       | 1.4053         | 13.90x  | 3 / 2                  |
+| Scattered 1,000  | 20.7411       | 1.6997         | 12.20x  | 3 / 2                  |
+| All 200,000      | 2481.6091     | 65.8839        | 37.67x  | 3 / 2                  |
 
 Large all-selected readback uses 97.35% less time in the completed samples.
 Single-file readback remains too small for a useful improvement claim (small
@@ -1136,13 +1136,13 @@ Unreleased because the worktree contains the benchmark corrections.
 Each number below is a three-repetition median in milliseconds. Readback is a
 separate diagnostic after input readiness, not part of the headline.
 
-| Pattern | Small Input Ready | Large Input Ready | Large Mutation | Large Readback |
-| --- | ---: | ---: | ---: | ---: |
-| Single | 13.53 | 42.70 | 26.61 | 0.06 |
-| All | 14.23 | 14.91 | 0.06 | 2481.61 |
-| Contiguous | 16.64 | 132.59 | 110.40 | 19.53 |
-| Alternating | 15.74 | 139.35 | 107.55 | 18.35 |
-| Scattered | 15.48 | 159.82 | 115.57 | 20.74 |
+| Pattern     | Small Input Ready | Large Input Ready | Large Mutation | Large Readback |
+| ----------- | ----------------: | ----------------: | -------------: | -------------: |
+| Single      | 13.53             | 42.70             | 26.61          | 0.06           |
+| All         | 14.23             | 14.91             | 0.06           | 2481.61        |
+| Contiguous  | 16.64             | 132.59            | 110.40         | 19.53          |
+| Alternating | 15.74             | 139.35            | 107.55         | 18.35          |
+| Scattered   | 15.48             | 159.82            | 115.57         | 20.74          |
 
 Headlines are equal-weight means of the five medians: **15.12 ms small** and
 **97.87 ms large**. Small/large folders contain 256/200,000 files; complex cases
@@ -1354,12 +1354,12 @@ One `QItemSelectionModel.select` call is not necessarily one range. Scattered
 rows produce many ranges, and Qt still spends substantial time enumerating them.
 A three-sample component probe with one-column in-memory Qt models measured:
 
-| Marked Rows | Shape | Ranges | Bulk Select Median | selectedRows Median |
-| ----------: | ----- | -----: | -----------------: | ------------------: |
-| 1,000 | Contiguous | 1 | 0.004 ms | 0.300 ms |
-| 1,000 | Every other row | 1,000 | 2.003 ms | 43.026 ms |
-| 2,000 | Contiguous | 1 | 0.006 ms | 0.725 ms |
-| 2,000 | Every other row | 2,000 | 7.533 ms | 169.534 ms |
+| Marked Rows | Shape           | Ranges | Bulk Select Median | selectedRows Median |
+| ----------: | --------------- | -----: | -----------------: | ------------------: |
+| 1,000       | Contiguous      | 1      | 0.004 ms           | 0.300 ms            |
+| 1,000       | Every other row | 1,000  | 2.003 ms           | 43.026 ms           |
+| 2,000       | Contiguous      | 1      | 0.006 ms           | 0.725 ms            |
+| 2,000       | Every other row | 2,000  | 7.533 ms           | 169.534 ms          |
 
 Required revision: describe coalescing as an improvement for contiguous runs,
 not a general elimination of quadratic work. Measure contiguous, scattered,
@@ -1524,16 +1524,16 @@ Verdict: **code approved; documentation corrections required before release.**
 
 ### Documentation and Process
 
-| ID | Priority | Finding | Where |
-| --- | --- | --- | --- |
-| C1 | P2 | "about **36x**" contradicts 2,481.61 / 66.17 ms = 37.5x | [CHANGELOG.md](../CHANGELOG.md) Changed |
-| C2 | P2 | "selected file and metadata list": readback returns URLs only | CHANGELOG intro |
-| C3 | P2 | Column `0.10.2` is unreleased; `base.json` is `0.10.1` and the run is recorded as Unreleased | CHANGELOG table |
-| C4 | P3 | `~2481.61` estimates sit in a measured-results table; use `-` | CHANGELOG table |
-| C5 | P3 | Unrelated rows moved between runs (Fuzzy Large +8.7%, Refresh 471 to 740 ms across harnesses). Selections Large 97.87 to 86.39 ms is within that spread and is not an improvement claim | CHANGELOG table |
-| D1 | P2 | README says the regular report has 13 rows; it now has sixteen | [README.md](../README.md#L141) |
-| P1 | P2 | Deferred F01 mutation batching (Medium-High) has no Pending plan after archiving | [Plan.md](../Plan.md) |
-| P2 | P3 | A `Role: Reviewer`, `Activity: Validation` record sits under Implementer; keep it (append-only), but use Reviewers/Review for future validation records | Implementer |
+| ID  | Priority | Finding                                                                                                                                                                                 | Where                                   |
+| --- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| C1  | P2       | "about **36x**" contradicts 2,481.61 / 66.17 ms = 37.5x                                                                                                                                 | [CHANGELOG.md](../CHANGELOG.md) Changed |
+| C2  | P2       | "selected file and metadata list": readback returns URLs only                                                                                                                           | CHANGELOG intro                         |
+| C3  | P2       | Column `0.10.2` is unreleased; `base.json` is `0.10.1` and the run is recorded as Unreleased                                                                                            | CHANGELOG table                         |
+| C4  | P3       | `~2481.61` estimates sit in a measured-results table; use `-`                                                                                                                           | CHANGELOG table                         |
+| C5  | P3       | Unrelated rows moved between runs (Fuzzy Large +8.7%, Refresh 471 to 740 ms across harnesses). Selections Large 97.87 to 86.39 ms is within that spread and is not an improvement claim | CHANGELOG table                         |
+| D1  | P2       | README says the regular report has 13 rows; it now has sixteen                                                                                                                          | [README.md](../README.md#L141)          |
+| P1  | P2       | Deferred F01 mutation batching (Medium-High) has no Pending plan after archiving                                                                                                        | [Plan.md](../Plan.md)                   |
+| P2  | P3       | A `Role: Reviewer`, `Activity: Validation` record sits under Implementer; keep it (append-only), but use Reviewers/Review for future validation records                                 | Implementer                             |
 
 Recommended: fix C1-C3 and D1, and record P1 in
 [CodeReview099](../Plan/CodeReview099.md) or a dedicated plan. C4/C5 are wording.

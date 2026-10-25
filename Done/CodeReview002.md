@@ -215,15 +215,15 @@ Use focused sentinel tests for the known consumers and a recorded repository
 literal/path search at completion. Do not build a general semantic scanner.
 Classify remaining matches rather than blindly requiring zero text matches:
 
-| Classification | Policy |
-| --- | --- |
-| Product definition | Exactly one: `base.json` `app_name`. |
-| Derived executable/runtime/build/docs value | Literal forbidden; consumer must load or receive `app_name`. |
-| Stable repository URL/slug | Allowed by exact path/context allowlist. |
-| Compatibility identifier | Allowed and documented; includes legacy uppercase environment variables. |
-| Stable asset/protocol identifier | Allowed only when rename-independent and tested as such. |
-| Historical record | Allowed under `Done/`, released changelog entries and reviewer history. |
-| Generated output | Excluded as input; regenerate to verify the new value. |
+| Classification                              | Policy                                                                   |
+| ------------------------------------------- | ------------------------------------------------------------------------ |
+| Product definition                          | Exactly one: `base.json` `app_name`.                                     |
+| Derived executable/runtime/build/docs value | Literal forbidden; consumer must load or receive `app_name`.             |
+| Stable repository URL/slug                  | Allowed by exact path/context allowlist.                                 |
+| Compatibility identifier                    | Allowed and documented; includes legacy uppercase environment variables. |
+| Stable asset/protocol identifier            | Allowed only when rename-independent and tested as such.                 |
+| Historical record                           | Allowed under `Done/`, released changelog entries and reviewer history.  |
+| Generated output                            | Excluded as input; regenerate to verify the new value.                   |
 
 Keep the recorded exceptions narrow and reviewable. Do not exempt entire active
 source trees. Also search product-named source paths such as the old spec filename.

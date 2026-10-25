@@ -64,21 +64,21 @@ Collected on 2026_09_20 using Python 3.14.7 on Windows 11 build 26200
 (`Windows-11-10.0.26200-SP0`). Times below are milliseconds. Ratios were
 calculated before rounding displayed medians.
 
-| Folder | Entries / directories | Listdir + stat median | Scandir median | Median saved | Ratio | Equality |
-| --- | ---: | ---: | ---: | ---: | ---: | --- |
-| Repository root | 24 / 9 | 0.098 | 0.029 | 0.069 | 3.43x | Pass |
-| `src/main/python/fman` | 8 / 2 | 0.042 | 0.018 | 0.024 | 2.30x | Pass |
-| `%WINDIR%/System32` | 4,757 / 180 | 25.105 | 3.762 | Withheld | Withheld | Invalid |
-| `%WINDIR%/SysWOW64` | 2,883 / 151 | 14.012 | 2.241 | 11.771 | 6.25x | Pass |
-| `%WINDIR%/WinSxS` | 24,315 / 24,313 | 192.694 | 46.268 | 146.426 | 4.16x | Pass |
+| Folder                 | Entries / directories | Listdir + stat median | Scandir median | Median saved | Ratio    | Equality |
+| ---------------------- | --------------------: | --------------------: | -------------: | -----------: | -------: | -------- |
+| Repository root        | 24 / 9                | 0.098                 | 0.029          | 0.069        | 3.43x    | Pass     |
+| `src/main/python/fman` | 8 / 2                 | 0.042                 | 0.018          | 0.024        | 2.30x    | Pass     |
+| `%WINDIR%/System32`    | 4,757 / 180           | 25.105                | 3.762          | Withheld     | Withheld | Invalid  |
+| `%WINDIR%/SysWOW64`    | 2,883 / 151           | 14.012                | 2.241          | 11.771       | 6.25x    | Pass     |
+| `%WINDIR%/WinSxS`      | 24,315 / 24,313       | 192.694               | 46.268         | 146.426      | 4.16x    | Pass     |
 
 Additional retained measurements:
 
-| Folder | Listdir min / max | Scandir min / max |
-| --- | ---: | ---: |
-| System32 | 24.572 / 28.788 | 3.719 / 4.191 |
-| SysWOW64 | 13.460 / 15.804 | 2.211 / 2.302 |
-| WinSxS | 190.125 / 195.760 | 45.417 / 48.086 |
+| Folder   | Listdir min / max | Scandir min / max |
+| -------- | ----------------: | ----------------: |
+| System32 | 24.572 / 28.788   | 3.719 / 4.191     |
+| SysWOW64 | 13.460 / 15.804   | 2.211 / 2.302     |
+| WinSxS   | 190.125 / 195.760 | 45.417 / 48.086   |
 
 System32 first-observed times: 40.104 ms for listdir + stat and 6.357 ms for
 scandir, with scandir first. Folder selection/counting had already warmed
@@ -104,10 +104,10 @@ System32 produced 32 results differing from the first reference and zero
 metadata errors. Two subsequent comparisons both isolated this same entry:
 `5E37410B-D6F1-471D-AE27-563CEAC0D6B2`.
 
-| Query | Directory | Bytes | Modification time, ns |
-| --- | --- | ---: | ---: |
-| Scandir | False | 17,374 | 1789421446454543200 |
-| Stat | False | 17,520 | 1789421491294898800 |
+| Query   | Directory | Bytes  | Modification time, ns |
+| ------- | --------- | -----: | --------------------: |
+| Scandir | False     | 17,374 | 1789421446454543200   |
+| Stat    | False     | 17,520 | 1789421491294898800   |
 
 The cause is unknown. Neither hard links nor concurrent writes were established
 as the explanation. Fresh enumeration did not remove the difference in those
@@ -117,11 +117,11 @@ it merely to report a speedup.
 A separate Windows probe on the benchmark script found equal display metadata
 but incomplete identity in the enumeration result:
 
-| Field | `os.stat()` | `DirEntry.stat()` |
-| --- | ---: | ---: |
-| `st_dev` | 6522454556174564065 | 0 |
-| `st_ino` | 30399297484824109 | 0 |
-| `st_nlink` | 1 | 0 |
+| Field      | `os.stat()`         | `DirEntry.stat()` |
+| ---------- | ------------------: | ----------------: |
+| `st_dev`   | 6522454556174564065 | 0                 |
+| `st_ino`   | 30399297484824109   | 0                 |
+| `st_nlink` | 1                   | 0                 |
 
 The numbers identify the observed sample, not test constants. This matches
 [Python's documented Windows behavior](https://docs.python.org/3.14/library/os.html#os.DirEntry.stat).
@@ -132,12 +132,12 @@ Read-only measurements on the CelebAAligned dataset: 202,603 entries, including
 202,599 JPEGs. QuickView was never imported. The separate uniform-row-height fix
 was already active; this measures the remaining first-list-display delay.
 
-| Phase | Lightweight timing | Detail |
-| --- | ---: | --- |
-| Worker preparation | 6.04 s | Row/name/directory metadata setup: 3.73 s; filtering/sorting: 1.86 s. |
-| Qt-thread model commit | 2.19 s | Repeated filtering/sorting: 1.86 s; initial row diff/application: 0.30 s. |
-| Remaining dispatch and first paint | 0.03 s | Paint callback itself: 15 ms. |
-| First populated paint | 8.26 s | Includes the preceding phases; not image decoding. |
+| Phase                              | Lightweight timing | Detail                                                                    |
+| ---------------------------------- | -----------------: | ------------------------------------------------------------------------- |
+| Worker preparation                 | 6.04 s             | Row/name/directory metadata setup: 3.73 s; filtering/sorting: 1.86 s.     |
+| Qt-thread model commit             | 2.19 s             | Repeated filtering/sorting: 1.86 s; initial row diff/application: 0.30 s. |
+| Remaining dispatch and first paint | 0.03 s             | Paint callback itself: 15 ms.                                             |
+| First populated paint              | 8.26 s             | Includes the preceding phases; not image decoding.                        |
 
 Separate raw enumeration took 71 ms. Only 34 visible rows needed full-column
 preloading. Profile captures identify `Name.get_sort_value -> is_dir -> stat`
@@ -181,10 +181,10 @@ documented under Alternatives; it is not yet the selected design.
 
 ### Selectable Methods
 
-| Choice | `pane_scan_method` | Behavior |
-| --- | --- | --- |
-| Per-file scan | `listdir` | Existing enumeration/cache path and complete-stat queries; proposed default. |
-| Optimized scan | `scandir` | Reuse enumeration metadata for display/sorting, with required stat fallbacks. |
+| Choice         | `pane_scan_method` | Behavior                                                                      |
+| -------------- | ------------------ | ----------------------------------------------------------------------------- |
+| Per-file scan  | `listdir`          | Existing enumeration/cache path and complete-stat queries; proposed default.  |
+| Optimized scan | `scandir`          | Reuse enumeration metadata for display/sorting, with required stat fallbacks. |
 
 Store the choice in `Core Settings.json` through existing differential
 configuration under `UserSettings/Plugins/User/Settings`. Missing/invalid
@@ -230,16 +230,16 @@ calls retain complete stat results. Never seed the shared `'stat'` cache with
 
 ### Differences and Fallbacks
 
-| Case | Difference / solution |
-| --- | --- |
-| Stable ordinary entries | Enumeration metadata normally supplies the required display fields without a separate path-based stat. |
-| Changed/disappeared entry | Uncached stat can observe a later state; DirEntry may retain enumeration-time data. Neither is atomic and the current app also caches stat. Accept snapshot timing for display, retaining operational error checks. |
-| Symlink/junction/reparse point | Detect reparse entries and use full path-based stat following the target; expect reduced savings. Unknown required attributes also take the full-query fallback. |
-| Broken target | Preserve the existing retry without following only on `FileNotFoundError`; an entry itself gone still fails. `DirEntry.is_dir()` returning False for missing entries is not equivalent to an operational query that raises. |
-| Permission/sharing failure | Preserve errors/fallback behavior rather than fabricating zero metadata. Enumeration success does not imply permission to open/copy. |
-| Hard links | No need to detect every alias during enumeration. Keep complete identity checks for operations; separately test display metadata after writes through either alias. |
-| Network/cloud entries | Metadata and reparse behavior depend on the filesystem/provider; do not promise no additional I/O or hydration. |
-| Persistent metadata mismatch | Investigate the System32 observation and controlled fixtures. Explain differences or explicitly accept their display consequences before adopting optimized scan. |
+| Case                           | Difference / solution                                                                                                                                                                                                       |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Stable ordinary entries        | Enumeration metadata normally supplies the required display fields without a separate path-based stat.                                                                                                                      |
+| Changed/disappeared entry      | Uncached stat can observe a later state; DirEntry may retain enumeration-time data. Neither is atomic and the current app also caches stat. Accept snapshot timing for display, retaining operational error checks.         |
+| Symlink/junction/reparse point | Detect reparse entries and use full path-based stat following the target; expect reduced savings. Unknown required attributes also take the full-query fallback.                                                            |
+| Broken target                  | Preserve the existing retry without following only on `FileNotFoundError`; an entry itself gone still fails. `DirEntry.is_dir()` returning False for missing entries is not equivalent to an operational query that raises. |
+| Permission/sharing failure     | Preserve errors/fallback behavior rather than fabricating zero metadata. Enumeration success does not imply permission to open/copy.                                                                                        |
+| Hard links                     | No need to detect every alias during enumeration. Keep complete identity checks for operations; separately test display metadata after writes through either alias.                                                         |
+| Network/cloud entries          | Metadata and reparse behavior depend on the filesystem/provider; do not promise no additional I/O or hydration.                                                                                                             |
+| Persistent metadata mismatch   | Investigate the System32 observation and controlled fixtures. Explain differences or explicitly accept their display consequences before adopting optimized scan.                                                           |
 
 Cheap classification cannot identify every stale ordinary entry or hard link.
 Selective stat protects identity consumers and detectable special cases; it
@@ -266,17 +266,17 @@ does not replace correctness testing.
 
 Added by review; not part of the original design. Three architectures compared:
 
-| | Current | Proposed above | Lazy identity stat |
-| --- | --- | --- | --- |
-| Enumeration | `os.listdir` in `LocalFileSystem.iterdir`; names cached by `MotherFileSystem` | `os.listdir` or `os.scandir`, chosen by a persisted setting | `os.scandir` always |
-| Metadata source | One `os.stat` per entry via `@cached stat`, first triggered by `Name.get_sort_value` -> `is_dir` before the pane shows | Optimized mode: new plain display records (dir flag, size, mtime) owned by the listing/model; full stat kept separately for operations | Same `'stat'` cache entry as today, seeded during the scan with a `LazyStat` proxy over `DirEntry.stat()` |
-| Identity (`st_dev`, `st_ino`, `st_nlink`) | Always present | Full stat on demand through a separate path | Proxy performs one real `os.stat` on first access of an identity field and memoizes it; display fields never wait for it |
-| Code touched | - | `LocalFileSystem`, `MotherFileSystem`, `Model`, Core columns, settings, palette command, two-pane reload | `LocalFileSystem` only (`iterdir`, `LazyStat`, reparse-point exclusion) |
-| Public API / columns | - | Unchanged semantics but a private adapter with explicit snapshot support per consumer | Existing named-attribute consumers keep their calls; `query(url, 'stat')` can return a proxy with different type/protocol/error behavior, detailed below |
-| Invalidation | `clear_cache(dir)` drops the subtree; `notify_file_changed` clears one path | Must invalidate display records *and* the stat cache in step | Identical to current: the proxy lives in the same cache node |
-| Reparse points | Full stat | Full stat | Not seeded; existing full-stat path |
-| Memory | One `stat_result` per entry | Display records plus stat results for touched entries | One proxy per entry, upgraded to a full result only when identity is read |
-| Failure surface | Existing | New: stale snapshots vs cache, mode switching, adapter bypass by custom columns | Proxy return contract, deferred full-stat errors, concurrent upgrade and cache-seeding races |
+|                                           | Current                                                                                                                | Proposed above                                                                                                                         | Lazy identity stat                                                                                                                                       |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Enumeration                               | `os.listdir` in `LocalFileSystem.iterdir`; names cached by `MotherFileSystem`                                          | `os.listdir` or `os.scandir`, chosen by a persisted setting                                                                            | `os.scandir` always                                                                                                                                      |
+| Metadata source                           | One `os.stat` per entry via `@cached stat`, first triggered by `Name.get_sort_value` -> `is_dir` before the pane shows | Optimized mode: new plain display records (dir flag, size, mtime) owned by the listing/model; full stat kept separately for operations | Same `'stat'` cache entry as today, seeded during the scan with a `LazyStat` proxy over `DirEntry.stat()`                                                |
+| Identity (`st_dev`, `st_ino`, `st_nlink`) | Always present                                                                                                         | Full stat on demand through a separate path                                                                                            | Proxy performs one real `os.stat` on first access of an identity field and memoizes it; display fields never wait for it                                 |
+| Code touched                              | -                                                                                                                      | `LocalFileSystem`, `MotherFileSystem`, `Model`, Core columns, settings, palette command, two-pane reload                               | `LocalFileSystem` only (`iterdir`, `LazyStat`, reparse-point exclusion)                                                                                  |
+| Public API / columns                      | -                                                                                                                      | Unchanged semantics but a private adapter with explicit snapshot support per consumer                                                  | Existing named-attribute consumers keep their calls; `query(url, 'stat')` can return a proxy with different type/protocol/error behavior, detailed below |
+| Invalidation                              | `clear_cache(dir)` drops the subtree; `notify_file_changed` clears one path                                            | Must invalidate display records *and* the stat cache in step                                                                           | Identical to current: the proxy lives in the same cache node                                                                                             |
+| Reparse points                            | Full stat                                                                                                              | Full stat                                                                                                                              | Not seeded; existing full-stat path                                                                                                                      |
+| Memory                                    | One `stat_result` per entry                                                                                            | Display records plus stat results for touched entries                                                                                  | One proxy per entry, upgraded to a full result only when identity is read                                                                                |
+| Failure surface                           | Existing                                                                                                               | New: stale snapshots vs cache, mode switching, adapter bypass by custom columns                                                        | Proxy return contract, deferred full-stat errors, concurrent upgrade and cache-seeding races                                                             |
 
 Data flow of the lazy design: `iterdir(dir)` opens `os.scandir`, appends each
 name, and for non-reparse entries calls `cache.put(dir + '/' + name, 'stat',
@@ -309,15 +309,15 @@ In the lazy alternative, a seeded entry returns `LazyStat`; an unseeded entry
 or excluded reparse point uses the existing full-stat path. The result type can
 therefore depend on scan history, not just the URL.
 
-| Consumer behavior | Current full-stat result | Seeded lazy result |
-| --- | --- | --- |
-| Read display fields such as `st_mode`, `st_size`, `st_mtime` | Values from the cached full stat | Enumeration values until upgraded; no new path stat for these reads |
-| Read `st_dev`, `st_ino`, `st_nlink` | Already present; no I/O on attribute access | First read performs full stat with existing missing-target fallback; successful result is memoized |
-| Read fields before and after an identity read | The same immutable snapshot | After upgrade, all fields use the full result; a previously read size/time can differ |
-| Check `isinstance(result, os.stat_result)` | True | False; `os.stat_result` cannot be subclassed to make the proxy its subtype |
-| Index, slice, unpack, call `len()` or `tuple()` | Supported sequence interface | Not supplied by attribute forwarding; fails unless explicitly implemented. Sequence access must not expose incomplete enumeration identity |
-| Compare/hash/serialize the result, inspect its representation or use other stat fields | Native stat-result behavior | Not automatically equivalent; supported protocols/fields need explicit design and tests |
-| Handle full-stat failures | Uncached full-stat failure occurs during `query()`; cached fields do not perform I/O | `query()` can return the proxy, then an identity read can raise an OS error |
+| Consumer behavior                                                                      | Current full-stat result                                                             | Seeded lazy result                                                                                                                         |
+| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Read display fields such as `st_mode`, `st_size`, `st_mtime`                           | Values from the cached full stat                                                     | Enumeration values until upgraded; no new path stat for these reads                                                                        |
+| Read `st_dev`, `st_ino`, `st_nlink`                                                    | Already present; no I/O on attribute access                                          | First read performs full stat with existing missing-target fallback; successful result is memoized                                         |
+| Read fields before and after an identity read                                          | The same immutable snapshot                                                          | After upgrade, all fields use the full result; a previously read size/time can differ                                                      |
+| Check `isinstance(result, os.stat_result)`                                             | True                                                                                 | False; `os.stat_result` cannot be subclassed to make the proxy its subtype                                                                 |
+| Index, slice, unpack, call `len()` or `tuple()`                                        | Supported sequence interface                                                         | Not supplied by attribute forwarding; fails unless explicitly implemented. Sequence access must not expose incomplete enumeration identity |
+| Compare/hash/serialize the result, inspect its representation or use other stat fields | Native stat-result behavior                                                          | Not automatically equivalent; supported protocols/fields need explicit design and tests                                                    |
+| Handle full-stat failures                                                              | Uncached full-stat failure occurs during `query()`; cached fields do not perform I/O | `query()` can return the proxy, then an identity read can raise an OS error                                                                |
 
 The [documented fman API](https://fman.io/docs/api) exposes generic `query()` but
 does not specify a standard `stat()` method or an `os.stat_result` return type.
@@ -379,12 +379,12 @@ third time per row during background loading, also on the Qt thread.
 
 **Measured options for the hidden check** (this machine, CelebAAligned, warm):
 
-| Check | Semantics vs `QFileInfo.isHidden()` | Cost / entry |
-| --- | --- | ---: |
-| `QFileInfo(path).isHidden()` (today) | reference | 9.6 µs |
-| Cached followed `stat().st_file_attributes` | **Wrong**: a junction to a hidden target becomes hidden (probe: `QFileInfo=False`, `stat(follow)=True`); drive roots `C:/`, `D:/` carry `HIDDEN\|SYSTEM` and Qt special-cases them | ~0 |
-| `os.lstat(path).st_file_attributes` | Matches for links; roots still need the special case | 4.7 µs |
-| `DirEntry.stat(follow_symlinks=False).st_file_attributes` from `scandir` | Same source `FindFirstFile` gives Qt; matches for links; roots are never entries of a listing | 0.7 µs incl. enumeration |
+| Check                                                                    | Semantics vs `QFileInfo.isHidden()`                                                                                                                                                | Cost / entry             |
+| ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -----------------------: |
+| `QFileInfo(path).isHidden()` (today)                                     | reference                                                                                                                                                                          | 9.6 µs                   |
+| Cached followed `stat().st_file_attributes`                              | **Wrong**: a junction to a hidden target becomes hidden (probe: `QFileInfo=False`, `stat(follow)=True`); drive roots `C:/`, `D:/` carry `HIDDEN\|SYSTEM` and Qt special-cases them | ~0                       |
+| `os.lstat(path).st_file_attributes`                                      | Matches for links; roots still need the special case                                                                                                                               | 4.7 µs                   |
+| `DirEntry.stat(follow_symlinks=False).st_file_attributes` from `scandir` | Same source `FindFirstFile` gives Qt; matches for links; roots are never entries of a listing                                                                                      | 0.7 µs incl. enumeration |
 
 Conclusion: the cheap hidden check is correct only as a consumer of the scandir
 scan. The followed-stat shortcut must not be used.
@@ -414,18 +414,18 @@ scan. The followed-stat shortcut must not be used.
 
 **Risk assessment and effect on other operations**
 
-| Area | Step 1 (scandir + proxy) | Step 2 (hidden filter) | Step 4 (commit worker rows) |
-| --- | --- | --- | --- |
-| Copy / move / delete / rename | `samefile`, `_prepare_move` (`st_dev`) read identity through the proxy, which performs one real `os.stat` on first access. Same decisions as today; the 19 acceptance tests cover hard links and same/cross-device moves | Not involved | Not involved: operations arrive as file events and go through `RecordFiles` on `_files`/`_rows` |
-| Display columns (Name/Size/Modified) | Values come from enumeration data instead of a path stat. NTFS may report a stale size/mtime for a file another process holds open for writing (the System32 case); Explorer shows the same value. Documented display consequence, no operational effect | None | None |
-| Links / junctions | Display fields still follow the target (full stat for reparse points, as today); `entry_attributes` is the link's own | Matches `QFileInfo` by construction (probe above); parity tests: hidden junction → visible target, visible link → hidden target, broken link | None |
-| Hidden-files toggle, drive roots, `drives://`, `zip://`, `network://` | Unaffected (other providers keep their paths) | Non-`file://` URLs return early as today; roots and unseeded paths hit the `QFileInfo` fallback | Toggle goes through `add_filter`/`remove_filter` transactions → `update()`; unaffected |
-| Filter bar | Unaffected | Unaffected | **The one real race**: `FilterBar._accepts` has mutable state changed on the GUI thread while the worker filters. Guard: `FilterBar` connects to `location_loaded` and calls `sourceModel().update()` when active. Without the guard, typing during a load shows unfiltered rows until the next keystroke |
-| Sort, `reload()`, `sort()` | `reload()` clears the cache and rescans; proxies are re-seeded | None | `sort()` and `reload()` keep their own `update()`/`sort()`; only the first commit changes |
-| Cache invalidation, file watcher | `clear_cache` / `notify_file_changed` drop the same nodes as today; the Windows watcher is a stub, so no new event paths | A cold cache on the Qt thread means one real stat, the same syscall `QFileInfo` performs today | None |
-| Status bar, DirectorySize, Search/Find plug-ins, QuickView | Status bar reads `size_bytes` via the cached object (proxy field). DirectorySize, `fd`/`rg` panels and QuickView use their own `scandir`/`os.stat`; unaffected | None | None |
-| Third-party plug-ins | `query(file_url, 'stat')` may return the proxy instead of `os.stat_result` (documented above; no in-tree consumer needs the concrete type). Keep the `listdir` setting as an escape hatch for the first release | Private to Core | Host model change; upstream-mergeability cost only |
-| Failure modes | Full-stat failure now surfaces on first identity read instead of at `query()`; existing callers already handle `OSError` there | Any exception inside `filter()` would empty the pane — the fallback must catch `OSError` | Inconsistent first view (see Filter bar) |
+| Area                                                                  | Step 1 (scandir + proxy)                                                                                                                                                                                                                                 | Step 2 (hidden filter)                                                                                                                       | Step 4 (commit worker rows)                                                                                                                                                                                                                                                                               |
+| --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Copy / move / delete / rename                                         | `samefile`, `_prepare_move` (`st_dev`) read identity through the proxy, which performs one real `os.stat` on first access. Same decisions as today; the 19 acceptance tests cover hard links and same/cross-device moves                                 | Not involved                                                                                                                                 | Not involved: operations arrive as file events and go through `RecordFiles` on `_files`/`_rows`                                                                                                                                                                                                           |
+| Display columns (Name/Size/Modified)                                  | Values come from enumeration data instead of a path stat. NTFS may report a stale size/mtime for a file another process holds open for writing (the System32 case); Explorer shows the same value. Documented display consequence, no operational effect | None                                                                                                                                         | None                                                                                                                                                                                                                                                                                                      |
+| Links / junctions                                                     | Display fields still follow the target (full stat for reparse points, as today); `entry_attributes` is the link's own                                                                                                                                    | Matches `QFileInfo` by construction (probe above); parity tests: hidden junction → visible target, visible link → hidden target, broken link | None                                                                                                                                                                                                                                                                                                      |
+| Hidden-files toggle, drive roots, `drives://`, `zip://`, `network://` | Unaffected (other providers keep their paths)                                                                                                                                                                                                            | Non-`file://` URLs return early as today; roots and unseeded paths hit the `QFileInfo` fallback                                              | Toggle goes through `add_filter`/`remove_filter` transactions → `update()`; unaffected                                                                                                                                                                                                                    |
+| Filter bar                                                            | Unaffected                                                                                                                                                                                                                                               | Unaffected                                                                                                                                   | **The one real race**: `FilterBar._accepts` has mutable state changed on the GUI thread while the worker filters. Guard: `FilterBar` connects to `location_loaded` and calls `sourceModel().update()` when active. Without the guard, typing during a load shows unfiltered rows until the next keystroke |
+| Sort, `reload()`, `sort()`                                            | `reload()` clears the cache and rescans; proxies are re-seeded                                                                                                                                                                                           | None                                                                                                                                         | `sort()` and `reload()` keep their own `update()`/`sort()`; only the first commit changes                                                                                                                                                                                                                 |
+| Cache invalidation, file watcher                                      | `clear_cache` / `notify_file_changed` drop the same nodes as today; the Windows watcher is a stub, so no new event paths                                                                                                                                 | A cold cache on the Qt thread means one real stat, the same syscall `QFileInfo` performs today                                               | None                                                                                                                                                                                                                                                                                                      |
+| Status bar, DirectorySize, Search/Find plug-ins, QuickView            | Status bar reads `size_bytes` via the cached object (proxy field). DirectorySize, `fd`/`rg` panels and QuickView use their own `scandir`/`os.stat`; unaffected                                                                                           | None                                                                                                                                         | None                                                                                                                                                                                                                                                                                                      |
+| Third-party plug-ins                                                  | `query(file_url, 'stat')` may return the proxy instead of `os.stat_result` (documented above; no in-tree consumer needs the concrete type). Keep the `listdir` setting as an escape hatch for the first release                                          | Private to Core                                                                                                                              | Host model change; upstream-mergeability cost only                                                                                                                                                                                                                                                        |
+| Failure modes                                                         | Full-stat failure now surfaces on first identity read instead of at `query()`; existing callers already handle `OSError` there                                                                                                                           | Any exception inside `filter()` would empty the pane — the fallback must catch `OSError`                                                     | Inconsistent first view (see Filter bar)                                                                                                                                                                                                                                                                  |
 
 Recommendation: implement steps 1–3; they remove roughly 4 s of the 8.26 s with
 `QFileInfo`-identical visibility and unchanged operation decisions. Treat steps
@@ -509,13 +509,13 @@ was not imported and extended status tracking was off. No application source or
 dataset files changed. OS caches were not flushed; these are instrumented local
 observations, not cold-cache measurements or an optimized implementation.
 
-| Measurement | While metadata loads | After metadata completes |
-| --- | ---: | ---: |
-| Posted arrow to actual cursor change, median | 250 ms | 1.1 ms |
-| Posted arrow to actual cursor change, p95 / maximum | 417 / 567 ms | 1.4 / 2.0 ms |
-| Posted arrow to completed paint, median | 435 ms | 2.1 ms |
-| Posted arrow to completed paint, p95 / maximum | 740 / 760 ms | 2.9 / 3.3 ms |
-| Completed arrow samples | 25 | 34 |
+| Measurement                                         | While metadata loads | After metadata completes |
+| --------------------------------------------------- | -------------------: | -----------------------: |
+| Posted arrow to actual cursor change, median        | 250 ms               | 1.1 ms                   |
+| Posted arrow to actual cursor change, p95 / maximum | 417 / 567 ms         | 1.4 / 2.0 ms             |
+| Posted arrow to completed paint, median             | 435 ms               | 2.1 ms                   |
+| Posted arrow to completed paint, p95 / maximum      | 740 / 760 ms         | 2.9 / 3.3 ms             |
+| Completed arrow samples                             | 25                   | 34                       |
 
 First populated paint took 8.678 s. Metadata completion required **another
 8.442 s**. There were 26 synchronous Qt commits, median 111 ms and maximum

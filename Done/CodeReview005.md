@@ -289,7 +289,7 @@ of `metrics`. Interactivity is unchanged: `CommandCallback` listeners
 
 | Member              | Behavior                                                         |
 | ------------------- | ---------------------------------------------------------------- |
-| `finished(outcome)` | Store `aborted` or `completed`; saturate abort count at 2       |
+| `finished(outcome)` | Store `aborted` or `completed`; saturate abort count at 2        |
 | `activity()`        | Clear last                                                       |
 | `take()`            | Return `(last, aborts)`, then clear last                         |
 
@@ -916,27 +916,27 @@ Only this task document was edited to record the review.
 
 Counts are per invocation and overlap; they are not unique-test totals.
 
-| Gate | Result |
-| --- | --- |
-| Phase A | 642 run: 631 passed, 11 expected skips (115.006s) |
-| Phase B | 161 passed (1.858s), including isolated native source workflows |
-| Phase C | 115 run: 114 passed, one expected skip (5.666s) |
-| Initial native callers + Windows behavior + snapshot model | 109 run: 106 passed, three failures (8.455s), resolved below |
-| Final native callers + Windows behavior + snapshot models + UI contracts | 157 passed, no skips (13.176s) |
-| Post-review native/UI gate, including new date/action regressions | 159 passed, no skips (13.276s) |
-| Post-review orphan cleanup, utilities, commands, ProcessPane and source smoke | 154 passed, no skips (1.515s) |
-| C1 focused date regressions | Four passed (0.627s) |
-| C1 full native FindFiles fixture | 10 passed, no skips (1.304s) |
-| C1 completion-review baseline with new regressions | 98 passed, no skips (1.317s) |
-| C1 FindFiles unit/engine checks | 25 run: 24 passed, one expected skip (1.354s) |
-| C1 strict documentation build | Passed (0.36s) |
-| Final platform fixture cleanup | 142 passed, native Windows (2.517s) |
-| Final local filesystem/watcher cleanup | 77 run: 73 passed, four symlink skips, native Windows (3.184s) |
-| Initial three-test Fusion probe | All three failed (0.385s); style override was not a fix |
-| Source/spec inventory | 217 Python files parsed; removed symbols/imports/aliases and resources absent; startup guard and portable Core spec path verified |
-| Documentation/editor checks | Seven changed documents' local links pass; requested editor diagnostics report no errors |
-| Source documentation screenshots | Existing generator produced 17 nonblank PNGs with isolated settings |
-| Strict documentation build | Passed (0.38s) after generating the missing assets |
+| Gate                                                                          | Result                                                                                                                            |
+| ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Phase A                                                                       | 642 run: 631 passed, 11 expected skips (115.006s)                                                                                 |
+| Phase B                                                                       | 161 passed (1.858s), including isolated native source workflows                                                                   |
+| Phase C                                                                       | 115 run: 114 passed, one expected skip (5.666s)                                                                                   |
+| Initial native callers + Windows behavior + snapshot model                    | 109 run: 106 passed, three failures (8.455s), resolved below                                                                      |
+| Final native callers + Windows behavior + snapshot models + UI contracts      | 157 passed, no skips (13.176s)                                                                                                    |
+| Post-review native/UI gate, including new date/action regressions             | 159 passed, no skips (13.276s)                                                                                                    |
+| Post-review orphan cleanup, utilities, commands, ProcessPane and source smoke | 154 passed, no skips (1.515s)                                                                                                     |
+| C1 focused date regressions                                                   | Four passed (0.627s)                                                                                                              |
+| C1 full native FindFiles fixture                                              | 10 passed, no skips (1.304s)                                                                                                      |
+| C1 completion-review baseline with new regressions                            | 98 passed, no skips (1.317s)                                                                                                      |
+| C1 FindFiles unit/engine checks                                               | 25 run: 24 passed, one expected skip (1.354s)                                                                                     |
+| C1 strict documentation build                                                 | Passed (0.36s)                                                                                                                    |
+| Final platform fixture cleanup                                                | 142 passed, native Windows (2.517s)                                                                                               |
+| Final local filesystem/watcher cleanup                                        | 77 run: 73 passed, four symlink skips, native Windows (3.184s)                                                                    |
+| Initial three-test Fusion probe                                               | All three failed (0.385s); style override was not a fix                                                                           |
+| Source/spec inventory                                                         | 217 Python files parsed; removed symbols/imports/aliases and resources absent; startup guard and portable Core spec path verified |
+| Documentation/editor checks                                                   | Seven changed documents' local links pass; requested editor diagnostics report no errors                                          |
+| Source documentation screenshots                                              | Existing generator produced 17 nonblank PNGs with isolated settings                                                               |
+| Strict documentation build                                                    | Passed (0.38s) after generating the missing assets                                                                                |
 
 The final platform-helper gate also passed 113 tests after fixing a race in the
 new source smoke: it now waits for the expected step's connected, visible screen,

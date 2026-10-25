@@ -8,13 +8,13 @@ For step-by-step examples, see [Everyday Workflows](workflows.md).
 
 Some guides describe the current development build, not just the latest release.
 
-| Capability | Available In |
-| --- | --- |
-| Bundled Robocopy | 0.16.0 and newer |
-| Bundled Batch File Renamer, including random letter/digit fields | 0.16.3 and newer |
-| Create a duplicate file and Pack here | 0.16.4 and newer |
-| Pane swapping, pattern selection and keypad selection shortcuts | Unreleased development builds |
-| Select same extension, clipboard/link navigation and Command Center synonyms | Unreleased development builds |
+| Capability                                                                          | Available In                  |
+| ----------------------------------------------------------------------------------- | ----------------------------- |
+| Bundled Robocopy                                                                    | 0.16.0 and newer              |
+| Bundled Batch File Renamer, including random letter/digit fields                    | 0.16.3 and newer              |
+| Create a duplicate file and Pack here                                               | 0.16.4 and newer              |
+| Pane swapping, pattern selection and keypad selection shortcuts                     | Unreleased development builds |
+| Select same extension, clipboard/link navigation and Command Center synonyms        | Unreleased development builds |
 | Numbered duplicate suggestions, copying multiple names and local free-space display | Unreleased development builds |
 
 Check the [release notes](https://github.com/RoyiAvital/RoyiFileManager/blob/main/CHANGELOG.md)

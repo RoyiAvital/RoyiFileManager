@@ -73,16 +73,16 @@ Compatibility:
 A new `Favorites(FileSystem)` with `scheme = 'favorites://'` in the Favorites
 plug-in. It reads the same store under the existing settings lock.
 
-| Member | Behavior |
-| --- | --- |
-| Row key | Lowercase hex of a 16-byte BLAKE2b digest of `FavoritesStore.key(url)`. Stable across renames and unique because the store rejects duplicate keys. Display names are not keys: they may repeat or contain `/`. |
-| `scan('')` | `Listing.create('favorites://', keys, labels=names, is_dir=True for all, identities=digests, extra=(('path', readable paths), ('order', recency positions), ('used', last-use epoch nanoseconds or None), ('count', open counts)))`. No filesystem I/O. Other paths raise `NotADirectoryError`. |
-| `get_default_columns` | `('core.Name', 'favorites.Path', 'favorites.Added', 'favorites.Used', 'favorites.Count')`. |
-| `is_dir(key)` / `exists(key)` | In-memory lookup only. Root is a directory. Unknown keys raise `FileNotFoundError` / return `False`. |
-| `resolve(key)` | Returns the stored `file://` (or other scheme) URL. Root resolves to `favorites://`. Unknown keys raise `FileNotFoundError`. |
-| `name(path)` | Favorite name; root is `Favorites`. |
-| `move(src, dst)` | Rename only: both URLs must be `favorites://`; the favorite of `src` gets `basename(dst)` as its new name. Anything else raises `io.UnsupportedOperation`. |
-| Mutations | `mkdir`, `touch`, `copy`, `delete` and `move_to_trash` stay unimplemented, so Core hides commands that check for them. |
+| Member                        | Behavior                                                                                                                                                                                                                                                                                        |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Row key                       | Lowercase hex of a 16-byte BLAKE2b digest of `FavoritesStore.key(url)`. Stable across renames and unique because the store rejects duplicate keys. Display names are not keys: they may repeat or contain `/`.                                                                                  |
+| `scan('')`                    | `Listing.create('favorites://', keys, labels=names, is_dir=True for all, identities=digests, extra=(('path', readable paths), ('order', recency positions), ('used', last-use epoch nanoseconds or None), ('count', open counts)))`. No filesystem I/O. Other paths raise `NotADirectoryError`. |
+| `get_default_columns`         | `('core.Name', 'favorites.Path', 'favorites.Added', 'favorites.Used', 'favorites.Count')`.                                                                                                                                                                                                      |
+| `is_dir(key)` / `exists(key)` | In-memory lookup only. Root is a directory. Unknown keys raise `FileNotFoundError` / return `False`.                                                                                                                                                                                            |
+| `resolve(key)`                | Returns the stored `file://` (or other scheme) URL. Root resolves to `favorites://`. Unknown keys raise `FileNotFoundError`.                                                                                                                                                                    |
+| `name(path)`                  | Favorite name; root is `Favorites`.                                                                                                                                                                                                                                                             |
+| `move(src, dst)`              | Rename only: both URLs must be `favorites://`; the favorite of `src` gets `basename(dst)` as its new name. Anything else raises `io.UnsupportedOperation`.                                                                                                                                      |
+| Mutations                     | `mkdir`, `touch`, `copy`, `delete` and `move_to_trash` stay unimplemented, so Core hides commands that check for them.                                                                                                                                                                          |
 
 After every committed store change (add, rename, remove, open, from any pane or
 window), the provider calls `notify_file_changed('')`. Open Favorites panes then
@@ -115,18 +115,18 @@ remove and eviction drop them. `to_json` writes each key only when it is set.
 
 ### Commands
 
-| Key / command | Mechanism in a Favorites pane |
-| --- | --- |
-| `Ctrl+B` / `show_favorites(query='')` | Navigate the active pane to `favorites://`, or reload it there. A nonempty `query` then runs `search_files_in_current_folder` with that query, replacing the old prefilled manager filter. |
-| Enter, double-click | Core `open` sees a directory and runs `open_directory`. A `FavoritesListener.on_command` rewrites `open_directory` for a `favorites://` row to a hidden `open_favorite` command. It resolves the stored URL, checks it is a folder, records the use (Used and Count), then runs `open_directory` with the stored URL. Everything runs on the command worker, never on Qt. |
-| `Ctrl+Left` / `Ctrl+Right` | Core calls `open_directory` on the destination pane; the same rewrite applies there and the use is recorded. |
-| Rename | Core's in-place edit shows the name (the Name column text). Core's `RenameListener` then prepares a move to `favorites://<new name>`, which the provider's `move` turns into a rename. The row key is unchanged, so the cursor stays on it. Names containing `/` or `\` are refused by Core, as for files. |
-| `F8`, `Delete`, `Shift+Delete` | Rewritten to a hidden `remove_favorites` command that works on the chosen rows and asks "Remove N favorites? Folders on disk are not deleted." with default No. |
-| `F11` | Rewritten to copy the stored folder paths instead of `favorites://` keys. |
-| `F5` into Favorites, drop onto Favorites | Rewritten to a hidden `add_favorites` command; see [Adding by Copy and Drop](#adding-by-copy-and-drop). |
-| `F6` into Favorites | Rewritten to an alert: "Moving is not supported; use F5 to add folders." |
-| Copy, move or drag out of Favorites; pack, new file, create folder in Favorites | Rewritten to a hidden alert: "Favorites are shortcuts, not files." |
-| Add current folder to favorites | Unchanged. Hidden and refused while the pane itself shows `favorites://`. |
+| Key / command                                                                   | Mechanism in a Favorites pane                                                                                                                                                                                                                                                                                                                                             |
+| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Ctrl+B` / `show_favorites(query='')`                                           | Navigate the active pane to `favorites://`, or reload it there. A nonempty `query` then runs `search_files_in_current_folder` with that query, replacing the old prefilled manager filter.                                                                                                                                                                                |
+| Enter, double-click                                                             | Core `open` sees a directory and runs `open_directory`. A `FavoritesListener.on_command` rewrites `open_directory` for a `favorites://` row to a hidden `open_favorite` command. It resolves the stored URL, checks it is a folder, records the use (Used and Count), then runs `open_directory` with the stored URL. Everything runs on the command worker, never on Qt. |
+| `Ctrl+Left` / `Ctrl+Right`                                                      | Core calls `open_directory` on the destination pane; the same rewrite applies there and the use is recorded.                                                                                                                                                                                                                                                              |
+| Rename                                                                          | Core's in-place edit shows the name (the Name column text). Core's `RenameListener` then prepares a move to `favorites://<new name>`, which the provider's `move` turns into a rename. The row key is unchanged, so the cursor stays on it. Names containing `/` or `\` are refused by Core, as for files.                                                                |
+| `F8`, `Delete`, `Shift+Delete`                                                  | Rewritten to a hidden `remove_favorites` command that works on the chosen rows and asks "Remove N favorites? Folders on disk are not deleted." with default No.                                                                                                                                                                                                           |
+| `F11`                                                                           | Rewritten to copy the stored folder paths instead of `favorites://` keys.                                                                                                                                                                                                                                                                                                 |
+| `F5` into Favorites, drop onto Favorites                                        | Rewritten to a hidden `add_favorites` command; see [Adding by Copy and Drop](#adding-by-copy-and-drop).                                                                                                                                                                                                                                                                   |
+| `F6` into Favorites                                                             | Rewritten to an alert: "Moving is not supported; use F5 to add folders."                                                                                                                                                                                                                                                                                                  |
+| Copy, move or drag out of Favorites; pack, new file, create folder in Favorites | Rewritten to a hidden alert: "Favorites are shortcuts, not files."                                                                                                                                                                                                                                                                                                        |
+| Add current folder to favorites                                                 | Unchanged. Hidden and refused while the pane itself shows `favorites://`.                                                                                                                                                                                                                                                                                                 |
 
 A missing target: `open_favorite` alerts "Favorite location not found: <path>"
 without recording a use. The pane stays in Favorites and the favorite is kept,
@@ -170,15 +170,15 @@ The plug-in uses only APIs available to a third-party plug-in in
 `UserSettings/Plugins/User`, following
 [Process Pane](../src/main/resources/base/Plugins/ProcessPane/process_pane/__init__.py):
 
-| Need | Public API |
-| --- | --- |
-| Location, rows, rename | `fman.fs.FileSystem`, `fman.listing.Listing`, `fman.url` |
-| Columns | `core.Name` and `fman.fs.Column` |
-| Rewrites and default sort | `DirectoryPaneListener.on_command`, `before_location_change` |
-| Commands | `DirectoryPaneCommand`; hidden commands return `False` from `is_visible` |
-| Storage and locking | `load_json`, `save_json`, `fman.ui.settings_resource` |
-| Messages and clipboard | `show_alert`, `show_status_message`, `fman.clipboard` |
-| Refresh | `FileSystem.notify_file_changed`; `pane.reload()` through `window.get_panes()` as fallback |
+| Need                      | Public API                                                                                 |
+| ------------------------- | ------------------------------------------------------------------------------------------ |
+| Location, rows, rename    | `fman.fs.FileSystem`, `fman.listing.Listing`, `fman.url`                                   |
+| Columns                   | `core.Name` and `fman.fs.Column`                                                           |
+| Rewrites and default sort | `DirectoryPaneListener.on_command`, `before_location_change`                               |
+| Commands                  | `DirectoryPaneCommand`; hidden commands return `False` from `is_visible`                   |
+| Storage and locking       | `load_json`, `save_json`, `fman.ui.settings_resource`                                      |
+| Messages and clipboard    | `show_alert`, `show_status_message`, `fman.clipboard`                                      |
+| Refresh                   | `FileSystem.notify_file_changed`; `pane.reload()` through `window.get_panes()` as fallback |
 
 No `fman.impl` imports, private host attributes, Core imports or host/Core
 changes. Accepted dependencies and caveats:

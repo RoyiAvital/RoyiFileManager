@@ -29,7 +29,7 @@ Minimal interface. Fast navigation. Powerful search. Commands are always close.
 - **Favorites** - Organize frequently used locations with ++ctrl+b++.
 - **Batch File Renamer** - Preview, sort and filter a group before applying a [name template](tools.md#batch-file-renamer).
 - **Robocopy** - Use [native Copy/Move commands](tools.md#robocopy) with their own overwrite and skip policies.
-- **Text Editor and Viewer** - Connect external programs to ++f4++ and ++f3++ with predefined presets for [CudaText](https://github.com/Alexey-T/CudaText), [EmEditor](https://www.emeditor.com), [Notepad++](https://github.com/notepad-plus-plus/notepad-plus-plus), [Notepad 4](https://github.com/zufuliu/notepad4) and [Ecode](https://github.com/SpartanJ/ecode).
+- **Text Editor and Viewer** - Connect external programs to ++f4++ and ++f3++ with predefined presets for [CudaText](https://github.com/Alexey-T/CudaText), [EmEditor](https://www.emeditor.com), [Notepad++](https://github.com/notepad-plus-plus/notepad-plus-plus), [Notepad 4](https://github.com/zufuliu/notepad4), [Ecode](https://github.com/SpartanJ/ecode) and Royi Text Editor.
 - **File and Folder Comparators** - Configure external comparison tools with predefined presets for [Meld](https://meldmerge.org), [Beyond Compare](https://www.scootersoftware.com), [WinMerge](https://github.com/winmerge/winmerge) and [SmartSynchronize](https://www.syntevo.com/smartsynchronize).
 - **Archive Handling** - Utilizing `7Zip` library for a feature reach and _safe_ experience with archives.
 

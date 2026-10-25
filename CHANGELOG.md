@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.1] - 2026-10-24
+
+### Added
+
+- Text editor/viewer setup includes a [Royi Text Editor](https://github.com/RoyiAvital/RoyiTextEditor) preset: no additional
+  arguments for editing and `--read-only` for viewing.
+
 ### Changed
 
 - The file context menu labels **Copy file name** and **Copy file path** are now

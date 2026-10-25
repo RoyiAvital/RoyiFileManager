@@ -34,13 +34,13 @@ timer, watcher, background scan or pane metadata column.
 
 ### User Policy
 
-| Selected entry | Copy to absent destination | Same-volume Move | Cross-volume Move | Permanent Delete |
-| --- | --- | --- | --- | --- |
-| File or directory symlink | Recreate same type and stored target text | Rename link | Recreate and verify link, then remove source link | Remove link only |
-| Supported directory junction | Recreate directory junction with same absolute target | Rename junction | Recreate and verify junction, then remove source junction | Remove junction only |
-| Hardlinked regular file | Independent content copy, not another hardlink | Rename selected name | Existing regular-file copy/delete contract | Remove selected name only |
-| `.lnk` / `.url` shortcut file | Ordinary file copy | Ordinary file rename | Ordinary file transfer | Ordinary file deletion |
-| Volume mount point, unknown or unsupported reparse type | Refuse | Refuse | Refuse | Refuse |
+| Selected entry                                          | Copy to absent destination                            | Same-volume Move     | Cross-volume Move                                         | Permanent Delete          |
+| ------------------------------------------------------- | ----------------------------------------------------- | -------------------- | --------------------------------------------------------- | ------------------------- |
+| File or directory symlink                               | Recreate same type and stored target text             | Rename link          | Recreate and verify link, then remove source link         | Remove link only          |
+| Supported directory junction                            | Recreate directory junction with same absolute target | Rename junction      | Recreate and verify junction, then remove source junction | Remove junction only      |
+| Hardlinked regular file                                 | Independent content copy, not another hardlink        | Rename selected name | Existing regular-file copy/delete contract                | Remove selected name only |
+| `.lnk` / `.url` shortcut file                           | Ordinary file copy                                    | Ordinary file rename | Ordinary file transfer                                    | Ordinary file deletion    |
+| Volume mount point, unknown or unsupported reparse type | Refuse                                                | Refuse               | Refuse                                                    | Refuse                    |
 
 Cloud placeholders are not symbolic links. In this first version, tagged cloud
 entries also refuse these mutations unless a provider-specific path is separately

@@ -175,12 +175,12 @@ unchanged entry does not move it in Name/Path order. Rename preserves Recent ord
 
 ### Bottom Actions
 
-| Control | Targets and Behavior |
-| --- | --- |
-| Delete | All selected favorites, including hidden selections; if selection is empty, the highlighted favorite only. |
-| Rename | The highlighted favorite only, regardless of multi-selection. |
-| Go To | Navigate the invoking pane to the highlighted favorite, then close on successful navigation. |
-| Escape | Close the host; perform no bookmark operation. |
+| Control | Targets and Behavior                                                                                       |
+| ------- | ---------------------------------------------------------------------------------------------------------- |
+| Delete  | All selected favorites, including hidden selections; if selection is empty, the highlighted favorite only. |
+| Rename  | The highlighted favorite only, regardless of multi-selection.                                              |
+| Go To   | Navigate the invoking pane to the highlighted favorite, then close on successful navigation.               |
+| Escape  | Close the host; perform no bookmark operation.                                                             |
 
 Delete is enabled when selection is nonempty or a highlighted item exists. Its
 tooltip/accessibility description states the fallback, for example "Delete

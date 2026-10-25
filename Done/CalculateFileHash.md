@@ -95,14 +95,14 @@ the older QuickList-based hash-result sketch for this consumer.
 
 Public contract:
 
-| API | Behavior |
-| --- | --- |
+| API                                                | Behavior                                                                                                                       |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | `OutputTextBox(text='', parent=None, *, title='')` | Construct a Qt-owned output widget with an optional plain-text title beside Copy. Existing positional arguments are unchanged. |
-| `set_title(title)` / `title()` | Set/get the complete string title on Qt. Elide long display text with a full-title tooltip; never include it in copying. |
-| `set_text(text)` | Replace the complete output; require `str`, reset selection/scroll, and update copy availability. |
-| `text()` | Return the original string supplied by the caller. |
-| `copy_text()` | Copy the entire current string, regardless of selection; empty text leaves the clipboard unchanged. |
-| `copied` | No-argument Qt signal after a nonempty copy action, for caller-owned feedback. |
+| `set_title(title)` / `title()`                     | Set/get the complete string title on Qt. Elide long display text with a full-title tooltip; never include it in copying.       |
+| `set_text(text)`                                   | Replace the complete output; require `str`, reset selection/scroll, and update copy availability.                              |
+| `text()`                                           | Return the original string supplied by the caller.                                                                             |
+| `copy_text()`                                      | Copy the entire current string, regardless of selection; empty text leaves the clipboard unchanged.                            |
+| `copied`                                           | No-argument Qt signal after a nonempty copy action, for caller-owned feedback.                                                 |
 
 Keyboard contract: unmodified Return or keypad Enter with focus in the text
 invokes `copy_text()` exactly once and consumes the event. This behavior belongs

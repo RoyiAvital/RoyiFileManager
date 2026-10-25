@@ -79,21 +79,21 @@ compatibility note, not an API break of the fman contract.
 
 ### Inventory of Incompatibilities (verified by grep)
 
-| Category | Occurrences | Files |
-| --- | --- | --- |
-| Unscoped enums (`Qt.Key_*`, `Qt.AlignLeft`, `QMessageBox.Yes`, `QStyle.SP_*`, `QAbstractItemView.MoveUp`, ...) | ~150+ host, many in tests | most of `fman/impl`, `fman/__init__.py`, plug-ins |
-| `exec_()` | 4 | [application_context.py](../src/main/python/fman/impl/application_context.py), [qt_runner.py](../src/integrationtest/python/fman_integrationtest/qt_runner.py), [test_qt.py](../src/integrationtest/python/fman_integrationtest/test_qt.py) |
-| `import sip` / `from PyQt5 import sip` | 6 | [model/__init__.py](../src/main/python/fman/impl/model/__init__.py), [model/drag_and_drop.py](../src/main/python/fman/impl/model/drag_and_drop.py), test_qt.py |
-| `QVariant()` return values | 7 | [model/table.py](../src/main/python/fman/impl/model/table.py), [quicksearch.py](../src/main/python/fman/impl/quicksearch.py), [uniform_row_heights.py](../src/main/python/fman/impl/view/uniform_row_heights.py) |
-| `QAction`, `QShortcut` from `QtWidgets` (moved to `QtGui`) | 6 | widgets.py, view/__init__.py, ui/panel.py, ui/table.py, Favorites `ui.py` |
-| `event.pos()` / `event.globalPos()` on mouse/context events | 7 | view/__init__.py, view/drag_and_drop.py, ui/table.py |
-| `Qt.CTRL + shortcut` (enum arithmetic) | 1 (mac only) | [widgets.py](../src/main/python/fman/impl/widgets.py) |
-| `QKeySequence(modifiers \| key)` with `int` key, `int(modifiers)` | 2 | [key_event.py](../src/main/python/fman/impl/util/qt/key_event.py) |
-| `event.reason() == event.Keyboard` | 1 | ui/table.py |
-| `QFontDatabase.FixedFont`, `QFont.Bold`, `QPainter.CompositionMode_*`, `QPalette.Inactive` | several | ui/output.py, ui/facade.py, quicklist.py, table.py, application_context.py |
-| `QtMacExtras` | 1 | mac_clipboard_fix.py (never imported on Windows) |
-| Public button constants exposed to plug-ins | 7 | [fman/__init__.py](../src/main/python/fman/__init__.py) |
-| Packaging | 3 | environment.yml (`pyqt=5.15.*`), spec (`PyQt5.QtSvg`), README |
+| Category                                                                                                       | Occurrences               | Files                                                                                                                                                                                                                                       |
+| -------------------------------------------------------------------------------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unscoped enums (`Qt.Key_*`, `Qt.AlignLeft`, `QMessageBox.Yes`, `QStyle.SP_*`, `QAbstractItemView.MoveUp`, ...) | ~150+ host, many in tests | most of `fman/impl`, `fman/__init__.py`, plug-ins                                                                                                                                                                                           |
+| `exec_()`                                                                                                      | 4                         | [application_context.py](../src/main/python/fman/impl/application_context.py), [qt_runner.py](../src/integrationtest/python/fman_integrationtest/qt_runner.py), [test_qt.py](../src/integrationtest/python/fman_integrationtest/test_qt.py) |
+| `import sip` / `from PyQt5 import sip`                                                                         | 6                         | [model/__init__.py](../src/main/python/fman/impl/model/__init__.py), [model/drag_and_drop.py](../src/main/python/fman/impl/model/drag_and_drop.py), test_qt.py                                                                              |
+| `QVariant()` return values                                                                                     | 7                         | [model/table.py](../src/main/python/fman/impl/model/table.py), [quicksearch.py](../src/main/python/fman/impl/quicksearch.py), [uniform_row_heights.py](../src/main/python/fman/impl/view/uniform_row_heights.py)                            |
+| `QAction`, `QShortcut` from `QtWidgets` (moved to `QtGui`)                                                     | 6                         | widgets.py, view/__init__.py, ui/panel.py, ui/table.py, Favorites `ui.py`                                                                                                                                                                   |
+| `event.pos()` / `event.globalPos()` on mouse/context events                                                    | 7                         | view/__init__.py, view/drag_and_drop.py, ui/table.py                                                                                                                                                                                        |
+| `Qt.CTRL + shortcut` (enum arithmetic)                                                                         | 1 (mac only)              | [widgets.py](../src/main/python/fman/impl/widgets.py)                                                                                                                                                                                       |
+| `QKeySequence(modifiers \| key)` with `int` key, `int(modifiers)`                                              | 2                         | [key_event.py](../src/main/python/fman/impl/util/qt/key_event.py)                                                                                                                                                                           |
+| `event.reason() == event.Keyboard`                                                                             | 1                         | ui/table.py                                                                                                                                                                                                                                 |
+| `QFontDatabase.FixedFont`, `QFont.Bold`, `QPainter.CompositionMode_*`, `QPalette.Inactive`                     | several                   | ui/output.py, ui/facade.py, quicklist.py, table.py, application_context.py                                                                                                                                                                  |
+| `QtMacExtras`                                                                                                  | 1                         | mac_clipboard_fix.py (never imported on Windows)                                                                                                                                                                                            |
+| Public button constants exposed to plug-ins                                                                    | 7                         | [fman/__init__.py](../src/main/python/fman/__init__.py)                                                                                                                                                                                     |
+| Packaging                                                                                                      | 3                         | environment.yml (`pyqt=5.15.*`), spec (`PyQt5.QtSvg`), README                                                                                                                                                                               |
 
 Not affected: `QFileIconProvider`, `QFileSystemWatcher` (Windows stub kept),
 `QSvgRenderer` (`PyQt6.QtSvg`), `QFontDatabase.systemFont` (already static),
@@ -119,11 +119,11 @@ almost mechanical. Rejected alternatives are listed below.
 Source assessment on 2026_10_04; no PyQt5/PyQt6 runtime comparison has been
 run. The panes use `QTableView` and Python delegates, not Qt Quick.
 
-| Qt 6 change | Potential benefit | Application limits |
-| --- | --- | --- |
-| `QAbstractItemModel.multiData()` (Qt 6.0+) | Batch the seven standard painting roles in one model callback; resolve the row once instead of repeating `data()` lookups. | PyQt6 6.11.0 exposes the API, but its inherited implementation still calls `data()` per role. An optimized override is required; Python span/wrapper overhead may offset savings. |
+| Qt 6 change                                   | Potential benefit                                                                                                                        | Application limits                                                                                                                                                                |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `QAbstractItemModel.multiData()` (Qt 6.0+)    | Batch the seven standard painting roles in one model callback; resolve the row once instead of repeating `data()` lookups.               | PyQt6 6.11.0 exposes the API, but its inherited implementation still calls `data()` per role. An optimized override is required; Python span/wrapper overhead may offset savings. |
 | `QAbstractItemView.updateThreshold` (Qt 6.9+) | Skip visibility calculations for large `dataChanged` ranges and repaint the viewport directly; default threshold is 200 changed indexes. | Snapshot commits reset the model, and `UniformRowHeights.dataChanged()` already suppresses off-screen updates. Relevance is limited to in-place updates, not scanning or sorting. |
-| Qt Quick GPU scene graph | Retained scene data, batching and a render thread can improve suitable Qt Quick workloads. | Not an automatic `QTableView` acceleration path. Adopting it requires a rendering architecture change, excluded from this migration. |
+| Qt Quick GPU scene graph                      | Retained scene data, batching and a render thread can improve suitable Qt Quick workloads.                                               | Not an automatic `QTableView` acceleration path. Adopting it requires a rendering architecture change, excluded from this migration.                                              |
 
 The [listing model](../src/main/python/fman/impl/model/listing.py) owns role
 values and row lookup. Any batching override belongs there, retains `data()`
@@ -215,14 +215,14 @@ before `Application` is constructed, or `QT_SCALE_FACTOR_ROUNDING_POLICY`) or
 opting out through `QT_ENABLE_HIGHDPI_SCALING=0`. Rounding applies to fonts
 and pixels together, so only the opt-out can reproduce today's mix.
 
-| Option | Factor at 125 / 150 / 175 / 200 % | Text | Pixel-sized widgets and icons | Mixed-DPI monitors |
-| --- | --- | --- | --- | --- |
-| A. Opt out (`QT_ENABLE_HIGHDPI_SCALING=0`) | 1 / 1 / 1 / 1; fonts still follow DPI | Scales | Stay small, exactly as today | Fonts re-scale per monitor, widgets do not |
-| B. `PassThrough` (Qt 6 default) | 1.25 / 1.5 / 1.75 / 2 | Scales | Scale by the exact factor; SVG icons crisp via `devicePixelRatioF()`; raster icons resampled; possible 1 px seams in custom painting at odd factors | Exact per screen, no jumps |
-| C. `Round` (Qt 5 `AA_EnableHighDpiScaling` behaviour) | 1 / 2 / 2 / 2 | Scales with the rounded factor | Crisp, integer | Jumps when a window crosses monitors |
-| D. `RoundPreferFloor` | 1 / 1 / 2 / 2 | As C | Crisp | Jumps |
-| E. `Floor` | 1 / 1 / 1 / 2 | As C | Crisp | Jumps |
-| F. `Ceil` | 2 / 2 / 2 / 2 | As C | Crisp | Jumps |
+| Option                                                | Factor at 125 / 150 / 175 / 200 %     | Text                           | Pixel-sized widgets and icons                                                                                                                       | Mixed-DPI monitors                         |
+| ----------------------------------------------------- | ------------------------------------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| A. Opt out (`QT_ENABLE_HIGHDPI_SCALING=0`)            | 1 / 1 / 1 / 1; fonts still follow DPI | Scales                         | Stay small, exactly as today                                                                                                                        | Fonts re-scale per monitor, widgets do not |
+| B. `PassThrough` (Qt 6 default)                       | 1.25 / 1.5 / 1.75 / 2                 | Scales                         | Scale by the exact factor; SVG icons crisp via `devicePixelRatioF()`; raster icons resampled; possible 1 px seams in custom painting at odd factors | Exact per screen, no jumps                 |
+| C. `Round` (Qt 5 `AA_EnableHighDpiScaling` behaviour) | 1 / 2 / 2 / 2                         | Scales with the rounded factor | Crisp, integer                                                                                                                                      | Jumps when a window crosses monitors       |
+| D. `RoundPreferFloor`                                 | 1 / 1 / 2 / 2                         | As C                           | Crisp                                                                                                                                               | Jumps                                      |
+| E. `Floor`                                            | 1 / 1 / 1 / 2                         | As C                           | Crisp                                                                                                                                               | Jumps                                      |
+| F. `Ceil`                                             | 2 / 2 / 2 / 2                         | As C                           | Crisp                                                                                                                                               | Jumps                                      |
 
 Comparison:
 

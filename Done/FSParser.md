@@ -64,14 +64,14 @@ as collected by `NativeDirectory.batches()` (`buffer.raw`). Records are the
 
 | Offset | Field                          | Used as                              |
 | -----: | ------------------------------ | ------------------------------------ |
-|      0 | `NextEntryOffset` (u32)        | record chaining                      |
-|      8 | `CreationTime` (i64 FILETIME)  | `created_ns`                         |
-|     24 | `LastWriteTime` (i64 FILETIME) | `mtimes_ns`                          |
-|     40 | `EndOfFile` (i64)              | `sizes`                              |
-|     56 | `FileAttributes` (u32)         | `attributes`, `is_dir` (bit `0x10`)  |
-|     60 | `FileNameLength` (u32, bytes)  | name extent                          |
-|     68 | `ReparseTag` (u32)             | `reparse_tags`                       |
-|     72 | `FileId` (16 bytes)            | `identities`                         |
+| 0      | `NextEntryOffset` (u32)        | record chaining                      |
+| 8      | `CreationTime` (i64 FILETIME)  | `created_ns`                         |
+| 24     | `LastWriteTime` (i64 FILETIME) | `mtimes_ns`                          |
+| 40     | `EndOfFile` (i64)              | `sizes`                              |
+| 56     | `FileAttributes` (u32)         | `attributes`, `is_dir` (bit `0x10`)  |
+| 60     | `FileNameLength` (u32, bytes)  | name extent                          |
+| 68     | `ReparseTag` (u32)             | `reparse_tags`                       |
+| 72     | `FileId` (16 bytes)            | `identities`                         |
 
 Output: eight sequences of equal length n (entries `.` and `..` skipped):
 `names` of `str`; `is_dir` of `bool`; `sizes`, `mtimes_ns`, `created_ns` of
@@ -120,7 +120,7 @@ entries (`Columns`) are exactly as before the call.
 Two paths produce a `Listing` for `file://` on NTFS/ReFS; every other producer
 has only the regular one.
 
-| Path | Producer | Parser | `Listing` constructor | Validation |
+| Path    | Producer                                              | Parser                  | `Listing` constructor    | Validation                   |
 | ------- | ----------------------------------------------------- | ----------------------- | ------------------------ | ---------------------------- |
 | Safe    | `scan()` in `core/fs/local/windows/listing.py`        | `_fsparser.Columns`     | `Listing._trusted`       | by the kernel and the C code |
 | Regular | `os.scandir` fallback for non-NTFS volumes, `zip://`, | Python / provider code  | `Listing(...)`,          | `__post_init__`, every       |
@@ -239,12 +239,12 @@ Parser only, no link follow-up:
 
 | Entries                    | Python | `whole` | `batch` | `columns` | `columns-frozen` |
 | -------------------------: | -----: | ------: | ------: | --------: | ---------------: |
-| 10k                        |   10.3 |     0.5 |     0.7 |       0.7 |              0.9 |
-| 100k                       |  104.7 |     6.6 |    11.0 |       9.2 |              9.1 |
-| 200k                       |  215.9 |    17.8 |    30.3 |      23.5 |             23.2 |
-| 202,603 (reference folder) |  220.7 |    16.0 |    29.3 |      22.0 |             22.3 |
-| 500k                       |  551.3 |    46.8 |    87.3 |      60.8 |             60.3 |
-| 1M                         | 1102.7 |    96.1 |   180.2 |     120.9 |            121.5 |
+| 10k                        | 10.3   | 0.5     | 0.7     | 0.7       | 0.9              |
+| 100k                       | 104.7  | 6.6     | 11.0    | 9.2       | 9.1              |
+| 200k                       | 215.9  | 17.8    | 30.3    | 23.5      | 23.2             |
+| 202,603 (reference folder) | 220.7  | 16.0    | 29.3    | 22.0      | 22.3             |
+| 500k                       | 551.3  | 46.8    | 87.3    | 60.8      | 60.3             |
+| 1M                         | 1102.7 | 96.1    | 180.2   | 120.9     | 121.5            |
 
 `batch` pays CPython's 1.125× list growth in 584-entry steps (12 ms of pure
 `extend` at 200k); `columns` removes two thirds of that, the rest is
@@ -254,12 +254,12 @@ Scan after the kernel call (parse + link follow-up + `Listing`):
 
 | Entries                          | Python scan (validated `Listing`) | Native scan (trusted `Listing`) | Ratio |
 | -------------------------------: | --------------------------------: | ------------------------------: | ----: |
-| 10k                              |                              13.3 |                             0.9 | 15.2× |
-| 100k                             |                             134.1 |                             9.6 | 14.0× |
-| 200k                             |                             274.9 |                            23.6 | 11.7× |
-| 202,603 (reference, kernel 23.6) |                             275.1 |                            21.8 | 12.6× |
-| 500k                             |                             707.0 |                            60.2 | 11.7× |
-| 1M                               |                            1418.9 |                           122.0 | 11.6× |
+| 10k                              | 13.3                              | 0.9                             | 15.2× |
+| 100k                             | 134.1                             | 9.6                             | 14.0× |
+| 200k                             | 274.9                             | 23.6                            | 11.7× |
+| 202,603 (reference, kernel 23.6) | 275.1                             | 21.8                            | 12.6× |
+| 500k                             | 707.0                             | 60.2                            | 11.7× |
+| 1M                               | 1418.9                            | 122.0                           | 11.6× |
 
 `Listing.__post_init__` at 200k: `tuple()` × 6 = 6.0, name checks 15.7,
 `set(names)` 12.2, `is_dir` types 3.2, numeric types 14.9, negative sizes 4.7
@@ -280,9 +280,9 @@ the reference folder in `target/diagnostics/fsparser-reference-final.json`.
 
 | Entries                          | Python scan | Native scan | Ratio | Parser `whole` | Parser `columns` | `columns` vs `whole` |
 | -------------------------------: | ----------: | ----------: | ----: | -------------: | ---------------: | -------------------: |
-| 202,603 reference (kernel 25.3)  |       279.2 |        21.9 | 12.8× |           15.9 |             22.1 |      +6.2 ms (+39 %) |
-| 200k synthetic                   |       286.2 |        25.6 | 11.2× |           20.2 |             25.4 |      +5.2 ms (+26 %) |
-| 1M synthetic                     |      1462.5 |       130.0 | 11.3× |          110.0 |            129.9 |     +19.9 ms (+18 %) |
+| 202,603 reference (kernel 25.3)  | 279.2       | 21.9        | 12.8× | 15.9           | 22.1             | +6.2 ms (+39 %)      |
+| 200k synthetic                   | 286.2       | 25.6        | 11.2× | 20.2           | 25.4             | +5.2 ms (+26 %)      |
+| 1M synthetic                     | 1462.5      | 130.0       | 11.3× | 110.0          | 129.9            | +19.9 ms (+18 %)     |
 
 Reading:
 
@@ -318,7 +318,7 @@ Every file the task touches. Paths below `Core/` are relative to
 | `Core/tests/fs/test_fsparser.py`      | 36 extension tests + source/binary pairing test               | done    |
 | `fman_unittest/test_listing.py`       | native vs Python `scan()` on identical batches (junction,     | done    |
 |                                       | cloud tag, failed stat), cancellation between links,          |         |
-|                                       | `_trusted` private and public constructors still validate;   |         |
+|                                       | `_trusted` private and public constructors still validate;    |         |
 |                                       | mocked-`records()` tests pinned to the regular path           |         |
 | `src/misc/benchmark_fsparser.py`      | gauge: Python reference body vs the real `scan()` on captured | done    |
 |                                       | batches, plus the three parser shapes                         |         |
@@ -362,13 +362,13 @@ Every file the task touches. Paths below `Core/` are relative to
 Measured, first visit of the 202,603-entry reference folder (warm, Python
 3.14.7, Windows 11); other sizes in the Gauge tables.
 
-| Step                                                |   Today | With `Columns` + trusted `Listing` |
+| Step                                                | Today   | With `Columns` + trusted `Listing` |
 | --------------------------------------------------- | ------: | ---------------------------------: |
-| Kernel `GetFileInformationByHandleEx`, 347 × 64 KiB |   24 ms |                              24 ms |
-| Parse, link follow-up, `Listing`                    |  275 ms |                              22 ms |
-| **Scan total**                                      | ~299 ms |                             ~46 ms |
-| Natural keys, sort, filter, row map                 | ~125 ms |            ~125 ms (FSPaneArch002) |
-| Model reset + first paint                           |  ~80 ms |                             ~80 ms |
+| Kernel `GetFileInformationByHandleEx`, 347 × 64 KiB | 24 ms   | 24 ms                              |
+| Parse, link follow-up, `Listing`                    | 275 ms  | 22 ms                              |
+| **Scan total**                                      | ~299 ms | ~46 ms                             |
+| Natural keys, sort, filter, row map                 | ~125 ms | ~125 ms (FSPaneArch002)            |
+| Model reset + first paint                           | ~80 ms  | ~80 ms                             |
 
 At 1M entries the post-kernel scan goes 1419 → 122 ms.
 
@@ -505,14 +505,14 @@ Resolution status after the third review (2026_10_04):
 |                                              | (list growth), so `Columns` was added and selected              |
 | 7 fill loop near floor                       | confirmed by compiler-flag measurements                         |
 | 9 plan out of sync; one production API;      | rewritten; `Columns` integrated, the other two shapes kept for  |
-|   trusted `Listing` in scope                 | the gauge by decision; no version constant (internal module,    |
+| trusted `Listing` in scope                   | the gauge by decision; no version constant (internal module,    |
 |                                              | hash-paired)                                                    |
 | 10 filter link tags in C                     | `Columns(link_tags)`; `add()` reports matching tags only        |
 | 11 `patch()` invariants                      | exact `bool`/`int`, size ≥ 0                                    |
 | 12 C API after failed allocation             | `make_entry` stops at the first NULL                            |
 | 13 arrays held through `finish()`            | each array freed after its column moves                         |
 | 14 single-thread ownership                   | documented in the type doc and header comment                   |
-| 15 silent fallback, stale binary, packaging  | no fallback at all (decision): missing binary fails the build  |
+| 15 silent fallback, stale binary, packaging  | no fallback at all (decision): missing binary fails the build   |
 |                                              | and the import; hash check in `test`/`freeze`; packaged copy    |
 |                                              | byte-checked in `package`/`smoke-everything`                    |
 | 16 edge-case tests                           | parser-level cases added (36 tests); scan-level cases listed    |
@@ -978,27 +978,27 @@ Run 2026_10_04 (after IR1–IR8) on Windows 11 26300, Python 3.14.7, binary
 probes below ran on the functionally identical `e929a168…` build that
 preceded a comment-only source change).
 
-| Check | Command | Result |
-| ------------------------------- | ------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| Focused unit tests              | `python -c "import build, subprocess, sys; ... '-X', 'dev', '-m', 'unittest', 'fman_unittest.test_listing', 'core.tests.fs.test_local', 'core.tests.fs.test_fsparser' ..."` | 137 tests OK, 4 skipped (symlink privilege, as before) |
-| Source/binary pairing           | `python src/main/c/write_hashes.py --from target/native/_fsparser.pyd`; `check_hashes.py` inside `build.py test`/`freeze` | written; matches |
-| Gauge, reference folder         | `python src/misc/benchmark_fsparser.py <reference> --repeat 7`                  | final: post-kernel scan 279.2 → 21.9 ms (12.8×) through the real `scan()`; whole 15.9, batch 29.1, columns 22.1, frozen 22.3; parity identical for all (see Final Scores for 200k/1M synthetic) |
-| Validation script               | `python src/misc/validate_fsparser.py`                                          | 1,300 entries, 1,324 cases, 13 expected skips; all extra and system folders; 8 synthetic sets, 17 malformed (incl. `\\`, `/`, NUL names), 32 bytes traced growth; no problems in six runs. One run started seconds after the rebuild reported two `os.stat` mismatches that did not recur; treated as a live-folder timing artefact (metadata still settling), not reproduced |
-| IR3 allocation injection        | `_testcapi.set_nomemory(i, i+1)` for `finish()` i = 0–11 and `parse_batch` i = 0–39, isolated subprocess | `finish()`: 529 entries before and after every failure, retry succeeds; `parse_batch`: no partial commit on any failure |
-| IR4 call times                  | three runs, `perf_counter_ns` around every `add`, `finish(frozen=True)`, discard | 200k: max add 1.42 ms, finish 3.85 ms, discard 6.61 ms; 1M: 4.66 / 18.15 / 33.47 ms — within the gate |
-| IR5 facts                       | `git check-ignore -v`, `git check-attr -a`                                      | `.gitignore:65:*.py[cod]`; `filter: lfs` from the existing `*.pyd` rule |
-| Not run                         | `python build.py freeze` / `package` / `smoke-everything`                        | packaged byte-check and `python3.dll` bundling to be confirmed by the first release build |
+| Check                           | Command                                                                                                                                                                     | Result                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Focused unit tests              | `python -c "import build, subprocess, sys; ... '-X', 'dev', '-m', 'unittest', 'fman_unittest.test_listing', 'core.tests.fs.test_local', 'core.tests.fs.test_fsparser' ..."` | 137 tests OK, 4 skipped (symlink privilege, as before)                                                                                                                                                                                                                                                                                                                        |
+| Source/binary pairing           | `python src/main/c/write_hashes.py --from target/native/_fsparser.pyd`; `check_hashes.py` inside `build.py test`/`freeze`                                                   | written; matches                                                                                                                                                                                                                                                                                                                                                              |
+| Gauge, reference folder         | `python src/misc/benchmark_fsparser.py <reference> --repeat 7`                                                                                                              | final: post-kernel scan 279.2 → 21.9 ms (12.8×) through the real `scan()`; whole 15.9, batch 29.1, columns 22.1, frozen 22.3; parity identical for all (see Final Scores for 200k/1M synthetic)                                                                                                                                                                               |
+| Validation script               | `python src/misc/validate_fsparser.py`                                                                                                                                      | 1,300 entries, 1,324 cases, 13 expected skips; all extra and system folders; 8 synthetic sets, 17 malformed (incl. `\\`, `/`, NUL names), 32 bytes traced growth; no problems in six runs. One run started seconds after the rebuild reported two `os.stat` mismatches that did not recur; treated as a live-folder timing artefact (metadata still settling), not reproduced |
+| IR3 allocation injection        | `_testcapi.set_nomemory(i, i+1)` for `finish()` i = 0–11 and `parse_batch` i = 0–39, isolated subprocess                                                                    | `finish()`: 529 entries before and after every failure, retry succeeds; `parse_batch`: no partial commit on any failure                                                                                                                                                                                                                                                       |
+| IR4 call times                  | three runs, `perf_counter_ns` around every `add`, `finish(frozen=True)`, discard                                                                                            | 200k: max add 1.42 ms, finish 3.85 ms, discard 6.61 ms; 1M: 4.66 / 18.15 / 33.47 ms — within the gate                                                                                                                                                                                                                                                                         |
+| IR5 facts                       | `git check-ignore -v`, `git check-attr -a`                                                                                                                                  | `.gitignore:65:*.py[cod]`; `filter: lfs` from the existing `*.pyd` rule                                                                                                                                                                                                                                                                                                       |
+| Not run                         | `python build.py freeze` / `package` / `smoke-everything`                                                                                                                   | packaged byte-check and `python3.dll` bundling to be confirmed by the first release build                                                                                                                                                                                                                                                                                     |
 
 Earlier results (first implementation pass, binary `65bdc1e0…`):
 
-| Check | Command | Result |
-| ------------------------------- | ------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| Focused unit tests              | `python -c "import build, subprocess, sys; ... '-X', 'dev', '-m', 'unittest', 'fman_unittest.test_listing', 'core.tests.fs.test_local', 'core.tests.fs.test_fsparser' ..."` | 136 tests OK, 4 skipped (symlink privilege, as before) |
-| Source/binary pairing           | `python src/main/c/check_hashes.py` (also inside `build.py test`/`freeze`)      | matches                                                    |
-| Gauge, reference folder         | `python src/misc/benchmark_fsparser.py <reference> --repeat 5`                  | post-kernel scan 276.9 → 22.8 ms (12.1×) through the real `scan()`; whole 17.3, batch 31.5, columns 23.0, frozen 23.2; parity identical for all |
-| Validation script               | `python src/misc/validate_fsparser.py`                                          | main folder 1,300 entries, 1,324 cases created, 13 skipped (symlink privilege, C0 name); empty/single/2,500-entry/case-sensitive/above-MAX_PATH folders; profile junctions, ProgramData, OneDrive cloud files, System32; 8 synthetic sets, 14 malformed, 32 bytes traced growth; no problems |
-| Hash scripts robustness         | scratch copies: CRLF source, CRLF sidecar, LFS pointer, edited source           | exit 0, 0, 1 (pointer message), 1 (rebuild message)        |
-| Not run                         | `python build.py freeze` / `package` / `smoke-everything`                        | packaged byte-check and `python3.dll` bundling to be confirmed by the first release build |
+| Check                           | Command                                                                                                                                                                     | Result                                                                                                                                                                                                                                                                                       |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Focused unit tests              | `python -c "import build, subprocess, sys; ... '-X', 'dev', '-m', 'unittest', 'fman_unittest.test_listing', 'core.tests.fs.test_local', 'core.tests.fs.test_fsparser' ..."` | 136 tests OK, 4 skipped (symlink privilege, as before)                                                                                                                                                                                                                                       |
+| Source/binary pairing           | `python src/main/c/check_hashes.py` (also inside `build.py test`/`freeze`)                                                                                                  | matches                                                                                                                                                                                                                                                                                      |
+| Gauge, reference folder         | `python src/misc/benchmark_fsparser.py <reference> --repeat 5`                                                                                                              | post-kernel scan 276.9 → 22.8 ms (12.1×) through the real `scan()`; whole 17.3, batch 31.5, columns 23.0, frozen 23.2; parity identical for all                                                                                                                                              |
+| Validation script               | `python src/misc/validate_fsparser.py`                                                                                                                                      | main folder 1,300 entries, 1,324 cases created, 13 skipped (symlink privilege, C0 name); empty/single/2,500-entry/case-sensitive/above-MAX_PATH folders; profile junctions, ProgramData, OneDrive cloud files, System32; 8 synthetic sets, 14 malformed, 32 bytes traced growth; no problems |
+| Hash scripts robustness         | scratch copies: CRLF source, CRLF sidecar, LFS pointer, edited source                                                                                                       | exit 0, 0, 1 (pointer message), 1 (rebuild message)                                                                                                                                                                                                                                          |
+| Not run                         | `python build.py freeze` / `package` / `smoke-everything`                                                                                                                   | packaged byte-check and `python3.dll` bundling to be confirmed by the first release build                                                                                                                                                                                                    |
 
 ## Implementation Review (2026_10_04)
 
@@ -1041,10 +1041,10 @@ work, but completion above is not release approval for the cases below.
   directory-sized work under the GIL. Three isolated runs on the official
   binary produced these call times:
 
-  | Entries | Maximum add | Median frozen finish | Median discard |
-  | ---: | ---: | ---: | ---: |
-  | 200,000 | 1.454 ms | 4.102 ms | 6.686 ms |
-  | 1,000,000 | 4.871 ms | 19.674 ms | 35.022 ms |
+  | Entries   | Maximum add | Median frozen finish | Median discard |
+  | --------: | ----------: | -------------------: | -------------: |
+  | 200,000   | 1.454 ms    | 4.102 ms             | 6.686 ms       |
+  | 1,000,000 | 4.871 ms    | 19.674 ms            | 35.022 ms      |
 
   The slowest adds crossed capacity boundaries. This contradicts the claimed
   70-us maximum and omits substantial cancellation cleanup. Correct Runtime

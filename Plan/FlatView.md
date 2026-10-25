@@ -72,9 +72,9 @@ the compatibility blockers and recommended revision.
 Add two methods to [DirectoryPane](../src/main/python/fman/__init__.py), keeping
 Qt objects and signals private to the host:
 
-| Method | Contract |
-| --- | --- |
-| `pane.get_listing_mode()` | Return `'normal'` for an ordinary directory listing or `'flat'` for the recursive files-only listing. |
+| Method                                   | Contract                                                                                                           |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `pane.get_listing_mode()`                | Return `'normal'` for an ordinary directory listing or `'flat'` for the recursive files-only listing.              |
 | `pane.on_listing_mode_changed(callback)` | Register a no-argument callback for this pane's committed mode changes; return an idempotent unsubscribe function. |
 
 - The host owns the mode per pane. `get_path()` remains the real root URL and

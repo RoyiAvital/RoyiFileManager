@@ -13,12 +13,12 @@ and the probe [src/misc/everything_probe.py](../src/misc/everything_probe.py).
 
 Add a bundled `Everything` plug-in with four Command Center commands:
 
-| Command id | Alias | Windows binding |
-| --- | --- | --- |
-| `search_file_by_everything` | Search file by Everything | `Ctrl+E` |
-| `add_folder_to_everything_database` | Add folder to Everything database | none |
-| `add_favorites_to_everything_database` | Add favorite folders to Everything database | none |
-| `manage_everything_folders` | Manage Everything database folders | none |
+| Command id                             | Alias                                       | Windows binding |
+| -------------------------------------- | ------------------------------------------- | --------------- |
+| `search_file_by_everything`            | Search file by Everything                   | `Ctrl+E`        |
+| `add_folder_to_everything_database`    | Add folder to Everything database           | none            |
+| `add_favorites_to_everything_database` | Add favorite folders to Everything database | none            |
+| `manage_everything_folders`            | Manage Everything database folders          | none            |
 
 **Search file by Everything** opens Quicksearch; each keystroke is sent verbatim,
 in Everything's own search syntax, to a resident Everything index and the top
@@ -129,16 +129,16 @@ Plugins/Everything/
 
 Settings file `Everything.json` in `UserSettings/Plugins/User/Settings/`:
 
-| Key | Default | Meaning |
-| --- | --- | --- |
-| `folders` | `[]` | Indexed roots, absolute local paths |
-| `executable` | `""` | Empty = bundled binary; otherwise a user path to `Everything.exe` |
-| `instance` | `"RoyiFileManager"` | Named instance; never empty |
-| `max_results` | `100` | Rows requested per keystroke |
-| `sort` | `"name"` | `name`, `path`, `date_modified`, `size` (Everything sort constants) |
-| `show_metadata` | `true` | Description line with modified date and size |
-| `exit_with_application` | `true` | Send `-exit` to the managed instance on quit |
-| `query_timeout_ms` | `50` | One total query deadline, bounded to 1-500 ms |
+| Key                     | Default             | Meaning                                                             |
+| ----------------------- | ------------------- | ------------------------------------------------------------------- |
+| `folders`               | `[]`                | Indexed roots, absolute local paths                                 |
+| `executable`            | `""`                | Empty = bundled binary; otherwise a user path to `Everything.exe`   |
+| `instance`              | `"RoyiFileManager"` | Named instance; never empty                                         |
+| `max_results`           | `100`               | Rows requested per keystroke                                        |
+| `sort`                  | `"name"`            | `name`, `path`, `date_modified`, `size` (Everything sort constants) |
+| `show_metadata`         | `true`              | Description line with modified date and size                        |
+| `exit_with_application` | `true`              | Send `-exit` to the managed instance on quit                        |
+| `query_timeout_ms`      | `50`                | One total query deadline, bounded to 1-500 ms                       |
 
 Mutable state under `UserSettings/Local/Everything/`: generated `Everything.ini`,
 `Everything.db` (`db_location`) and process ownership metadata, nothing beside the executable, nothing in the
@@ -308,15 +308,15 @@ provider notifications or activation. Reloading a new service cannot revive old 
 
 ### Threading and ownership
 
-| Work | Thread |
-| --- | --- |
-| Command entry points | host command worker; Qt work dispatched explicitly |
-| `get_items`, Quicksearch, prompts, settings and notifications | Qt thread |
-| Win32 window, message pump, `SendMessageTimeoutW`, reply parsing | `everything-ipc` daemon thread |
-| `Popen` start/exit, readiness and root updates | one serialized lazy worker |
-| User settings read/write | Qt thread; immutable configuration sent to worker |
-| IPC initialization | manager worker, before ready publication |
-| Shutdown joins | one non-daemon cleanup thread, only when workers exist |
+| Work                                                             | Thread                                                 |
+| ---------------------------------------------------------------- | ------------------------------------------------------ |
+| Command entry points                                             | host command worker; Qt work dispatched explicitly     |
+| `get_items`, Quicksearch, prompts, settings and notifications    | Qt thread                                              |
+| Win32 window, message pump, `SendMessageTimeoutW`, reply parsing | `everything-ipc` daemon thread                         |
+| `Popen` start/exit, readiness and root updates                   | one serialized lazy worker                             |
+| User settings read/write                                         | Qt thread; immutable configuration sent to worker      |
+| IPC initialization                                               | manager worker, before ready publication               |
+| Shutdown joins                                                   | one non-daemon cleanup thread, only when workers exist |
 
 Data crossing threads is immutable (`str`, tuples, `Hit` dataclasses). Widgets and
 models stay on Qt; cleanup uses thread-safe `QObject.deleteLater` after joins.
@@ -819,16 +819,16 @@ The IPC client, packet parsing, stale-reply rejection, ownership-checked
 lifecycle, serialized root updates and read-only folder manager match the design.
 Thread ownership is respected.
 
-| ID | Priority | Finding | Where |
-| --- | --- | --- | --- |
-| E1 | P2 | **Enter on a broad query closes the dialog without navigating.** The "Showing N of M" hint is row 0. Quicksearch moves the cursor to row 0 on every text change ([quicksearch.py](../src/main/python/fman/impl/quicksearch.py#L86-L88)), so Enter accepts the hint's empty value. This happens whenever there are more than `max_results` (100) hits, which is common with Everything. The native test only presses Enter on a one-hit query. | `search_items` in [\_\_init\_\_.py](../src/main/resources/base/Plugins/Everything/everything_search/__init__.py) |
-| E2 | P2 | **No recovery after the managed instance exits.** The state stays `ready`. `Manager.request` returns early for unchanged settings, so every reopened search shows "Everything instance changed." until the application restarts or a root changes. A fake-runtime probe showed one `apply` call before and after reopening the search. | `Manager.request` in [instance.py](../src/main/resources/base/Plugins/Everything/everything_search/instance.py), `search_items` |
-| E3 | P3 | **`exit_with_application: false` has no benefit.** The next session's `apply` adopts the owned instance, then always calls `stop()` and starts a new one. The design says to reuse it. | `ProcessRuntime.apply` |
-| E4 | P3 | **The first query of a session can time out.** It must start the IPC thread within the 50 ms deadline; if it misses, a "busy" hint appears and Quicksearch does not query again until the text changes. | `IpcClient.query` |
-| E5 | P3 | **Quit can block the Qt thread.** `_dispose` runs on Qt and joins the manager, which can wait up to about 21 s (a 15 s exit poll plus a 5 s process wait) if Everything is slow to exit. | `EverythingService._dispose`, `Manager.close` |
-| E6 | P3 | **`License.txt` is fragile and untracked.** It is downloaded from a mutable web page with a pinned SHA-256, so any edit by voidtools breaks `run`/`test`/`freeze` even though the binary is unchanged. Only `*.exe` is ignored, so the downloaded file appears untracked and can be committed by accident. | [build.py](../build.py) `_ensure_everything` |
-| E7 | P3 | The plug-in imports `fman.impl` (`PluginService`, `format_size`, `run_in_main_thread`). This is documented as fork coupling, but PlugIn.md asks plug-ins not to import `fman.impl`. | `__init__.py` imports |
-| E8 | P3 | Stale text: Scope and Acceptance still describe "Add/Remove folder" commands, but removal now happens through the manager (F8/Delete). | This document |
+| ID  | Priority | Finding                                                                                                                                                                                                                                                                                                                                                                                                                                       | Where                                                                                                                           |
+| --- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| E1  | P2       | **Enter on a broad query closes the dialog without navigating.** The "Showing N of M" hint is row 0. Quicksearch moves the cursor to row 0 on every text change ([quicksearch.py](../src/main/python/fman/impl/quicksearch.py#L86-L88)), so Enter accepts the hint's empty value. This happens whenever there are more than `max_results` (100) hits, which is common with Everything. The native test only presses Enter on a one-hit query. | `search_items` in [\_\_init\_\_.py](../src/main/resources/base/Plugins/Everything/everything_search/__init__.py)                |
+| E2  | P2       | **No recovery after the managed instance exits.** The state stays `ready`. `Manager.request` returns early for unchanged settings, so every reopened search shows "Everything instance changed." until the application restarts or a root changes. A fake-runtime probe showed one `apply` call before and after reopening the search.                                                                                                        | `Manager.request` in [instance.py](../src/main/resources/base/Plugins/Everything/everything_search/instance.py), `search_items` |
+| E3  | P3       | **`exit_with_application: false` has no benefit.** The next session's `apply` adopts the owned instance, then always calls `stop()` and starts a new one. The design says to reuse it.                                                                                                                                                                                                                                                        | `ProcessRuntime.apply`                                                                                                          |
+| E4  | P3       | **The first query of a session can time out.** It must start the IPC thread within the 50 ms deadline; if it misses, a "busy" hint appears and Quicksearch does not query again until the text changes.                                                                                                                                                                                                                                       | `IpcClient.query`                                                                                                               |
+| E5  | P3       | **Quit can block the Qt thread.** `_dispose` runs on Qt and joins the manager, which can wait up to about 21 s (a 15 s exit poll plus a 5 s process wait) if Everything is slow to exit.                                                                                                                                                                                                                                                      | `EverythingService._dispose`, `Manager.close`                                                                                   |
+| E6  | P3       | **`License.txt` is fragile and untracked.** It is downloaded from a mutable web page with a pinned SHA-256, so any edit by voidtools breaks `run`/`test`/`freeze` even though the binary is unchanged. Only `*.exe` is ignored, so the downloaded file appears untracked and can be committed by accident.                                                                                                                                    | [build.py](../build.py) `_ensure_everything`                                                                                    |
+| E7  | P3       | The plug-in imports `fman.impl` (`PluginService`, `format_size`, `run_in_main_thread`). This is documented as fork coupling, but PlugIn.md asks plug-ins not to import `fman.impl`.                                                                                                                                                                                                                                                           | `__init__.py` imports                                                                                                           |
+| E8  | P3       | Stale text: Scope and Acceptance still describe "Add/Remove folder" commands, but removal now happens through the manager (F8/Delete).                                                                                                                                                                                                                                                                                                        | This document                                                                                                                   |
 
 Recommended fixes:
 
@@ -866,11 +866,11 @@ read-only root manager, serialized process updates, IPC ownership/deadline
 checks and pinned portable inputs passed focused checks. Prior records and
 findings remain unchanged.
 
-| ID | Priority | Finding | Evidence / Required Change |
-| --- | --- | --- | --- |
-| S1 | P2 | **A folder-add task can persist after plug-in disposal.** [_CollectEverythingFolders](../src/main/resources/base/Plugins/Everything/everything_search/__init__.py#L440) checks only progress-dialog cancellation; [_commit_roots](../src/main/resources/base/Plugins/Everything/everything_search/__init__.py#L349) saves before checking the service's lifetime. | Invalidating a real `UiOwner` during candidate validation disposed the real service, but the command still called `save_json('Everything.json', {'folders': ['C:\\Data']})` once, then alerted that the service was not loaded. The host unload invalidates owners but does not cancel arbitrary `Task` objects. Capture the initiating owner/service generation, cancel or reject stale work, and validate that captured lifetime on Qt before any settings write, provider notification or activation. Check the other root-mutating commands through this shared boundary. Add an owner-invalidation-during-validation regression asserting no persistence, notification or activation. |
-| E1 | P2 | **Return on a broad query accepts the count hint.** [search_items](../src/main/resources/base/Plugins/Everything/everything_search/__init__.py#L213) prepends the empty-valued count row, while Quicksearch selects row zero after text changes. | A real native Quicksearch receiving 12,345 total hits selected `(row=0, value='')`; pressing Return closed it and produced zero navigation calls. Keep the first selected row navigable when hits exist, for example by appending the count row. Add native Return coverage for a query exceeding `max_results`, not just the one-hit path. |
-| E2 | P2 | **The manager does not recover after the process disappears.** [Manager.request](../src/main/resources/base/Plugins/Everything/everything_search/instance.py#L256) short-circuits unchanged settings while status remains ready; the query failure does not invalidate that state. | With a fake runtime, `NotRunning` produced the instance-changed hint; reopening with the same settings retained ready/generation 1 and only one `apply` call. Mark lost ownership/process state and schedule an ownership-checked retry on the manager worker. A foreign named instance must remain a collision, never permission to stop it. Add unchanged-settings recovery and foreign-instance refusal regressions. |
+| ID  | Priority | Finding                                                                                                                                                                                                                                                                                                                                                           | Evidence / Required Change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| --- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| S1  | P2       | **A folder-add task can persist after plug-in disposal.** [_CollectEverythingFolders](../src/main/resources/base/Plugins/Everything/everything_search/__init__.py#L440) checks only progress-dialog cancellation; [_commit_roots](../src/main/resources/base/Plugins/Everything/everything_search/__init__.py#L349) saves before checking the service's lifetime. | Invalidating a real `UiOwner` during candidate validation disposed the real service, but the command still called `save_json('Everything.json', {'folders': ['C:\\Data']})` once, then alerted that the service was not loaded. The host unload invalidates owners but does not cancel arbitrary `Task` objects. Capture the initiating owner/service generation, cancel or reject stale work, and validate that captured lifetime on Qt before any settings write, provider notification or activation. Check the other root-mutating commands through this shared boundary. Add an owner-invalidation-during-validation regression asserting no persistence, notification or activation. |
+| E1  | P2       | **Return on a broad query accepts the count hint.** [search_items](../src/main/resources/base/Plugins/Everything/everything_search/__init__.py#L213) prepends the empty-valued count row, while Quicksearch selects row zero after text changes.                                                                                                                  | A real native Quicksearch receiving 12,345 total hits selected `(row=0, value='')`; pressing Return closed it and produced zero navigation calls. Keep the first selected row navigable when hits exist, for example by appending the count row. Add native Return coverage for a query exceeding `max_results`, not just the one-hit path.                                                                                                                                                                                                                                                                                                                                                |
+| E2  | P2       | **The manager does not recover after the process disappears.** [Manager.request](../src/main/resources/base/Plugins/Everything/everything_search/instance.py#L256) short-circuits unchanged settings while status remains ready; the query failure does not invalidate that state.                                                                                | With a fake runtime, `NotRunning` produced the instance-changed hint; reopening with the same settings retained ready/generation 1 and only one `apply` call. Mark lost ownership/process state and schedule an ownership-checked retry on the manager worker. A foreign named instance must remain a collision, never permission to stop it. Add unchanged-settings recovery and foreign-instance refusal regressions.                                                                                                                                                                                                                                                                    |
 
 ### Focused Validation
 
@@ -944,17 +944,17 @@ within the same application session. Only this task document was manually edited
 
 ## Review Response (2026-10-03)
 
-| ID | Disposition | Decisive Check |
-| --- | --- | --- |
-| S1 | Captured service identity and owner lifetime reach the shared Qt commit guard; stale work returns before settings I/O, notifications or activation. Collection stops on invalidation. | Real owner disposal during drop, Add prompt, Favorites import, removal confirmation and parent confirmation; replaced-service unit check. |
-| E1 | Count hint follows real hits, keeping the default selection navigable. | Native Return/Escape on both one-hit and truncated queries. |
-| E2 | `NotRunning` invalidates only the matching state; reopening retries unchanged settings on the manager worker. Foreign ownership remains a refusal. | Recovery/collision/stale-generation unit cases plus existing direct foreign-process refusal. |
-| E3 | Owner records include a generated-configuration hash. Reuse also verifies executable, name, identity and readiness; changed or legacy records restart safely. | Unit matching/changed/legacy cases and live same-process reuse assertion. |
-| E4 | The manager prepares IPC off Qt before publishing ready, outside the first query's deadline. | Native thread-affinity assertion, idempotent client startup test and real source captures. |
-| E5 | Qt signals cancellation without joining; a bounded non-daemon cleanup thread performs waits and retains notifications until the producer stops. Empty-root disposal creates no worker. | Blocked runtime shutdown leaves Qt responsive; active and empty lifecycle cases pass. |
-| E6 | Repository-owned `licenses/Everything.txt` replaces the mutable license download. Both original notices are preserved; normalized pin, spec and package verification cover the asset. Old generated `bin/License.txt` removed. | Notice-text comparison, offline/tamper/CRLF tests, actual asset verification and spec assertions. |
-| E7 | Existing private dependencies retained as an explicit, limited bundled-host exception in PlugIn.md; not exported as public APIs. | Matching-host loader, lifecycle, thread-affinity and source-app checks pass. |
-| E8 | Current Scope, Design, Implementation Steps and Acceptance describe Add commands and manager F8/Delete; historical review records remain unchanged. | Current command table and documentation aligned; strict docs build passes. |
+| ID  | Disposition                                                                                                                                                                                                                    | Decisive Check                                                                                                                            |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| S1  | Captured service identity and owner lifetime reach the shared Qt commit guard; stale work returns before settings I/O, notifications or activation. Collection stops on invalidation.                                          | Real owner disposal during drop, Add prompt, Favorites import, removal confirmation and parent confirmation; replaced-service unit check. |
+| E1  | Count hint follows real hits, keeping the default selection navigable.                                                                                                                                                         | Native Return/Escape on both one-hit and truncated queries.                                                                               |
+| E2  | `NotRunning` invalidates only the matching state; reopening retries unchanged settings on the manager worker. Foreign ownership remains a refusal.                                                                             | Recovery/collision/stale-generation unit cases plus existing direct foreign-process refusal.                                              |
+| E3  | Owner records include a generated-configuration hash. Reuse also verifies executable, name, identity and readiness; changed or legacy records restart safely.                                                                  | Unit matching/changed/legacy cases and live same-process reuse assertion.                                                                 |
+| E4  | The manager prepares IPC off Qt before publishing ready, outside the first query's deadline.                                                                                                                                   | Native thread-affinity assertion, idempotent client startup test and real source captures.                                                |
+| E5  | Qt signals cancellation without joining; a bounded non-daemon cleanup thread performs waits and retains notifications until the producer stops. Empty-root disposal creates no worker.                                         | Blocked runtime shutdown leaves Qt responsive; active and empty lifecycle cases pass.                                                     |
+| E6  | Repository-owned `licenses/Everything.txt` replaces the mutable license download. Both original notices are preserved; normalized pin, spec and package verification cover the asset. Old generated `bin/License.txt` removed. | Notice-text comparison, offline/tamper/CRLF tests, actual asset verification and spec assertions.                                         |
+| E7  | Existing private dependencies retained as an explicit, limited bundled-host exception in PlugIn.md; not exported as public APIs.                                                                                               | Matching-host loader, lifecycle, thread-affinity and source-app checks pass.                                                              |
+| E8  | Current Scope, Design, Implementation Steps and Acceptance describe Add commands and manager F8/Delete; historical review records remain unchanged.                                                                            | Current command table and documentation aligned; strict docs build passes.                                                                |
 
 Source fixes and recommendations are complete. Rebuilt-distribution validation
 remains explicitly unverified; no release approval is implied.

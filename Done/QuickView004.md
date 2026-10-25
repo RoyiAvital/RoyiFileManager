@@ -210,14 +210,14 @@ the vertical scrollbar width so fit calculations do not oscillate. Use bounded
 scrollbar mapping for very tall documents rather than overflowing Qt integer
 ranges. Loading/error placeholders occupy stable page rectangles.
 
-| Control | Behavior |
-| --- | --- |
-| Wheel / vertical scrollbar | Continuous scrolling across page boundaries. |
-| Previous / Next | Align the preceding/following page to the viewport top; clamp at the ends. |
-| Page number / total | Show a 1-based editable current page and read-only total; Enter accepts a valid page, invalid input restores the current value. |
-| Fit Page | Scale each page to fit both usable viewport dimensions, preserving aspect ratio. |
-| Fit Width | Scale each page to the usable viewport width; tall pages scroll vertically. |
-| Zoom out / in | Enter manual zoom in 1.25x steps, clamped to 25%-400%; 100% means PDF logical size at 96 DPI before device-pixel scaling. |
+| Control                    | Behavior                                                                                                                        |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Wheel / vertical scrollbar | Continuous scrolling across page boundaries.                                                                                    |
+| Previous / Next            | Align the preceding/following page to the viewport top; clamp at the ends.                                                      |
+| Page number / total        | Show a 1-based editable current page and read-only total; Enter accepts a valid page, invalid input restores the current value. |
+| Fit Page                   | Scale each page to fit both usable viewport dimensions, preserving aspect ratio.                                                |
+| Fit Width                  | Scale each page to the usable viewport width; tall pages scroll vertically.                                                     |
+| Zoom out / in              | Enter manual zoom in 1.25x steps, clamped to 25%-400%; 100% means PDF logical size at 96 DPI before device-pixel scaling.       |
 
 Fit modes scale pages independently, including mixed portrait/landscape sizes;
 manual zoom uses one document-wide percentage. The current page is the one with

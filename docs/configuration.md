@@ -57,12 +57,12 @@ Restart {{ app_name }} after external edits.
 
 Use `SearchFileFuzzy.json`.
 
-| Parameter | Default | Effect |
-| --- | ---: | --- |
-| `mode` | `fuzzy` | Use `fuzzy` subsequence matching or `regular` substring matching. |
-| `max_recursive_entries` | 50,000 | Maximum files and folders inspected while building a find index. |
-| `max_results` | 100 | Maximum results shown in Quicksearch. |
-| `show_metadata` | `false` | Show modified time and size below each result. |
+| Parameter               | Default | Effect                                                            |
+| ----------------------- | ------: | ----------------------------------------------------------------- |
+| `mode`                  | `fuzzy` | Use `fuzzy` subsequence matching or `regular` substring matching. |
+| `max_recursive_entries` | 50,000  | Maximum files and folders inspected while building a find index.  |
+| `max_results`           | 100     | Maximum results shown in Quicksearch.                             |
+| `show_metadata`         | `false` | Show modified time and size below each result.                    |
 
 Limits must be positive integers. Larger values can use more time and memory.
 
@@ -80,17 +80,17 @@ to show or hide them.
 
 Use `SearchFiles.json`.
 
-| Parameter | Default | Effect |
-| --- | ---: | --- |
-| `name_mode` | `glob` | Filename matching: `literal`, `glob` or `regex`. |
-| `content_mode` | `literal` | Content matching: `literal`, `glob` or `regex`. |
-| `recursive` | `true` | Include subfolders. |
-| `extended` | `false` | Add Size and Date Modified columns (Extended mode). |
-| `encoding` | `auto` | Use `auto` or `windows-1252`. |
-| `max_rows` | 10,000 | Maximum result rows retained. |
-| `max_text_bytes` | 16 MiB | Maximum retained result text and payload. |
-| `max_file_lines` | 200 | Maximum matching lines retained per file. |
-| `max_file_bytes` | 50 MiB | Largest file eligible for content search. |
+| Parameter        | Default   | Effect                                              |
+| ---------------- | --------: | --------------------------------------------------- |
+| `name_mode`      | `glob`    | Filename matching: `literal`, `glob` or `regex`.    |
+| `content_mode`   | `literal` | Content matching: `literal`, `glob` or `regex`.     |
+| `recursive`      | `true`    | Include subfolders.                                 |
+| `extended`       | `false`   | Add Size and Date Modified columns (Extended mode). |
+| `encoding`       | `auto`    | Use `auto` or `windows-1252`.                       |
+| `max_rows`       | 10,000    | Maximum result rows retained.                       |
+| `max_text_bytes` | 16 MiB    | Maximum retained result text and payload.           |
+| `max_file_lines` | 200       | Maximum matching lines retained per file.           |
+| `max_file_bytes` | 50 MiB    | Largest file eligible for content search.           |
 
 Numeric limits must be positive. They can be lowered, but not raised above their defaults.
 
@@ -98,17 +98,17 @@ Numeric limits must be positive. They can be lowered, but not raised above their
 
 Use `FindFiles.json` or change these options in the Find Files panel.
 
-| Parameter | Default | Effect |
-| --- | ---: | --- |
-| `pattern_mode` | `glob` | Name matching: `literal`, `glob` or `regex`. |
-| `case_mode` | `smart` | Use `smart`, `sensitive` or `insensitive` matching. |
-| `type` | `f` | Search for files by default. |
-| `full_path` | `false` | Match the absolute path instead of only the name. |
-| `recursive` | `true` | Include subfolders. |
-| `hidden` | `false` | Include hidden entries. |
-| `honor_gitignore` | `true` | Honor `.gitignore` rules. |
-| `follow_symlinks` | `false` | Follow symbolic links. |
-| `min_size_unit`, `max_size_unit` | `b` | Default size units for panel bounds. |
+| Parameter                        | Default | Effect                                              |
+| -------------------------------- | ------: | --------------------------------------------------- |
+| `pattern_mode`                   | `glob`  | Name matching: `literal`, `glob` or `regex`.        |
+| `case_mode`                      | `smart` | Use `smart`, `sensitive` or `insensitive` matching. |
+| `type`                           | `f`     | Search for files by default.                        |
+| `full_path`                      | `false` | Match the absolute path instead of only the name.   |
+| `recursive`                      | `true`  | Include subfolders.                                 |
+| `hidden`                         | `false` | Include hidden entries.                             |
+| `honor_gitignore`                | `true`  | Honor `.gitignore` rules.                           |
+| `follow_symlinks`                | `false` | Follow symbolic links.                              |
+| `min_size_unit`, `max_size_unit` | `b`     | Default size units for panel bounds.                |
 
 **Max Results** is a per-search field. Leave it blank to count all matches, or enter a positive integer.
 
@@ -116,31 +116,31 @@ The results table retains at most 10,000 rows or 16 MiB. An uncapped search can 
 
 ### Other Behavior Settings
 
-| File | Parameter | Default | Effect |
-| --- | --- | ---: | --- |
-| `Status Bar.json` | `mode` | `disabled` | Use `disabled` or `single` (active pane). ++ctrl+s++ toggles the mode. |
-| `Status Bar.json` | `max_entries` | 5,000 | Maximum pane entries inspected for status totals. |
-| `Status Bar.json` | `size_divisor` | 1,024 | Use 1,024 for KiB or 1,000 for KB. |
-| `DirectorySize.json` | `enabled` | `false` | Enable automatic directory totals. |
-| `DirectorySize.json` | `max_files` | 10,000,000 | Regular files counted per root. Use `0` for unlimited. |
-| `Favorites.json` | `max_favorites` | 200 | Maximum saved favorites before replacement is offered. |
-| `CalculateFileHash.json` | `default_algorithm` | `sha256` | Initially selected hash algorithm. |
-| `CalculateFileHash.json` | `remember_last_algorithm` | `false` | Remember the last accepted algorithm. |
-| `CalculateFileHash.json` | `auto_copy` | `false` | Copy a completed current result automatically. |
-| `CalculateFileHash.json` | `chunk_size_mib` | 4 | Read chunk size. Values are clamped to 1–64 MiB. |
-| `QuickView.json` | `image_mode` | `fit` | Use `fit` or `actual_size`. |
+| File                     | Parameter                 | Default    | Effect                                                                 |
+| ------------------------ | ------------------------- | ---------: | ---------------------------------------------------------------------- |
+| `Status Bar.json`        | `mode`                    | `disabled` | Use `disabled` or `single` (active pane). ++ctrl+s++ toggles the mode. |
+| `Status Bar.json`        | `max_entries`             | 5,000      | Maximum pane entries inspected for status totals.                      |
+| `Status Bar.json`        | `size_divisor`            | 1,024      | Use 1,024 for KiB or 1,000 for KB.                                     |
+| `DirectorySize.json`     | `enabled`                 | `false`    | Enable automatic directory totals.                                     |
+| `DirectorySize.json`     | `max_files`               | 10,000,000 | Regular files counted per root. Use `0` for unlimited.                 |
+| `Favorites.json`         | `max_favorites`           | 200        | Maximum saved favorites before replacement is offered.                 |
+| `CalculateFileHash.json` | `default_algorithm`       | `sha256`   | Initially selected hash algorithm.                                     |
+| `CalculateFileHash.json` | `remember_last_algorithm` | `false`    | Remember the last accepted algorithm.                                  |
+| `CalculateFileHash.json` | `auto_copy`               | `false`    | Copy a completed current result automatically.                         |
+| `CalculateFileHash.json` | `chunk_size_mib`          | 4          | Read chunk size. Values are clamped to 1–64 MiB.                       |
+| `QuickView.json`         | `image_mode`              | `fit`      | Use `fit` or `actual_size`.                                            |
 
 ### Fixed Safety Limits
 
 These values are not user-configurable.
 
-| Feature | Limit |
-| --- | ---: |
-| Shared result tables | 10,000 rows |
-| Shared result-table payload | 16 MiB |
-| QuickView encoded image | 64 MiB |
-| QuickView image dimensions | 65,536 pixels per edge |
-| QuickView decoded image | 128 million pixels |
+| Feature                     | Limit                  |
+| --------------------------- | ---------------------: |
+| Shared result tables        | 10,000 rows            |
+| Shared result-table payload | 16 MiB                 |
+| QuickView encoded image     | 64 MiB                 |
+| QuickView image dimensions  | 65,536 pixels per edge |
+| QuickView decoded image     | 128 million pixels     |
 
 ## Keyboard Shortcuts
 
@@ -216,18 +216,18 @@ Create `Theme (Windows).css` in the user Settings folder for visual overrides.
 The file uses CSS syntax with a fixed set of selectors. Their properties go to
 Qt Style Sheets, so use properties that Qt supports. Other selectors are ignored.
 
-| Selector | Styles |
-| --- | --- |
-| `*` | Every widget |
-| `th` | Column headers |
-| `.locationbar` | Location bars |
-| `.statusbar` | Status bar |
-| `.statusbar-pane` | Extended status bar statistics |
-| `.quicksearch-query` | QuickSearch and QuickList query fields |
-| `.quicksearch-item` | QuickSearch and QuickList rows |
-| `.panel` | Docked Panel controls |
-| `.plugin-panel-dock` | Docked Panel frame |
-| `.plugin-tool-window` | Plug-in tool windows |
+| Selector              | Styles                                 |
+| --------------------- | -------------------------------------- |
+| `*`                   | Every widget                           |
+| `th`                  | Column headers                         |
+| `.locationbar`        | Location bars                          |
+| `.statusbar`          | Status bar                             |
+| `.statusbar-pane`     | Extended status bar statistics         |
+| `.quicksearch-query`  | QuickSearch and QuickList query fields |
+| `.quicksearch-item`   | QuickSearch and QuickList rows         |
+| `.panel`              | Docked Panel controls                  |
+| `.plugin-panel-dock`  | Docked Panel frame                     |
+| `.plugin-tool-window` | Plug-in tool windows                   |
 
 QuickSearch text also reads `font-size` and `color` from `.quicksearch-item-title`,
 `.quicksearch-item-hint` and `.quicksearch-item-description`, and `color` from
@@ -242,11 +242,9 @@ Run **Reload plugins** in the Command Center to apply changes.
 
 Press ++ctrl+shift+p++ and run **Set text editor** or **Set text viewer**.
 
-1. Choose [CudaText](https://github.com/Alexey-T/CudaText), [EmEditor](https://www.emeditor.com), [Notepad++](https://github.com/notepad-plus-plus/notepad-plus-plus), [Notepad 4](https://github.com/zufuliu/notepad4), [Ecode](https://github.com/SpartanJ/ecode) or **Manual configuration**.
+1. Choose [CudaText](https://github.com/Alexey-T/CudaText), [Ecode](https://github.com/SpartanJ/ecode), [EmEditor](https://www.emeditor.com), [Notepad++](https://github.com/notepad-plus-plus/notepad-plus-plus), [Notepad 4](https://github.com/zufuliu/notepad4), [Royi Text Editor](https://github.com/RoyiAvital/RoyiTextEditor) or **Manual configuration**.
 2. Select the program's `.exe` file.
 3. Enter arguments when using Manual configuration.
-
-The Ecode preset uses `--zen-mode` for editing and `--zen-mode --read-only` for viewing.
 
 Press ++f4++ to edit. Press ++f3++ to view.
 

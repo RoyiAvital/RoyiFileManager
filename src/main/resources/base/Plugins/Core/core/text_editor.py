@@ -17,6 +17,7 @@ PRESETS = (
 	('Notepad 4', ('-ns',), ('-ro', '-ns')),
 	('EmEditor', ('-nr', '-sp'), ('-nr', '-sp', '-r')),
 	('Ecode', ('--zen-mode',), ('--zen-mode', '--read-only')),
+	('Royi Text Editor', (), ('--read-only',)),
 )
 SETTINGS = 'Core Settings.json'
 MANUAL = 'Manual configuration'

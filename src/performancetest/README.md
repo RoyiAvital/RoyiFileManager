@@ -248,13 +248,13 @@ Historical CelebA measurements are not substituted into synthetic histories.
 Selection is separate from the existing untimed refresh setup. It uses the real
 pane API without changing application code.
 
-| Pattern | Small (256 files) | Medium (50,000; full only) | Large (200,000 files) |
-| --- | ---: | ---: | ---: |
-| Single file | 1 | 1 | 1 |
-| All files, using `select_all` | 256 | 50,000 | 200,000 |
-| Contiguous block | 64 | 1,000 | 1,000 |
-| Alternating rows | 64 | 1,000 | 1,000 |
-| Seeded scattered rows | 64 | 1,000 | 1,000 |
+| Pattern                       | Small (256 files) | Medium (50,000; full only) | Large (200,000 files) |
+| ----------------------------- | ----------------: | -------------------------: | --------------------: |
+| Single file                   | 1                 | 1                          | 1                     |
+| All files, using `select_all` | 256               | 50,000                     | 200,000               |
+| Contiguous block              | 64                | 1,000                      | 1,000                 |
+| Alternating rows              | 64                | 1,000                      | 1,000                 |
+| Seeded scattered rows         | 64                | 1,000                      | 1,000                 |
 
 All five patterns share one loaded pane per size and repetition. Three fresh
 processes per size give six selection processes in regular mode, nine in full
@@ -323,17 +323,17 @@ The diagnostic launcher defaults to `target/performance/runs` and accepts
 repetitions and an error. New records use `schema_version: 2`; schema-1 records
 remain readable and are not rewritten.
 
-| Field | Meaning |
-| --- | --- |
-| `run_id`, `started_at`, `finished_at`, `status` | Unique run, UTC bounds and outcome |
-| `suite_mode` | `regular` or `full`; older records without this field are regular |
-| `application` | Version identifier, source version, Git commit, dirty flag, actual application-source hash |
-| `harness` | Harness commit and actual harness-source hash |
-| `environment` | Anonymous machine/volume IDs, OS, CPU, RAM, disk inventory, filesystem, power plan, locale, Python/Qt and dependencies |
-| `catalog`, `catalog_sha256`, `parameters` | Definition snapshot, semantic hash and effective parameters |
-| `fixtures` | Fixture IDs, generator specifications and manifest hashes |
-| `results` | Test ID/revision/definition hash, fixture hash, status, completed repetition count and metric summaries |
-| `artifacts`, `notes` | Separate profile locations and persistent annotation |
+| Field                                           | Meaning                                                                                                                |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `run_id`, `started_at`, `finished_at`, `status` | Unique run, UTC bounds and outcome                                                                                     |
+| `suite_mode`                                    | `regular` or `full`; older records without this field are regular                                                      |
+| `application`                                   | Version identifier, source version, Git commit, dirty flag, actual application-source hash                             |
+| `harness`                                       | Harness commit and actual harness-source hash                                                                          |
+| `environment`                                   | Anonymous machine/volume IDs, OS, CPU, RAM, disk inventory, filesystem, power plan, locale, Python/Qt and dependencies |
+| `catalog`, `catalog_sha256`, `parameters`       | Definition snapshot, semantic hash and effective parameters                                                            |
+| `fixtures`                                      | Fixture IDs, generator specifications and manifest hashes                                                              |
+| `results`                                       | Test ID/revision/definition hash, fixture hash, status, completed repetition count and metric summaries                |
+| `artifacts`, `notes`                            | Separate profile locations and persistent annotation                                                                   |
 
 Times use `_ms`; memory uses `_mib`. Each metric retains count, median, minimum,
 maximum and p95; p95 is `null` below 20 observations. Individual observations,

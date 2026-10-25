@@ -33,10 +33,10 @@ Included:
 
 - Two new SearchFileFuzzy commands sharing the existing index walk:
 
-  | Command id | Alias | Windows binding |
-  | --- | --- | --- |
-  | `search_files_in_current_folder_everything` | Search files in current folder (Everything syntax) | `Ctrl+Alt+F` |
-  | `search_files_recursively_everything` | Search files recursively (Everything syntax) | `Ctrl+Alt+Shift+F` |
+  | Command id                                  | Alias                                              | Windows binding    |
+  | ------------------------------------------- | -------------------------------------------------- | ------------------ |
+  | `search_files_in_current_folder_everything` | Search files in current folder (Everything syntax) | `Ctrl+Alt+F`       |
+  | `search_files_recursively_everything`       | Search files recursively (Everything syntax)       | `Ctrl+Alt+Shift+F` |
 
   `search_files_in_current_folder` (`Ctrl+F`) and `search_files_recursively`
   (`Ctrl+Shift+F`) keep their identifiers, aliases, bindings and fuzzy
@@ -124,13 +124,13 @@ accept `query=''` and `metadata=None`, delegating with `mode='everything'`;
 the override does not persist. The existing toggle remains shared by all four
 commands, defaults off, and affects the next invocation.
 
-| Search mode/root | Metadata view | Collect before opening |
-| --- | --- | --- |
-| Fuzzy/regular, any scheme | Off | No metadata collection; existing path unchanged |
-| Fuzzy/regular, any scheme | On | Existing size/modified collection only |
-| Everything, `file://` | Off or on | Size, modified and created, needed for later query edits |
-| Everything, other schemes | Off | No metadata collection; metadata clauses yield a hint |
-| Everything, other schemes | On | Existing best-effort size/modified display; metadata clauses still yield a hint |
+| Search mode/root          | Metadata view | Collect before opening                                                          |
+| ------------------------- | ------------- | ------------------------------------------------------------------------------- |
+| Fuzzy/regular, any scheme | Off           | No metadata collection; existing path unchanged                                 |
+| Fuzzy/regular, any scheme | On            | Existing size/modified collection only                                          |
+| Everything, `file://`     | Off or on     | Size, modified and created, needed for later query edits                        |
+| Everything, other schemes | Off           | No metadata collection; metadata clauses yield a hint                           |
+| Everything, other schemes | On            | Existing best-effort size/modified display; metadata clauses still yield a hint |
 
 Keep `collect_metadata=False` for size/modified and add an optional
 `collect_created=False` to the plug-in indexer. Set `collect_metadata` when the
@@ -198,19 +198,19 @@ just the initial list. Metadata-only conditions add no title highlight spans.
 
 ### Grammar (Subset)
 
-| Term | Meaning |
-| --- | --- |
-| `report pdf` | case-insensitive substring per term, AND, unranked |
-| `a \| b`, `!tmp`, `< >` | OR, NOT, grouping |
-| `"annual report"` | phrase with spaces |
-| `*.py`, `img_??.jpg` | wildcards; whole-name match when a term contains one |
-| `case:Report`, `nocase:` | per-term case control |
-| `regex:rep.*\.pdf$` | regular expression (Python `re` flavour) |
-| `ext:pdf;txt` | extension list |
-| `path:src\core`, `file:` | scope modifiers (`folder:` moot: files only) |
-| `size:>1mb`, `size:1kb..10mb`, `size:empty` | size filters |
-| `dm:today`, `dm:lastweek`, `dm:2024-06`, `dm:>=2024-01-01`, `dm:a..b`, `dc:` | modified / created date filters |
-| `wholeword:` | whole-word match |
+| Term                                                                         | Meaning                                              |
+| ---------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `report pdf`                                                                 | case-insensitive substring per term, AND, unranked   |
+| `a \| b`, `!tmp`, `< >`                                                      | OR, NOT, grouping                                    |
+| `"annual report"`                                                            | phrase with spaces                                   |
+| `*.py`, `img_??.jpg`                                                         | wildcards; whole-name match when a term contains one |
+| `case:Report`, `nocase:`                                                     | per-term case control                                |
+| `regex:rep.*\.pdf$`                                                          | regular expression (Python `re` flavour)             |
+| `ext:pdf;txt`                                                                | extension list                                       |
+| `path:src\core`, `file:`                                                     | scope modifiers (`folder:` moot: files only)         |
+| `size:>1mb`, `size:1kb..10mb`, `size:empty`                                  | size filters                                         |
+| `dm:today`, `dm:lastweek`, `dm:2024-06`, `dm:>=2024-01-01`, `dm:a..b`, `dc:` | modified / created date filters                      |
+| `wholeword:`                                                                 | whole-word match                                     |
 
 Pitfalls:
 
@@ -304,11 +304,11 @@ Analysis:
   current date.
 - The example splits into two kinds of constraints:
 
-  | Constraint | Expressible by this task | Grammar |
-  | --- | --- | --- |
-  | edited last week | yes | `dm:lastweek` |
-  | Word document | yes | `ext:docx;doc;docm` |
-  | pretty heavy | yes, with a threshold | `size:>5mb` |
+  | Constraint             | Expressible by this task         | Grammar             |
+  | ---------------------- | -------------------------------- | ------------------- |
+  | edited last week       | yes                              | `dm:lastweek`       |
+  | Word document          | yes                              | `ext:docx;doc;docm` |
+  | pretty heavy           | yes, with a threshold            | `size:>5mb`         |
   | about 20 images inside | **no**; needs content inspection | future `meta:` hook |
 
   Counting images means opening each `.docx` (a ZIP) and counting
@@ -400,10 +400,10 @@ was tried first and found to have moved the HTTP server into a plugin.
 **Runtime measurements** (loopback HTTP JSON, 100 results with path, size and
 date columns, 30 runs per query, warm)
 
-| Setup | Index | Build | Working set | Query median | Query min |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Repository + `C:\Windows` folder indexes | 328,673 entries | ~10 s | 50 MiB | 16 ms | 0.4-0.7 ms |
-| Fixed drives C:, D:, E:, F: as folder indexes | 242 MiB database | several minutes (not completed within the probe) | 157 MiB while walking | - | - |
+| Setup                                         | Index            | Build                                            | Working set           | Query median | Query min  |
+| --------------------------------------------- | ---------------: | -----------------------------------------------: | --------------------: | -----------: | ---------: |
+| Repository + `C:\Windows` folder indexes      | 328,673 entries  | ~10 s                                            | 50 MiB                | 16 ms        | 0.4-0.7 ms |
+| Fixed drives C:, D:, E:, F: as folder indexes | 242 MiB database | several minutes (not completed within the probe) | 157 MiB while walking | -            | -          |
 
 Medians were flat at ~16 ms for substring, wildcard, `ext:`/`size:`, `dm:`,
 `regex:`, OR and path-scoped queries alike, with minimums under 1 ms: the 16 ms
@@ -414,14 +414,14 @@ Either is faster than the shipped fuzzy `get_items` (19-103 ms per keystroke on
 
 **Comparison with this design's Python engine**
 
-| Stage | Python (this design) | Everything (named instance, folder index) |
-| --- | --- | --- |
-| Opening the dialog | Walk the pane subtree first: ~90 ms / 50k, ~250 ms / 100k entries, seconds on network shares; 50k cap | None; the index is resident |
-| Keystroke, substring/wildcard | 10-15 ms at 50k, linear | <1 ms real work, flat to millions |
-| Keystroke, regex | Python `re` over all entries, not cancellable on Qt | C regex in another process |
-| Size/date filters, sorting | Python over collected metadata | Indexed fields |
-| Scope | Pane subtree on any scheme, always current | Pre-indexed roots only; live while running, stale for offline changes until a rescan |
-| Footprint | None | Second process, 50 MiB (330k) to several hundred MiB (all drives), startup rescan I/O |
+| Stage                         | Python (this design)                                                                                  | Everything (named instance, folder index)                                             |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Opening the dialog            | Walk the pane subtree first: ~90 ms / 50k, ~250 ms / 100k entries, seconds on network shares; 50k cap | None; the index is resident                                                           |
+| Keystroke, substring/wildcard | 10-15 ms at 50k, linear                                                                               | <1 ms real work, flat to millions                                                     |
+| Keystroke, regex              | Python `re` over all entries, not cancellable on Qt                                                   | C regex in another process                                                            |
+| Size/date filters, sorting    | Python over collected metadata                                                                        | Indexed fields                                                                        |
+| Scope                         | Pane subtree on any scheme, always current                                                            | Pre-indexed roots only; live while running, stale for offline changes until a rescan  |
+| Footprint                     | None                                                                                                  | Second process, 50 MiB (330k) to several hundred MiB (all drives), startup rescan I/O |
 
 **Why it was not adopted for this task**
 

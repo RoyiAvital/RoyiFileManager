@@ -138,10 +138,10 @@ entry paths, retain exact spelling, and reject unsupported selected entries rath
 than silently dropping them. Do not use snapshot display identity as permission to
 mutate files. Recheck each job's selected roots immediately before launching it.
 
-| Selected Entry | Source Argument | Destination Argument | File Arguments / Traversal |
-| --- | --- | --- | --- |
-| Loose files in the active folder | Active folder | Chosen destination | Explicit names only; no `/S` or `/E` |
-| A directory named `Photos` | Active folder / `Photos` | Destination / `Photos` | Recursive `/E`, including empty directories |
+| Selected Entry                   | Source Argument          | Destination Argument   | File Arguments / Traversal                  |
+| -------------------------------- | ------------------------ | ---------------------- | ------------------------------------------- |
+| Loose files in the active folder | Active folder            | Chosen destination     | Explicit names only; no `/S` or `/E`        |
+| A directory named `Photos`       | Active folder / `Photos` | Destination / `Photos` | Recursive `/E`, including empty directories |
 
 Robocopy copies a directory's contents. Appending the selected directory's name to
 the destination preserves the normal selected-folder behavior rather than flattening
@@ -222,16 +222,16 @@ help parsing; the reviewer observed an unknown switch returning 16.
 
 Read `Robocopy.json` at invocation and freeze the validated values for the run:
 
-| Setting | Default | Validation / Effect |
-| --- | --- | --- |
-| `threads` | `8` | Integer 1-32; `/MT:n` |
-| `retries` | `1` | Integer 0-10; `/R:n` |
-| `retry_wait_seconds` | `1` | Integer 0-30; `/W:n` |
-| `restartable` | `false` | Boolean; opt into `/Z` |
-| `unbuffered` | `false` | Boolean; opt into `/J`, mainly for large files |
-| `log_enabled` | `false` | Boolean; save one Unicode log for the complete transfer |
-| `open_log_on_finish` | `false` | Boolean; open the finalized log on completion, failure or user cancellation; requires logging |
-| `log_retention_count` | `20` | Integer 1-100; retain the current and newest completed plug-in logs |
+| Setting               | Default | Validation / Effect                                                                           |
+| --------------------- | ------- | --------------------------------------------------------------------------------------------- |
+| `threads`             | `8`     | Integer 1-32; `/MT:n`                                                                         |
+| `retries`             | `1`     | Integer 0-10; `/R:n`                                                                          |
+| `retry_wait_seconds`  | `1`     | Integer 0-30; `/W:n`                                                                          |
+| `restartable`         | `false` | Boolean; opt into `/Z`                                                                        |
+| `unbuffered`          | `false` | Boolean; opt into `/J`, mainly for large files                                                |
+| `log_enabled`         | `false` | Boolean; save one Unicode log for the complete transfer                                       |
+| `open_log_on_finish`  | `false` | Boolean; open the finalized log on completion, failure or user cancellation; requires logging |
+| `log_retention_count` | `20`    | Integer 1-100; retain the current and newest completed plug-in logs                           |
 
 Reject invalid types/ranges, including booleans as integers. No unrestricted argv,
 job-file input or executable override in V1. Store changes only through the existing
@@ -881,20 +881,20 @@ This revision follows the user's decisions after reviewing D1/D2 and S1/S2:
 an explicit fast Robocopy alternative using native policy, with those attributes
 in user-facing documentation. It does not claim to fix Robocopy's behavior.
 
-| Finding | Disposition |
-| --- | --- |
-| D1: same-file Move skips | Keep native skips; do not force `/IS /IT`. Report remaining/uncheckable selected roots, and never equate exit 0 with all moved. No extra deletion. |
-| D2: older source replaces newer target | Native overwrite is intended. Document it; no `/XO` or extra confirmation page. This is not a limitation of interactive integration. |
-| D3: suspended launch | Specify ctypes `CreateProcessW`, `STARTUPINFOEXW`, an explicit inherited-handle list, retained thread handle, Job assignment and resume/cleanup tests. |
-| D4: per-batch enumeration | Record the observed cost and add an opt-in partial-selection comparison. Keep explicit selected filenames; do not silently replace them with `*`. |
-| D5: progress/cancel text | Require `Task.set_size(0)` coverage and stop ordinary activity updates after cancellation. Progress remains approximate. |
-| D6: active-folder suggestion | Remove it; keep typed draft first and the captured opposite path as the default. |
-| D7: flags/probe/case/naming | Use `/XJD /XJF`, `/NP`, an empty-folder `/L` option probe and explicit source case-sensitivity checks. Name the product Robocopy consistently. |
-| D7: owner `build()` | No change required: the loader assigns `UiOwner` without calling `build`; public examples use an empty controller for owner-only services. This plug-in never calls its `show()` route. |
-| D7: attribution | The user explicitly assigned GPT-6 Astra, Extra High, 1M in this conversation. That session assignment takes precedence over the reusable prompt's 272K; no historical record is rewritten. |
-| S1: nested destination junction | Accept/document native destination traversal under the user's policy. Remove the unsupported isolation promise; no destination audit or absent-target-only restriction. Source selection and overlap checks remain. |
-| S2: hard-linked destination | Accept/document that native in-place overwrite changes aliases. Do not present `/XJ` or a successful exit as isolation. Normal Core Copy/Move remains unchanged. |
-| Optional log request | Add logging, open-on-finish and retention settings, generated portable Unicode logs across all jobs, and user-facing usage/privacy/error documentation. |
+| Finding                                | Disposition                                                                                                                                                                                                         |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D1: same-file Move skips               | Keep native skips; do not force `/IS /IT`. Report remaining/uncheckable selected roots, and never equate exit 0 with all moved. No extra deletion.                                                                  |
+| D2: older source replaces newer target | Native overwrite is intended. Document it; no `/XO` or extra confirmation page. This is not a limitation of interactive integration.                                                                                |
+| D3: suspended launch                   | Specify ctypes `CreateProcessW`, `STARTUPINFOEXW`, an explicit inherited-handle list, retained thread handle, Job assignment and resume/cleanup tests.                                                              |
+| D4: per-batch enumeration              | Record the observed cost and add an opt-in partial-selection comparison. Keep explicit selected filenames; do not silently replace them with `*`.                                                                   |
+| D5: progress/cancel text               | Require `Task.set_size(0)` coverage and stop ordinary activity updates after cancellation. Progress remains approximate.                                                                                            |
+| D6: active-folder suggestion           | Remove it; keep typed draft first and the captured opposite path as the default.                                                                                                                                    |
+| D7: flags/probe/case/naming            | Use `/XJD /XJF`, `/NP`, an empty-folder `/L` option probe and explicit source case-sensitivity checks. Name the product Robocopy consistently.                                                                      |
+| D7: owner `build()`                    | No change required: the loader assigns `UiOwner` without calling `build`; public examples use an empty controller for owner-only services. This plug-in never calls its `show()` route.                             |
+| D7: attribution                        | The user explicitly assigned GPT-6 Astra, Extra High, 1M in this conversation. That session assignment takes precedence over the reusable prompt's 272K; no historical record is rewritten.                         |
+| S1: nested destination junction        | Accept/document native destination traversal under the user's policy. Remove the unsupported isolation promise; no destination audit or absent-target-only restriction. Source selection and overlap checks remain. |
+| S2: hard-linked destination            | Accept/document that native in-place overwrite changes aliases. Do not present `/XJ` or a successful exit as isolation. Normal Core Copy/Move remains unchanged.                                                    |
+| Optional log request                   | Add logging, open-on-finish and retention settings, generated portable Unicode logs across all jobs, and user-facing usage/privacy/error documentation.                                                             |
 
 Validation for this revision is document-level: all required sections, local links,
 review IDs, settings, unchanged Pending index and preserved review history are
@@ -1041,11 +1041,11 @@ Any proposed confirmation or `/XO` policy remains a user decision.
   Remove the junction itself before disposing its temporary tree.
 
   | Destination case | Mode | Exit | Unselected target changed | Selected source remains |
-  | --- | --- | ---: | --- | --- |
-  | Hard-linked file | Copy | 1 | Yes | Yes |
-  | Hard-linked file | Move | 1 | Yes | No |
-  | Nested junction | Copy | 1 | Yes | Yes |
-  | Nested junction | Move | 1 | Yes | No |
+  | ---------------- | ---- | ---: | ------------------------- | ----------------------- |
+  | Hard-linked file | Copy | 1    | Yes                       | Yes                     |
+  | Hard-linked file | Move | 1    | Yes                       | No                      |
+  | Nested junction  | Copy | 1    | Yes                       | Yes                     |
+  | Nested junction  | Move | 1    | Yes                       | No                      |
 
 - The destination hard-link count remained two; the junction remained in place.
   These are reproduced failures of the proposed isolation contract, not passes
@@ -1346,17 +1346,17 @@ the first implementation review with fresh, bounded checks.
 
 ## Implementation Review Resolutions (2026_10_08)
 
-| Finding | Resolution And Evidence |
-| --- | --- |
-| I1 / S1: UNC loose files | Unsupported case-query errors 1/50/87 return unknown. Fresh primary/alternate-name validation still rejects ambiguous case matches and aliases; access errors propagate. Real loopback UNC Unicode Copy and Move pass, preserving unselected siblings. Other servers and FAT32/exFAT are not certified. |
+| Finding                         | Resolution And Evidence                                                                                                                                                                                                                                                                                                                                                                    |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| I1 / S1: UNC loose files        | Unsupported case-query errors 1/50/87 return unknown. Fresh primary/alternate-name validation still rejects ambiguous case matches and aliases; access errors propagate. Real loopback UNC Unicode Copy and Move pass, preserving unselected siblings. Other servers and FAT32/exFAT are not certified.                                                                                    |
 | I2 / S3: repeated planning work | One immediate-folder name stream replaces all per-file long-path queries; shared source/destination canonical paths are resolved once. Existing-target file identities, source rechecks and directory subtree guards remain. The 32-file regression performs two canonical calls and one enumeration for both new and populated destinations. No tilde assumption or new throughput claim. |
-| I3 / S4: late cancellation | Return and record the reaped native receipt and log entry before cancellation checks. Real Copy/Move tests cancel immediately after cleanup: completed bytes and exit 1 remain recorded, later jobs stay unstarted, and skipped Move-root checks are explicit. |
-| I4 / S2: inherited writer hang | Availability-checked reads and an exit drain budget stop dependence on EOF from unrelated writers. Native regression leaks the writer to a live unrelated child and verifies cleanup/reader shutdown within two seconds without killing that child. No early lease release or abandoned reader. |
-| I5: hyphen directories | Restrict the hyphen refusal to loose file operands. Real `-copy` and `-move` selected-folder jobs pass. |
-| I6: merge alerts | Codes 2/3 use status reporting with extra-entry information. Codes 4-8, other failures and existing warning conditions retain alerts; presentation regression covers codes 0-8. |
-| I7: cloud log ancestors | Allow non-name-surrogate reparse tags for log paths, retaining symlink/junction rejection. Retention skips all reparse candidates. Synthetic cloud-tag creation/append/finalization tests pass; this is not a OneDrive hydration test. |
-| I8: documentation | Install under managed `Plugins/Third-party`, explain old User installations, remove the unmeasured optimization claim, and add a Robocopy entry to the documentation site's plug-in page. |
-| Everything changelog aside | The entry was already absent at the start of this follow-up. Git was unavailable on PATH and at the checked installations, so deletion intent cannot be established. No unrelated release-note deletion was reversed; confirmation remains with the user. |
+| I3 / S4: late cancellation      | Return and record the reaped native receipt and log entry before cancellation checks. Real Copy/Move tests cancel immediately after cleanup: completed bytes and exit 1 remain recorded, later jobs stay unstarted, and skipped Move-root checks are explicit.                                                                                                                             |
+| I4 / S2: inherited writer hang  | Availability-checked reads and an exit drain budget stop dependence on EOF from unrelated writers. Native regression leaks the writer to a live unrelated child and verifies cleanup/reader shutdown within two seconds without killing that child. No early lease release or abandoned reader.                                                                                            |
+| I5: hyphen directories          | Restrict the hyphen refusal to loose file operands. Real `-copy` and `-move` selected-folder jobs pass.                                                                                                                                                                                                                                                                                    |
+| I6: merge alerts                | Codes 2/3 use status reporting with extra-entry information. Codes 4-8, other failures and existing warning conditions retain alerts; presentation regression covers codes 0-8.                                                                                                                                                                                                            |
+| I7: cloud log ancestors         | Allow non-name-surrogate reparse tags for log paths, retaining symlink/junction rejection. Retention skips all reparse candidates. Synthetic cloud-tag creation/append/finalization tests pass; this is not a OneDrive hydration test.                                                                                                                                                     |
+| I8: documentation               | Install under managed `Plugins/Third-party`, explain old User installations, remove the unmeasured optimization claim, and add a Robocopy entry to the documentation site's plug-in page.                                                                                                                                                                                                  |
+| Everything changelog aside      | The entry was already absent at the start of this follow-up. Git was unavailable on PATH and at the checked installations, so deletion intent cannot be established. No unrelated release-note deletion was reversed; confirmation remains with the user.                                                                                                                                  |
 
 ## Review Fix Validation Results
 

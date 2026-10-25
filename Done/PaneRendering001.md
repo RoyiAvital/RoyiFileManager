@@ -70,13 +70,13 @@ required public `FileSystem` method. Host models, columns and dispatch stay unch
 
 ### Roots, Links and Fallback
 
-| Input | Required behavior |
-| --- | --- |
-| Ordinary local entry with a valid snapshot | Test its own `FILE_ATTRIBUTE_HIDDEN` bit. |
-| Drive root, UNC/share root or unsupported path spelling | Existing Qt helper; roots are never seeded merely because their directory was enumerated. |
-| Symlink, junction or any reparse entry, including cloud placeholders | Existing Qt helper, even if a followed target has a cached stat. |
-| Unseeded, failed, missing or invalidated entry metadata | Existing Qt helper; no extra path stat before fallback. |
-| Nonlocal scheme | Existing filter behavior; no new local metadata query. |
+| Input                                                                | Required behavior                                                                         |
+| -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Ordinary local entry with a valid snapshot                           | Test its own `FILE_ATTRIBUTE_HIDDEN` bit.                                                 |
+| Drive root, UNC/share root or unsupported path spelling              | Existing Qt helper; roots are never seeded merely because their directory was enumerated. |
+| Symlink, junction or any reparse entry, including cloud placeholders | Existing Qt helper, even if a followed target has a cached stat.                          |
+| Unseeded, failed, missing or invalidated entry metadata              | Existing Qt helper; no extra path stat before fallback.                                   |
+| Nonlocal scheme                                                      | Existing filter behavior; no new local metadata query.                                    |
 
 Never use followed `stat().st_file_attributes`: a visible junction to a hidden
 target must stay visible, and roots with `HIDDEN | SYSTEM` must keep Qt semantics.
@@ -590,30 +590,30 @@ Hidden filtering enabled; times are **median [min-max] milliseconds** over three
 fresh processes. The reference folder is CelebAAligned, 202,603 entries. System32
 has 4,757 entries, WinSxS 24,315, and C root 19 (nine visible with filtering).
 
-| Folder | Mode | First paint | Metadata complete | Post-paint tail | Post-render Qt commits |
-| --- | --- | --- | --- | --- | --- |
+| Folder        | Mode   | First paint            | Metadata complete         | Post-paint tail        | Post-render Qt commits |
+| ------------- | ------ | ---------------------- | ------------------------- | ---------------------- | ---------------------- |
 | CelebAAligned | Before | 8994.9 [8182.5-9222.5] | 17693.7 [16071.8-18072.3] | 8698.8 [7889.3-8849.8] | 2780.1 [2444.4-3186.3] |
-| CelebAAligned | After | 6136.9 [5971.8-6259.5] | 12689.6 [12219.1-13230.1] | 6552.7 [6247.3-6970.5] | 1146.7 [1015.8-1362.6] |
-| System32 | Before | 266.3 [265.9-299.8] | 435.1 [434.6-471.6] | 168.8 [168.6-171.8] | 65.8 [65.6-65.8] |
-| System32 | After | 182.5 [180.8-183.0] | 303.6 [301.2-304.4] | 121.1 [120.5-121.4] | 18.9 [18.8-19.3] |
-| WinSxS | Before | 1400.5 [1379.3-1538.1] | 2483.5 [2456.8-2683.0] | 1083.0 [1077.5-1144.9] | 497.8 [497.1-568.9] |
-| WinSxS | After | 788.7 [777.5-811.0] | 1511.0 [1493.3-1532.2] | 721.2 [715.8-722.3] | 139.9 [139.6-144.4] |
-| C root | Before | 58.0 [57.6-58.1] | 67.8 [67.1-68.8] | 9.7 [9.5-10.7] | 0 |
-| C root | After | 64.8 [61.6-66.2] | 74.7 [72.5-75.9] | 9.8 [9.7-10.8] | 0 |
+| CelebAAligned | After  | 6136.9 [5971.8-6259.5] | 12689.6 [12219.1-13230.1] | 6552.7 [6247.3-6970.5] | 1146.7 [1015.8-1362.6] |
+| System32      | Before | 266.3 [265.9-299.8]    | 435.1 [434.6-471.6]       | 168.8 [168.6-171.8]    | 65.8 [65.6-65.8]       |
+| System32      | After  | 182.5 [180.8-183.0]    | 303.6 [301.2-304.4]       | 121.1 [120.5-121.4]    | 18.9 [18.8-19.3]       |
+| WinSxS        | Before | 1400.5 [1379.3-1538.1] | 2483.5 [2456.8-2683.0]    | 1083.0 [1077.5-1144.9] | 497.8 [497.1-568.9]    |
+| WinSxS        | After  | 788.7 [777.5-811.0]    | 1511.0 [1493.3-1532.2]    | 721.2 [715.8-722.3]    | 139.9 [139.6-144.4]    |
+| C root        | Before | 58.0 [57.6-58.1]       | 67.8 [67.1-68.8]          | 9.7 [9.5-10.7]         | 0                      |
+| C root        | After  | 64.8 [61.6-66.2]       | 74.7 [72.5-75.9]          | 9.8 [9.7-10.8]         | 0                      |
 
 Preparation, enumeration and memory; times are medians in milliseconds and
 working set is median [min-max] MiB. Counts were constant within each group.
 
-| Folder | Mode | Enumeration | Worker prepare | Initial Qt commit | Qt hidden queries | Path stats | Working set |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| CelebAAligned | Before | 41.8 | 6361.9 | 2555.0 | 607775 | 202603 | 809.4 [809.4-811.3] |
-| CelebAAligned | After | 554.6 | 4898.6 | 1170.1 | 0 | 202603 | 807.4 [807.1-807.5] |
-| System32 | Before | 3.5 | 124.8 | 61.5 | 14237 | 4757 | 112.4 [112.3-112.4] |
-| System32 | After | 12.1 | 86.5 | 16.4 | 0 | 4757 | 112.3 [112.2-112.3] |
-| WinSxS | Before | 33.5 | 974.8 | 358.0 | 72911 | 24315 | 193.4 [193.4-193.6] |
-| WinSxS | After | 79.5 | 635.1 | 84.6 | 0 | 24315 | 193.9 [193.1-194.0] |
-| C root | Before | 0.2 | 5.0 | 0.7 | 38 | 21 | 92.5 [92.1-94.8] |
-| C root | After | 0.4 | 12.7 | 0.5 | 2 | 21 | 92.8 [92.5-94.6] |
+| Folder        | Mode   | Enumeration | Worker prepare | Initial Qt commit | Qt hidden queries | Path stats | Working set         |
+| ------------- | ------ | ----------- | -------------- | ----------------- | ----------------- | ---------- | ------------------- |
+| CelebAAligned | Before | 41.8        | 6361.9         | 2555.0            | 607775            | 202603     | 809.4 [809.4-811.3] |
+| CelebAAligned | After  | 554.6       | 4898.6         | 1170.1            | 0                 | 202603     | 807.4 [807.1-807.5] |
+| System32      | Before | 3.5         | 124.8          | 61.5              | 14237             | 4757       | 112.4 [112.3-112.4] |
+| System32      | After  | 12.1        | 86.5           | 16.4              | 0                 | 4757       | 112.3 [112.2-112.3] |
+| WinSxS        | Before | 33.5        | 974.8          | 358.0             | 72911             | 24315      | 193.4 [193.4-193.6] |
+| WinSxS        | After  | 79.5        | 635.1          | 84.6              | 0                 | 24315      | 193.9 [193.1-194.0] |
+| C root        | Before | 0.2         | 5.0            | 0.7               | 38                | 21         | 92.5 [92.1-94.8]    |
+| C root        | After  | 0.4         | 12.7           | 0.5               | 2                 | 21         | 92.8 [92.5-94.6]    |
 
 Candidate attribute reads: respectively 202603, 4757, 24315 and 19; baseline zero.
 The two remaining C-root hidden calls use the required special-entry fallback.
@@ -622,29 +622,29 @@ allocation cost or a memory optimization.
 
 Input latency: **median of per-run p95 [min-max] milliseconds**, not a pooled p95.
 
-| Folder | Mode | Loading arrow-to-cursor | Loading arrow-to-paint | Settled arrow-to-cursor | Settled arrow-to-paint |
-| --- | --- | --- | --- | --- | --- |
-| CelebAAligned | Before | 360.1 [266.7-467.4] | 677.7 [544.3-700.6] | 1.6 [1.4-1.8] | 2.7 [2.1-2.7] |
-| CelebAAligned | After | 230.1 [227.9-270.6] | 380.6 [357.6-413.3] | 1.7 [1.6-1.9] | 2.6 [2.5-2.8] |
-| System32 | Before | 162.8 [162.7-165.1] | 163.4 [163.4-165.8] | 1.4 [1.4-1.5] | 2.1 [2.0-2.4] |
-| System32 | After | 115.4 [114.6-115.5] | 116.1 [115.3-116.2] | 1.4 [1.3-1.6] | 2.2 [2.1-2.3] |
-| WinSxS | Before | 418.0 [413.0-461.1] | 569.1 [563.9-588.3] | 1.7 [1.7-1.8] | 2.8 [2.8-3.3] |
-| WinSxS | After | 285.0 [282.6-286.2] | 452.7 [419.7-473.2] | 1.5 [1.5-1.6] | 2.6 [2.5-2.7] |
-| C root | Before | 4.7 [4.4-4.8] | 5.3 [4.8-5.7] | 1.5 [1.3-1.5] | 2.2 [2.2-2.4] |
-| C root | After | 4.8 [4.3-5.4] | 5.6 [5.4-5.9] | 1.4 [1.4-1.5] | 2.2 [2.1-2.3] |
+| Folder        | Mode   | Loading arrow-to-cursor | Loading arrow-to-paint | Settled arrow-to-cursor | Settled arrow-to-paint |
+| ------------- | ------ | ----------------------- | ---------------------- | ----------------------- | ---------------------- |
+| CelebAAligned | Before | 360.1 [266.7-467.4]     | 677.7 [544.3-700.6]    | 1.6 [1.4-1.8]           | 2.7 [2.1-2.7]          |
+| CelebAAligned | After  | 230.1 [227.9-270.6]     | 380.6 [357.6-413.3]    | 1.7 [1.6-1.9]           | 2.6 [2.5-2.8]          |
+| System32      | Before | 162.8 [162.7-165.1]     | 163.4 [163.4-165.8]    | 1.4 [1.4-1.5]           | 2.1 [2.0-2.4]          |
+| System32      | After  | 115.4 [114.6-115.5]     | 116.1 [115.3-116.2]    | 1.4 [1.3-1.6]           | 2.2 [2.1-2.3]          |
+| WinSxS        | Before | 418.0 [413.0-461.1]     | 569.1 [563.9-588.3]    | 1.7 [1.7-1.8]           | 2.8 [2.8-3.3]          |
+| WinSxS        | After  | 285.0 [282.6-286.2]     | 452.7 [419.7-473.2]    | 1.5 [1.5-1.6]           | 2.6 [2.5-2.7]          |
+| C root        | Before | 4.7 [4.4-4.8]           | 5.3 [4.8-5.7]          | 1.5 [1.3-1.5]           | 2.2 [2.2-2.4]          |
+| C root        | After  | 4.8 [4.3-5.4]           | 5.6 [5.4-5.9]          | 1.4 [1.4-1.5]           | 2.2 [2.1-2.3]          |
 
 Per-run first-paint / completion pairs (milliseconds), ordered by pair number:
 
-| Folder | Mode | Pair 1 | Pair 2 | Pair 3 |
-| --- | --- | --- | --- | --- |
+| Folder        | Mode   | Pair 1           | Pair 2           | Pair 3           |
+| ------------- | ------ | ---------------- | ---------------- | ---------------- |
 | CelebAAligned | Before | 8994.9 / 17693.7 | 8182.5 / 16071.8 | 9222.5 / 18072.3 |
-| CelebAAligned | After | 6136.9 / 12689.6 | 5971.8 / 12219.1 | 6259.5 / 13230.1 |
-| System32 | Before | 299.8 / 471.6 | 266.3 / 435.1 | 265.9 / 434.6 |
-| System32 | After | 182.5 / 303.6 | 183.0 / 304.4 | 180.8 / 301.2 |
-| WinSxS | Before | 1538.1 / 2683.0 | 1379.3 / 2456.8 | 1400.5 / 2483.5 |
-| WinSxS | After | 788.7 / 1511.0 | 777.5 / 1493.3 | 811.0 / 1532.2 |
-| C root | Before | 57.6 / 67.1 | 58.0 / 68.8 | 58.1 / 67.8 |
-| C root | After | 61.6 / 72.5 | 64.8 / 74.7 | 66.2 / 75.9 |
+| CelebAAligned | After  | 6136.9 / 12689.6 | 5971.8 / 12219.1 | 6259.5 / 13230.1 |
+| System32      | Before | 299.8 / 471.6    | 266.3 / 435.1    | 265.9 / 434.6    |
+| System32      | After  | 182.5 / 303.6    | 183.0 / 304.4    | 180.8 / 301.2    |
+| WinSxS        | Before | 1538.1 / 2683.0  | 1379.3 / 2456.8  | 1400.5 / 2483.5  |
+| WinSxS        | After  | 788.7 / 1511.0   | 777.5 / 1493.3   | 811.0 / 1532.2   |
+| C root        | Before | 57.6 / 67.1      | 58.0 / 68.8      | 58.1 / 67.8      |
+| C root        | After  | 61.6 / 72.5      | 64.8 / 74.7      | 66.2 / 75.9      |
 
 ### Filter-Off Cost and Remaining Limits
 
@@ -653,18 +653,18 @@ hidden helper calls, retained all 202603 rows and still made 202603 path stats.
 One-pass capture remains intentional so the provider can serve another pane with
 filtering enabled. It introduces no additional worker, timer or separate scan.
 
-| Metric | Before median [min-max] | After median [min-max] |
-| --- | --- | --- |
-| Enumeration, ms | 40.1 [39.5-40.8] | 540.2 [534.4-540.7] |
-| Worker prepare, ms | 4079.7 [4005.8-4108.2] | 4128.0 [4112.9-4246.3] |
-| First paint, ms | 4560.3 [4468.6-4605.2] | 4846.4 [4827.8-5045.2] |
-| Metadata complete, ms | 10726.8 [10347.9-10920.9] | 10568.1 [10362.4-11277.1] |
-| Post-render Qt commits, ms | 526.1 [506.7-861.3] | 834.7 [497.7-886.0] |
-| Loading cursor p95, ms | 245.3 [166.1-425.6] | 346.2 [210.0-419.6] |
-| Loading paint p95, ms | 471.6 [297.2-674.1] | 424.3 [412.7-490.8] |
-| Settled cursor p95, ms | 1.6 [1.5-1.6] | 1.6 [1.6-1.6] |
-| Settled paint p95, ms | 2.5 [2.4-2.7] | 2.5 [2.5-2.6] |
-| Working set, MiB | 808.4 [807.0-810.1] | 807.5 [806.9-807.6] |
+| Metric                     | Before median [min-max]   | After median [min-max]    |
+| -------------------------- | ------------------------- | ------------------------- |
+| Enumeration, ms            | 40.1 [39.5-40.8]          | 540.2 [534.4-540.7]       |
+| Worker prepare, ms         | 4079.7 [4005.8-4108.2]    | 4128.0 [4112.9-4246.3]    |
+| First paint, ms            | 4560.3 [4468.6-4605.2]    | 4846.4 [4827.8-5045.2]    |
+| Metadata complete, ms      | 10726.8 [10347.9-10920.9] | 10568.1 [10362.4-11277.1] |
+| Post-render Qt commits, ms | 526.1 [506.7-861.3]       | 834.7 [497.7-886.0]       |
+| Loading cursor p95, ms     | 245.3 [166.1-425.6]       | 346.2 [210.0-419.6]       |
+| Loading paint p95, ms      | 471.6 [297.2-674.1]       | 424.3 [412.7-490.8]       |
+| Settled cursor p95, ms     | 1.6 [1.5-1.6]             | 1.6 [1.6-1.6]             |
+| Settled paint p95, ms      | 2.5 [2.4-2.7]             | 2.5 [2.5-2.6]             |
+| Working set, MiB           | 808.4 [807.0-810.1]       | 807.5 [806.9-807.6]       |
 
 Filter-off first-paint/completion pairs: before 4468.6/10347.9,
 4560.3/10726.8, 4605.2/10920.9; after 4846.4/10568.1,
@@ -695,25 +695,25 @@ agrees with the application's resolved URL. No source folder was modified.
 
 All times below are milliseconds; medians over three runs:
 
-| Folder | Enumeration reviewed -> revised | First paint reviewed -> revised | Completion reviewed -> revised |
-| --- | ---: | ---: | ---: |
-| CelebAAligned (202603) | 588.3 -> 528.3 | 6090.8 -> 5780.0 | 12735.7 -> 11851.3 |
-| System32 (4757) | 12.0 -> 11.3 | 193.1 -> 190.9 | 317.8 -> 314.1 |
-| WinSxS (24315) | 77.2 -> 72.8 | 830.9 -> 800.6 | 1593.5 -> 1527.3 |
-| C root (19; 9 visible) | 0.238 -> 0.303 | 58.8 -> 58.7 | 68.9 -> 69.1 |
+| Folder                 | Enumeration reviewed -> revised | First paint reviewed -> revised | Completion reviewed -> revised |
+| ---------------------- | ------------------------------: | ------------------------------: | -----------------------------: |
+| CelebAAligned (202603) | 588.3 -> 528.3                  | 6090.8 -> 5780.0                | 12735.7 -> 11851.3             |
+| System32 (4757)        | 12.0 -> 11.3                    | 193.1 -> 190.9                  | 317.8 -> 314.1                 |
+| WinSxS (24315)         | 77.2 -> 72.8                    | 830.9 -> 800.6                  | 1593.5 -> 1527.3               |
+| C root (19; 9 visible) | 0.238 -> 0.303                  | 58.8 -> 58.7                    | 68.9 -> 69.1                   |
 
 Retained first-paint/completion pairs, milliseconds:
 
-| Folder | Mode | Pair 1 | Pair 2 | Pair 3 |
-| --- | --- | --- | --- | --- |
+| Folder        | Mode     | Pair 1           | Pair 2           | Pair 3           |
+| ------------- | -------- | ---------------- | ---------------- | ---------------- |
 | CelebAAligned | Reviewed | 5861.6 / 11911.5 | 6147.3 / 12735.7 | 6090.8 / 12927.8 |
-| CelebAAligned | Revised | 5780.0 / 11851.3 | 5758.2 / 11767.8 | 6017.0 / 12626.4 |
-| System32 | Reviewed | 193.1 / 310.3 | 193.2 / 319.4 | 190.1 / 317.8 |
-| System32 | Revised | 191.0 / 316.1 | 185.3 / 308.8 | 190.9 / 314.1 |
-| WinSxS | Reviewed | 810.4 / 1547.5 | 840.1 / 1593.5 | 830.9 / 1597.7 |
-| WinSxS | Revised | 800.6 / 1522.9 | 799.2 / 1527.3 | 807.6 / 1544.7 |
-| C root | Reviewed | 58.6 / 68.5 | 65.5 / 75.3 | 58.8 / 68.9 |
-| C root | Revised | 58.1 / 68.8 | 58.7 / 69.1 | 67.8 / 70.9 |
+| CelebAAligned | Revised  | 5780.0 / 11851.3 | 5758.2 / 11767.8 | 6017.0 / 12626.4 |
+| System32      | Reviewed | 193.1 / 310.3    | 193.2 / 319.4    | 190.1 / 317.8    |
+| System32      | Revised  | 191.0 / 316.1    | 185.3 / 308.8    | 190.9 / 314.1    |
+| WinSxS        | Reviewed | 810.4 / 1547.5   | 840.1 / 1593.5   | 830.9 / 1597.7   |
+| WinSxS        | Revised  | 800.6 / 1522.9   | 799.2 / 1527.3   | 807.6 / 1544.7   |
+| C root        | Reviewed | 58.6 / 68.5      | 65.5 / 75.3      | 58.8 / 68.9      |
+| C root        | Revised  | 58.1 / 68.8      | 58.7 / 69.1      | 67.8 / 70.9      |
 
 The reference median first-paint improvement is 5.1%, completion 6.9%. These are
 modest whole-application gains, not a demonstrated 5x lookup/scan speedup.
@@ -730,15 +730,15 @@ is not established; small-folder/root differences are mainly millisecond noise.
 
 Original no-cache baseline was rerun in three pairs on the reference folder:
 
-| Metric | Before hidden cache | Revised cache |
-| --- | ---: | ---: |
-| First paint, median | 8949.1 | 5822.7 |
-| Completion, median | 17785.6 | 11872.8 |
-| Post-paint Qt commits, median | 2765.5 | 1281.8 |
-| Qt hidden queries | 607775 | 0 |
-| Pair 1 first/complete | 8949.1 / 17785.6 | 5826.1 / 12191.3 |
-| Pair 2 first/complete | 8140.6 / 16113.4 | 5774.1 / 11872.8 |
-| Pair 3 first/complete | 9409.8 / 18065.4 | 5822.7 / 11832.7 |
+| Metric                        | Before hidden cache | Revised cache    |
+| ----------------------------- | ------------------: | ---------------: |
+| First paint, median           | 8949.1              | 5822.7           |
+| Completion, median            | 17785.6             | 11872.8          |
+| Post-paint Qt commits, median | 2765.5              | 1281.8           |
+| Qt hidden queries             | 607775              | 0                |
+| Pair 1 first/complete         | 8949.1 / 17785.6    | 5826.1 / 12191.3 |
+| Pair 2 first/complete         | 8140.6 / 16113.4    | 5774.1 / 11872.8 |
+| Pair 3 first/complete         | 9409.8 / 18065.4    | 5822.7 / 11832.7 |
 
 Filter-off control, reference folder, reviewed -> revised medians: enumeration
 606.9 -> 519.2 ms, first paint 5072.8 -> 4949.8 ms, completion 10584.7 -> 10455.1

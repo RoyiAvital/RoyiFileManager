@@ -649,16 +649,16 @@ Checked against `_TreeCommand.__call__`/`_confirm_tree_operation` in
   the shared rules: no hidden pre-task loop, and no per-file ancestor resolution.
   What is left between them is small for users and large in risk.
 
-  | Criterion | A | B |
-  | --- | --- | --- |
-  | First-file latency | About 36 µs per file before the first copy (362 ms at 10,000; about 7 s extrapolated at 200,000), visible and cancellable | Immediate |
-  | Total time | 1.006 s / 10.40 s | 1.054 s / 9.81 s; no clear gain |
-  | Conflict prompts | All asked in preparation, before any copy; the rest runs unattended | Interleaved with copying; the user must stay present |
-  | Progress | Exact byte total from task sizes | Item count or indeterminate |
-  | Refusal (self-copy, Abort) | Zero mutations | May follow a completed prefix |
-  | Move | Bottom-up directory postprocessing keeps its gathered order | Needs per-directory planning anyway |
-  | Memory | O(N) queued tasks | Bounded queue |
-  | Change size | Remove one loop, add a fast path in `_gather_files` | New scheduler, streaming progress, new partial-result semantics and fallbacks |
+  | Criterion                  | A                                                                                                                         | B                                                                             |
+  | -------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+  | First-file latency         | About 36 µs per file before the first copy (362 ms at 10,000; about 7 s extrapolated at 200,000), visible and cancellable | Immediate                                                                     |
+  | Total time                 | 1.006 s / 10.40 s                                                                                                         | 1.054 s / 9.81 s; no clear gain                                               |
+  | Conflict prompts           | All asked in preparation, before any copy; the rest runs unattended                                                       | Interleaved with copying; the user must stay present                          |
+  | Progress                   | Exact byte total from task sizes                                                                                          | Item count or indeterminate                                                   |
+  | Refusal (self-copy, Abort) | Zero mutations                                                                                                            | May follow a completed prefix                                                 |
+  | Move                       | Bottom-up directory postprocessing keeps its gathered order                                                               | Needs per-directory planning anyway                                           |
+  | Memory                     | O(N) queued tasks                                                                                                         | Bounded queue                                                                 |
+  | Change size                | Remove one loop, add a fast path in `_gather_files`                                                                       | New scheduler, streaming progress, new partial-result semantics and fallbacks |
 
   The user's complaint was that nothing visibly happened. That was caused by
   the hidden loop and the O(N·D) resolution, and A fixes both. The existing
@@ -1492,17 +1492,17 @@ This review establishes no additional source-loss defect.
 
 ### Disposition
 
-| Review Items | Resolution |
-| --- | --- |
-| E1, E5, G6 and Sol's design recommendation | Retain whole-batch A, pre-execution overwrite/Abort choices, Symlink's guard and actual progress-visibility checks. Preparation is visibly cancellable, not instant; the 100 ms stretch goal remains unmet. |
-| E2, G1, G2 | Retain the implemented destination identity comparison, task-local directory ancestor set and conservative fallback for links, unknown identities and other providers. Existing safety/alias tests remain gates. |
-| E3, G3 | Retain measured preparation working-set and task-count estimates with their caveats; they are not exact Task allocations or a 200k-transfer measurement. No compact-record optimization is justified here; FO03 owns reconsideration. |
-| E4, G4, G5, I5 | FO02/FO03 in the existing pending backlog own status capture and possible streaming/compact records, with separate approval and measurable re-entry criteria. Historical design discussion stays here; it is not active Copy scope. |
-| I1, A1, S1 | Fixed. The queued prerequisite is identified explicitly; its failure alerts once and stops, even when per-file errors were previously ignored. Copy/Move regression covers all four combinations. |
-| I2 | Tracking addressed by FO01 with code ownership, original run identity and a native-dump investigation requirement. The crash itself is unresolved; no dump or root cause is claimed. |
-| I3 | Accepted limitation of vanilla A; FO04 records measured motivation and criteria for later inference sharing. No new provider contract, dispatcher or cache. |
-| I4, A3, S3 | Added exact-prefix cancellation coverage for Copy and same-volume Move. Acceptance now promises retained filesystem state, not an absent summary. Real cross-volume/in-file cancellation remains separate. |
-| A2, S2 | Fixed. Input-ready starts at Ctrl+A and ends at the verified follow-up paint; validation rejects a value earlier than selection paint. Copy workload revisions are 2 and catalog revision is 14. Existing eight-file smoke catches the old boundary deterministically and verifies aggregation. |
+| Review Items                               | Resolution                                                                                                                                                                                                                                                                                      |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| E1, E5, G6 and Sol's design recommendation | Retain whole-batch A, pre-execution overwrite/Abort choices, Symlink's guard and actual progress-visibility checks. Preparation is visibly cancellable, not instant; the 100 ms stretch goal remains unmet.                                                                                     |
+| E2, G1, G2                                 | Retain the implemented destination identity comparison, task-local directory ancestor set and conservative fallback for links, unknown identities and other providers. Existing safety/alias tests remain gates.                                                                                |
+| E3, G3                                     | Retain measured preparation working-set and task-count estimates with their caveats; they are not exact Task allocations or a 200k-transfer measurement. No compact-record optimization is justified here; FO03 owns reconsideration.                                                           |
+| E4, G4, G5, I5                             | FO02/FO03 in the existing pending backlog own status capture and possible streaming/compact records, with separate approval and measurable re-entry criteria. Historical design discussion stays here; it is not active Copy scope.                                                             |
+| I1, A1, S1                                 | Fixed. The queued prerequisite is identified explicitly; its failure alerts once and stops, even when per-file errors were previously ignored. Copy/Move regression covers all four combinations.                                                                                               |
+| I2                                         | Tracking addressed by FO01 with code ownership, original run identity and a native-dump investigation requirement. The crash itself is unresolved; no dump or root cause is claimed.                                                                                                            |
+| I3                                         | Accepted limitation of vanilla A; FO04 records measured motivation and criteria for later inference sharing. No new provider contract, dispatcher or cache.                                                                                                                                     |
+| I4, A3, S3                                 | Added exact-prefix cancellation coverage for Copy and same-volume Move. Acceptance now promises retained filesystem state, not an absent summary. Real cross-volume/in-file cancellation remains separate.                                                                                      |
+| A2, S2                                     | Fixed. Input-ready starts at Ctrl+A and ends at the verified follow-up paint; validation rejects a value earlier than selection paint. Copy workload revisions are 2 and catalog revision is 14. Existing eight-file smoke catches the old boundary deterministically and verifies aggregation. |
 
 Pending ownership: [CodeReview099 FO01-FO04](../Plan/CodeReview099.md#file-operations-001-follow-ups).
 No earlier reviewer record or retained measurement was rewritten.

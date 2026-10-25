@@ -23,13 +23,13 @@ but changes freshness semantics; N12 can be reduced to a safer per-suggestion
 hint lookup without freezing command visibility. ISO dates are useful as a
 preference, not as a material responsiveness improvement.
 
-| Decision | Recommended Scope | Expected Benefit And Limit |
-| --- | --- | --- |
-| First batch | N01-N04, N09, N10 | Remove proven redundant work with no settings or lifecycle change. N01: 50-67% fewer sizing passes in the probe; N02: half the flat-entry normalization calls; N03: about 1.54 MiB of avoidable score containers at 20,000 matches; N04: half the tested icon-key calls; N09: a reviewer-measured 3.37 ms status pass at 202,603 entries; N10: fewer lowercase calls, timing unmeasured. These are component gains, not additive whole-app percentages. |
-| Highest-value conditional follow-up | N11 after N09, if snapshot-consistent totals are accepted | Remove cold size-query I/O for known files. Opus's 40-file ZIP probe spent 303 ms in 40 extra processes after scanning; this work becomes unnecessary for known sizes. No comparable first-pane-paint saving is established, and warm caches/disabled status reduce or remove the benefit. Adds about 1.55 MiB of references per 202,603-entry status snapshot. |
-| Optional small palette follow-up | N12 narrowed to one shortcut map per suggestion pass, alongside N10 | In a synthetic 82-command/74-binding fixture, 6,068 binding visits become 74 with exact hint parity. Keep visibility/aliases live; do not cache all candidates per opening. Overall palette latency is unmeasured. |
-| Optional display preference | N13 through [DateFormat](../Plan/DateFormat.md) | Locale remains default; ISO gives consistent local 24-hour dates and four-digit years. One-time pattern resolution saves about 0.20-0.25 ms per 512 uncached date cells, roughly 0.02 ms for 40 dates. ISO itself adds little beyond prepared Locale. |
-| Do not select for this batch | N05-N08 and the original per-opening N12 cache | Their claimed gains depend on changing signals, scheduling, retained memory, Qt lookup cost or live command semantics. A separate design/benchmark is needed. |
+| Decision                            | Recommended Scope                                                   | Expected Benefit And Limit                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ----------------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| First batch                         | N01-N04, N09, N10                                                   | Remove proven redundant work with no settings or lifecycle change. N01: 50-67% fewer sizing passes in the probe; N02: half the flat-entry normalization calls; N03: about 1.54 MiB of avoidable score containers at 20,000 matches; N04: half the tested icon-key calls; N09: a reviewer-measured 3.37 ms status pass at 202,603 entries; N10: fewer lowercase calls, timing unmeasured. These are component gains, not additive whole-app percentages. |
+| Highest-value conditional follow-up | N11 after N09, if snapshot-consistent totals are accepted           | Remove cold size-query I/O for known files. Opus's 40-file ZIP probe spent 303 ms in 40 extra processes after scanning; this work becomes unnecessary for known sizes. No comparable first-pane-paint saving is established, and warm caches/disabled status reduce or remove the benefit. Adds about 1.55 MiB of references per 202,603-entry status snapshot.                                                                                         |
+| Optional small palette follow-up    | N12 narrowed to one shortcut map per suggestion pass, alongside N10 | In a synthetic 82-command/74-binding fixture, 6,068 binding visits become 74 with exact hint parity. Keep visibility/aliases live; do not cache all candidates per opening. Overall palette latency is unmeasured.                                                                                                                                                                                                                                      |
+| Optional display preference         | N13 through [DateFormat](../Plan/DateFormat.md)                     | Locale remains default; ISO gives consistent local 24-hour dates and four-digit years. One-time pattern resolution saves about 0.20-0.25 ms per 512 uncached date cells, roughly 0.02 ms for 40 dates. ISO itself adds little beyond prepared Locale.                                                                                                                                                                                                   |
+| Do not select for this batch        | N05-N08 and the original per-opening N12 cache                      | Their claimed gains depend on changing signals, scheduling, retained memory, Qt lookup cost or live command semantics. A separate design/benchmark is needed.                                                                                                                                                                                                                                                                                           |
 
 Accepted decision: implement the base six only. N11 still requires approval of
 snapshot freshness; N12 requires its separate hint-map tests; N13 remains a
@@ -439,10 +439,10 @@ blanket approval of all candidates.
   file at folder opening. A disposable full-formatter probe measured:
 
   | Locale | Current Locale | Prepared Locale | Prepared ISO |
-  | --- | --- | --- | --- |
-  | en_US | 2.119 ms | 1.898 ms | 1.872 ms |
-  | en_GB | 2.058 ms | 1.814 ms | 1.812 ms |
-  | de_DE | 2.027 ms | 1.826 ms | 1.798 ms |
+  | ------ | -------------- | --------------- | ------------ |
+  | en_US  | 2.119 ms       | 1.898 ms        | 1.872 ms     |
+  | en_GB  | 2.058 ms       | 1.814 ms        | 1.812 ms     |
+  | de_DE  | 2.027 ms       | 1.826 ms        | 1.798 ms     |
 
   Values are median time for 512 uncached cells, using Python 3.14.7 / PyQt5
   5.15.11 / Qt 5.15.15 on Windows: 9 batches, 8 passes over 512 timestamps per
@@ -486,17 +486,17 @@ Percentages describe the affected work, not application latency. Existing probes
 establish call counts and container sizes; no completed implementation or paired
 end-to-end timing supports a whole-app speedup claim yet.
 
-| Candidate | Defensible Estimate | What The User May Notice |
-| --- | --- | --- |
-| N01: column sizing | 2-3 minimum-width passes become 1: 50-67% fewer passes in the tested automatic layouts. Elapsed sizing savings depend on which cells each pass measures and their cache state. | Less layout work when resizing windows/panes or automatically fitting columns. Best small candidate for smoother layout; no faster disk enumeration. |
-| N02: search normalization | 50% fewer name/path normalization calls when all entries are flat, with one reused normalized string per equal pair. For mixed trees, the fraction of equal pairs determines savings; literal-path setup and other construction work remain. | Shorter first Find preparation in large flat folders. Little benefit for mostly nested paths, and no corresponding per-keystroke gain once the matcher is built. |
-| N03: bounded scoring | With 20,000 matches and a 100-result limit, almost all of the measured 1.54 MiB list/score-tuple storage becomes avoidable. Linear extrapolation is about 3.85 MiB at 50,000 matches; the bounded heap still needs storage. Score/index objects are excluded, and actual peak-memory savings remain unmeasured. | Lower temporary allocation pressure during broad searches. Query time may improve, remain similar or regress slightly from iterator overhead; it still scores every candidate. No promised typing-latency percentage. |
-| N04: icon key reuse | 50% fewer key calculations on the tested eligible decoration path: 20 calls become 10. Icon loading, drawing and shell request counts are unchanged. | A small reduction in paint/sizing overhead, probably difficult to notice alone. Does not accelerate uncached shell icon extraction. |
-| N09: status completeness | Removes one 202,603-entry pass measured at 3.37 ms median. Status tuple construction, URL joins and worker calculation remain. | A small reduction in the debounced Qt-thread pause before status calculation for very large folders. No effect while status is disabled. |
-| N10: palette normalization | One query lowercase and one per visited alias, instead of up to two of each per alias with the current matchers. Whole-palette timing is unmeasured. | Slightly less synchronous work while opening or typing in the command palette; likely modest by itself. |
-| N11: snapshot status sizes, conditional | Remove cold queries for eligible known sizes, up to the 5,000-file cap. Opus reported 303 ms in 40 extra ZIP processes and 23-29 ms for 4,757 warm local stats. These are avoided-worker-work examples, not measured end-to-end savings or CPU-time totals; large archives/network shares are unmeasured. Adds about 1.55 MiB of references at 202,603 entries. | Faster snapshot-consistent status totals when extended status is on and provider sizes would miss cache. No benefit while disabled; changed freshness needs approval. |
-| N12: per-suggestion hints, conditional | Synthetic helper fixture: 6,068 binding visits become 74 for 82 lookups, with hint parity. Visibility and aliases still run per query; no per-opening caching. Overall latency unmeasured. | Less synchronous hint work for broad Command Center queries; likely modest with the bundled command set. |
-| N13: Locale/ISO dates | Prepared formatting saves about 0.20-0.25 ms per 512 uncached date cells; roughly 0.02 ms for 40 dates, excluding layout/paint. Most saving comes from resolving the pattern once in either mode, not ISO itself. | Consistent local 24-hour dates and four-digit years if selected; little perceptible performance benefit. Locale stays the default. |
+| Candidate                               | Defensible Estimate                                                                                                                                                                                                                                                                                                                                             | What The User May Notice                                                                                                                                                                                              |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| N01: column sizing                      | 2-3 minimum-width passes become 1: 50-67% fewer passes in the tested automatic layouts. Elapsed sizing savings depend on which cells each pass measures and their cache state.                                                                                                                                                                                  | Less layout work when resizing windows/panes or automatically fitting columns. Best small candidate for smoother layout; no faster disk enumeration.                                                                  |
+| N02: search normalization               | 50% fewer name/path normalization calls when all entries are flat, with one reused normalized string per equal pair. For mixed trees, the fraction of equal pairs determines savings; literal-path setup and other construction work remain.                                                                                                                    | Shorter first Find preparation in large flat folders. Little benefit for mostly nested paths, and no corresponding per-keystroke gain once the matcher is built.                                                      |
+| N03: bounded scoring                    | With 20,000 matches and a 100-result limit, almost all of the measured 1.54 MiB list/score-tuple storage becomes avoidable. Linear extrapolation is about 3.85 MiB at 50,000 matches; the bounded heap still needs storage. Score/index objects are excluded, and actual peak-memory savings remain unmeasured.                                                 | Lower temporary allocation pressure during broad searches. Query time may improve, remain similar or regress slightly from iterator overhead; it still scores every candidate. No promised typing-latency percentage. |
+| N04: icon key reuse                     | 50% fewer key calculations on the tested eligible decoration path: 20 calls become 10. Icon loading, drawing and shell request counts are unchanged.                                                                                                                                                                                                            | A small reduction in paint/sizing overhead, probably difficult to notice alone. Does not accelerate uncached shell icon extraction.                                                                                   |
+| N09: status completeness                | Removes one 202,603-entry pass measured at 3.37 ms median. Status tuple construction, URL joins and worker calculation remain.                                                                                                                                                                                                                                  | A small reduction in the debounced Qt-thread pause before status calculation for very large folders. No effect while status is disabled.                                                                              |
+| N10: palette normalization              | One query lowercase and one per visited alias, instead of up to two of each per alias with the current matchers. Whole-palette timing is unmeasured.                                                                                                                                                                                                            | Slightly less synchronous work while opening or typing in the command palette; likely modest by itself.                                                                                                               |
+| N11: snapshot status sizes, conditional | Remove cold queries for eligible known sizes, up to the 5,000-file cap. Opus reported 303 ms in 40 extra ZIP processes and 23-29 ms for 4,757 warm local stats. These are avoided-worker-work examples, not measured end-to-end savings or CPU-time totals; large archives/network shares are unmeasured. Adds about 1.55 MiB of references at 202,603 entries. | Faster snapshot-consistent status totals when extended status is on and provider sizes would miss cache. No benefit while disabled; changed freshness needs approval.                                                 |
+| N12: per-suggestion hints, conditional  | Synthetic helper fixture: 6,068 binding visits become 74 for 82 lookups, with hint parity. Visibility and aliases still run per query; no per-opening caching. Overall latency unmeasured.                                                                                                                                                                      | Less synchronous hint work for broad Command Center queries; likely modest with the bundled command set.                                                                                                              |
+| N13: Locale/ISO dates                   | Prepared formatting saves about 0.20-0.25 ms per 512 uncached date cells; roughly 0.02 ms for 40 dates, excluding layout/paint. Most saving comes from resolving the pattern once in either mode, not ISO itself.                                                                                                                                               | Consistent local 24-hour dates and four-digit years if selected; little perceptible performance benefit. Locale stays the default.                                                                                    |
 
 For scale, if a removable component accounts for 20% of an interaction's elapsed
 time, halving that component saves about 10% overall, ignoring new overhead. Its
@@ -569,16 +569,16 @@ and Qt tests below. Keep performance tooling outside ordinary test discovery.
 
 Required focused homes for an approved implementation:
 
-| Candidate | Existing Test Homes And Required Additions |
-| --- | --- |
-| N01 | `fman_unittest.impl.view.test_resize_cols_to_contents`; Qt `UniformRowHeightsIT` and `SnapshotFilterBarIT`. Add the counted batch/guard test and native resizing/empty-model/font/scrollbar regressions. |
-| N02, N03 | `fman_unittest.test_search_file_fuzzy` and `fman_unittest.test_listing`; Qt `SnapshotFilterBarIT`, `SearchFileSyntaxIT`, `SearchFileMetadataIT`. Add normalization counts, reference-ranking parity, bounded-allocation and cancellation cases. |
-| N04 | `fman_unittest.test_listing`; Qt `SnapshotFilterBarIT`. Extend icon coverage through `ListingModel.data`, retaining direct-call and worker-lifecycle checks. |
-| N09 | `fman_unittest.test_listing` and `fman_unittest.impl.test_status_bar`. Add a pane-snapshot completeness regression covering empty and filtered listings without a second entry traversal. |
-| N10 | `core.tests.commands.test___init__` and Qt `CommandPaletteRecentIT`. Add counted normalization and exact suggestion/highlight/order cases. |
-| N11 | `fman_unittest.impl.test_status_bar`, `fman_unittest.test_listing` and `core.tests.fs.test_zip`. Add known/zero/unknown/reparse sizes, preserved file cap and cancellation, disabled behavior, per-entry memory, deliberate after-scan changes and zero cold provider/7-Zip calls for known sizes. |
-| N12 | `core.tests.commands.test___init__` and Qt `CommandPaletteRecentIT`. Add per-pass hint traversal counts, unmatched-query behavior, duplicate/malformed shadowing and dynamic visibility/alias/binding changes within one opening. |
-| N13 | `core.tests.fs.test_columns` and `fman_unittest.test_listing`; configuration, restart and native pane checks in [DateFormat](../Plan/DateFormat.md). Exercise snapshot `text` and compatibility `get_str`, locale parity, ISO output, DST, invalid values, resolution counts and unchanged sorting. |
+| Candidate | Existing Test Homes And Required Additions                                                                                                                                                                                                                                                          |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| N01       | `fman_unittest.impl.view.test_resize_cols_to_contents`; Qt `UniformRowHeightsIT` and `SnapshotFilterBarIT`. Add the counted batch/guard test and native resizing/empty-model/font/scrollbar regressions.                                                                                            |
+| N02, N03  | `fman_unittest.test_search_file_fuzzy` and `fman_unittest.test_listing`; Qt `SnapshotFilterBarIT`, `SearchFileSyntaxIT`, `SearchFileMetadataIT`. Add normalization counts, reference-ranking parity, bounded-allocation and cancellation cases.                                                     |
+| N04       | `fman_unittest.test_listing`; Qt `SnapshotFilterBarIT`. Extend icon coverage through `ListingModel.data`, retaining direct-call and worker-lifecycle checks.                                                                                                                                        |
+| N09       | `fman_unittest.test_listing` and `fman_unittest.impl.test_status_bar`. Add a pane-snapshot completeness regression covering empty and filtered listings without a second entry traversal.                                                                                                           |
+| N10       | `core.tests.commands.test___init__` and Qt `CommandPaletteRecentIT`. Add counted normalization and exact suggestion/highlight/order cases.                                                                                                                                                          |
+| N11       | `fman_unittest.impl.test_status_bar`, `fman_unittest.test_listing` and `core.tests.fs.test_zip`. Add known/zero/unknown/reparse sizes, preserved file cap and cancellation, disabled behavior, per-entry memory, deliberate after-scan changes and zero cold provider/7-Zip calls for known sizes.  |
+| N12       | `core.tests.commands.test___init__` and Qt `CommandPaletteRecentIT`. Add per-pass hint traversal counts, unmatched-query behavior, duplicate/malformed shadowing and dynamic visibility/alias/binding changes within one opening.                                                                   |
+| N13       | `core.tests.fs.test_columns` and `fman_unittest.test_listing`; configuration, restart and native pane checks in [DateFormat](../Plan/DateFormat.md). Exercise snapshot `text` and compatibility `get_str`, locale parity, ISO output, DST, invalid values, resolution counts and unchanged sorting. |
 
 Exact focused commands for the completed six-item batch are recorded in
 Validation Results. Use the existing project interpreter; no new environment.
@@ -1037,16 +1037,16 @@ interpreter, leaving benchmark tooling and saved records unchanged:
   report median milliseconds per call. Measure one separate `tracemalloc` peak
   after `gc.collect()` per operation. Compare all query outputs exactly.
 
-| Entries | Operation | Old / New Median ms | Old / New Peak Bytes |
-| --- | --- | --- | --- |
-| 100 | Preparation | 0.2160 / 0.1198 | 26,716 / 21,016 |
-| 100 | `rpt` | 0.1727 / 0.1931 | 15,940 / 25,644 |
-| 100 | `rpt !tmp` | 0.2289 / 0.2523 | 17,820 / 27,620 |
-| 100 | `missing` | 0.0708 / 0.0706 | 1,334 / 2,440 |
-| 20,000 | Preparation | 44.5317 / 24.9113 | 5,206,672 / 4,066,672 |
-| 20,000 | `rpt` | 36.9808 / 36.7025 | 2,744,724 / 25,996 |
-| 20,000 | `rpt !tmp` | 47.7925 / 47.7138 | 2,746,612 / 27,996 |
-| 20,000 | `missing` | 15.1315 / 15.3584 | 1,334 / 2,504 |
+| Entries | Operation   | Old / New Median ms | Old / New Peak Bytes  |
+| ------- | ----------- | ------------------- | --------------------- |
+| 100     | Preparation | 0.2160 / 0.1198     | 26,716 / 21,016       |
+| 100     | `rpt`       | 0.1727 / 0.1931     | 15,940 / 25,644       |
+| 100     | `rpt !tmp`  | 0.2289 / 0.2523     | 17,820 / 27,620       |
+| 100     | `missing`   | 0.0708 / 0.0706     | 1,334 / 2,440         |
+| 20,000  | Preparation | 44.5317 / 24.9113   | 5,206,672 / 4,066,672 |
+| 20,000  | `rpt`       | 36.9808 / 36.7025   | 2,744,724 / 25,996    |
+| 20,000  | `rpt !tmp`  | 47.7925 / 47.7138   | 2,746,612 / 27,996    |
+| 20,000  | `missing`   | 15.1315 / 15.3584   | 1,334 / 2,504         |
 
 Ranked peak allocation drops about 99% on the many-match fixture. At 100 entries,
 iterator/heap overhead adds about 0.02 ms and 10 KB versus the old sized-list
@@ -1209,17 +1209,17 @@ displayed-snapshot ownership and live palette metadata. No further defect found.
   Added unequal recursive-path preparation under the same protocol. Outputs
   and prepared strings matched baseline in every measured case.
 
-| Entries | Operation | Old / New Median ms | Old / New Peak Bytes |
-| --- | --- | --- | --- |
-| 100 | Preparation | 0.2196 / 0.1210 | 26,716 / 21,016 |
-| 100 | `rpt` | 0.1710 / 0.1918 | 15,940 / 25,644 |
-| 100 | `rpt !tmp` | 0.2306 / 0.2498 | 17,820 / 27,620 |
-| 100 | `missing` | 0.0702 / 0.0710 | 1,334 / 2,440 |
-| 20,000 | Preparation | 45.8255 / 25.3024 | 5,206,672 / 4,066,672 |
-| 20,000 | `rpt` | 34.8369 / 34.4534 | 2,744,724 / 25,996 |
-| 20,000 | `rpt !tmp` | 45.3222 / 45.0047 | 2,746,612 / 27,996 |
-| 20,000 | `missing` | 14.1980 / 14.3316 | 1,334 / 2,504 |
-| 20,000 | Recursive preparation | 57.3492 / 57.5320 | 5,566,738 / 5,566,738 |
+| Entries | Operation             | Old / New Median ms | Old / New Peak Bytes  |
+| ------- | --------------------- | ------------------- | --------------------- |
+| 100     | Preparation           | 0.2196 / 0.1210     | 26,716 / 21,016       |
+| 100     | `rpt`                 | 0.1710 / 0.1918     | 15,940 / 25,644       |
+| 100     | `rpt !tmp`            | 0.2306 / 0.2498     | 17,820 / 27,620       |
+| 100     | `missing`             | 0.0702 / 0.0710     | 1,334 / 2,440         |
+| 20,000  | Preparation           | 45.8255 / 25.3024   | 5,206,672 / 4,066,672 |
+| 20,000  | `rpt`                 | 34.8369 / 34.4534   | 2,744,724 / 25,996    |
+| 20,000  | `rpt !tmp`            | 45.3222 / 45.0047   | 2,746,612 / 27,996    |
+| 20,000  | `missing`             | 14.1980 / 14.3316   | 1,334 / 2,504         |
+| 20,000  | Recursive preparation | 57.3492 / 57.5320   | 5,566,738 / 5,566,738 |
 
 Flat setup used 44.79% less time; ordinary/extended ranked allocation fell
 99.05%/98.98%. Small ranked queries still add about 0.02 ms and 10 KB; large

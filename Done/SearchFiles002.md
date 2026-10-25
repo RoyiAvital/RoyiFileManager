@@ -217,13 +217,13 @@ Fix: `create` also calls `label.setToolTip(record.tooltip or record.label)`
 for `TextField`. The plug-in's `MODE_OPTIONS` tooltips become descriptive, and
 the two `TextField` tooltips are reworded for the new semantics:
 
-| Control | Tooltip |
-| --- | --- |
-| File Name Pattern | `Text within the name, globs matching the whole name (*.cmd;!*.bak), or a regular expression` |
-| Content Pattern | `Text within the line, a glob matched anywhere in the line (Comm*der), or a regular expression; leave empty to list files by name` |
-| Literal | `Literal text, case-insensitive` |
-| Glob | `Glob: * any text, ? one character, [ab] a set` |
-| RegEx | `Regular expression (ripgrep syntax), case-insensitive` |
+| Control           | Tooltip                                                                                                                            |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| File Name Pattern | `Text within the name, globs matching the whole name (*.cmd;!*.bak), or a regular expression`                                      |
+| Content Pattern   | `Text within the line, a glob matched anywhere in the line (Comm*der), or a regular expression; leave empty to list files by name` |
+| Literal           | `Literal text, case-insensitive`                                                                                                   |
+| Glob              | `Glob: * any text, ? one character, [ab] a set`                                                                                    |
+| RegEx             | `Regular expression (ripgrep syntax), case-insensitive`                                                                            |
 
 ## Alternatives
 

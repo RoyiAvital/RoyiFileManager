@@ -10,12 +10,12 @@ Open Command Center with ++ctrl+shift+p++ for commands without shortcuts.
 
 ## Which Items Will Change?
 
-| Term | Meaning |
-| --- | --- |
-| Cursor / highlighted item | The row reached with the arrow keys. QuickView uses this item, even when others are marked. |
-| Committed marks | The applied pane selection. Built-in Copy/Move use these items; with no marks, they use the cursor item. |
-| Preview marks | A proposed Select/Deselect-by-pattern result. Enter applies it; Esc keeps the original marks. Other commands cancel the preview and use committed marks. |
-| Filtered table rows | Results left after narrowing a search table. They are not pane marks or a bulk Copy/Move/Delete selection. |
+| Term                      | Meaning                                                                                                                                                  |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Cursor / highlighted item | The row reached with the arrow keys. QuickView uses this item, even when others are marked.                                                              |
+| Committed marks           | The applied pane selection. Built-in Copy/Move use these items; with no marks, they use the cursor item.                                                 |
+| Preview marks             | A proposed Select/Deselect-by-pattern result. Enter applies it; Esc keeps the original marks. Other commands cancel the preview and use committed marks. |
+| Filtered table rows       | Results left after narrowing a search table. They are not pane marks or a bulk Copy/Move/Delete selection.                                               |
 
 "Visible" means passing the current filters, not just fitting on screen.
 Scrolling does not exclude items from a group.

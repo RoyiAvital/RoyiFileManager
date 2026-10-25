@@ -6043,7 +6043,7 @@ class TextEditorIT(QtIT):
 				self.assertEqual(QApplication.instance().thread(), QThread.currentThread())
 				if isinstance(dialog, Quicksearch):
 					self.dialogs.append('preset')
-					self.assertEqual(['Notepad++', 'CudaText', 'Notepad 4', 'EmEditor', 'Ecode', 'Manual configuration'],
+					self.assertEqual(['Notepad++', 'CudaText', 'Notepad 4', 'EmEditor', 'Ecode', 'Royi Text Editor', 'Manual configuration'],
 						[item.value for item in dialog._curr_items[:-1]])
 					self.assertIn(dialog._curr_items[-1].value, ('Clear editor', 'Clear viewer'))
 					if self.cancel == 'preset':
@@ -6136,6 +6136,8 @@ class TextEditorIT(QtIT):
 			('EmEditor', 'viewer', SetTextViewer, ['-nr', '-sp', '-r']),
 			('Ecode', 'editor', SetTextEditor, ['--zen-mode']),
 			('Ecode', 'viewer', SetTextViewer, ['--zen-mode', '--read-only']),
+			('Royi Text Editor', 'editor', SetTextEditor, []),
+			('Royi Text Editor', 'viewer', SetTextViewer, ['--read-only']),
 		):
 			with self.subTest(preset=preset, role=role):
 				self.selection = preset

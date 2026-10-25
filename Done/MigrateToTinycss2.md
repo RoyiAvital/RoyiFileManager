@@ -59,15 +59,15 @@ errors for unsupported at-rules follow the approved policy above. `tinycss` and
 
 `parse_css` today, via `tinycss.make_parser()` (CSS 2.1 parser):
 
-| Aspect | tinycss 0.4 behaviour |
-| --- | --- |
-| Input | `bytes`; `@charset`, BOM and UTF-8 fallback decoding |
-| Rules | Qualified rules only; each yields `Rule(selectors, declarations)` |
-| Selectors | `rule.selector.as_css().split(', ')` – text split on comma-space |
-| Declarations | `(name, value.as_css())`; leading/trailing whitespace stripped, inner whitespace kept, `!important` dropped from the value |
-| Comments | Dropped |
-| Errors | Any tokenizer/parser error (bad declaration, unknown at-rule, unbalanced block) collected in `stylesheet.errors`; `parse_css` raises the first as `ParseError(line, column, reason)` |
-| Empty file | `[]` |
+| Aspect       | tinycss 0.4 behaviour                                                                                                                                                                |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Input        | `bytes`; `@charset`, BOM and UTF-8 fallback decoding                                                                                                                                 |
+| Rules        | Qualified rules only; each yields `Rule(selectors, declarations)`                                                                                                                    |
+| Selectors    | `rule.selector.as_css().split(', ')` – text split on comma-space                                                                                                                     |
+| Declarations | `(name, value.as_css())`; leading/trailing whitespace stripped, inner whitespace kept, `!important` dropped from the value                                                           |
+| Comments     | Dropped                                                                                                                                                                              |
+| Errors       | Any tokenizer/parser error (bad declaration, unknown at-rule, unbalanced block) collected in `stylesheet.errors`; `parse_css` raises the first as `ParseError(line, column, reason)` |
+| Empty file   | `[]`                                                                                                                                                                                 |
 
 `theme.py` formats errors as `'CSS Parse error in file %s at line %d, column %d: %s'`
 using `e.line`, `e.column`, `e.reason`.
@@ -165,11 +165,11 @@ and does not affect other plug-ins, exactly as today.
 
 ### Dependencies
 
-| Package | Before | After |
-| --- | --- | --- |
-| `tinycss` 0.4 (conda-forge noarch) | required | removed |
-| `tinycss2` (conda-forge noarch, >=1.5,<2) | – | required |
-| `webencodings` (dependency of tinycss2, noarch) | – | pulled automatically |
+| Package                                         | Before   | After                |
+| ----------------------------------------------- | -------- | -------------------- |
+| `tinycss` 0.4 (conda-forge noarch)              | required | removed              |
+| `tinycss2` (conda-forge noarch, >=1.5,<2)       | –        | required             |
+| `webencodings` (dependency of tinycss2, noarch) | –        | pulled automatically |
 
 Both new packages are pure Python; PyInstaller collects them without hidden
 imports or data hooks. [application.spec](../application.spec) does not

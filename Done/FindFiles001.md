@@ -30,19 +30,19 @@ Included:
   and `search_files_recursively` (`Ctrl+Shift+F`) commands when `mode` is
   `fuzzy`:
 
-  | Term | Meaning |
-  | --- | --- |
-  | `report pdf` | fuzzy match of each term, AND, ranked (unchanged) |
-  | `'report` | exact substring |
-  | `'word'`, `!'word'` | exact word boundary, positive or inverse |
-  | `^src` | prefix anchor |
-  | `.py$` | suffix anchor |
-  | `^report.txt$` | entire relative path |
-  | `!tmp` | negation (exact substring must be absent) |
-  | `!'tmp` | inverse fuzzy subsequence |
-  | `!^src`, `!.py$` | negated anchors |
-  | `a \| b` | OR between adjacent terms |
-  | `'two\ words` | escaped space inside a term |
+  | Term                | Meaning                                           |
+  | ------------------- | ------------------------------------------------- |
+  | `report pdf`        | fuzzy match of each term, AND, ranked (unchanged) |
+  | `'report`           | exact substring                                   |
+  | `'word'`, `!'word'` | exact word boundary, positive or inverse          |
+  | `^src`              | prefix anchor                                     |
+  | `.py$`              | suffix anchor                                     |
+  | `^report.txt$`      | entire relative path                              |
+  | `!tmp`              | negation (exact substring must be absent)         |
+  | `!'tmp`             | inverse fuzzy subsequence                         |
+  | `!^src`, `!.py$`    | negated anchors                                   |
+  | `a \| b`            | OR between adjacent terms                         |
+  | `'two\ words`       | escaped space inside a term                       |
 
 - New highlights for positive fuzzy, exact and anchored terms.
 - Permissive partial queries: stripped-empty terms are ignored, not invalid.
@@ -88,14 +88,14 @@ Fuzzy mode already splits the query on spaces and requires every token as a
 subsequence (`_score`); selecting a result places the cursor on the file,
 navigating to its folder if needed.
 
-| | Start typing (pane filter) | `Ctrl+F` (current folder) | `Ctrl+Shift+F` (recursive) |
-| --- | --- | --- | --- |
-| Where it lives | Host `FilterBar` | Plug-in, `show_quicksearch` | Plug-in, `show_quicksearch` |
-| Scope | Current folder | Current folder | Whole subtree, up to `max_recursive_entries` (50,000) |
-| Targets | Files **and** folders, any scheme | Files only | Files only |
-| Matching | Case-insensitive substring, `*` wildcard | Fuzzy (NFKC, casefold, camel-case tokens, ranked) or substring via `mode` | Same |
-| Exact / anchors / negation | No | No | No |
-| Result | Pane stays filtered; act on rows directly | Cursor jumps to one file; dialog closes | Cursor jumps to one file in its folder |
+|                            | Start typing (pane filter)                | `Ctrl+F` (current folder)                                                 | `Ctrl+Shift+F` (recursive)                            |
+| -------------------------- | ----------------------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------- |
+| Where it lives             | Host `FilterBar`                          | Plug-in, `show_quicksearch`                                               | Plug-in, `show_quicksearch`                           |
+| Scope                      | Current folder                            | Current folder                                                            | Whole subtree, up to `max_recursive_entries` (50,000) |
+| Targets                    | Files **and** folders, any scheme         | Files only                                                                | Files only                                            |
+| Matching                   | Case-insensitive substring, `*` wildcard  | Fuzzy (NFKC, casefold, camel-case tokens, ranked) or substring via `mode` | Same                                                  |
+| Exact / anchors / negation | No                                        | No                                                                        | No                                                    |
+| Result                     | Pane stays filtered; act on rows directly | Cursor jumps to one file; dialog closes                                   | Cursor jumps to one file in its folder                |
 
 ## Design
 
@@ -146,15 +146,15 @@ Two grammars were evaluated. Option A is this task; Option B is
 
 #### Option A: fzf Extended-Search Syntax
 
-| Term | Meaning |
-| --- | --- |
-| `report pdf` | fuzzy match of each term, AND, ranked |
-| `'report` | exact substring |
-| `^src`, `.py$` | prefix / suffix anchors |
-| `!tmp` | negation |
-| `a \| b` | OR |
-| `'two\ words` | escaped space inside a term |
-| case | fzf: smart-case (insensitive unless the term contains an uppercase letter) |
+| Term           | Meaning                                                                    |
+| -------------- | -------------------------------------------------------------------------- |
+| `report pdf`   | fuzzy match of each term, AND, ranked                                      |
+| `'report`      | exact substring                                                            |
+| `^src`, `.py$` | prefix / suffix anchors                                                    |
+| `!tmp`         | negation                                                                   |
+| `a \| b`       | OR                                                                         |
+| `'two\ words`  | escaped space inside a term                                                |
+| case           | fzf: smart-case (insensitive unless the term contains an uppercase letter) |
 
 Pitfalls:
 
@@ -175,19 +175,19 @@ Pitfalls:
 
 #### Option B: Everything Syntax (Subset) — deferred to Find Files 003
 
-| Term | Meaning |
-| --- | --- |
-| `report pdf` | case-insensitive substring per term, AND, unranked |
-| `a \| b`, `!tmp`, `< >` | OR, NOT, grouping |
-| `"annual report"` | phrase with spaces |
-| `*.py`, `img_??.jpg` | wildcards |
-| `case:Report`, `nocase:` | per-term case control |
-| `regex:rep.*\.pdf$` | regular expression |
-| `ext:pdf;txt` | extension list |
-| `path:src\core`, `file:` | scope modifiers |
-| `size:>1mb`, `size:1kb..10mb`, `size:empty` | size filters |
-| `dm:today`, `dm:lastweek`, `dm:2024-06`, `dm:>=2024-01-01`, `dc:` | modified / created date filters |
-| `wholeword:` | whole-word match |
+| Term                                                              | Meaning                                            |
+| ----------------------------------------------------------------- | -------------------------------------------------- |
+| `report pdf`                                                      | case-insensitive substring per term, AND, unranked |
+| `a \| b`, `!tmp`, `< >`                                           | OR, NOT, grouping                                  |
+| `"annual report"`                                                 | phrase with spaces                                 |
+| `*.py`, `img_??.jpg`                                              | wildcards                                          |
+| `case:Report`, `nocase:`                                          | per-term case control                              |
+| `regex:rep.*\.pdf$`                                               | regular expression                                 |
+| `ext:pdf;txt`                                                     | extension list                                     |
+| `path:src\core`, `file:`                                          | scope modifiers                                    |
+| `size:>1mb`, `size:1kb..10mb`, `size:empty`                       | size filters                                       |
+| `dm:today`, `dm:lastweek`, `dm:2024-06`, `dm:>=2024-01-01`, `dc:` | modified / created date filters                    |
+| `wholeword:`                                                      | whole-word match                                   |
 
 Its pitfalls (grammar size, semantic divergences from Everything, whole-name
 wildcards, no fuzzy matching, metadata cost) and its design are recorded in
@@ -290,11 +290,11 @@ Old measurements use the unchanged `_fuzzy(normalize(query))` scorer.
 
 Median paired additional query time in milliseconds:
 
-| Files | Ordinary queries | Broad extended queries |
-| ---: | ---: | ---: |
-| 1,000 | 1.12-1.39 | 1.43-1.66 |
-| 10,000 | 1.07-1.36 | 6.30-7.59 |
-| 50,000 | 1.20-2.37 | 29.50-37.72 |
+| Files  | Ordinary queries | Broad extended queries |
+| -----: | ---------------: | ---------------------: |
+| 1,000  | 1.12-1.39        | 1.43-1.66              |
+| 10,000 | 1.07-1.36        | 6.30-7.59              |
+| 50,000 | 1.20-2.37        | 29.50-37.72            |
 
 Ordinary cases: `report`, `rpt`, `report py`. Extended cases compare `report`
 with `report !missing`, and `rpt` with `rpt !missing` / `^src rpt`. The extra
@@ -304,11 +304,11 @@ benefits. These synthetic figures are not universal performance bounds.
 Construction comparison uses otherwise identical normalization with/without
 the literal-path cache, ten paired samples after warmup:
 
-| Files | Added construction time | Extra cache memory |
-| ---: | ---: | ---: |
-| 1,000 | 0.11 ms | 0.07 MiB |
-| 10,000 | 1.10 ms | 0.74 MiB |
-| 50,000 | 5.89 ms | 3.71 MiB |
+| Files  | Added construction time | Extra cache memory |
+| -----: | ----------------------: | -----------------: |
+| 1,000  | 0.11 ms                 | 0.07 MiB           |
+| 10,000 | 1.10 ms                 | 0.74 MiB           |
+| 50,000 | 5.89 ms                 | 3.71 MiB           |
 
 Separately, seven warm 50,000-entry samples measured total latency:
 `report py` old baseline 162.06 ms versus 164.14 ms including highlights;

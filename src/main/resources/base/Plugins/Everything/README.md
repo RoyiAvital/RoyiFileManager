@@ -72,16 +72,16 @@ See the [manager screenshot](../../../../../../docs/tools.md#folder-manager).
 
 Edit `UserSettings/Plugins/User/Settings/Everything.json`; omitted keys use defaults.
 
-| Key | Default | Meaning |
-| --- | --- | --- |
-| `folders` | `[]` | Shared absolute local indexed roots |
-| `executable` | `""` | Bundled binary, or an absolute compatible 1.4 portable executable path |
-| `instance` | `"RoyiFileManager"` | Nonempty private name; letters, digits, `_`, `.`, `-` |
-| `max_results` | `100` | Result limit, 1-1000 |
-| `sort` | `"name"` | Name/path ascending, or `date_modified`/`size` descending |
-| `show_metadata` | `true` | Show modification date and file size |
-| `exit_with_application` | `true` | Stop the managed process on quit or plug-in unload |
-| `query_timeout_ms` | `50` | Total synchronous query deadline, 1-500 ms |
+| Key                     | Default             | Meaning                                                                |
+| ----------------------- | ------------------- | ---------------------------------------------------------------------- |
+| `folders`               | `[]`                | Shared absolute local indexed roots                                    |
+| `executable`            | `""`                | Bundled binary, or an absolute compatible 1.4 portable executable path |
+| `instance`              | `"RoyiFileManager"` | Nonempty private name; letters, digits, `_`, `.`, `-`                  |
+| `max_results`           | `100`               | Result limit, 1-1000                                                   |
+| `sort`                  | `"name"`            | Name/path ascending, or `date_modified`/`size` descending              |
+| `show_metadata`         | `true`              | Show modification date and file size                                   |
+| `exit_with_application` | `true`              | Stop the managed process on quit or plug-in unload                     |
+| `query_timeout_ms`      | `50`                | Total synchronous query deadline, 1-500 ms                             |
 
 Everything starts lazily only when configured roots are used. Its INI, database,
 lock and process identity live under `UserSettings/Local/Everything`. No volume

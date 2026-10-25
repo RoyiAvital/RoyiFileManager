@@ -8,15 +8,15 @@ contract; command and file-operation signatures remain unchanged.
 Start typing in a pane to filter file and folder names in place. Matching is
 case-insensitive and searches anywhere in the name unless anchored.
 
-| Input | Matches |
-| --- | --- |
-| `rep` | Names containing `rep`, including `Annual Report.pdf` |
-| `rep*2024` | `rep` followed anywhere by `2024` |
-| `r?p` | `r`, one character, then `p` |
-| `[abc]`, `[a-z]`, `[!x]` | One character in the set/range, or anything except `x` |
-| `^rep`, `.py$` | Names starting with `rep`, or ending in `.py` (not `.pyc`) |
-| `!tmp` | Names that do not contain `tmp` |
-| `\$`, `\[`, `\!` | Literal `$`, `[` or `!` |
+| Input                    | Matches                                                    |
+| ------------------------ | ---------------------------------------------------------- |
+| `rep`                    | Names containing `rep`, including `Annual Report.pdf`      |
+| `rep*2024`               | `rep` followed anywhere by `2024`                          |
+| `r?p`                    | `r`, one character, then `p`                               |
+| `[abc]`, `[a-z]`, `[!x]` | One character in the set/range, or anything except `x`     |
+| `^rep`, `.py$`           | Names starting with `rep`, or ending in `.py` (not `.pyc`) |
+| `!tmp`                   | Names that do not contain `tmp`                            |
+| `\$`, `\[`, `\!`         | Literal `$`, `[` or `!`                                    |
 
 `*` still means any sequence: `*.py` can match `.pyc`; add `$` for an exact
 ending. Only leading `!`/`^` and trailing `$` are operators; `!`, `^`, `$`
@@ -126,17 +126,17 @@ the preview. Images, PDFs, plain text, Markdown and source code are supported; l
 errors appear inline. QuickView starts off at every launch and does no preview
 work while off.
 
-| Control | Action |
-| --- | --- |
-| Source `Tab` | Focus QuickView instead of the covered file list |
-| QuickView `Tab`, `Shift+Tab`, `Escape` | Return to source without closing |
-| `Ctrl+Q` or close icon | Close QuickView |
-| Fit / `F` | Fit without enlarging small images |
-| 100% / `1` | One image pixel per physical screen pixel |
-| `+`, `-`, zoom buttons, `Ctrl+wheel` | Zoom between 5% and 800%; Fit can be smaller |
-| Arrows / `Shift+arrows` | Pan 32 / 128 logical pixels |
-| Drag, wheel / `Shift+wheel` | Pan with mouse, vertically / horizontally |
-| Copy Image button | Copy the loaded image to the clipboard at full resolution |
+| Control                                | Action                                                    |
+| -------------------------------------- | --------------------------------------------------------- |
+| Source `Tab`                           | Focus QuickView instead of the covered file list          |
+| QuickView `Tab`, `Shift+Tab`, `Escape` | Return to source without closing                          |
+| `Ctrl+Q` or close icon                 | Close QuickView                                           |
+| Fit / `F`                              | Fit without enlarging small images                        |
+| 100% / `1`                             | One image pixel per physical screen pixel                 |
+| `+`, `-`, zoom buttons, `Ctrl+wheel`   | Zoom between 5% and 800%; Fit can be smaller              |
+| Arrows / `Shift+arrows`                | Pan 32 / 128 logical pixels                               |
+| Drag, wheel / `Shift+wheel`            | Pan with mouse, vertically / horizontally                 |
+| Copy Image button                      | Copy the loaded image to the clipboard at full resolution |
 
 Copy Image copies decoded pixels, not the file or zoomed viewport. GIF/APNG
 previews contribute only the displayed still image, not the animation. It replaces
@@ -172,16 +172,16 @@ Local and accessible UNC `.pdf` files open read-only at page 1 in Fit Page mode.
 PDFium, accessed through `pypdfium2`, renders in a separate helper process. The
 portable application bundles this backend; no external PDF reader is needed.
 
-| Focused PDF preview | Action |
-| --- | --- |
-| Wheel / scrollbar | Scroll continuously across pages |
-| Previous / Next buttons | Align the preceding/following page to the top |
-| Page number + Enter | Go to a valid page; invalid input restores the current number |
-| Fit Page / `F` | Fit each page within the viewport |
-| Fit Width / `W` | Fit each page to the viewport width |
-| `+`, `-`, zoom buttons, `Ctrl+wheel` | Manual zoom from 25% to 400% |
-| Arrows, Page Up/Down, Home/End | Scroll or move to document ends |
-| Tab / Shift+Tab / Escape | Return to the source pane |
+| Focused PDF preview                  | Action                                                        |
+| ------------------------------------ | ------------------------------------------------------------- |
+| Wheel / scrollbar                    | Scroll continuously across pages                              |
+| Previous / Next buttons              | Align the preceding/following page to the top                 |
+| Page number + Enter                  | Go to a valid page; invalid input restores the current number |
+| Fit Page / `F`                       | Fit each page within the viewport                             |
+| Fit Width / `W`                      | Fit each page to the viewport width                           |
+| `+`, `-`, zoom buttons, `Ctrl+wheel` | Manual zoom from 25% to 400%                                  |
+| Arrows, Page Up/Down, Home/End       | Scroll or move to document ends                               |
+| Tab / Shift+Tab / Escape             | Return to the source pane                                     |
 
 The page indicator follows the page with the largest visible area. Fit modes
 handle mixed page sizes independently. Resize and zoom preserve the reading
@@ -210,16 +210,16 @@ source, never as web pages. Images and external resources in Markdown are blocke
 For ambiguous extensions, `.m` uses MATLAB (not Objective-C) and `.ts` uses
 TypeScript; binary MPEG-TS files are rejected by the content probe.
 
-| Focused text preview | Action |
-| --- | --- |
-| Arrows, Page Up/Down, Home/End | Move or scroll within the preview |
-| Ctrl+Home/End | Start/end of loaded text |
-| Ctrl+A / Ctrl+C | Select/copy displayed text |
-| Ctrl+F | Open local Find |
-| F3 / Shift+F3 | Next/previous literal match |
-| Enter / Shift+Enter in Find | Next literal match, including keypad Enter |
-| Escape | Close Find first, then return to the source pane |
-| Tab / Shift+Tab | Return to the source pane |
+| Focused text preview           | Action                                           |
+| ------------------------------ | ------------------------------------------------ |
+| Arrows, Page Up/Down, Home/End | Move or scroll within the preview                |
+| Ctrl+Home/End                  | Start/end of loaded text                         |
+| Ctrl+A / Ctrl+C                | Select/copy displayed text                       |
+| Ctrl+F                         | Open local Find                                  |
+| F3 / Shift+F3                  | Next/previous literal match                      |
+| Enter / Shift+Enter in Find    | Next literal match, including keypad Enter       |
+| Escape                         | Close Find first, then return to the source pane |
+| Tab / Shift+Tab                | Return to the source pane                        |
 
 These local keys take precedence over user bindings only while the preview or
 its Find field is focused. Other commands, including Ctrl+Q and Alt+Enter
@@ -445,7 +445,7 @@ local, but later archive operations beneath it may hit the same parser limitatio
   Existing files are left unchanged.
 
 Press `Ctrl+Shift+P` and run **Set text editor** or **Set text viewer**.
-Choose Notepad++, CudaText, Notepad 4, EmEditor, Ecode, or **Manual configuration**.
+Choose Notepad++, CudaText, Notepad 4, EmEditor, Ecode, Royi Text Editor, or **Manual configuration**.
 Browse to the program's `.exe`, or type/paste its path in the file picker.
 Presets need only the executable; Manual also asks for arguments, which may be
 empty. Cancel leaves settings unchanged. If a role is unset, F3/F4 only display
@@ -464,13 +464,14 @@ placeholder: the selected file's full path is appended automatically as one
 argument. `""` passes an empty argument. Braces, `%VARIABLE%` and shell operators
 are literal; launches do not use a shell.
 
-| Preset    | Editor arguments                  | Viewer arguments                      |
-| --------- | --------------------------------- | ------------------------------------- |
-| Notepad++ | `-multiInst -nosession -notabbar` | `-multiInst -nosession -notabbar -ro` |
-| CudaText  | `-n -ns -nh`                      | `-r -n -ns -nh`                       |
-| Notepad 4 | `-ns`                             | `-ro -ns`                             |
-| EmEditor  | `-nr -sp`                         | `-nr -sp -r`                          |
-| Ecode     | `--zen-mode`                      | `--zen-mode --read-only`              |
+| Preset           | Editor arguments                  | Viewer arguments                      |
+| ---------------- | --------------------------------- | ------------------------------------- |
+| Notepad++        | `-multiInst -nosession -notabbar` | `-multiInst -nosession -notabbar -ro` |
+| CudaText         | `-n -ns -nh`                      | `-r -n -ns -nh`                       |
+| Notepad 4        | `-ns`                             | `-ro -ns`                             |
+| EmEditor         | `-nr -sp`                         | `-nr -sp -r`                          |
+| Ecode            | `--zen-mode`                      | `--zen-mode --read-only`              |
+| Royi Text Editor | None                              | `--read-only`                         |
 
 These are convenience defaults, **not a read-only guarantee**.
 The user is responsible for the chosen program's behavior. Use Manual configuration to
@@ -494,12 +495,12 @@ independent; no tool is installed or detected automatically. Manual setup also
 asks for Windows-quoted arguments. Do not include path placeholders: two absolute
 paths are appended as separate arguments, without a shell or variable expansion.
 
-| Preset | File arguments | Folder arguments | Window behavior |
-| --- | --- | --- | --- |
-| Meld | None | None | Uses default new-window behavior; no `--newtab`. |
-| Beyond Compare | `/solo` | `/solo` | Requests a separate instance. |
-| WinMerge | `/s- /u` | `/s- /u /r` | Requests a separate instance; folders recurse. |
-| SmartSynchronize | None | None | Uses two-path invocation; separate-window behavior is unverified. |
+| Preset           | File arguments | Folder arguments | Window behavior                                                   |
+| ---------------- | -------------- | ---------------- | ----------------------------------------------------------------- |
+| Meld             | None           | None             | Uses default new-window behavior; no `--newtab`.                  |
+| Beyond Compare   | `/solo`        | `/solo`          | Requests a separate instance.                                     |
+| WinMerge         | `/s- /u`       | `/s- /u /r`      | Requests a separate instance; folders recurse.                    |
+| SmartSynchronize | None           | None             | Uses two-path invocation; separate-window behavior is unverified. |
 
 **Compare files** chooses operands as follows:
 
