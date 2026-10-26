@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.1] - 2026-10-26
+
+### Fixed
+
+- Choosing Properties for files or folders no longer crashes the application
+  when invoking the Windows shell command.
+- QuickView Table View sizes the record-number column from an estimated record
+  count while loading, so it no longer starts wide and narrows when the import ends.
+
 ## [0.18.0] - 2026-10-26
 
 This version focuses on adding support for `CSV` / `TSV` files in the _QuickView_ feature.  

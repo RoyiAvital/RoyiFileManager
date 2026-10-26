@@ -4,7 +4,7 @@ from fman.url import splitscheme, as_human_readable, basename, dirname
 from pywintypes import com_error
 from win32com.shell.shell import SHILCreateFromPath, SHGetDesktopFolder, \
 	IID_IShellFolder, IID_IContextMenu
-from win32com.shell.shellcon import CMF_EXPLORE
+from win32com.shell.shellcon import CMF_EXPLORE, GCS_VERBA
 
 import ctypes.wintypes
 import re
@@ -92,13 +92,24 @@ def _show_file_properties(dir_, filenames):
 			pass
 		else:
 			children.append(pidl)
+	if not children:
+		return
 	cm = shell_folder.GetUIObjectOf(None, children, IID_IContextMenu, 0)[1]
 	if not cm:
 		return
 	hMenu = win32gui.CreatePopupMenu()
-	cm.QueryContextMenu(hMenu, 0, 1, 0x7FFF, CMF_EXPLORE)
-	cm.InvokeCommand((0, None, 'properties', '', '', 1, 0, None))
-	cm.QueryContextMenu(hMenu, 0, 1, 0x7FFF, CMF_EXPLORE)
+	try:
+		count = cm.QueryContextMenu(hMenu, 0, 1, 0x7FFF, CMF_EXPLORE)
+		for command_id in range(count & 0xFFFF):
+			try:
+				verb = cm.GetCommandString(command_id, GCS_VERBA)
+			except com_error:
+				continue
+			if verb in ('properties', b'properties'):
+				cm.InvokeCommand((0, None, command_id, '', '', 1, 0, None))
+				return
+	finally:
+		win32gui.DestroyMenu(hMenu)
 
 def _show_drive_properties(drive_nobackslash):
 	sei = SHELLEXECUTEINFO()

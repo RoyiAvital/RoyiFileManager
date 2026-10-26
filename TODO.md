@@ -10,9 +10,8 @@
   and execution in the PyInstaller build, rerun the benchmark, and add ranking
   regression tests for representative filename queries.
 - [x] Add "Quick View" mode where there inactive pane is used for previewing the current file.
-- [ ] Integrate "Quick Look Win". See [QuickLook-Win](https://github.com/BenjaminKobjolke/QuickLook-Win).
 - [x] Integrate a Terminal into the file manager. Or at least open the current folder in Windows Terminal.
-- [ ] Add a "Rename Tool" as a Plug In. See [FManPowerRenamerAndReplacer](https://github.com/BenjaminKobjolke/FManPowerRenamerAndReplacer).
+- [ ] Add option to replace a (sub) string in file names in the _Batch Rename Tool_. See [FManPowerRenamerAndReplacer](https://github.com/BenjaminKobjolke/FManPowerRenamerAndReplacer).
 - [ ] Add "Synchronized Browsing" feature. See [SynchronizedBrowsing](https://github.com/mherrmann/SynchronizedBrowsing).
 - [x] Add option to compare 2 files using external file comparison or integrate Meld view. See [SimpleCompare](https://github.com/rjwojcicki/SimpleCompare).
 - [x] Show System Process in a Pane with the ability to kill a process. See [ProcessFS](https://github.com/mherrmann/ProcessFS).
@@ -65,6 +64,7 @@
 - [x] CHANGE: Rename the _Command Palette_ menu item: `Copy file name` to `Copy item(s) name`.
 - [x] CHANGE: Rename the _Command Palette_ menu item: `Copy file path` to `Copy item(s) path` and show its shortcut key.
 - [x] BUG: The _Command Palette_ item `Copy paths to clipboard` is a duplicate.
+- [x] BUG: Choosing `Properties` on the _Right Click Menu_ on a file / folder crash the application.
 
 ## Performance
 

@@ -887,19 +887,31 @@ class CsvPreview(QWidget):
 		pages = [(start, rows[start:start + PAGE_ROWS]) for start in range(0, len(rows), PAGE_ROWS)]
 		self.model.reset(self.labels, len(rows), pages)
 		self._autosize(rows)
-		width = self.fontMetrics().horizontalAdvance('0' * 12) + 16
-		self.view.verticalHeader().setFixedWidth(width)
+		self.view.verticalHeader().setFixedWidth(self._number_width(self._estimate_count(header, rows)))
 		self.status.setText('Validating\u2026 showing the first {:,} records'.format(len(rows)))
 		self.stack.setCurrentWidget(self.view)
 		if rows:
 			self.view.setCurrentIndex(self.model.index(0, 0))
+
+	@staticmethod
+	def _estimate_count(header, rows):
+		"""Record count estimated from the file size and the preview rows' average size."""
+		fingerprint = header.get('fingerprint') or ()
+		if not rows or len(fingerprint) < 3:
+			return len(rows)
+		units = 2 if header.get('encoding') == 'utf-16' else 1
+		sample = sum(len(cell.encode('utf-8')) + 1 for row in rows for cell in row[1]) * units
+		return max(len(rows), fingerprint[2] * len(rows) // max(1, sample))
+
+	def _number_width(self, count):
+		return self.fontMetrics().horizontalAdvance(format(max(count, 1), ',') + '00') + 16
 
 	def show_imported(self, count):
 		self.ready = True
 		self._set_controls_enabled(True)
 		self.model.set_count(count)
 		self.header.viewport().update()
-		self.view.verticalHeader().setFixedWidth(self.fontMetrics().horizontalAdvance(format(max(count, 1), ',') + '00') + 16)
+		self.view.verticalHeader().setFixedWidth(self._number_width(count))
 		state, self.restore = self.restore, None
 		if state:
 			self.filters = dict(state.get('filters') or {})

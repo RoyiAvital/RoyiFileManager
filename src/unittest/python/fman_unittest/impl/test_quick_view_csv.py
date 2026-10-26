@@ -280,6 +280,17 @@ class ControllerModelTest(TestCase):
 		from PyQt5.QtWidgets import QApplication
 		self.app = QApplication.instance() or QApplication([])
 
+	def test_record_count_estimate_keeps_the_number_column_width(self):
+		from fman.impl.quick_view_csv import CsvPreview
+		rows = [[index + 1, ['%06d' % index, '0.123456', 'x' * 20], []] for index in range(200)]
+		record = sum(len(cell) + 1 for cell in rows[0][1])
+		for count in (200, 284807, 10 ** 7):
+			with self.subTest(count=count):
+				header = dict(fingerprint=[0, 0, 40 + count * record, 0], encoding='utf-8')
+				estimate = CsvPreview._estimate_count(header, rows)
+				self.assertEqual(len(format(count, ',')), len(format(estimate, ',')))
+		self.assertEqual(3, CsvPreview._estimate_count({}, rows[:3]))
+
 	def test_actions_do_not_cross_query_revisions(self):
 		from fman.impl.quick_view_csv import CsvController
 		controller = CsvController()

@@ -12,12 +12,90 @@ from fman import OK, YES, NO
 from fman.impl.plugins.plugin import _get_command_name
 from fman.impl.product import APP_NAME
 from fman.url import join, as_human_readable, as_url, dirname
-from unittest import TestCase
+from unittest import TestCase, skipUnless
 from unittest.mock import call, Mock, patch
 
 import json
 import os
 import os.path
+
+@skipUnless(os.name == 'nt', 'Windows shell Properties')
+class ExplorerPropertiesTest(TestCase):
+	def setUp(self):
+		from core.commands import explorer_properties
+		self.properties = explorer_properties
+		self.desktop = Mock()
+		self.folder = self.desktop.BindToObject.return_value
+		self.folder.ParseDisplayName.side_effect = lambda owner, context, name: (
+			0, 'pidl:' + name, 0
+		)
+		self.menu = Mock()
+		self.folder.GetUIObjectOf.return_value = (0, self.menu)
+		self.menu.QueryContextMenu.return_value = 3
+		self.menu.GetCommandString.side_effect = [b'open', b'copy', b'properties']
+		for name, replacement in (
+			('SHILCreateFromPath', Mock(return_value=('parent-pidl', 0))),
+			('SHGetDesktopFolder', Mock(return_value=self.desktop)),
+			('win32gui', Mock())):
+			patcher = patch.object(explorer_properties, name, replacement)
+			patcher.start()
+			self.addCleanup(patcher.stop)
+
+	def test_properties_uses_numeric_offset_for_files_and_folders(self):
+		for names in (['file.txt'], ['folder'], ['file.txt', 'folder']):
+			with self.subTest(names=names):
+				self.menu.reset_mock()
+				self.properties.win32gui.reset_mock()
+				self.menu.GetCommandString.side_effect = [b'open', b'copy', b'properties']
+				self.properties._show_file_properties('C:\\fixture', names)
+				self.folder.GetUIObjectOf.assert_called_with(
+					None, ['pidl:' + name for name in names],
+					self.properties.IID_IContextMenu, 0
+				)
+				self.menu.InvokeCommand.assert_called_once_with(
+					(0, None, 2, '', '', 1, 0, None)
+				)
+				self.menu.QueryContextMenu.assert_called_once()
+				self.properties.win32gui.DestroyMenu.assert_called_once_with(
+					self.properties.win32gui.CreatePopupMenu.return_value
+				)
+
+	def test_unavailable_verbs_are_skipped_and_unicode_verbs_are_supported(self):
+		self.menu.QueryContextMenu.return_value = 0x10003
+		self.menu.GetCommandString.side_effect = [
+			self.properties.com_error(-2147467263, 'Unsupported', None, None),
+			'open', 'properties'
+		]
+		self.properties._show_file_properties('C:\\fixture', ['file.txt'])
+		self.menu.InvokeCommand.assert_called_once_with((0, None, 2, '', '', 1, 0, None))
+
+	def test_no_properties_command_does_not_invoke_another_verb(self):
+		self.menu.GetCommandString.side_effect = [b'open', b'copy', b'delete']
+		self.properties._show_file_properties('C:\\fixture', ['file.txt'])
+		self.menu.InvokeCommand.assert_not_called()
+		self.properties.win32gui.DestroyMenu.assert_called_once()
+
+	def test_shell_failures_release_menu(self):
+		for operation in ('QueryContextMenu', 'InvokeCommand'):
+			with self.subTest(operation=operation):
+				self.menu.reset_mock(side_effect=True)
+				self.menu.QueryContextMenu.return_value = 1
+				self.menu.GetCommandString.return_value = b'properties'
+				self.properties.win32gui.reset_mock()
+				getattr(self.menu, operation).side_effect = self.properties.com_error(
+					-2147467259, 'Shell failure', None, None
+				)
+				with self.assertRaises(self.properties.com_error):
+					self.properties._show_file_properties('C:\\fixture', ['file.txt'])
+				self.properties.win32gui.DestroyMenu.assert_called_once()
+
+	def test_vanished_selection_does_not_invoke_shell_with_empty_children(self):
+		self.folder.ParseDisplayName.side_effect = self.properties.com_error(
+			-2147024894, 'File not found', None, None
+		)
+		self.properties._show_file_properties('C:\\fixture', ['missing.txt'])
+		self.folder.GetUIObjectOf.assert_not_called()
+		self.properties.win32gui.CreatePopupMenu.assert_not_called()
 
 class CommandSynonymsTest(TestCase):
 	def test_synonyms_preserve_primary_aliases_and_command_ids(self):
