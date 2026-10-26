@@ -381,6 +381,7 @@ assert not context.main_window.isVisible(), 'Capture left its main window open'
 			'royifilemanager-filter-pane.png',
 			'royifilemanager-quickview.png',
 			'royifilemanager-quickview-python.png',
+			'royifilemanager-quickview-table.png',
 			'royifilemanager-fuzzy-find-recursive.png',
 			'royifilemanager-everything-images.png',
 			'royifilemanager-everything-fonts.png',

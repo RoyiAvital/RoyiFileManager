@@ -23,6 +23,7 @@ class ImageRequest:
 	mode: str = 'rendered'
 	colors: tuple = ('#dddddd', '#252525')
 	content: object = None
+	limit: int = 0
 
 
 @dataclass(frozen=True)
@@ -41,6 +42,9 @@ def load_preview(request, canceled, resolve=None):
 	if request.content is not None:
 		from fman.impl.quick_view_text import convert_text
 		return convert_text(request.content, request.mode, request.colors, canceled)
+	if PureWindowsPath(request.url).suffix.lower() in ('.csv', '.tsv'):
+		from fman.impl.quick_view_csv import load_csv_preview
+		return load_csv_preview(request, canceled, resolve)
 	if PureWindowsPath(request.url).suffix.lower() == '.pdf':
 		try:
 			if splitscheme(request.url)[0] != 'file://':

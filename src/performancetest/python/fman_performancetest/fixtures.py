@@ -1,7 +1,9 @@
 """Content-verified synthetic fixtures independent of private datasets."""
 
 from datetime import datetime, timezone
+import csv
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -19,6 +21,67 @@ TEXT_ASSETS = {
 	'preview-sample.py': b'def summarize(values):\n    total = sum(values)\n    return total\n',
 	'preview-sample.md': b'# Preview Report\n\n**Status:** Ready\n\n- First item\n- Second item\n\n[Project](https://example.invalid/)\n',
 }
+CSV_NAME = 'orders.csv'
+CSV_HEADER = ('order_id', 'order_date', 'order_time', 'customer', 'email', 'phone', 'city', 'country', 'region',
+	'postal_code', 'product', 'category', 'sku', 'quantity', 'unit_price', 'discount', 'tax', 'total', 'currency',
+	'status', 'priority', 'channel', 'warehouse', 'carrier', 'tracking', 'weight_kg', 'latitude', 'longitude',
+	'rating', 'flags', 'note', 'padding')
+# Every record is padded to this many UTF-8 bytes, so the record count follows from the file size.
+CSV_RECORD_BYTES = 512
+CSV_NAMES = ('Avery Stone', 'Noa Levi', 'Jo\u00e3o Silva', 'Mira Patel', 'Liam Chen', 'Sara M\u00fcller',
+	'Omar Haddad', 'In\u00e8s Moreau', 'Kenji Sato', 'Elena Rossi', 'Zo\u00eb Brennan', 'Bj\u00f6rk Sigur\u00f0ard\u00f3ttir')
+CSV_CITIES = (('Z\u00fcrich', 'Switzerland', 'Europe'), ('Tel Aviv', 'Israel', 'Middle East'),
+	('S\u00e3o Paulo', 'Brazil', 'South America'), ('Krak\u00f3w', 'Poland', 'Europe'), ('Osaka', 'Japan', 'Asia'),
+	('Montr\u00e9al', 'Canada', 'North America'), ('Reykjav\u00edk', 'Iceland', 'Europe'), ('Lyon', 'France', 'Europe'))
+CSV_PRODUCTS = (('Desk lamp', 'Lighting'), ('Monitor, 27"', 'Displays'), ('Keyboard', 'Input'), ('USB-C hub', 'Accessories'),
+	('Office chair', 'Furniture'), ('Webcam', 'Video'), ('Standing desk', 'Furniture'), ('Headset', 'Audio'))
+
+
+def csv_fields(seed, index):
+	"""Fields of record `index` without padding; mixes numbers, dates, Unicode, quotes, commas and line breaks."""
+	token = hashlib.sha256(('%d:%d' % (seed, index)).encode('ascii')).hexdigest()
+	city, country, region = CSV_CITIES[index % len(CSV_CITIES)]
+	product, category = CSV_PRODUCTS[(index // 3) % len(CSV_PRODUCTS)]
+	quantity, price = 1 + index % 20, int(token[:6], 16) % 100000 / 100
+	discount = index % 30 / 2
+	total = quantity * price * (1 - discount / 100)
+	note = 'Leave at door, ring twice' if index % 7 else 'Fragile "glass"\nCall on arrival' if index % 49 == 0 else ''
+	return (str(index + 1), '%04d-%02d-%02d' % (2020 + index % 6, 1 + index % 12, 1 + index % 28),
+		'%02d:%02d:%02d' % (index % 24, index * 7 % 60, index * 13 % 60), CSV_NAMES[index % len(CSV_NAMES)],
+		'customer%d@example.invalid' % (index % 50000), '+1-555-%04d' % (index % 10000), city, country, region,
+		token[6:11].upper(), product, category, 'SKU-' + token[11:19].upper(), str(quantity), '%.2f' % price,
+		'%.1f' % discount, '%.2f' % (total * .17), '%.2f' % total, ('USD', 'EUR', 'ILS', 'JPY')[index % 4],
+		('new', 'paid', 'shipped', 'delivered', 'returned')[index % 5], ('low', 'normal', 'high')[index % 3],
+		('web', 'store', 'phone')[index % 3], 'WH-%02d' % (index % 12), ('DHL', 'UPS', 'FedEx', 'Post')[index % 4],
+		token[19:35], '%.3f' % (int(token[35:39], 16) / 1000), '%.5f' % (int(token[39:45], 16) / 93206.75 - 90),
+		'%.5f' % (int(token[45:51], 16) / 46603.375 - 180), str(1 + index % 5), ('', 'gift', 'express', 'gift express')[index % 4],
+		note)
+
+
+def csv_records(specification):
+	return (specification['bytes'] - len(_csv_line(CSV_HEADER))) // CSV_RECORD_BYTES
+
+
+def _csv_line(fields):
+	stream = io.StringIO(newline='')
+	csv.writer(stream, lineterminator='\r\n').writerow(fields)
+	return stream.getvalue().encode('utf-8')
+
+
+def csv_table(specification):
+	header = _csv_line(CSV_HEADER)
+	count, remainder = divmod(specification['bytes'] - len(header), CSV_RECORD_BYTES)
+	chunks = [header]
+	for index in range(count):
+		fields = csv_fields(specification['seed'], index)
+		padding = CSV_RECORD_BYTES - len(_csv_line(fields + ('',))) + (remainder if index == count - 1 else 0)
+		if padding < 1:
+			raise ValueError('CSV record exceeds its fixed size')
+		chunks.append(_csv_line(fields + ('x' * padding,)))
+	data = b''.join(chunks)
+	if len(data) != specification['bytes']:
+		raise AssertionError('Incorrect CSV fixture size')
+	return data
 
 
 def png(width, height):
@@ -49,6 +112,9 @@ def assets():
 
 
 def entries(specification, image_assets):
+	if specification['kind'] == 'csv':
+		yield CSV_NAME, csv_table(specification)
+		return
 	if specification['kind'] == 'copy':
 		for index in range(specification['files']):
 			seed = ('%d:%d' % (specification['seed'], index)).encode('ascii')
@@ -130,7 +196,11 @@ def verify(directory, expected):
 def prepare(base, identity, specification, image_assets=None):
 	if not identity or Path(identity).name != identity or identity in ('.', '..'):
 		raise ValueError('Invalid fixture ID')
-	if specification['revision'] not in (1, 2) or specification['kind'] not in ('flat', 'recursive', 'copy') or specification['files'] < 8:
+	if specification['kind'] == 'csv':
+		if (specification['revision'] != 1 or specification['files'] != 1 or specification.get('columns') != len(CSV_HEADER) or
+				type(specification.get('bytes')) is not int or not 1024 * 1024 <= specification['bytes'] <= 2 ** 31):
+			raise ValueError('Invalid CSV fixture specification')
+	elif specification['revision'] not in (1, 2) or specification['kind'] not in ('flat', 'recursive', 'copy') or specification['files'] < 8:
 		raise ValueError('Invalid fixture specification')
 	if specification['kind'] == 'copy' and (specification['revision'] != 1 or
 			type(specification.get('bytes_per_file')) is not int or not 1 <= specification['bytes_per_file'] <= 1024 * 1024 or
@@ -138,12 +208,13 @@ def prepare(base, identity, specification, image_assets=None):
 		raise ValueError('Invalid copy fixture payload')
 	if specification['revision'] == 2 and specification['kind'] != 'flat':
 		raise ValueError('Text preview fixtures require flat folders')
-	image_assets = {} if specification['kind'] == 'copy' else assets() if image_assets is None else image_assets
+	image_assets = {} if specification['kind'] in ('copy', 'csv') else assets() if image_assets is None else image_assets
 	root = Path(base).resolve() / identity
 	directory, manifest = root / 'data', root / 'manifest.json'
 	expected = {name: dict(size=len(data), sha256=hashlib.sha256(data).hexdigest())
 		for name, data in entries(specification, image_assets)}
-	generator = 'shake256-copy-v1' if specification['kind'] == 'copy' else 'sha256-names-rgb-bands-v%d' % specification['revision']
+	generator = {'copy': 'shake256-copy-v1', 'csv': 'csv-orders-v1'}.get(specification['kind'],
+		'sha256-names-rgb-bands-v%d' % specification['revision'])
 	definition = dict(generator=generator, specification=specification,
 		mtime_ns=EPOCH_NS, creation_ns=EPOCH_NS, file_attributes=32, entries=expected)
 	fingerprint = digest(definition)

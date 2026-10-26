@@ -702,7 +702,7 @@ class Copy(_TreeCommand):
 		submit_task(CopyFiles(files, dest_dir, dest_name))
 
 class DuplicateFile(Copy):
-	aliases = ('Create a duplicate file', 'Copy file here', 'Duplicate file')
+	aliases = ('Duplicate item', 'Copy file here', 'Duplicate file')
 
 	def __call__(self):
 		super().__call__(dest_dir=self.pane.get_path())
@@ -972,7 +972,9 @@ class OpenNativeFileManager(DirectoryPaneCommand):
 			return
 		open_native_file_manager(as_human_readable(url))
 
-class CopyPathsToClipboard(DirectoryPaneCommand):
+class CopyFilePath(DirectoryPaneCommand):
+	aliases = ('Copy item(s) path',)
+
 	def __call__(self):
 		to_copy = self.get_chosen_files() or [self.pane.get_path()]
 		clipboard.clear()
@@ -1054,6 +1056,8 @@ def _clipboard_location(text):
 	return as_url(ntpath.normpath(path))
 
 class CopyFileName(DirectoryPaneCommand):
+	aliases = ('Copy item(s) name',)
+
 	def __call__(self):
 		files = self.get_chosen_files()
 		if files:
@@ -1062,20 +1066,6 @@ class CopyFileName(DirectoryPaneCommand):
 			_report_clipboard_action('Copied', files, ' to the clipboard', 'name')
 	def is_visible(self):
 		return bool(self.get_chosen_files())
-
-class CopyFilePath(DirectoryPaneCommand):
-	def __call__(self):
-		_copy_single_item_text(self.get_chosen_files(), as_human_readable)
-	def is_visible(self):
-		return len(self.get_chosen_files()) == 1
-
-def _copy_single_item_text(files, format_text):
-	if len(files) != 1:
-		return
-	text = format_text(files[0])
-	clipboard.clear()
-	clipboard.set_text(text)
-	show_status_message('Copied %s to the clipboard' % text, timeout_secs=3)
 
 def _report_clipboard_action(verb, files, suffix='', ftype='file'):
 	num = len(files)
@@ -1406,8 +1396,7 @@ class CommandPalette(DirectoryPaneCommand):
 				for i, matcher in enumerate(self._MATCHERS):
 					highlight = matcher(lower_alias, query)
 					if highlight is not None:
-						shortcuts = \
-							_get_shortcuts_for_command(key_bindings, cmd_name)
+						shortcuts = _get_shortcuts_for_command(key_bindings, cmd_name)
 						hint = ', '.join(shortcuts)
 						item = QuicksearchItem(command, alias, highlight, hint)
 						result[i].append(item)

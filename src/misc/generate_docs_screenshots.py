@@ -46,7 +46,7 @@ DEFAULT_OUTPUT_DIR = ROOT / 'docs' / 'assets'
 WORK_DIR = ROOT / 'target' / 'docs-screenshots'
 SOURCE_LOG_DIR = ROOT / 'UserSettings' / 'Local' / 'DocsScreenshots'
 SOURCE_CAPTURES = (
-	'overview', 'go-to', 'context-menu', 'filter-pane', 'quick-view', 'quick-view-text',
+	'overview', 'go-to', 'context-menu', 'filter-pane', 'quick-view', 'quick-view-text', 'quick-view-csv',
 	'fuzzy-find', 'everything-search', 'everything-folders',
 	'search-files', 'find-files', 'favorites', 'directory-size', 'file-hash',
 	'checksum-files', 'process-pane', 'pack-archive', 'quick-table', 'quick-board', 'batch-renamer', 'robocopy',
@@ -81,6 +81,22 @@ def describe_files(folder: Path) -> list[FileSummary]:
 for item in describe_files(Path(".")):
 	print(f"{item.name:24} {item.size:>8,} bytes")
 '''.expandtabs(4)
+CSV_SAMPLE = '''Order,Date,Customer,City,Product,Quantity,Amount
+1001,2026-03-02,Avery Stone,Z\u00fcrich,Desk lamp,2,84.00
+1002,2026-03-02,Noa Levi,Tel Aviv,"Monitor, 27""",1,329.90
+1003,2026-03-03,Jo\u00e3o Silva,S\u00e3o Paulo,Keyboard,3,147.00
+1004,2026-03-04,Mira Patel,Krak\u00f3w,USB-C hub,5,99.75
+1005,2026-03-04,Liam Chen,Oslo,Office chair,1,249.00
+1006,2026-03-05,Sara M\u00fcller,Z\u00fcrich,Notebook,12,36.00
+1007,2026-03-06,Omar Haddad,Amman,Webcam,2,118.00
+1008,2026-03-06,Ines Moreau,Lyon,Desk lamp,1,42.00
+1009,2026-03-07,Kenji Sato,Osaka,"Monitor, 24""",2,398.00
+1010,2026-03-08,Avery Stone,Z\u00fcrich,Mouse,4,79.60
+1011,2026-03-09,Noa Levi,Tel Aviv,Headset,1,89.90
+1012,2026-03-10,Elena Rossi,Milan,Standing desk,1,529.00
+1013,2026-03-11,Mira Patel,Krak\u00f3w,Cable set,6,47.40
+1014,2026-03-12,Liam Chen,Oslo,Docking station,1,219.00
+'''
 RIGHT_PANE_CAPTURES = (
 	'context-menu', 'filter-pane', 'search-files', 'find-files', 'file-hash',
 	'process-pane', 'pack-archive', 'quick-table'
@@ -327,6 +343,11 @@ def _source_capture_paths(capture):
 		folder.mkdir(parents=True, exist_ok=True)
 		(folder / 'file_summary.py').write_text(PYTHON_SAMPLE, encoding='utf-8')
 		return folder, windows
+	if capture == 'quick-view-csv':
+		folder = WORK_DIR / 'source-quick-view-csv' / 'sample'
+		folder.mkdir(parents=True, exist_ok=True)
+		(folder / 'orders.csv').write_text(CSV_SAMPLE, encoding='utf-8', newline='')
+		return folder, windows
 	if capture in ('fuzzy-find', 'robocopy'):
 		return windows / 'Web', windows
 	if capture in ('everything-search', 'everything-folders', 'free-space'):
@@ -350,6 +371,7 @@ def _source_outputs(output_dir, capture):
 		'filter-pane': ('royifilemanager-filter-pane.png',),
 		'quick-view': ('royifilemanager-quickview.png',),
 		'quick-view-text': ('royifilemanager-quickview-python.png',),
+		'quick-view-csv': ('royifilemanager-quickview-table.png',),
 		'fuzzy-find': ('royifilemanager-fuzzy-find-recursive.png',),
 		'everything-search': (
 			'royifilemanager-everything-images.png',
@@ -732,6 +754,37 @@ def _capture_source_child(args):
 				elif session.overlay.canvas.image is not None:
 					finish(
 						context.main_window.grab(), outputs[0],
+						lambda: pane.run_command('toggle_quick_view')
+					)
+			elif args._capture == 'quick-view-csv':
+				file_url = as_url(str(left_path / 'orders.csv'))
+				if not state['started']:
+					pane.place_cursor_at(file_url)
+					pane.focus()
+					if pane.get_file_under_cursor() != file_url:
+						return
+					state['started'] = True
+					pane.run_command('toggle_quick_view')
+					return
+				session = getattr(context.main_window, '_quick_view_session', None)
+				view = session.overlay.csv_view if session is not None else None
+				if view is None or not view.ready or view.pending or not view.isVisible():
+					state['settled'] = 0
+					return
+				if view.sort_column is None:
+					view.set_sort(3, False)
+					return
+				if view.model.count != 14 or any(view.model.row(row) is None for row in range(view.model.count)):
+					return
+				if view.model.row(0).cells[3] != 'Amman':
+					raise RuntimeError('QuickView Table View did not sort the sample by City')
+				view.view.setCurrentIndex(view.model.index(3, 4))
+				state['settled'] += 1
+				if state['settled'] >= 3:
+					finish(
+						_grab_window_with_sample_location(
+							context.main_window, pane._widget._location_bar, 'CSV sample'
+						), outputs[0],
 						lambda: pane.run_command('toggle_quick_view')
 					)
 			elif args._capture == 'fuzzy-find':

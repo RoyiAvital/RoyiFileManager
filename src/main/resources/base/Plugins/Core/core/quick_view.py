@@ -97,3 +97,26 @@ class QuickViewPan(_ImageCommand):
 	aliases = ('QuickView: Pan',)
 	def __call__(self, direction='down', large=False):
 		self._act('pan', (direction, large))
+
+
+class SetQuickViewTableLimit(DirectoryPaneCommand):
+	aliases = ('Set QuickView table limit',)
+
+	def __call__(self):
+		from fman import QuicksearchItem, show_alert, show_quicksearch, show_status_message
+		from fman.impl.quick_view_csv import PRESETS, load_table_preset, notify_table_limit_changed, save_table_preset
+		current = load_table_preset()
+		options = tuple(('%s MB' % format(size, ','), 'DuckDB memory %d MiB%s' % (memory, ' (current)' if size == current else ''), size)
+			for size, memory in PRESETS)
+		choice = show_quicksearch(lambda query: (QuicksearchItem(size, title, hint=hint)
+			for title, hint, size in options if query.casefold() in title.casefold()),
+			item=[size for size, memory in PRESETS].index(current))
+		if not choice or choice[1] not in dict(PRESETS):
+			return
+		try:
+			save_table_preset(choice[1])
+		except (OSError, ValueError) as error:
+			show_alert('Could not save the QuickView table limit: %s' % error)
+			return
+		notify_table_limit_changed()
+		show_status_message('QuickView table limit: %s MB.' % format(choice[1], ','), timeout_secs=3)

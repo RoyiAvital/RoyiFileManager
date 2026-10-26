@@ -550,7 +550,7 @@ class EverythingFoldersListener(DirectoryPaneListener):
 				return 'open_everything_folder', {'url': url}
 		if in_manager and command_name in ('move_to_trash', 'delete_permanently'):
 			return 'remove_everything_folders', args
-		if in_manager and command_name == 'copy_paths_to_clipboard':
+		if in_manager and command_name == 'copy_file_path':
 			return 'copy_everything_folder_paths', {}
 		if command_name in ('copy', 'move', 'symlink'):
 			files = args.get('files')

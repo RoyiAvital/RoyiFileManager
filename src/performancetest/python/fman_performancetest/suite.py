@@ -176,6 +176,9 @@ def child(test, catalog, directory, algorithm, profile_directory, selection_case
 		return pane(directory, test['id'], 'snapshot', True, viewport=protocol['viewport'],
 			navigation_repetitions=protocol['navigation_repetitions'] if workload == 'pane' else 0,
 			refresh_patterns=protocol['refresh_selections'] if workload == 'refresh' else ())
+	if workload == 'csv':
+		from fman_performancetest.quickview_csv import child as csv_table
+		return csv_table(directory, protocol['viewport'], catalog['fixtures'][test['fixture']])
 	from fman_performancetest.quickview import child as quickview
 	return quickview(directory, protocol['viewport'], protocol['navigation_repetitions'])
 
@@ -237,7 +240,7 @@ def main(argv=None, *, record_saved=None):
 	record['status'] = 'failed'
 	record['artifacts'] = []
 	try:
-		image_assets = fixtures.assets() if any(catalog['fixtures'][test['fixture']]['kind'] != 'copy' for test in selected) else {}
+		image_assets = fixtures.assets() if any(catalog['fixtures'][test['fixture']]['kind'] not in ('copy', 'csv') for test in selected) else {}
 		prepared = {}
 		for test in selected:
 			identity = test['fixture']

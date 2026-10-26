@@ -137,6 +137,8 @@ def headline(identity, metrics):
 		metric, label = 'first_paint_ms', 'First populated paint'
 	elif identity.startswith('copy.'):
 		metric, label = 'copy.transfer.wall_ms', 'Copy completion including preparation'
+	elif identity.startswith('csv.'):
+		metric, label = 'csv.full.input_to_paint_ms', 'Full table import paint'
 	elif identity.startswith('quickview.text.'):
 		expected = [case + '.input_to_paint_ms' for case in TEXT_CASES]
 		values = [metrics[name]['median'] for name in expected if name in metrics]
@@ -186,7 +188,7 @@ def overview(record):
 	tests.extend(text_tests)
 	for test in tests:
 		test['headline'] = headline(test['test_id'], test['metrics'])
-		if test['test_id'].startswith(('selection.', 'quickview.', 'copy.')) and test['status'] != 'passed':
+		if test['test_id'].startswith(('selection.', 'quickview.', 'copy.', 'csv.')) and test['status'] != 'passed':
 			test['headline'].update(median=None, minimum=None, maximum=None)
 		if test['test_id'].startswith('quickview.text.') and test['headline']['median'] is None and test['status'] == 'passed':
 			test['status'] = 'incomplete'

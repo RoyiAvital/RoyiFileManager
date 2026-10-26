@@ -37,9 +37,10 @@ Open the Command Center with ++ctrl+shift+p++ to see every command.
 | ++shift+f11++ | Copy chosen names, one per line |
 
 !!! info "Multiple Files / Folders Selection"
-    Copy file name supports multiple items. The separate Copy file path command
-    remains single-item; F11 copies multiple paths. With no chosen item,
-    Copy file name leaves the clipboard unchanged.
+    Copy item(s) name and Copy item(s) path support one or multiple items and
+    show their shortcuts in Command Center. The context menu uses the same
+    commands under Copy name and Copy path. With no chosen item, Copy item(s)
+    name leaves the clipboard unchanged and Copy item(s) path copies the current folder.
 
 ## Navigation
 
@@ -103,7 +104,7 @@ Open Command Center with ++ctrl+shift+p++.
 | Command                                                | Action                                                          |
 | ------------------------------------------------------ | --------------------------------------------------------------- |
 | **Select same extension**                              | Add visible files with the highlighted file's final extension   |
-| **Create a duplicate file** / **Copy file here**       | Suggest an available numbered name in the current folder        |
+| **Duplicate item** / **Copy file here**                | Suggest an available numbered name in the current folder        |
 | **Go to clipboard path** / **Open clipboard location** | Open one copied location or highlight a copied file path        |
 | **Go to link target** / **Reveal link target**         | Open the highlighted link's target or highlight its target file |
 | **Sync pane location**                                 | Open the active location in the opposite pane                   |

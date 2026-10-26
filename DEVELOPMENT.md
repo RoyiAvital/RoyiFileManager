@@ -452,7 +452,7 @@ summary statistics. Repetition counts are unchanged; new records retain metric
 counts, medians, ranges and p95 instead of raw observations. The runner never
 rewrites the YAML or an existing result, and older raw records remain readable.
 
-Run `python build.py measure` for the regular sixteen-row performance report,
+Run `python build.py measure` for the regular seventeen-row performance report,
 including five selection patterns each for small and large folders. Add `--full`
 to include medium-folder cases and two Copy workloads: 10,000 flat files at 4 KiB
 and a 1,000-file tree at 8 KiB per file,
@@ -468,8 +468,8 @@ Version identifiers are `X.Y.Z` for clean matching release tags, or `Unreleased`
 the source version and commit are retained separately. Reruns replace the version's
 current result but preserve earlier runs. Failed runs never replace successful results.
 
-The regular report has sixteen overview rows, including Selections Readback, separate QuickView Images
-and Text rows, Refresh / Selection and a Navigation
+The regular report has seventeen overview rows, including Selections Readback, separate QuickView Images
+and Text rows, QuickView Table, Refresh / Selection and a Navigation
 aggregate of Page Up/Down, Home/End and wheel scrolling. Previous-version comparisons, charts
 and detailed measurements use compatible results only; the first run establishes
 a baseline. The original `src/performancetest/run.py suite` remains available for
@@ -480,6 +480,8 @@ The default suite uses three fresh processes per test, synthetic 256-file and
 loading, Filter Bar, Quicksearch Fuzzy Find, recursive Find (`Ctrl+Shift+F`) and
 QuickView image and TXT/Python/Markdown paints, responsiveness and memory. Page Up/Down, Home/End and
 mouse-wheel latency are measured in both normal and QuickView-enabled panes.
+QuickView Table opens a 64,000,000-byte, 32-column CSV and records the first
+painted rows and the painted full import; the headline is the full import.
 Refresh / Selection averages 16 unchanged-refresh case medians: eight selection
 patterns in both folder sizes, from no marks through scattered and all-marked
 selections. Reload-to-completed-paint timings check snapshot, marks, cursor and
@@ -504,7 +506,7 @@ to 25 seconds.
 
 `python build.py measure --full` adds medium (50,000-file) pane loading, refresh,
 Filter Bar, Fuzzy Find, QuickView, navigation and selection cases, plus Copy.
-The eight extra workloads produce twenty-one workloads and twenty-four overview rows total; refresh
+The eight extra workloads produce twenty-two workloads and twenty-five overview rows total; refresh
 averages 24 case medians and navigation 42. Medium selections use the same five
 patterns, with 1,000 rows for each complex pattern. Full history and reports live
 separately under `UserSettings/Performance/Full`. Regular runs do not prepare or
@@ -526,7 +528,8 @@ python src/performancetest/run.py historical --output UserSettings/Performance/R
 Application sources must be committed; benchmark/documentation changes may be
 uncommitted. The driver exports source without changing the checkout, verifies
 shared fixtures, isolates application imports/settings, and alternates version
-order per repetition. It runs all thirteen regular workloads, including current
+order per repetition. It runs the regular workloads except QuickView Table, which
+released versions do not have, including current
 selection/readback checks on old releases. Pre-`0.10.0` versions skip only the
 unavailable QuickView text cases. Application dependencies are not reinstalled.
 

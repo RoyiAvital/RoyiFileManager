@@ -69,6 +69,82 @@ Text selection, search, forms and printing are not available.
 Text reads stop at 2 MiB, formatting stops at 512 KiB, with plain-text fallback.
 Markdown external resources are blocked.
 
+### QuickView for CSV and TSV Tables
+
+`.csv` and `.tsv` files open as a read-only **Table View**.
+Filtering and sorting always cover the whole file, not only the loaded rows.
+
+<figure class="product-shot" markdown>
+  ![QuickView Table View showing orders sorted by City](assets/royifilemanager-quickview-table.png)
+  <figcaption>Sort, filter and search a CSV file without leaving its folder.</figcaption>
+</figure>
+
+The top row holds the table controls:
+
+| Control                | Options                                     | Effect                                                         |
+| ---------------------- | ------------------------------------------- | -------------------------------------------------------------- |
+| **Filter all columns** | Text                                        | Keep records containing the text in any column, ignoring case. |
+| Delimiter              | Auto, Comma, Semicolon, Tab, Pipe           | Field separator. Auto detects it; `.tsv` files use Tab.        |
+| Encoding               | Auto, UTF-8, UTF-16 LE (BOM), Latin-1       | Text encoding. Auto follows the byte order mark, else UTF-8.   |
+| Header                 | Auto, First record, None                    | Use the first record as column names, or number the columns.   |
+| **Retry**              |                                             | Load the file again with the selected options.                 |
+
+After loading, the boxes show the detected values. Changing one reloads the file.
+Options apply to the current file only.
+
+The bottom row shows the record count, filter and sort state, and:
+
+- **Text View**: show the file as text. Only for files up to 2 MiB; Text View has a **Table View** button to return.
+- **Inspect**: show the complete selected cell in a panel under the table. The panel
+  follows the selection. Table cells are cut at 512 characters and show one line,
+  Inspect shows the whole value with its line breaks.
+
+Mouse and menus:
+
+- Click a column header to sort ascending, descending, then back to file order.
+- Click the header funnel for a **Fuzzy** or **Contains** column filter, **Clear Filter**,
+  **Clear All Filters**, and the sort orders. Column filters combine with **Filter all columns**.
+- Right-click a header to hide or show columns.
+- Right-click a cell for **Copy**, **Copy with headers**, **Copy rows**, **Select column**,
+  **Inspect cell**, **Find…** and **Freeze first column**.
+
+| Key                                            | Action                                                         |
+| ---------------------------------------------- | -------------------------------------------------------------- |
+| ++ctrl+f++                                     | Go to **Filter all columns**                                   |
+| ++f3++ / ++shift+f3++                          | Open Find, then go to the next or previous match               |
+| ++alt+down++                                   | Open the current column's filter                               |
+| ++ctrl+c++ / ++ctrl+shift+c++                  | Copy the selected cells as TSV, without or with headers        |
+| ++ctrl+a++                                     | Select all cells                                               |
+| ++ctrl+home++ / ++ctrl+end++                   | Go to the first or last record                                 |
+| ++down++ in the filter or Find box             | Move to the table                                              |
+| ++esc++                                        | Close Find or clear the filter, else return to the file pane   |
+| ++tab++                                        | Return to the file pane                                        |
+
+The Find bar searches the whole table. **Current column** limits it to the selected
+column and **Match case** makes it case sensitive. Copy is limited to 8 MiB.
+
+The first rows appear while the whole file is still being checked. Faulty files are
+never repaired: a file up to 2 MiB switches to Text View, and a larger one shows
+the reason. Choose a delimiter, encoding or header option, then press **Retry**.
+Table View reads UTF-8, UTF-16 LE with a byte order mark, and Latin-1. Windows
+"ANSI" files are refused rather than shown with wrong characters.
+
+#### Table Size Presets
+
+Run **Set QuickView table limit** in the Command Center to choose the largest file
+Table View opens:
+
+| Largest File | Table Engine Memory | Default |
+| -----------: | ------------------: | :-----: |
+| 512 MB       | 192 MiB             |         |
+| 1,024 MB     | 384 MiB             |         |
+| 2,048 MB     | 768 MiB             | Yes     |
+
+A lower preset uses less memory and is usually quicker, but accepts smaller files.
+Engine memory is not the application's total memory use. Larger files show the
+limit instead of a table. See [QuickView Table Limit](configuration.md#quickview-table-limit)
+for the setting and the temporary cache.
+
 ## Fuzzy Find
 
 Press ++ctrl+f++ for the current folder.

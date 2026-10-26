@@ -130,6 +130,26 @@ The results table retains at most 10,000 rows or 16 MiB. An uncapped search can 
 | `CalculateFileHash.json` | `chunk_size_mib`          | 4          | Read chunk size. Values are clamped to 1–64 MiB.                       |
 | `QuickView.json`         | `image_mode`              | `fit`      | Use `fit` or `actual_size`.                                            |
 
+### QuickView Table Limit
+
+Run **Set QuickView table limit** in the Command Center to choose the largest CSV/TSV
+file shown as a table. The choice is saved as `quickview_table_max_file_mb` in
+`Core Settings.json`.
+
+| Largest File | Table Engine Memory | Default |
+| -----------: | ------------------: | :-----: |
+| 512 MB       | 192 MiB             |         |
+| 1,024 MB     | 384 MiB             |         |
+| 2,048 MB     | 768 MiB             | Yes     |
+
+A lower limit uses less memory and is usually quicker, but accepts smaller files.
+The engine memory is not the application's total memory use, and a small limit can
+slow sorting of large files. Larger files show the limit instead of a table.
+Table View keeps a temporary cache under `UserSettings\Cache\QuickViewCsv`, up to
+twice the file size (at most 8 GiB), and deletes it when the preview closes.
+Filtering files of long, varied non-English text can need more; Table View then
+stops that filter with a cache-limit message.
+
 ### Fixed Safety Limits
 
 These values are not user-configurable.
@@ -141,6 +161,9 @@ These values are not user-configurable.
 | QuickView encoded image     | 64 MiB                 |
 | QuickView image dimensions  | 65,536 pixels per edge |
 | QuickView decoded image     | 128 million pixels     |
+| QuickView table columns     | 256                    |
+| QuickView table field       | 1,048,576 characters   |
+| QuickView table copy        | 8 MiB                  |
 
 ## Keyboard Shortcuts
 

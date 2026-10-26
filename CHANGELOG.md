@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-10-26
+
+This version focuses on adding support for `CSV` / `TSV` files in the _QuickView_ feature.  
+It uses [DuckDB](https://github.com/duckdb/duckdb) for fast parsing and efficient
+searching, filtering and sorting.
+
+### Added
+
+- QuickView shows `.csv` and `.tsv` files as a read-only **Table View**, backed by a
+  bundled DuckDB helper process. Sorting, Fuzzy/Contains column filters, the
+  all-columns filter and Find cover the whole file. Copy as TSV, hide or freeze
+  columns, and inspect complete cells. Faulty files are never repaired: files up
+  to 2 MiB switch to Text View with the reason, larger files show it in Table View.
+- **Set QuickView table limit** chooses the largest table file: 512, 1,024 or
+  2,048 MB (default), with 192, 384 or 768 MiB of engine memory.
+
+### Changed
+
+- The file context menu now labels the duplicate command **Duplicate...**;
+  Command Center calls it **Duplicate item**. Its command ID and copy behavior
+  are unchanged.
+- Command Center uses **Copy item(s) name** and **Copy item(s) path**. Both
+  support single and multiple items and share their implementations with the
+  context menu's unchanged **Copy name** and **Copy path** actions. The path
+  entry shows its current shortcut, including custom bindings.
+
+### Removed
+
+- Removed `copy_paths_to_clipboard` and its redundant Command Center entry.
+  `F11`, the context menu and Everything now use `copy_file_path`. Update custom
+  key bindings and plug-in calls/listeners to that ID; no compatibility alias remains.
+  Multi-path and current-folder copying are unchanged.
+
 ## [0.17.1] - 2026-10-24
 
 ### Added

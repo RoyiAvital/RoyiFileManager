@@ -218,6 +218,7 @@ class QuickViewOverlay(QWidget):
 		self._title = 'QuickView'
 		self.image_format = ''
 		self.pdf_view = None
+		self.csv_view = None
 		self.setAutoFillBackground(True)
 		self.setAcceptDrops(False)
 		self.setObjectName('QuickView')
@@ -281,10 +282,37 @@ class QuickViewOverlay(QWidget):
 		self.source.setFocus()
 		if self.pdf_view is not None and self.content.currentWidget() is self.pdf_view:
 			self.pdf_view.canvas.setFocus()
+		elif self.csv_view is not None and self.content.currentWidget() is self.csv_view:
+			self.csv_view.view.setFocus()
 		elif self.text_view is not None and self.content.currentWidget() is self.text_view:
 			self.text_view.browser.setFocus()
 		else:
 			self.canvas.setFocus()
+
+	def show_csv(self):
+		if self.csv_view is None:
+			from fman.impl.quick_view_csv import CsvPreview
+			self.csv_view = CsvPreview(self.source, self)
+			self.content.addWidget(self.csv_view)
+		focused = self.isAncestorOf(QApplication.focusWidget())
+		self.content.setCurrentWidget(self.csv_view)
+		for widget in (*self.buttons.values(), self.metadata):
+			widget.hide()
+		if focused:
+			self.csv_view.view.setFocus()
+		return self.csv_view
+
+	def clear_csv(self):
+		if self.csv_view is None:
+			return
+		self.csv_view.clear()
+		if self.content.currentWidget() is self.csv_view:
+			focused = self.csv_view.isAncestorOf(QApplication.focusWidget())
+			self.content.setCurrentWidget(self.canvas)
+			if focused:
+				self.canvas.setFocus()
+			for widget in (*self.buttons.values(), self.metadata):
+				widget.show()
 
 	def show_pdf(self):
 		if self.pdf_view is None:
@@ -312,7 +340,7 @@ class QuickViewOverlay(QWidget):
 		for widget in (*self.buttons.values(), self.metadata):
 			widget.show()
 
-	def show_text(self, result):
+	def show_text(self, result, table_note=None):
 		if self.text_view is None:
 			from fman.impl.quick_view_text import TextPreview
 			self.text_view = TextPreview(self.source, self)
@@ -322,7 +350,7 @@ class QuickViewOverlay(QWidget):
 		self.content.setCurrentWidget(self.text_view)
 		for widget in (*self.buttons.values(), self.metadata):
 			widget.hide()
-		self.text_view.show_result(result)
+		self.text_view.show_result(result, table_note)
 		if focused:
 			self.text_view.browser.setFocus()
 
@@ -389,6 +417,8 @@ class QuickViewOverlay(QWidget):
 		self.canvas.set_image(None)
 		if self.text_view is not None:
 			self.text_view.clear()
+		if self.csv_view is not None:
+			self.csv_view.clear()
 		if self.pdf_view is not None:
 			self.pdf_view.canvas.clear()
 		self.hide()
@@ -447,6 +477,13 @@ class QuickViewSession(QObject):
 		self._url = None
 		self._text_content = None
 		self._pdf_controller = None
+		self._csv_controller = None
+		self._csv = None
+		self._csv_generation = 0
+		self._csv_text = False
+		self._csv_reset()
+		from fman.impl.quick_view_csv import load_table_preset
+		self.table_preset = load_table_preset()
 		settings = load_json('QuickView.json', default={})
 		self.preferred_mode = settings.get('image_mode', 'fit') if isinstance(settings, dict) else 'fit'
 		if self.preferred_mode not in ('fit', 'actual_size'):
@@ -517,6 +554,8 @@ class QuickViewSession(QObject):
 		self.generation = self.bridge.loader.invalidate()
 		self._text_content = None
 		self._clear_pdf()
+		self._clear_csv()
+		self._csv_reset()
 		self.overlay.clear_text()
 		self.overlay.image_format = ''
 		self.overlay.canvas.set_image(None, self.preferred_mode, message)
@@ -537,7 +576,9 @@ class QuickViewSession(QObject):
 
 	def _submit(self):
 		if not self.closed and self._url:
-			self.bridge.loader.submit(ImageRequest(self.generation, self._url, colors=self._text_colors()))
+			from fman.impl.quick_view_csv import preset_limits
+			self.bridge.loader.submit(ImageRequest(self.generation, self._url, 'csv-text' if self._csv_text else 'rendered',
+				colors=self._text_colors(), limit=preset_limits(self.table_preset)[0]))
 
 	def _text_colors(self):
 		widget = self.overlay.text_view.browser if self.overlay.text_view is not None else self.overlay.canvas
@@ -546,7 +587,12 @@ class QuickViewSession(QObject):
 		return palette.text().color().name(), palette.base().color().name()
 
 	def text_mode(self, mode):
-		if self.closed or self._text_content is None or mode not in ('source', 'rendered'):
+		if self.closed:
+			return
+		if mode in ('table', 'csv-text'):
+			self._switch_csv_mode(mode)
+			return
+		if self._text_content is None or mode not in ('source', 'rendered'):
 			return
 		self.timer.stop()
 		self.generation = self.bridge.loader.invalidate()
@@ -555,6 +601,12 @@ class QuickViewSession(QObject):
 			self._text_colors(), self._text_content))
 
 	def show_result(self, result):
+		if result.kind == 'csv':
+			self._clear_pdf()
+			self._show_csv(result)
+			return
+		if not (self._csv_text and result.kind == 'text'):
+			self._retire_csv()
 		if result.kind == 'pdf':
 			self._show_pdf(result.path)
 			return
@@ -562,12 +614,215 @@ class QuickViewSession(QObject):
 		if result.kind == 'text':
 			self._text_content = result.content
 			self.overlay.canvas.set_image(None)
-			self.overlay.show_text(result)
+			if self._csv_text:
+				self.overlay.show_text(result, self._csv_note or '')
+				if self._csv_scroll is not None:
+					self.overlay.text_view.browser.verticalScrollBar().setValue(self._csv_scroll)
+			else:
+				self.overlay.show_text(result)
 			return
 		self._text_content = None
 		self.overlay.clear_text()
 		self.overlay.image_format = result.format
 		self.overlay.canvas.set_image(result.image, self.preferred_mode, result.message)
+
+	# -- CSV/TSV Table View -----------------------------------------------------------------
+
+	def _csv_reset(self):
+		from fman.impl.quick_view_csv import DEFAULT_OPTIONS
+		self._csv = None
+		self._csv_text = False
+		self._csv_options = dict(DEFAULT_OPTIONS)
+		self._csv_rejected = {}
+		self._csv_state = None
+		self._csv_note = None
+		self._csv_scroll = None
+
+	def _csv_key(self):
+		return self._csv['fingerprint'], tuple(sorted(self._csv_options.items()))
+
+	def _csv_view(self, generation):
+		view = self.overlay.csv_view
+		if self.closed or generation != self._csv_generation or view is None or view.generation != generation:
+			return None
+		return view
+
+	def _clear_csv(self):
+		self._csv_generation += 1
+		if self._csv_controller is not None:
+			self._csv_controller.invalidate()
+		self.overlay.clear_csv()
+
+	def _retire_csv(self):
+		if self._csv_controller is not None:
+			self._csv_controller.retire()
+		self.overlay.clear_csv()
+
+	def _csv_controller_for_window(self):
+		if self._csv_controller is None:
+			from fman.impl.quick_view_csv import CsvController
+			controller = getattr(self.window, '_quick_view_csv_controller', None)
+			if controller is None:
+				controller = CsvController(self.window)
+				self.window._quick_view_csv_controller = controller
+			self._csv_controller = controller
+			self._connect(controller.preview, self._csv_preview)
+			self._connect(controller.imported, self._csv_imported)
+			self._connect(controller.projected, self._csv_projected)
+			self._connect(controller.page_ready, self._csv_page)
+			self._connect(controller.action_done, self._csv_action)
+			self._connect(controller.failed, self._csv_failed)
+		return self._csv_controller
+
+	def _show_csv(self, result):
+		from fman.impl.quick_view_csv import TEXT_LIMIT, preset_limits
+		self._csv_text = False
+		self._text_content = None
+		self.overlay.clear_text()
+		self.overlay.canvas.set_image(None)
+		fingerprint = tuple(result.fingerprint)
+		if self._csv is not None and self._csv['fingerprint'] != fingerprint:
+			state = None
+			self._csv_rejected = {}
+			self._csv_scroll = None
+		else:
+			state = self._csv_state
+		self._csv = dict(path=result.path, fingerprint=fingerprint, size=fingerprint[2])
+		self._csv_state = None
+		view = self.overlay.show_csv()
+		if not self._csv_signals(view):
+			return
+		text_available = self._csv['size'] <= TEXT_LIMIT
+		self._csv_generation += 1
+		rejected = self._csv_rejected.get(self._csv_key())
+		if rejected is not None:
+			view.show_error(rejected, text_available, self._csv_options)
+			view.generation = self._csv_generation
+			return
+		controller = self._csv_controller_for_window()
+		view.start(controller, self._csv_generation, self._csv_options, text_available, state)
+		limit, memory = preset_limits(self.table_preset)
+		controller.open(self._csv_generation, self._csv['path'], limit, memory, self._csv_options)
+
+	def _csv_signals(self, view):
+		if getattr(view, '_session_connected', None) is self:
+			return True
+		view._session_connected = self
+		self._connect(view.mode_requested, self.text_mode)
+		self._connect(view.options_changed, self._csv_options_changed)
+		self._connect(view.retry_requested, self._csv_retry)
+		return True
+
+	def _restart_csv(self):
+		if self.closed or self._csv is None:
+			return
+		if self._csv_controller is not None:
+			self._csv_controller.invalidate()
+		self.timer.stop()
+		self.generation = self.bridge.loader.invalidate()
+		self._csv_text = False
+		self._submit()
+
+	def _csv_options_changed(self, options):
+		if self._csv is None or options == self._csv_options:
+			return
+		self._csv_options = dict(options)
+		self._csv_state = None
+		self._restart_csv()
+
+	def _csv_retry(self):
+		if self._csv is None:
+			return
+		view = self.overlay.csv_view
+		if view is not None:
+			self._csv_options = view.options()
+		self._csv_rejected.pop(self._csv_key(), None)
+		self._restart_csv()
+
+	def _switch_csv_mode(self, mode):
+		from fman.impl.quick_view_csv import TEXT_LIMIT
+		if self._csv is None:
+			return
+		if mode == 'csv-text':
+			if self._csv['size'] > TEXT_LIMIT:
+				return
+			if self.overlay.csv_view is not None and self.overlay.content.currentWidget() is self.overlay.csv_view:
+				self._csv_state = self.overlay.csv_view.state()
+			self._retire_csv()
+			self.timer.stop()
+			self.generation = self.bridge.loader.invalidate()
+			self._csv_text = True
+			self._submit()
+		else:
+			if self.overlay.text_view is not None:
+				self._csv_scroll = self.overlay.text_view.browser.verticalScrollBar().value()
+			self._csv_note = None
+			self._restart_csv()
+
+	def _csv_preview(self, generation, header, rows):
+		view = self._csv_view(generation)
+		if view is not None:
+			view.show_preview(header, rows)
+
+	def _csv_imported(self, generation, count):
+		view = self._csv_view(generation)
+		if view is not None:
+			view.show_imported(count)
+
+	def _csv_projected(self, generation, revision, count):
+		view = self._csv_view(generation)
+		if view is not None:
+			view.show_projection(revision, count)
+
+	def _csv_page(self, generation, revision, start, rows):
+		view = self._csv_view(generation)
+		if view is not None:
+			view.add_page(revision, start, rows)
+
+	def _csv_action(self, generation, kind, header, payload):
+		view = self._csv_view(generation)
+		if view is not None:
+			view.action_done(kind, header, payload)
+
+	def _csv_failed(self, generation, stage, kind, message):
+		from fman.impl.quick_view_csv import TEXT_LIMIT
+		view = self._csv_view(generation)
+		if view is None or self._csv is None:
+			return
+		if stage == 'query':
+			view.query_failed(message)
+			return
+		if stage not in ('open', 'helper'):
+			view.action_failed(message)
+			return
+		self._csv_rejected[self._csv_key()] = message
+		if self._csv['size'] <= TEXT_LIMIT:
+			self._csv_note = message
+			self._switch_csv_mode('csv-text')
+		else:
+			view.show_error(message, False, self._csv_options)
+			view.generation = generation
+
+	def table_limit_changed(self):
+		from fman.impl.quick_view_csv import load_table_preset
+		if self.closed:
+			return
+		self.table_preset = load_table_preset()
+		if self._csv_text or self._url is None or not self._url:
+			return
+		from fman.impl.quick_view_csv import is_table_file
+		if not is_table_file(self._url):
+			return
+		view = self.overlay.csv_view
+		if view is not None and self.overlay.content.currentWidget() is view:
+			self._csv_state = view.state()
+		self._csv_rejected = {}
+		if self._csv is None:
+			self.timer.stop()
+			self.generation = self.bridge.loader.invalidate()
+			self._submit()
+		else:
+			self._restart_csv()
 
 	def _clear_pdf(self):
 		if self._pdf_controller is not None:
@@ -657,6 +912,8 @@ class QuickViewSession(QObject):
 		self._text_content = None
 		if self._pdf_controller is not None:
 			self._pdf_controller.invalidate()
+		if self._csv_controller is not None:
+			self._csv_controller.retire()
 		self.timer.stop()
 		self.bridge.loader.invalidate()
 		for signal, callback in self._connections:

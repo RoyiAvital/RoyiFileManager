@@ -55,6 +55,7 @@
 - [QuickView 001: Initial Design and Images](Done/QuickView001.md)
 - [QuickView 003: Text-Based Files](Done/QuickView003.md)
 - [QuickView 004: PDF Preview](Done/QuickView004.md)
+- [QuickView 005: CSV and TSV Tables](Done/QuickView005.md)
 - [Recent Commands in Command Palette](Done/RecentCommandsInPalette.md)
 - [Release Workflow Hardening](Done/ReleaseWorkflowHardening.md)
 - [Roadmap 001: Tweaks and Tricks (Approved Items)](Done/Roadmap001.md)

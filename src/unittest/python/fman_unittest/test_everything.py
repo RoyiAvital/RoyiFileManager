@@ -545,7 +545,7 @@ class EverythingFoldersTest(TestCase):
 			self.assertEqual(('remove_everything_folders', {}), listener.on_command(name, {}))
 		for name in ('copy', 'move', 'symlink', 'rename', 'pack', 'cut', 'copy_to_clipboard', 'new_empty_file'):
 			self.assertEqual(('everything_folder_operation_unsupported', {}), listener.on_command(name, {}))
-		self.assertEqual(('copy_everything_folder_paths', {}), listener.on_command('copy_paths_to_clipboard', {}))
+		self.assertEqual(('copy_everything_folder_paths', {}), listener.on_command('copy_file_path', {}))
 		pane.get_path.return_value = 'file://C:'
 		other.get_path.return_value = commands.FOLDERS_ROOT
 		self.assertEqual(('add_everything_folders', {'files': None, 'dest_dir': commands.FOLDERS_ROOT}),

@@ -43,7 +43,8 @@ Press ++ctrl+u++ to swap the two pane locations without moving files.
 
 ### Duplicate In The Same Folder
 
-**Create a duplicate file** suggests `name Copy 1.ext` in the current folder.
+**Duplicate item** in Command Center, or **Duplicate...** in the context menu,
+suggests `name Copy 1.ext` in the current folder.
 Existing numbered copies continue the series; you can edit the suggested name.
 
 <figure class="product-shot" markdown>

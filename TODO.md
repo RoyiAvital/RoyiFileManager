@@ -1,12 +1,5 @@
 # TODO
 
-- [ ] Add a constrained abstraction layer for `fman.ui`: keep Qt widgets,
-  models and signals private, and expose only explicitly supported operations
-  and plain-data callbacks through small wrappers, without unrestricted Qt
-  method forwarding. Keep layout, focus, threading and lifecycle host-owned;
-  migrate Favorites as the reference consumer, document API migration, and add
-  focused tests for the boundary and preserved behavior. Preserve the upstream
-  fman 1.7.5 plug-in API.
 - [x] Generate a plan to replace legacy `tinycss 0.4` usage with `tinycss2`.
 - [ ] Reevaluate RapidFuzz as a future replacement for the pure Python fuzzy matcher.
   The benchmark in `src/misc/benchmark_fuzzy_search.py` measured RapidFuzz
@@ -65,8 +58,13 @@
 - [x] CHANGE: Rename the right click menu item: `Copy file name` to `Copy name`.
 - [x] CHANGE: Rename the right click menu item: `Copy file path` to `Copy path`.
 - [x] BUG: Running the `fd` based search on `C:\` and all sub folders raised access issues and gabbled text.
-- [ ] FEATURE: Add support in QuickView for viewing `CSV` and `TSV` as tables with `RAW` as view potion for text.
+- [x] FEATURE: Add support in QuickView for viewing `CSV` and `TSV` as tables with `RAW` as view potion for text.
 - [x] FEATURE: Add support for `Royi Text Editor` as a text editor / viewer. Use the flag `--read-only` for view mode.
+- [x] CHANGE: Rename the right click menu item: `Create a duplicate file...` to `Duplicate...`.
+- [x] CHANGE: Rename the _Command Palette_ menu item: `Create a duplicate file` to `Duplicate item`.
+- [x] CHANGE: Rename the _Command Palette_ menu item: `Copy file name` to `Copy item(s) name`.
+- [x] CHANGE: Rename the _Command Palette_ menu item: `Copy file path` to `Copy item(s) path` and show its shortcut key.
+- [x] BUG: The _Command Palette_ item `Copy paths to clipboard` is a duplicate.
 
 ## Performance
 

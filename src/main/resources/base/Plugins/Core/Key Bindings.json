@@ -36,7 +36,7 @@
 	{ "keys": ["Num+Delete"], "command": "move_to_trash" },
 	{ "keys": ["F9"], "command": "open_terminal" },
 	{ "keys": ["F10"], "command": "open_native_file_manager" },
-	{ "keys": ["F11"], "command": "copy_paths_to_clipboard" },
+	{ "keys": ["F11"], "command": "copy_file_path" },
 	{ "keys": ["Shift+F11"], "command": "copy_file_name" },
 	{ "keys": ["Shift+Delete"], "command": "delete_permanently" },
 	{ "keys": ["Alt+F1"], "command": "show_volumes", "args": {"pane_index": 0} },

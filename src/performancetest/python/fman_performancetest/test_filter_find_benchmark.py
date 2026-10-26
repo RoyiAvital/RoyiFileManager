@@ -114,6 +114,9 @@ class PerformanceReportTest(TestCase):
 					input_ready_ms=index * 10 + 5,
 					selected_count=marked, heartbeat_gap_ms={'max': 12})
 					for index, (pattern, marked) in enumerate(patterns, 1)]))]
+			if test['workload'] == 'csv':
+				result['samples'] = [dict(ui=dict(samples=[dict(action_id='csv.first-rows', input_to_paint_ms=40),
+					dict(action_id='csv.full', input_to_paint_ms=900, peak_working_set_mib=200)]))]
 			if test['workload'] == 'copy':
 				result['samples'] = [dict(ui=dict(samples=[
 					dict(action_id='copy.selection', paint_ms=2, input_ready_ms=3, readback_ms=1, selected_count=15000),
@@ -126,7 +129,7 @@ class PerformanceReportTest(TestCase):
 		compact = records.statistics_record(current)
 		self.assertEqual(report.overview(current), report.overview(compact))
 		overview = report.overview(compact)
-		self.assertEqual(16, len(overview))
+		self.assertEqual(17, len(overview))
 		selections = [item for item in overview if item['test_id'].startswith('selection.')]
 		self.assertEqual(['selection.small', 'selection.large'], [item['test_id'] for item in selections])
 		for item, selected in zip(selections, (64, 1000)):
@@ -149,8 +152,8 @@ class PerformanceReportTest(TestCase):
 		current = self.selection_record(full=True)
 		data = report.report_data(current, {})
 		self.assertEqual('full', data['suite_mode'])
-		self.assertEqual(21, data['expected_tests'])
-		self.assertEqual(24, len(data['tests']))
+		self.assertEqual(22, data['expected_tests'])
+		self.assertEqual(25, len(data['tests']))
 		self.assertTrue(data['complete'])
 		medium = next(item for item in data['tests'] if item['test_id'] == 'selection.medium')
 		self.assertEqual(35, medium['headline']['median'])
@@ -176,6 +179,13 @@ class PerformanceReportTest(TestCase):
 		self.assertEqual(3, rows['quickview.text.large']['headline']['count'])
 		self.assertNotIn('switch.text.input_to_paint_ms', rows['quickview.large']['metrics'])
 		self.assertNotIn('enable.png.input_to_paint_ms', rows['quickview.text.large']['metrics'])
+
+	def test_csv_report_uses_full_import_and_keeps_first_rows(self):
+		rows = {item['test_id']: item for item in report.overview(self.selection_record())}
+		row = rows['csv.load']
+		self.assertEqual(('csv.full.input_to_paint_ms', 900), (row['headline']['metric'], row['headline']['median']))
+		self.assertEqual(40, row['metrics']['csv.first-rows.input_to_paint_ms']['median'])
+		self.assertIn('QuickView Table / 64 MB CSV', report.render_html(self.selection_record(), {}))
 
 	def test_copy_report_keeps_selection_startup_and_completion_separate(self):
 		current = self.selection_record(full=True)
@@ -795,6 +805,24 @@ class SyntheticFixtureTest(TestCase):
 			with self.assertRaisesRegex(ValueError, 'Modified fixture'):
 				synthetic.prepare(temporary, 'copy-test', specification)
 
+	def test_csv_fixture_has_exact_size_32_columns_and_fixed_records(self):
+		import csv
+		import io
+		specification = dict(revision=1, kind='csv', files=1, bytes=2 * 1024 * 1024 + 7, columns=32, seed=1734)
+		with TemporaryDirectory() as temporary:
+			first = synthetic.prepare(temporary, 'csv-test', specification)
+			path = Path(first['directory']) / synthetic.CSV_NAME
+			self.assertEqual(specification['bytes'], path.stat().st_size)
+			rows = list(csv.reader(io.StringIO(path.read_text(encoding='utf-8'), newline=''), strict=True))
+			self.assertEqual(list(synthetic.CSV_HEADER), rows[0])
+			self.assertEqual(synthetic.csv_records(specification), len(rows) - 1)
+			self.assertTrue(all(len(row) == 32 for row in rows))
+			self.assertEqual(list(synthetic.csv_fields(1734, 0)), rows[1][:31])
+			self.assertIn('\n', rows[1][30])
+			self.assertEqual(first, synthetic.prepare(temporary, 'csv-test', specification))
+			with self.assertRaises(ValueError):
+				synthetic.prepare(temporary, 'csv-columns', dict(specification, columns=8))
+
 	def test_text_revision_adds_samples_without_changing_legacy_fixtures(self):
 		images = {name: ('test-' + name).encode('ascii') for name in synthetic.ASSETS}
 		legacy = dict(revision=1, kind='flat', files=8, seed=1729)
@@ -836,7 +864,7 @@ class SyntheticFixtureTest(TestCase):
 class PerformanceRecordTest(TestCase):
 	def test_full_mode_adds_medium_without_default_fixture_io(self):
 		catalog = records.load_catalog()
-		self.assertEqual(13, len(catalog['tests']))
+		self.assertEqual(14, len(catalog['tests']))
 		self.assertEqual(['pane.load.medium', 'refresh.medium', 'filter.medium',
 			'fuzzy.medium', 'quickview.medium', 'selection.medium', 'copy.flat', 'copy.tree'],
 			[test['id'] for test in catalog['full_tests']])
@@ -861,9 +889,9 @@ class PerformanceRecordTest(TestCase):
 					self.assertEqual(0, suite.main(['--prepare-only', '--results', temporary] +
 						(['--full'] if full else []), record_saved=lambda record, path: published.append(record)))
 				invoke.assert_not_called()
-				self.assertEqual(['flat-small-v1', 'flat-large-v1', 'recursive-v1', 'flat-small-v2', 'flat-large-v2'] +
+				self.assertEqual(['flat-small-v1', 'flat-large-v1', 'recursive-v1', 'flat-small-v2', 'flat-large-v2', 'csv-64mb-v1'] +
 					(['flat-medium-v1', 'flat-medium-v2', 'copy-flat-v1', 'copy-tree-v1'] if full else []), prepared)
-				self.assertEqual(21 if full else 13, len(published[0]['catalog']['tests']))
+				self.assertEqual(22 if full else 14, len(published[0]['catalog']['tests']))
 				self.assertEqual('full' if full else 'regular', published[0]['suite_mode'])
 				self.assertNotIn('full_tests', published[0]['catalog'])
 
@@ -1024,6 +1052,17 @@ class PerformanceRecordTest(TestCase):
 		self.assertEqual({'first_paint_ms': dict(count=20, median=10.5, minimum=1, maximum=20, p95=20)},
 			compact['summary'])
 
+	def test_csv_catalog_uses_64_mb_32_column_fixture_and_table_child(self):
+		from fman_performancetest import quickview_csv
+		catalog = records.load_catalog()
+		test = next(test for test in catalog['tests'] if test['workload'] == 'csv')
+		self.assertEqual('csv.load', test['id'])
+		fixture = catalog['fixtures'][test['fixture']]
+		self.assertEqual((64000000, 32), (fixture['bytes'], fixture['columns']))
+		with patch.object(quickview_csv, 'child', return_value=0) as child:
+			self.assertEqual(0, suite.child(test, catalog, Path('fixture'), False, None))
+		child.assert_called_once_with(Path('fixture'), catalog['protocol']['viewport'], fixture)
+
 	def test_refresh_dispatch_uses_catalog_cases_without_navigation(self):
 		from fman_performancetest import pane_rendering_benchmark
 		catalog = records.load_catalog()
@@ -1090,7 +1129,7 @@ class PerformanceRecordTest(TestCase):
 	def test_catalog_has_unique_ids_and_keeps_comments_untouched(self):
 		before = records.CATALOG.read_bytes()
 		catalog = records.load_catalog()
-		self.assertEqual(13, len(catalog['tests']))
+		self.assertEqual(14, len(catalog['tests']))
 		self.assertEqual(before, records.CATALOG.read_bytes())
 		self.assertEqual(records.digest(catalog), records.digest(json.loads(json.dumps(catalog))))
 

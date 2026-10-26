@@ -163,6 +163,7 @@ def measure(output, selected, catalog_path, repetitions):
 		return 0 if all(json.loads(Path(path).read_text(encoding='utf-8'))['status'] == 'passed' for path in paths.values()) else 1
 	catalog_path = output / 'catalog.yaml'
 	catalog = load_catalog(catalog_path)
+	catalog['tests'] = [test for test in catalog['tests'] if test['workload'] != 'csv']
 	started = time.perf_counter()
 	for test in selected:
 		for iteration in range(repetitions):
@@ -240,8 +241,9 @@ def main(argv=None):
 		return suite.child(test, catalog, args.directory, args.algorithm, None)
 	if args.output is None or args.repeat < 1:
 		parser.error('--output and a positive --repeat are required')
-	selected = [test for test in catalog['tests'] if not args.test or
-		any(fnmatch.fnmatchcase(test['id'], pattern) for pattern in args.test)]
+	# Released versions predate the CSV Table View.
+	selected = [test for test in catalog['tests'] if test['workload'] != 'csv' and (not args.test or
+		any(fnmatch.fnmatchcase(test['id'], pattern) for pattern in args.test))]
 	if not selected:
 		parser.error('No matching regular workloads')
 	return measure(args.output.resolve(), selected, args.catalog.resolve(), args.repeat)

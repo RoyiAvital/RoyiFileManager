@@ -9,7 +9,7 @@ uses a SafeLoader subclass that also rejects duplicate keys.
 python build.py measure
 ```
 
-This runs the thirteen regular workloads, three repetitions each, without profiling;
+This runs the fourteen regular workloads, three repetitions each, without profiling;
 updates the version's result; generates a standalone HTML report; and opens it in
 the default browser. No arguments or profile selection are required. It does not
 run correctness verification, build the application or install dependencies.
@@ -17,8 +17,8 @@ run correctness verification, build the application or install dependencies.
 checks. A failed measurement run returns nonzero and displays its failure without
 replacing the last successful version result.
 
-The regular suite keeps the original eleven workloads and two selection workloads,
-with five patterns per size. It does not prepare or run the Copy fixture. To also
+The regular suite keeps the original eleven workloads, two selection workloads
+and the QuickView Table workload, with five selection patterns per size. It does not prepare or run the Copy fixture. To also
 measure medium folders and Copy:
 
 ```powershell
@@ -28,7 +28,7 @@ python build.py measure --full
 Full mode adds six workloads on a 50,000-file flat folder: pane loading, refresh,
 Filter Bar, Fuzzy Find, QuickView and selections, plus two Copy workloads.
 Navigation is included in pane
-and QuickView workloads. It runs twenty-one workloads with the same three
+and QuickView workloads. It runs twenty-two workloads with the same three
 repetitions and protocols; it does not enable profiling or legacy stress tests.
 
 ## Report and Version History
@@ -49,15 +49,15 @@ in the result record. Repeating a version replaces its index entry, not its old 
 Corrupt history is reported, never silently reset. Earlier diagnostic runs under
 `target` are not imported as previous versions.
 
-The regular overview has sixteen rows: pane loading, Filter Bar, Fuzzy Find, QuickView Images
+The regular overview has seventeen rows: pane loading, Filter Bar, Fuzzy Find, QuickView Images
 and QuickView Text in
-small/large folders, Fuzzy Find (Recursive), Refresh / Selection,
+small/large folders, QuickView Table, Fuzzy Find (Recursive), Refresh / Selection,
 Selections / Small, Selections / Large, Selections Readback, and Navigation. Headlines are first populated
 paint, slowest query median, first PNG preview paint, or the mean of TXT/Python/Markdown
 paint medians, respectively. QuickView Images/Text rows are consecutive; Selections
 Readback immediately follows the Selections rows and shows the slowest of ten selected-file
 readback case medians: five patterns in each folder size. These derived rows reuse
-the thirteen workloads, without extra measurement processes. Navigation is
+the fourteen workloads, without extra measurement processes. Navigation is
 the arithmetic mean of 28 case medians: seven actions across small/large panes with
 QuickView off/on, equally weighted. Refresh / Selection is the mean of 16 case
 medians: eight selection patterns across small/large folders. Each Selections row
@@ -65,7 +65,7 @@ is the mean of five full selection-interaction case medians for its folder size.
 or failed selection cases suppress that aggregate. Details
 retain every case so the aggregate cannot conceal individual regressions.
 
-Full reports have twenty-four rows, including the additional medium pane, Filter
+Full reports have twenty-five rows, including the additional medium pane, Filter
 Bar, Fuzzy Find, QuickView Images, QuickView Text, Selections / Medium and two Copy rows.
 Readback spans fifteen case medians. Refresh remains
 one aggregate, now across 24 case medians; Navigation averages 42. Both require
@@ -180,6 +180,26 @@ access violation while copy and destination refresh were active. Its traceback
 and failed record are retained; the root cause is unresolved. Three subsequent
 baseline runs and three A runs passed. This does not establish that A fixed the
 crash or that future runs cannot encounter it. Only disposable files were involved.
+
+### QuickView Table Workload
+
+`csv.load` uses `csv-64mb-v1`: one `orders.csv` of exactly 64,000,000 bytes,
+32 columns and 124,999 records of 512 UTF-8 bytes. Records mix numbers, dates,
+Unicode names and cities, quoted commas and quotes, and a two-line note on every
+49th record; the last column pads each record to its fixed size. Generation and
+verification are untimed.
+
+Each fresh process places the cursor on the file and toggles QuickView. Timing
+includes the 100 ms debounce, the first helper-process start and DuckDB import:
+
+- `csv.first-rows.input_to_paint_ms`: first completed table paint with rows.
+- `csv.full.input_to_paint_ms` (headline): first completed paint after the whole
+  file is imported and the record count matches. CPU, heartbeat and queue
+  maxima and application memory are recorded here.
+- `csv.helper.*_mib`: helper-process working set and peak.
+
+Header and first-record cells are checked against the generator outside timing.
+Historical retests skip this workload; released versions have no Table View.
 
 ### Shared Settings
 
@@ -311,8 +331,8 @@ reference. Keep both source trees unchanged during a measurement run.
 For selection-only diagnostics across all three sizes:
 `python src/performancetest/run.py suite --test "selection.*"`.
 For medium only: `python src/performancetest/run.py suite --test "selection.medium"`.
-Use `python build.py measure` for the regular thirteen-workload report and history.
-Use `python build.py measure --full` for all nineteen workloads and separate full history.
+Use `python build.py measure` for the regular fourteen-workload report and history.
+Use `python build.py measure --full` for all twenty-two workloads and separate full history.
 
 ## JSON Records
 

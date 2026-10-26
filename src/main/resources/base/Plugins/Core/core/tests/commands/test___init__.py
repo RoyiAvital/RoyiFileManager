@@ -294,7 +294,7 @@ class DuplicateFileTest(TestCase):
 
 	def test_command_name_and_aliases(self):
 		self.assertEqual('duplicate_file', _get_command_name(type(self.command)))
-		self.assertEqual(('Create a duplicate file', 'Copy file here', 'Duplicate file'), self.command.aliases)
+		self.assertEqual(('Duplicate item', 'Copy file here', 'Duplicate file'), self.command.aliases)
 
 	def test_delegates_to_copy_with_active_destination(self):
 		from core.commands import Copy
@@ -375,7 +375,7 @@ class PackTest(TestCase):
 		from pathlib import Path
 		menu_path = Path(__file__).resolve().parents[3] / 'File Context Menu (Windows).json'
 		entries = json.loads(menu_path.read_text(encoding='utf-8'))
-		for command_type, caption in ((DuplicateFile, 'Create a duplicate file...'), (PackHere, 'Pack here...')):
+		for command_type, caption in ((DuplicateFile, 'Duplicate...'), (PackHere, 'Pack here...')):
 			with self.subTest(command=command_type.__name__):
 				matching = [entry for entry in entries if entry.get('command') == _get_command_name(command_type)]
 				self.assertEqual([{'command': _get_command_name(command_type), 'caption': caption}], matching)
@@ -647,12 +647,12 @@ class DeleteTaskTest(TestCase):
 
 class CommandCleanupTest(TestCase):
 	def test_clipboard_text_and_messages(self):
-		from core.commands import CopyPathsToClipboard
+		from core.commands import CopyFilePath
 		pane = Mock()
 		pane.get_path.return_value = 'file://C:/folder'
 		for files in ([], ['file://C:/one'], ['file://C:/one', 'file://C:/two']):
 			with self.subTest(files=files):
-				command = CopyPathsToClipboard(pane)
+				command = CopyFilePath(pane)
 				with patch.object(command, 'get_chosen_files', return_value=files), \
 					patch('core.commands.clipboard.clear') as clear, \
 					patch('core.commands.clipboard.set_text') as set_text, \
@@ -724,31 +724,42 @@ class CopyItemTextTest(TestCase):
 					set_text.assert_called_once_with(text)
 					status.assert_called_once_with('Copied %s to the clipboard' % path, timeout_secs=3)
 					pane.get_path.assert_not_called()
-	def test_cursor_fallback_and_invalid_selection_counts(self):
+	def test_cursor_multiple_items_and_empty_selection(self):
 		from core.commands import CopyFileName, CopyFilePath
 		for command_type in (CopyFileName, CopyFilePath):
-			for selected, cursor, visible in (
-				([], 'file://C:/folder', True),
-				([], None, False),
-				(['file://C:/one', 'file://C:/two'], 'file://C:/one', command_type is CopyFileName),
+			for selected, cursor, name_text, path_text in (
+				([], 'file://C:/folder', 'folder', 'C:\\folder'),
+				([], None, None, 'C:\\current'),
+				(['file://C:/one', 'file://C:/two'], 'file://C:/one', 'one\ntwo', 'C:\\one\nC:\\two'),
 			):
 				with self.subTest(command=command_type.__name__, selected=selected, cursor=cursor):
 					pane = Mock()
 					pane.get_selected_files.return_value = selected
 					pane.get_file_under_cursor.return_value = cursor
+					pane.get_path.return_value = 'file://C:/current'
+					text = name_text if command_type is CopyFileName else path_text
 					command = command_type(pane)
 					with patch('core.commands.clipboard.clear') as clear, \
 						patch('core.commands.clipboard.set_text') as set_text, \
 						patch('core.commands.show_status_message') as status:
-						self.assertEqual(visible, command.is_visible())
+						self.assertEqual(text is not None, command.is_visible())
 						command()
-					if visible:
-						set_text.assert_called_once_with(('one\ntwo' if selected else 'folder') if command_type is CopyFileName else 'C:\\folder')
+					if text is not None:
+						clear.assert_called_once_with()
+						set_text.assert_called_once_with(text)
 					else:
 						clear.assert_not_called()
 						set_text.assert_not_called()
 						status.assert_not_called()
-					pane.get_path.assert_not_called()
+					if text == 'C:\\current':
+						pane.get_path.assert_called_once_with()
+					else:
+						pane.get_path.assert_not_called()
+	def test_removed_path_command_is_not_exported(self):
+		import core
+		from core import commands
+		self.assertFalse(hasattr(commands, 'CopyPathsToClipboard'))
+		self.assertFalse(hasattr(core, 'CopyPathsToClipboard'))
 	def test_execution_rechecks_selection(self):
 		from core.commands import CopyFileName, CopyFilePath
 		for command_type in (CopyFileName, CopyFilePath):
@@ -760,11 +771,8 @@ class CopyItemTextTest(TestCase):
 			with patch('core.commands.clipboard.clear') as clear, \
 				patch('core.commands.clipboard.set_text') as set_text, patch('core.commands.show_status_message'):
 				command()
-			if command_type is CopyFileName:
-				set_text.assert_called_once_with('one\ntwo')
-			else:
-				clear.assert_not_called()
-				set_text.assert_not_called()
+			clear.assert_called_once_with()
+			set_text.assert_called_once_with('one\ntwo' if command_type is CopyFileName else 'C:\\one\nC:\\two')
 
 class ExternalAppConfigurationTest(TestCase):
 	def test_edit_app_uses_windows_picker_and_keeps_associations(self):
@@ -978,6 +986,38 @@ class CommandPaletteRecentTest(TestCase):
 			patcher.start()
 			self.addCleanup(patcher.stop)
 		self.palette = CommandPalette(self.pane)
+	def test_item_labels_and_direct_path_shortcut(self):
+		from core.commands import CopyFileName, CopyFilePath, DuplicateFile
+		from fman.impl.plugins.command_registry import _get_default_aliases
+		self.aliases.clear()
+		for command in (CopyFileName, CopyFilePath, DuplicateFile):
+			self.aliases[_get_command_name(command)] = getattr(command, 'aliases', _get_default_aliases(command))
+		self.bindings[:] = [
+			{'keys': ['F11'], 'command': 'copy_file_path'},
+			{'keys': ['Shift+F11'], 'command': 'copy_file_name'},
+		]
+		items = {item.title: item for item in self.open()}
+		self.assertIn('Duplicate item', items)
+		self.assertEqual('Shift+F11', items['Copy item(s) name'].hint)
+		self.assertEqual('F11', items['Copy item(s) path'].hint)
+		for old_title in ('Create a duplicate file', 'Copy file name', 'Copy file path', 'Copy paths to clipboard'):
+			self.assertNotIn(old_title, items)
+		items['Copy item(s) path'].value()
+		self.pane.run_command.assert_called_once_with('copy_file_path')
+		self.seed(('pane', 'copy_paths_to_clipboard'), ('pane', 'copy_file_path'))
+		self.assertEqual(['Copy item(s) path'], [item.title for item in self.open('path')])
+		self.bindings[0]['keys'] = ['Ctrl+F11']
+		self.assertEqual('Ctrl+F11 \u00b7 Recent', self.open('path')[0].hint)
+		self.bindings.append({'keys': ['Alt+F11'], 'command': 'copy_file_path'})
+		self.assertEqual('Ctrl+F11, Alt+F11 \u00b7 Recent', self.open('path')[0].hint)
+		self.pane.is_command_visible.side_effect = lambda name: name != 'copy_file_path'
+		self.assertEqual([], self.open('path'))
+	def test_removed_path_command_is_pruned_from_history(self):
+		self.aliases.clear()
+		self.aliases['copy_file_path'] = ['Copy item(s) path']
+		self.seed(('pane', 'copy_paths_to_clipboard'))
+		self.assertEqual(['Copy item(s) path'], [item.title for item in self.open('path')])
+		self.assertEqual((), _recent_commands())
 	def seed(self, *identities):
 		self.document['recent'] = [{'kind': kind, 'name': name} for kind, name in identities]
 	def test_roadmap_synonyms_match_once_dispatch_and_keep_identity(self):

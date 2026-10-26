@@ -18,5 +18,6 @@ dependencies:
   - pymdown-extensions #<! Extensions for Markdown rendering
   - pypdfium2 #<! PDF rendering
   - blake3=1.0.10 #<! Fast hashing algorithm (Checksum)
+  - python-duckdb #<! CSV / TSV processing for QuickView
   - conda-lock
   - mkdocs-material #<! Downgrades `click` (https://github.com/conda-forge/mkdocs-feedstock/issues/55) run `micromamba update click --no-deps`

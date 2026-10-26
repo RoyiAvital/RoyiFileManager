@@ -777,6 +777,234 @@ Event().wait()
 		self.run_in_app(check)
 
 
+class QuickViewCsvIT(QtIT):
+	setUp = QuickViewIT.setUp
+	close_window = QuickViewIT.close_window
+	navigate = QuickViewIT.navigate
+	drain = QuickViewIT.drain
+	until = QuickViewPdfIT.until
+
+	def start(self, name, data, preset=None):
+		from fman.impl.quick_view import QuickViewSession
+		from fman.impl.quick_view_images import load_preview
+		from fman.url import as_url
+		from unittest.mock import patch
+		path = self.root / name
+		path.write_bytes(data if isinstance(data, bytes) else data.encode('utf-8'))
+		self.panes[0].reload()
+		self.drain(self.panes[0])
+		self.panes[0].place_cursor_at(as_url(path))
+		self.cache = self.root.parent / (self.root.name + '-cache')
+		patcher = patch('fman.impl.quick_view_csv.cache_root', return_value=str(self.cache))
+		patcher.start()
+		self.addCleanup(patcher.stop)
+		def load(request, canceled):
+			return load_preview(request, canceled, self.filesystem.resolve)
+		settings = {} if preset is None else {'quickview_table_max_file_mb': preset}
+		with patch('fman.load_json', return_value=settings):
+			return QuickViewSession(self.window, *self.panes, load=load)
+
+	def finish(self, session):
+		session.shutdown()
+		controller = getattr(self.window, '_quick_view_csv_controller', None)
+		if controller is not None:
+			self.until(lambda: controller.process is None)
+			controller.shutdown()
+			self.window._quick_view_csv_controller = None
+		self.until(lambda: not self.cache.exists() or not any(self.cache.iterdir()))
+
+	def ready(self, session):
+		view = session.overlay.csv_view
+		return view is not None and view.ready and not view.pending and view.isVisible()
+
+	def rows(self, view):
+		model = view.model
+		self.until(lambda: all(model.row(model.base + index) is not None for index in range(model.rowCount())))
+		return [model.row(model.base + index).cells for index in range(model.rowCount())]
+
+	def test_table_view_filters_sorts_copies_and_toggles_text(self):
+		from fman.impl.ui.table_data import QuickTableColumn
+		from fman.impl.ui.table_filters import compile_filter
+		from PyQt5.QtCore import QItemSelection, QItemSelectionModel, QModelIndex, QPoint, QThread
+		from PyQt5.QtTest import QTest
+		data = 'name;city;note\r\nbeta;Stra\u00dfe;"x;y"\r\ngamma;Oslo;"line\nbreak"\r\nalpha;STRASSE;\r\n'
+		def check():
+			session = self.start('table.csv', data)
+			threads = []
+			try:
+				self.until(lambda: self.ready(session))
+				view = session.overlay.csv_view
+				session._csv_controller.page_ready.connect(lambda *args: threads.append(QThread.currentThread()))
+				self.assertIs(session.overlay.content.currentWidget(), view)
+				self.assertEqual(('name', 'city', 'note'), view.labels)
+				self.assertEqual('semicolon', view.options()['delimiter'])
+				self.assertTrue(view.text_button.isVisible())
+				self.assertFalse(session.overlay.buttons['copy_image'].isVisible())
+				self.assertEqual([('beta', 'Stra\u00dfe', 'x;y'), ('gamma', 'Oslo', 'line\nbreak'), ('alpha', 'STRASSE', '')], self.rows(view))
+				self.assertIn('3 records', view.status.text())
+				QTest.mouseClick(view.header.viewport(), Qt.LeftButton, Qt.NoModifier,
+					QPoint(view.header.sectionViewportPosition(0) + 10, view.header.height() // 2))
+				self.until(lambda: self.ready(session) and view.sort_column == 0)
+				self.assertEqual(['alpha', 'beta', 'gamma'], [row[0] for row in self.rows(view)])
+				self.assertFalse(view.view.selectionModel().isColumnSelected(0, QModelIndex()))
+				view.set_column_filter(1, compile_filter(QuickTableColumn('city'), 1, 'substring', 'strasse'))
+				self.until(lambda: self.ready(session) and view.model.count == 2)
+				self.assertEqual(['alpha', 'beta'], [row[0] for row in self.rows(view)])
+				self.assertIn('2 matching records', view.status.text())
+				view.query.setText('X;Y')
+				self.until(lambda: self.ready(session) and view.model.count == 1)
+				self.assertEqual([('beta', 'Stra\u00dfe', 'x;y')], self.rows(view))
+				view.view.setFocus()
+				view.view.setCurrentIndex(view.model.index(0, 0))
+				view.view.selectionModel().select(QItemSelection(view.model.index(0, 0), view.model.index(0, 2)),
+					QItemSelectionModel.ClearAndSelect)
+				QApplication.clipboard().clear()
+				QTest.keyClick(view.view, Qt.Key_C, Qt.ControlModifier | Qt.ShiftModifier)
+				self.until(lambda: QApplication.clipboard().text() == 'name\tcity\tnote\r\nbeta\tStra\u00dfe\tx;y')
+				view.text_button.click()
+				self.until(lambda: session.overlay.text_view is not None and
+					session.overlay.content.currentWidget() is session.overlay.text_view)
+				self.assertTrue(session.overlay.text_view.table_button.isVisible())
+				self.assertIn('line\nbreak', session.overlay.text_view.browser.toPlainText())
+				self.until(lambda: session._csv_controller.process is None)
+				session.overlay.text_view.table_button.click()
+				self.until(lambda: self.ready(session) and view.model.count == 1)
+				self.assertEqual('X;Y', view.query.text())
+				self.assertEqual((0, False), (view.sort_column, view.sort_descending))
+				self.assertEqual([1], list(view.filters))
+				self.assertTrue(all(thread == QApplication.instance().thread() for thread in threads))
+				view.clear_all_filters()
+				self.until(lambda: self.ready(session) and view.model.count == 3)
+			finally:
+				self.finish(session)
+		self.run_in_app(check)
+
+	def test_keys_find_inspect_and_filter_menu(self):
+		from PyQt5.QtTest import QTest
+		long_value = 'v' * 700
+		data = 'key,value\n' + ''.join('row%03d,%s\n' % (index, long_value if index == 150 else 'value %d' % index) for index in range(300))
+		def check():
+			session = self.start('keys.csv', data)
+			try:
+				self.until(lambda: self.ready(session))
+				view = session.overlay.csv_view
+				session.overlay.focus_canvas()
+				self.assertTrue(view.view.hasFocus())
+				QTest.keyClick(view.view, Qt.Key_F, Qt.ControlModifier)
+				self.assertTrue(view.query.hasFocus())
+				view.view.setFocus()
+				QTest.keyClick(view.view, Qt.Key_F3)
+				self.assertTrue(view.find_input.hasFocus())
+				QTest.keyClicks(view.find_input, 'ROW150')
+				QTest.keyClick(view.find_input, Qt.Key_Return)
+				self.until(lambda: view.view.currentIndex().row() == 150)
+				self.assertEqual(0, view.view.currentIndex().column())
+				view.view.setCurrentIndex(view.model.index(150, 1))
+				from unittest.mock import patch
+				from PyQt5.QtWidgets import QMenu
+				menus = []
+				with patch.object(QMenu, 'exec_', lambda menu, *args: menus.append(menu)):
+					view._cell_menu(view.view.visualRect(view.view.currentIndex()).center())
+				inspect = next(action for action in menus[0].actions() if action.text() == 'Inspect cell')
+				self.assertFalse(inspect.isChecked())
+				inspect.trigger()
+				self.assertTrue(view.inspect_button.isChecked())
+				self.until(lambda: view.inspector.toPlainText() == long_value)
+				self.assertTrue(view.model.row(150).cells[1].endswith('\u2026'))
+				QTest.keyClick(view.find_input, Qt.Key_Escape)
+				self.assertFalse(view.find_bar.isVisible())
+				view.view.setFocus()
+				QTest.keyClick(view.view, Qt.Key_Down, Qt.AltModifier)
+				self.until(lambda: view.filter_menu is not None and view.filter_menu.isVisible())
+				view.close_filter_menu()
+				self.controller.handle_shortcut.reset_mock()
+				view.view.setFocus()
+				QTest.keyClick(view.view, Qt.Key_F8)
+				self.controller.handle_shortcut.assert_called_once()
+				for key, modifiers in ((Qt.Key_Tab, Qt.NoModifier), (Qt.Key_Escape, Qt.NoModifier)):
+					session.overlay.focus_canvas()
+					QTest.keyClick(view.view, key, modifiers)
+					self.assertTrue(session.source.hasFocus())
+				view.view.setFocus()
+				QTest.keyClick(view.view, Qt.Key_End, Qt.ControlModifier)
+				self.assertEqual(299, view.view.currentIndex().row())
+				self.until(lambda: view.model.headerData(299, Qt.Vertical) == '300')
+			finally:
+				self.finish(session)
+		self.run_in_app(check)
+
+	def test_small_fault_falls_back_to_text_without_retry_loop(self):
+		def check():
+			session = self.start('ragged.csv', 'a,b\n1,2\n3\n')
+			try:
+				self.until(lambda: session.overlay.text_view is not None and
+					session.overlay.content.currentWidget() is session.overlay.text_view)
+				text_view = session.overlay.text_view
+				self.assertIn('Table View unavailable', text_view.metadata.text())
+				self.assertTrue(text_view.table_button.isVisible())
+				text_view.table_button.click()
+				self.until(lambda: session.overlay.csv_view is not None and
+					session.overlay.csv_view.stack.currentWidget() is session.overlay.csv_view.message)
+				view = session.overlay.csv_view
+				self.assertTrue(view.retry.isVisible())
+				self.until(lambda: session._csv_controller.process is None)
+				self.assertIsNone(session._csv_controller._open)
+				view.option_boxes['delimiter'].setCurrentIndex(view.option_boxes['delimiter'].findData('comma'))
+				view.retry.click()
+				self.until(lambda: session.overlay.content.currentWidget() is session.overlay.text_view)
+			finally:
+				self.finish(session)
+		self.run_in_app(check)
+
+	def test_large_fault_stays_table_only_and_cap_refuses_without_helper(self):
+		from unittest.mock import patch
+		rows = ''.join('%07d,value\n' % index for index in range(200000))
+		data = 'id,value\n' + rows + 'broken\n'
+		self.assertGreater(len(data), 2 * 1024 * 1024)
+		def check():
+			session = self.start('large.csv', data)
+			try:
+				self.until(lambda: session.overlay.csv_view is not None and
+					session.overlay.csv_view.stack.currentWidget() is session.overlay.csv_view.message)
+				view = session.overlay.csv_view
+				self.assertIn('Table View unavailable', view.message.text())
+				self.assertFalse(view.text_button.isVisible())
+				self.assertTrue(view.retry.isVisible())
+				self.assertIs(session.overlay.content.currentWidget(), view)
+			finally:
+				self.finish(session)
+			with patch('fman.impl.quick_view_csv.preset_limits', return_value=(1000, 128)):
+				session = self.start('large.csv', data)
+				try:
+					self.until(lambda: 'exceeds' in session.overlay.canvas.message)
+					self.assertIsNone(getattr(self.window, '_quick_view_csv_controller', None))
+				finally:
+					self.finish(session)
+		self.run_in_app(check)
+
+	def test_preset_command_saves_and_notifies_sessions(self):
+		from core.quick_view import SetQuickViewTableLimit
+		from unittest.mock import Mock, patch
+		saved = {}
+		pane = Mock()
+		with patch('fman.load_json', return_value={'other': 1}), \
+				patch('fman.save_json', side_effect=lambda name, value: saved.update({name: value})), \
+				patch('fman.show_quicksearch', return_value=('', 512)) as chooser, \
+				patch('fman.show_status_message'), \
+				patch('fman.impl.quick_view_csv.notify_table_limit_changed') as notify:
+			SetQuickViewTableLimit(pane)()
+		items = list(chooser.call_args.args[0](''))
+		self.assertEqual(['512 MB', '1,024 MB', '2,048 MB'], [item.title for item in items])
+		self.assertIn('(current)', items[2].hint)
+		self.assertEqual(2, chooser.call_args.kwargs['item'])
+		self.assertEqual({'Core Settings.json': {'other': 1, 'quickview_table_max_file_mb': 512}}, saved)
+		notify.assert_called_once_with()
+		with patch('fman.load_json', return_value={}), patch('fman.show_quicksearch', return_value=None), \
+				patch('fman.save_json') as save:
+			SetQuickViewTableLimit(pane)()
+		save.assert_not_called()
+
+
 class QuickViewTextIT(QtIT):
 	setUp = QuickViewIT.setUp
 	close_window = QuickViewIT.close_window
@@ -4922,7 +5150,7 @@ class EverythingFoldersIT(QtIT):
 	def setUp(self):
 		from core import Name, Size, Modified
 		from core.commands import Open, OpenDirectory, OpenListener, MoveToTrash, DeletePermanently, \
-			Copy, Move, Rename, CopyPathsToClipboard, DragAndDropListener
+			Copy, Move, Rename, CopyFilePath, DragAndDropListener
 		from core.fs.local import LocalFileSystem
 		from fman import DirectoryPane
 		from fman.impl.controller import Controller
@@ -4966,7 +5194,7 @@ class EverythingFoldersIT(QtIT):
 		bindings = KeyBindings()
 		for name, command in (('open', Open), ('open_directory', OpenDirectory), ('move_to_trash', MoveToTrash),
 				('delete_permanently', DeletePermanently), ('copy', Copy), ('move', Move), ('rename', Rename),
-				('copy_paths_to_clipboard', CopyPathsToClipboard), ('search_files_in_current_folder', SearchFilesInCurrentFolder)):
+				('copy_file_path', CopyFilePath), ('search_files_in_current_folder', SearchFilesInCurrentFolder)):
 			commands.register_command(name, command)
 			bindings.register_command(name)
 		plugins = Path(__file__).parents[3] / 'main/resources/base/Plugins'
@@ -5493,7 +5721,7 @@ class CommandPaletteRecentIT(QtIT):
 
 class ClipboardCommandsIT(QtIT):
 	def setUp(self):
-		from core.commands import CopyFileName, CopyFilePath, CopyPathsToClipboard
+		from core.commands import CopyFileName, CopyFilePath
 		from fman import DirectoryPane
 		from fman.impl.plugins.command_registry import ApplicationCommandRegistry, PaneCommandRegistry
 		from fman.impl.plugins.context_menu import ContextMenuProvider
@@ -5520,8 +5748,9 @@ class ClipboardCommandsIT(QtIT):
 		callback.after_command.side_effect = lambda *args: self.completed.set()
 		def create():
 			self.registry = PaneCommandRegistry(self.errors, callback)
-			for command_type in (CopyFileName, CopyFilePath, CopyPathsToClipboard):
+			for command_type in (CopyFileName, CopyFilePath):
 				self.registry.register_command(_get_command_name(command_type), command_type)
+			self.assertEqual({'copy_file_name', 'copy_file_path'}, self.registry.get_commands())
 			bindings = KeyBindings()
 			for name in self.registry.get_commands():
 				bindings.register_command(name)
@@ -5581,13 +5810,13 @@ class ClipboardCommandsIT(QtIT):
 				selection.select(self.model.index(row, 0), QItemSelectionModel.Select | QItemSelectionModel.Rows)
 		self.run_in_app(select)
 	def test_menu_visibility_for_single_file_folder_multiple_and_background(self):
-		for rows, cursor, expected in (([0], 0, True), ([1], 1, True), ([0, 1], 0, False), ([], -1, False)):
+		for rows, cursor, expected in (([0], 0, True), ([1], 1, True), ([0, 1], 0, True), ([], -1, False)):
 			with self.subTest(rows=rows, cursor=cursor):
 				self._select(rows, cursor)
 				titles = self.run_in_app(lambda: [entry[0] for entry in
 					self.provider.get_context_menu(self.pane, self.pane.get_file_under_cursor())])
 				for title in ('Copy name', 'Copy path'):
-					self.assertEqual(bool(rows) if title == 'Copy name' else expected, title in titles)
+					self.assertEqual(expected, title in titles)
 		self._select([0])
 		self.assertEqual([], self.run_in_app(lambda: list(self.provider.get_context_menu(self.pane))))
 		self.errors.report.assert_not_called()
@@ -5598,30 +5827,39 @@ class ClipboardCommandsIT(QtIT):
 		palette = CommandPalette(self.pane)
 		with patch('core.commands.load_json', return_value=self.bindings_config), \
 			patch('core.commands.get_application_commands', return_value=[]):
+			self.assertEqual([{'keys': ['F11'], 'command': 'copy_file_path'}],
+				[binding for binding in self.bindings_config if binding['keys'] == ['F11']])
 			self._select([0, 1])
-			self.assertEqual(['Copy file name', 'Copy paths to clipboard'], [item.title for item in palette._suggest_commands('copy')])
+			self.assertEqual(['Copy item(s) name', 'Copy item(s) path'],
+				[item.title for item in palette._suggest_commands('copy')])
 			for row, expected in ((0, 'report.tar.gz'), (1, 'Folder notes'), (2, 'caf\u00e9.txt')):
 				self._select([row])
 				items = {item.title: item for item in palette._suggest_commands('copy')}
-				self.assertEqual('Shift+F11', items['Copy file name'].hint)
-				self.assertEqual('F11', items['Copy paths to clipboard'].hint)
-				for title, text in (('Copy file name', expected),
-					('Copy file path', 'C:\\clipboard-test\\' + expected)):
+				self.assertEqual({'Copy item(s) name', 'Copy item(s) path'}, set(items))
+				self.assertEqual('Shift+F11', items['Copy item(s) name'].hint)
+				self.assertEqual('F11', items['Copy item(s) path'].hint)
+				for title, text in (('Copy item(s) name', expected),
+					('Copy item(s) path', 'C:\\clipboard-test\\' + expected)):
 					items[title].value()
 					self.assertEqual(text, clipboard.get_text())
 					self.assertFalse(self.run_in_app(lambda: QApplication.clipboard().mimeData().hasUrls()))
 			self._select([0, 1])
 			items = {item.title: item for item in palette._suggest_commands('copy')}
-			items['Copy file name'].value()
+			items['Copy item(s) name'].value()
 			self.assertEqual('report.tar.gz\nFolder notes', clipboard.get_text())
-			items['Copy paths to clipboard'].value()
+			items['Copy item(s) path'].value()
 			self.assertEqual('C:\\clipboard-test\\report.tar.gz\nC:\\clipboard-test\\Folder notes', clipboard.get_text())
+			self._select([], -1)
+			items = palette._suggest_commands('copy')
+			self.assertEqual(['Copy item(s) path'], [item.title for item in items])
+			items[0].value()
+			self.assertEqual('C:\\clipboard-test', clipboard.get_text())
 		self.errors.report.assert_not_called()
 	def test_mouse_target_and_selected_group(self):
 		from fman import clipboard
 		from PyQt5.QtGui import QContextMenuEvent
 		from unittest.mock import patch
-		for selected, target, visible in (([0, 1], 2, True), ([0, 1], 0, False), ([1], 1, True)):
+		for selected, target in (([0, 1], 2), ([0, 1], 0), ([1], 1)):
 			with self.subTest(selected=selected, target=target):
 				self._select(selected)
 				self.completed.clear()
@@ -5629,11 +5867,10 @@ class ClipboardCommandsIT(QtIT):
 				def inspect(menu, position):
 					actions = {action.text(): action for action in menu.actions()}
 					for title in ('Copy name', 'Copy path'):
-						self.assertEqual(True if title == 'Copy name' else visible, title in actions)
-					if visible:
-						self.assertEqual('Shift+F11', actions['Copy name'].shortcut().toString())
-						self.assertEqual('F11', actions['Copy path'].shortcut().toString())
-						actions['Copy path'].trigger()
+						self.assertIn(title, actions)
+					self.assertEqual('Shift+F11', actions['Copy name'].shortcut().toString())
+					self.assertEqual('F11', actions['Copy path'].shortcut().toString())
+					actions['Copy path'].trigger()
 				def open_menu():
 					position = self.view.visualRect(self.model.index(target, 0)).center()
 					event = QContextMenuEvent(QContextMenuEvent.Mouse, position,
@@ -5641,11 +5878,10 @@ class ClipboardCommandsIT(QtIT):
 					self.view.contextMenuEvent(event)
 				with patch('fman.impl.view.Menu.exec', inspect):
 					self.run_in_app(open_menu)
-				if visible:
-					self.assertTrue(self.completed.wait(5), 'Menu command did not complete')
-					self.assertEqual('C:\\clipboard-test\\' + ('report.tar.gz', 'Folder notes', 'caf\u00e9.txt')[target], clipboard.get_text())
-				else:
-					self.assertEqual('unchanged', clipboard.get_text())
+				self.assertTrue(self.completed.wait(5), 'Menu command did not complete')
+				chosen_rows = selected if target in selected else [target]
+				self.assertEqual('\n'.join('C:\\clipboard-test\\' +
+					('report.tar.gz', 'Folder notes', 'caf\u00e9.txt')[row] for row in chosen_rows), clipboard.get_text())
 				expected_rows = [] if target not in selected else selected
 				self.assertEqual(expected_rows, self.run_in_app(lambda:
 					[index.row() for index in self.view.selectionModel().selectedRows()]))

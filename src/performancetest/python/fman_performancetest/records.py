@@ -13,7 +13,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[4]
 CATALOG = ROOT / 'src/performancetest/catalog.yaml'
-WORKLOADS = {'pane', 'refresh', 'filter', 'fuzzy', 'recursive', 'quickview', 'selection', 'copy'}
+WORKLOADS = {'pane', 'refresh', 'filter', 'fuzzy', 'recursive', 'quickview', 'selection', 'copy', 'csv'}
 
 
 def digest(value):
@@ -63,6 +63,11 @@ def load_catalog(path=CATALOG):
 		'middle-block', 'scattered', 'all-except-current', 'all']:
 		raise ValueError('Unsupported refresh selection protocol')
 	for fixture in catalog['fixtures'].values():
+		if fixture['kind'] == 'csv':
+			if fixture['revision'] != 1 or fixture['files'] != 1 or not positive(fixture.get('bytes')) or \
+					not positive(fixture.get('columns')) or type(fixture['seed']) is not int:
+				raise ValueError('Invalid CSV fixture definition')
+			continue
 		if fixture['revision'] not in (1, 2) or fixture['kind'] not in ('flat', 'recursive', 'copy') or not positive(fixture['files']) or fixture['files'] < 8 or type(fixture['seed']) is not int:
 			raise ValueError('Invalid fixture definition')
 		if fixture['kind'] == 'copy' and (fixture['revision'] != 1 or not positive(fixture.get('bytes_per_file')) or
@@ -87,6 +92,8 @@ def load_catalog(path=CATALOG):
 		if test['workload'] == 'copy' and (catalog['fixtures'][test['fixture']]['kind'] != 'copy' or
 				not positive(protocol.get('copy_timeout_seconds'))):
 			raise ValueError('Invalid copy definition: ' + identity)
+		if (test['workload'] == 'csv') != (catalog['fixtures'][test['fixture']]['kind'] == 'csv'):
+			raise ValueError('CSV workloads require CSV fixtures: ' + identity)
 	for workload in ('filter', 'fuzzy', 'recursive'):
 		queries = catalog['queries'][workload]
 		identities = [query['id'] for query in queries]

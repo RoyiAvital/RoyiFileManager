@@ -68,24 +68,27 @@ metadata or identity checks.
 
 ## Clipboard Text
 
-**Copy file name** copies all chosen basenames, one per line. With no marks it
+**Copy item(s) name** copies all chosen basenames, one per line. With no marks it
 uses the cursor item; with no chosen item it leaves the clipboard unchanged.
-**Copy file path** remains single-item. Both appear in Command Center and, as
-**Copy name** and **Copy path**, in the file context menu when their selection
-requirements are met.
+**Copy item(s) path** copies all chosen paths, one per line, or the current
+directory when no item is chosen. Both appear in Command Center and, as
+**Copy name** and **Copy path**, in the file context menu. The menu, Command Center
+and shortcuts use the same implementations for single or multiple items.
 Right-clicking an unmarked row targets that row; right-clicking a marked row
 preserves the marked group.
 
-`Shift+F11` copies names, including file extensions. Copy file path copies
+`Shift+F11` copies names, including file extensions. Copy item(s) path copies
 the full Windows path, including UNC paths; nonlocal providers retain their URL.
 Both copy plain text without quotes or file-transfer clipboard data.
 
-The Copy path menu entry shows `F11`, following the current binding for
-Copy paths to clipboard unless Copy file path has its own binding.
+The menu and Command Center show the current bindings for these same commands:
+`F11` for paths and `Shift+F11` for names by default.
 
-`F11` remains **Copy paths to clipboard**: it copies all chosen paths, one per
-line, or the current directory when no item is chosen. `Ctrl+C` still copies
-items for file transfer.
+`F11` still copies all chosen paths, one per line, or the current directory when
+no item is chosen. `Ctrl+C` still copies items for file transfer.
+
+The old `copy_paths_to_clipboard` command was removed. Update custom bindings,
+plug-in calls and command listeners to `copy_file_path`; there is no compatibility alias.
 
 ## Navigation Commands
 
@@ -122,8 +125,8 @@ free-space queries. Mounted folders report the volume containing that folder.
 
 On Windows, `Ctrl+Q` / **Toggle QuickView** previews the file under the source
 cursor over the other pane, including its address bar. Marked files do not choose
-the preview. Images, PDFs, plain text, Markdown and source code are supported; loading
-errors appear inline. QuickView starts off at every launch and does no preview
+the preview. Images, PDFs, CSV/TSV tables, plain text, Markdown and source code are
+supported; loading errors appear inline. QuickView starts off at every launch and does no preview
 work while off.
 
 | Control                                | Action                                                    |
@@ -200,6 +203,37 @@ selection or toggle QuickView off/on to retry; there is no automatic reader
 fallback. Text selection/search, password entry, forms, annotations, link actions
 and printing are not included. The helper contains native crashes/hangs but is
 not a security sandbox.
+
+### CSV and TSV Tables
+
+Local and accessible UNC `.csv` / `.tsv` files open in a read-only **Table View**.
+A DuckDB helper process (one per window) checks the whole file strictly and keeps a
+disposable cache under `UserSettings\Cache\QuickViewCsv`. The first 200 records
+appear while it validates; filtering, sorting and Find then cover the whole file.
+Values stay strings: leading zeros and empty fields are preserved.
+
+| Focused table                         | Action                                                       |
+| ------------------------------------- | ------------------------------------------------------------ |
+| Header click                          | Sort ascending, descending, then restore file order          |
+| Header funnel / Alt+Down              | Fuzzy or Contains column filter, combined with AND           |
+| Ctrl+F                                | Focus **Filter all columns** (Contains, 200 ms delay)        |
+| F3 / Shift+F3                         | Open Find, then next/previous match                          |
+| Ctrl+C / Ctrl+Shift+C                 | Copy the selection as TSV, without/with headers (8 MiB cap)  |
+| Right-click cell / header             | Copy rows, select column, freeze column, hide/show columns   |
+| Tab / Shift+Tab / Escape              | Return to the source pane                                    |
+
+Faults are never repaired: ragged records, bad quotes, NUL bytes, invalid
+encoding, more than 256 columns or fields over 1,048,576 characters reject the
+table. Files up to 2 MiB then switch to **Text View** with the reason; larger
+files stay in Table View with the reason, parsing options and **Retry**. Only
+files up to 2 MiB offer the Text View / Table View toggle. Table encodings are
+UTF-8, UTF-16 LE with a byte order mark, and Latin-1; Latin-1 bytes 0x80-0x9F
+(Windows-1252 quotes and currency signs) are refused.
+
+**Set QuickView table limit** (`set_quick_view_table_limit`) chooses the largest
+table file: 512, 1,024 or 2,048 MB (default), with 192, 384 or 768 MiB of engine
+memory. It is stored as `quickview_table_max_file_mb` in `Core Settings.json`.
+The cache quota is twice the file size, at least 16 MiB and at most 8 GiB.
 
 ### Text, Markdown and Code
 
@@ -360,9 +394,9 @@ provide a filesystem transaction or protection against hostile path replacement.
 
 ## Duplicate a File
 
-Run **Create a duplicate file** (alias **Copy file here**) from the Command Center
-or file context menu. It uses the existing Copy command with the active pane's
-folder as the default destination. Select files/folders, or leave selection empty
+Run **Duplicate item** (alias **Copy file here**) from the Command Center,
+or **Duplicate...** from the file context menu. It uses the existing Copy command
+with the active pane's folder as the default destination. Select files/folders, or leave selection empty
 to use the item under the cursor. Edit the filename or destination in the normal
 Copy prompt. Selection, provider support, overwrite handling and cancellation
 are unchanged. The command ID is `duplicate_file`; no default shortcut is assigned.

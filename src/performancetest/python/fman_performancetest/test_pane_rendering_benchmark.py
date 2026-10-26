@@ -62,6 +62,32 @@ with TemporaryDirectory() as temporary:
 		self.assertIn('invalid-image', samples)
 		self.assertNotIn('unsupported-file', samples)
 
+	def test_native_csv_table_measures_first_rows_and_full_import(self):
+		script = '''
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from fman_performancetest import fixtures, quickview_csv
+specification = dict(revision=1, kind='csv', files=1, bytes=2 * 1024 * 1024, columns=32, seed=1734)
+with TemporaryDirectory() as temporary:
+    fixture = fixtures.prepare(temporary, 'csv-smoke', specification)
+    raise SystemExit(quickview_csv.child(Path(fixture['directory']), (1280, 800), specification))
+'''
+		environment = dict(os.environ, QT_QPA_PLATFORM='windows', QT_SCALE_FACTOR='1',
+			QT_AUTO_SCREEN_SCALE_FACTOR='0', QT_ENABLE_HIGHDPI_SCALING='0', QT_FONT_DPI='96')
+		environment['PYTHONPATH'] = os.pathsep.join((str(SCRIPT.parents[1] /
+			'performancetest/python'), environment.get('PYTHONPATH', '')))
+		result = subprocess.run([sys.executable, '-X', 'faulthandler', '-c', script],
+			env=environment, capture_output=True, text=True, timeout=60)
+		self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+		payload = json.loads(next(line.removeprefix('QUICKVIEW_RESULT ')
+			for line in result.stdout.splitlines() if line.startswith('QUICKVIEW_RESULT ')))
+		self.assertEqual([], payload['errors'])
+		self.assertEqual((32, 2 * 1024 * 1024), (payload['columns'], payload['source_bytes']))
+		samples = {sample['action_id']: sample for sample in payload['samples']}
+		self.assertGreater(samples['csv.first-rows']['input_to_paint_ms'], 0)
+		self.assertLessEqual(samples['csv.first-rows']['input_to_paint_ms'], samples['csv.full']['input_to_paint_ms'])
+		self.assertGreater(samples['csv.helper']['peak_working_set_mib'], 0)
+
 	def test_native_selection_measures_real_pane_patterns(self):
 		script = '''
 from pathlib import Path

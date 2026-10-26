@@ -292,13 +292,20 @@ class TextPreview(QWidget):
 			button.clicked.connect(lambda checked=False, value=mode: self.mode_requested.emit(value))
 			self.mode_buttons[mode] = button
 			controls.addWidget(button)
+		self.table_button = QToolButton(self)
+		self.table_button.setText('Table View')
+		self.table_button.setToolTip('Show the file as a table')
+		self.table_button.setFocusPolicy(Qt.NoFocus)
+		self.table_button.clicked.connect(lambda: self.mode_requested.emit('table'))
+		self.table_button.hide()
+		controls.addWidget(self.table_button)
 		self.metadata = QLabel(self)
 		self.metadata.setTextFormat(Qt.PlainText)
 		self.metadata.setWordWrap(True)
 		controls.addWidget(self.metadata, 1)
 		layout.addLayout(controls)
 
-	def show_result(self, result):
+	def show_result(self, result, table_note=None):
 		self.clear()
 		formatted = bool(result.html)
 		self.browser.setLineWrapMode(QTextBrowser.WidgetWidth if result.mode == 'rendered' and formatted else QTextBrowser.NoWrap)
@@ -317,7 +324,9 @@ class TextPreview(QWidget):
 			button.setEnabled(mode != 'rendered' or can_format)
 			button.setChecked(mode == result.mode)
 		self.modes.setExclusive(True)
-		self.metadata.setText(' | '.join(value for value in (result.content.encoding, result.message) if value))
+		self.table_button.setVisible(table_note is not None)
+		note = 'Table View unavailable: ' + table_note if table_note else ''
+		self.metadata.setText(' | '.join(value for value in (result.content.encoding, result.message, note) if value))
 		self.changed.emit()
 
 	def clear(self):

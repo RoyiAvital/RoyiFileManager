@@ -136,7 +136,7 @@ class BuildNamingTest(TestCase):
 			with patch.dict(build['package'].__globals__, {
 				'_require_windows': Mock(), '_copy_dependency_manifests': Mock(),
 				'_verify_everything': Mock(), '_verify_native_parser_packaged': Mock(),
-				'_verify_pdf_helper_packaged': Mock()
+				'_verify_pdf_helper_packaged': Mock(), '_verify_csv_helper_packaged': Mock()
 			}), patch('builtins.print') as output:
 				build['package']()
 			archive = root / 'target/RfmRenameProbe-9.8.7-windows-x86_64.zip'

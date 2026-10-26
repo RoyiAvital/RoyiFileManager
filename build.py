@@ -517,6 +517,7 @@ def package():
 	_verify_everything(DIST_DIR / '_internal/resources/Plugins/Everything/bin')
 	_verify_native_parser_packaged()
 	_verify_pdf_helper_packaged()
+	_verify_csv_helper_packaged()
 	_copy_dependency_manifests()
 	version = BUILD_SETTINGS['version']
 	archive = TARGET_DIR / f'{APP_NAME}-{version}-windows-x86_64.zip'
@@ -621,6 +622,42 @@ def _verify_pdf_helper_packaged():
 	except (OSError, subprocess.SubprocessError, PdfError, ValueError) as error:
 		raise SystemExit(f'Packaged PDF helper smoke failed: {error}') from error
 	print('Packaged PDF helper smoke passed (two pages, red/green pixels).')
+
+
+def _verify_csv_helper_packaged():
+	"""The frozen executable runs the offline DuckDB Table View helper with a restricted environment."""
+	import json
+	from src.main.python._quick_view_pdf_worker import FrameDecoder, PdfError, encode_frame
+	executable = DIST_DIR / (APP_NAME + '.exe')
+	environment = {name: value for name, value in os.environ.items()
+		if not name.upper().startswith(('PYTHON', 'CONDA', '_PYI', 'PYINSTALLER'))
+		and name.upper() != 'PATH'}
+	windows = Path(os.environ['SYSTEMROOT'])
+	environment['PATH'] = os.pathsep.join((str(windows / 'System32'), str(windows)))
+	try:
+		with TemporaryDirectory(prefix='CsvSmoke-') as temporary:
+			path = Path(temporary) / 'table.csv'
+			path.write_bytes('name;value\r\nalpha;"1;2"\r\nStra\u00dfe;\r\n'.encode('utf-8'))
+			commands = [dict(type='open', path=str(path), limit=512000000, memory=128, options={},
+				cache=str(Path(temporary) / 'cache')), dict(type='query', filters=[[0, 'substring', 'STRASSE']], text='', sort=None),
+				dict(type='page', start=0, count=10), dict(type='close')]
+			request = b''.join(encode_frame(dict(command, epoch=1, generation=1,
+				operation=operation, revision=0)) for operation, command in enumerate(commands, 1))
+			result = subprocess.run([str(executable), '--quick-view-csv-worker'],
+				input=request, capture_output=True, check=True, cwd=DIST_DIR, env=environment, timeout=60)
+		decoder = FrameDecoder()
+		frames = decoder.feed(result.stdout)
+		decoder.finish()
+		kinds = [header.get('type') for header, payload in frames]
+		if kinds != ['ready', 'preview', 'imported', 'projection', 'page']:
+			raise ValueError('Unexpected helper replies: %s %s' % (kinds, [header.get('message') for header, _ in frames]))
+		if frames[1][0].get('labels') != ['name', 'value'] or frames[2][0].get('count') != 2 or frames[3][0].get('count') != 1:
+			raise ValueError('Invalid table metadata')
+		if json.loads(frames[4][1])['rows'] != [[2, ['Stra\u00dfe', ''], []]]:
+			raise ValueError('Invalid filtered page')
+	except (OSError, subprocess.SubprocessError, PdfError, ValueError, KeyError) as error:
+		raise SystemExit(f'Packaged CSV helper smoke failed: {error}') from error
+	print('Packaged CSV helper smoke passed (strict import, Unicode fold filter).')
 
 
 COMMANDS = {
