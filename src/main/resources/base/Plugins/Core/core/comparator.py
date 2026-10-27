@@ -2,18 +2,18 @@ from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass
 from core.external_program import _check_argv, _check_text, parse_arguments
-from fman import QuicksearchItem, Task, load_json, save_json, show_alert, show_file_open_dialog, show_prompt, show_quicksearch, show_status_message, submit_task
+from fman import QuicksearchItem, Task, load_settings, save_settings, show_alert, show_file_open_dialog, show_prompt, show_quicksearch, show_status_message, submit_task
 from fman.fs import resolve
 from fman.impl.util.qt.thread import run_in_main_thread
+from fman.ui import settings_resource
 from fman.url import as_human_readable, splitscheme
 from subprocess import Popen, list2cmdline
-from threading import Lock
 
 import os
 import stat
 
 
-SETTINGS = 'Core Settings.json'
+SETTINGS = 'AppSettings.yaml'
 MANUAL = 'Manual configuration'
 PRESETS = (
 	('Meld', 'Meld.exe', (), ()),
@@ -21,14 +21,14 @@ PRESETS = (
 	('WinMerge', 'WinMergeU.exe', ('/s-', '/u'), ('/s-', '/u', '/r')),
 	('SmartSynchronize', 'smartsynchronize.exe', (), ()),
 )
-_settings_lock = Lock()
+_settings_lock = settings_resource(SETTINGS).lock
 _pending = {}
 
 
 def _load_settings():
-	settings = load_json(SETTINGS, default={})
+	settings = load_settings(SETTINGS, default={})
 	if not isinstance(settings, dict):
-		raise ValueError('Core Settings.json must contain an object.')
+		raise ValueError('AppSettings.yaml must contain a mapping.')
 	return settings
 
 
@@ -77,7 +77,7 @@ def configure(role):
 				raise ValueError('This comparator changed while setup was open. Retry setup.')
 			if configuration is not None or settings.get(key) is not None:
 				settings[key] = configuration
-				save_json(SETTINGS, settings)
+				save_settings(SETTINGS, settings)
 	except (OSError, ValueError, TypeError) as error:
 		show_alert('Could not %s %s comparator: %s' % (action, role, error))
 		return

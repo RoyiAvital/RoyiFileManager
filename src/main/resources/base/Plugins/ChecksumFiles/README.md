@@ -81,16 +81,15 @@ are not signed or authenticated.
 
 ## Preferences
 
-Override `ChecksumFiles.json` through the host's user settings:
+Override [ChecksumFiles.yaml](ChecksumFiles.yaml) in
+`UserSettings/Plugins/User/Settings/ChecksumFiles (Windows).yaml`:
 
-```json
-{
-  "default_algorithm": "sha256",
-  "filename_encoding": "utf-8-sig",
-  "unix_format": false,
-  "chunk_size_mib": 4,
-  "blake3_threads": 0
-}
+```yaml
+default_algorithm: sha256
+filename_encoding: utf-8-sig
+unix_format: false
+chunk_size_mib: 4
+blake3_threads: 0
 ```
 
 Windows output defaults to UTF-8 BOM, CRLF and backslashes. `filename_encoding`

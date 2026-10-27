@@ -9,7 +9,7 @@ It began as a fork of [`fman`](https://github.com/mherrmann/fman) by [Michael He
 The _File Manager_ focuses on:
  - **Minimalistic** and focused UI.
  - High performance to generate **reactive** experience.
- - **Commands** through _Command Center_.
+ - **Commands** through _Command Center_, grouped by category (`File: Copy`, `View: Toggle hidden files`).
  - **Keyboard** oriented workflow.
  - Advanced search tools with **known syntax** (`fzf` / `fd` / `ripgrep` / `Everything`).
  - Easy **integration** of 3rd party tools (Text Editor, File Comparison, Grep Tool, File Find Tool, etc...).
@@ -47,6 +47,7 @@ Significant additions compared with `fman`:
 - **UI Components**: New building blocks that expand what plug-ins can do. [Plug-in UI guide](PlugIn.md#ui-extension).
 - **Batch File Renamer**: Fully featured batch file renamer with option for filtering and sorting and renaming using Python's `f string` like syntax. See [usage and syntax](plugins/BatchFileRenamer/README.md).
 - **Copy / Move Files with [Robocopy](https://en.wikipedia.org/wiki/Robocopy)**: Utilizing Windows' `robocopy` for multi threaded copy or move of files. Optimized for large transfers. See [installation and native behavior](src/main/resources/base/Plugins/Robocopy/README.md).
+- **Live Refresh During File Operations**: Run **Toggle live refresh during file operations** to refresh panes once when Copy, Move or Delete ends instead of continuously. Copying 10,000 small files took 10 s instead of 64-71 s. See [Configuration](docs/configuration.md#live-refresh-during-file-operations).
 - **Docked Panel**: Controlling states and operations. Exposed to be used by Plug-In's.
 - **Favorites**: Press <kbd>Ctrl</kbd>+<kbd>B</kbd> for a fully featured Favorites Manager, built entirely with the plug-in APIs.
 - **Recent Commands**: <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> pins the last three commands run from the palette.

@@ -253,6 +253,7 @@ def search_items(service, settings, query):
 
 
 class SearchFileByEverything(DirectoryPaneCommand):
+	category = 'Search'
 	aliases = ('Search file by Everything',)
 
 	def __call__(self):
@@ -293,6 +294,7 @@ def _validate_new_folder(path, allow_unavailable=False):
 
 
 class AddFolderToEverythingDatabase(DirectoryPaneCommand):
+	category = 'Search'
 	aliases = ('Add folder to Everything database',)
 
 	def __call__(self):
@@ -352,6 +354,7 @@ def _favorite_paths(service):
 
 
 class AddFavoritesToEverythingDatabase(DirectoryPaneCommand):
+	category = 'Search'
 	aliases = ('Add favorite folders to Everything database',)
 
 	def __call__(self):
@@ -404,6 +407,7 @@ def _commit_roots(data, roots, service):
 
 
 class ManageEverythingFolders(DirectoryPaneCommand):
+	category = 'Search'
 	aliases = ('Manage Everything database folders',)
 
 	def __call__(self):
@@ -428,6 +432,7 @@ def _paths_for_rows(urls, folders):
 
 
 class RemoveEverythingFolders(DirectoryPaneCommand):
+	category = 'Search'
 	def is_visible(self):
 		return False
 
@@ -448,6 +453,7 @@ class RemoveEverythingFolders(DirectoryPaneCommand):
 
 
 class OpenEverythingFolder(DirectoryPaneCommand):
+	category = 'Search'
 	def is_visible(self):
 		return False
 
@@ -463,6 +469,7 @@ class OpenEverythingFolder(DirectoryPaneCommand):
 
 
 class CopyEverythingFolderPaths(DirectoryPaneCommand):
+	category = 'Search'
 	def is_visible(self):
 		return False
 
@@ -505,6 +512,7 @@ class _CollectEverythingFolders(Task):
 
 
 class AddEverythingFolders(DirectoryPaneCommand):
+	category = 'Search'
 	def is_visible(self):
 		return False
 
@@ -532,6 +540,7 @@ class AddEverythingFolders(DirectoryPaneCommand):
 
 
 class EverythingFolderOperationUnsupported(DirectoryPaneCommand):
+	category = 'Search'
 	def is_visible(self):
 		return False
 

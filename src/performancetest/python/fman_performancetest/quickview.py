@@ -34,7 +34,7 @@ def child(directory, viewport, navigation_repetitions=5, *, include_text=True):
 		user = settings / 'Plugins/User/Settings'
 		user.mkdir(parents=True)
 		(user / 'Panes.json').write_text(json.dumps([{'show_hidden_files': True}] * 2), encoding='utf-8')
-		(user / 'QuickView.json').write_text('{"image_mode":"fit"}', encoding='utf-8')
+		(user / 'QuickView.yaml').write_text('image_mode: fit\n', encoding='utf-8')
 		empty = Path(temporary) / 'empty'
 		empty.mkdir()
 		context = get_application_context()

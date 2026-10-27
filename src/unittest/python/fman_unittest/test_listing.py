@@ -760,6 +760,86 @@ class SnapshotJobsTest(TestCase):
 		self.assertEqual(2, filesystem.file_added.remove_callback.call_count)
 		self.assertEqual(2, filesystem.file_removed.remove_callback.call_count)
 
+	def test_deferred_refresh_batches_per_thread_and_flushes_once(self):
+		from fman.impl.model.file_watcher import FileWatcher, deferred_refresh
+		from threading import Thread
+		from unittest.mock import Mock, call
+		model = Mock(get_location=Mock(return_value='file://C:/folder'))
+		filesystem = Mock()
+		watcher = FileWatcher(filesystem, model)
+		with deferred_refresh():
+			with deferred_refresh():
+				watcher._on_file_added('file://C:/folder/a')
+				watcher._on_file_removed('file://C:/folder/b')
+				watcher._on_file_changed('file://C:/folder/c')
+				watcher._on_file_changed('file://C:/folder')
+			model.reload.assert_not_called()
+			self.assertEqual([call('file://C:/folder/c'), call('file://C:/folder')],
+				filesystem.clear_cache.call_args_list)
+			other = Thread(target=watcher._on_file_added, args=('file://C:/folder/d',))
+			other.start()
+			other.join()
+			model.notify_file_added.assert_called_once_with('file://C:/folder/d')
+		model.reload.assert_called_once_with()
+		model.notify_file_removed.assert_not_called()
+		model.notify_file_changed.assert_not_called()
+
+	def test_live_refresh_scope_and_deleted_models_keep_current_behavior(self):
+		from fman.impl.model.file_watcher import FileWatcher, deferred_refresh
+		from unittest.mock import Mock
+		model = Mock(get_location=Mock(return_value='file://C:/folder'))
+		watcher = FileWatcher(Mock(), model)
+		with deferred_refresh(False):
+			watcher._on_file_added('file://C:/folder/a')
+		model.notify_file_added.assert_called_once_with('file://C:/folder/a')
+		model.reload.side_effect = RuntimeError('deleted')
+		with deferred_refresh():
+			watcher._on_file_removed('file://C:/folder/a')
+		model.reload.assert_called_once_with()
+		watcher._on_file_removed('file://C:/folder/b')
+		model.notify_file_removed.assert_called_once_with('file://C:/folder/b')
+
+	def test_live_refresh_setting_defaults_on_for_missing_or_invalid_values(self):
+		from fman.impl.model.file_watcher import live_refresh_enabled
+		for settings, expected in (({}, True), ({'live_refresh_during_file_operations': False}, False),
+			({'live_refresh_during_file_operations': True}, True),
+			({'live_refresh_during_file_operations': 0}, True), ([], True)):
+			with self.subTest(settings=settings), patch('fman.impl.model.file_watcher._load_settings', return_value=settings):
+				self.assertEqual(expected, live_refresh_enabled())
+		with patch('fman.impl.model.file_watcher._load_settings', side_effect=ValueError('bad JSON')):
+			self.assertTrue(live_refresh_enabled())
+		with patch('fman.impl.application_context.get_existing_application_context', return_value=None), \
+			patch('fman.impl.application_context.get_application_context', side_effect=AssertionError('Created')):
+			self.assertTrue(live_refresh_enabled())
+
+	def test_submit_task_requests_final_reload_on_every_exit(self):
+		from fman import Task, submit_task
+		from fman.impl.model.file_watcher import FileWatcher
+		from unittest.mock import Mock
+		def fail():
+			watcher._on_file_added('file://C:/folder/a')
+			raise OSError('disk full')
+		def cancel():
+			watcher._on_file_added('file://C:/folder/a')
+			raise Task.Canceled()
+		for live, fn, raised in ((False, fail, OSError), (False, cancel, None), (True, cancel, None)):
+			with self.subTest(live=live, fn=fn.__name__), patch('fman._get_ui'), \
+				patch('fman.impl.model.file_watcher.live_refresh_enabled', return_value=live):
+				model = Mock(get_location=Mock(return_value='file://C:/folder'))
+				watcher = FileWatcher(Mock(), model)
+				task = Task('Copying', fn=fn)
+				if raised:
+					with self.assertRaises(raised):
+						submit_task(task)
+				else:
+					submit_task(task)
+				if live:
+					model.notify_file_added.assert_called_once_with('file://C:/folder/a')
+					model.reload.assert_not_called()
+				else:
+					model.notify_file_added.assert_not_called()
+					model.reload.assert_called_once_with()
+
 	def test_fuzzy_construction_and_queries_honor_cancellation(self):
 		from search_file_fuzzy.matcher import Matcher, SearchEntry
 		from fman.impl.model.listing import Canceled

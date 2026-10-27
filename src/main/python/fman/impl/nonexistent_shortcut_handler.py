@@ -1,5 +1,5 @@
-from fman import show_alert, YES, NO, load_json, \
-	save_json, DATA_DIRECTORY, unload_plugin, load_plugin
+from fman import show_alert, YES, NO, load_settings, \
+	save_settings, DATA_DIRECTORY, unload_plugin, load_plugin
 from fman.fs import is_dir
 from fman.impl.html_style import highlight
 from fman.impl.product import APP_NAME
@@ -218,12 +218,12 @@ class NonexistentShortcutHandler:
 			YES | NO, YES
 		)
 		if choice & YES:
-			key_bindings = load_json('Key Bindings.json')
+			key_bindings = load_settings('Key Bindings.yaml')
 			key_bindings.insert(0, {
 				'keys': [keys],
 				'command': command
 			})
-			save_json('Key Bindings.json')
+			save_settings('Key Bindings.yaml')
 			settings_plugin = \
 				join(DATA_DIRECTORY, 'Plugins', 'User', 'Settings')
 			unload_plugin(settings_plugin)

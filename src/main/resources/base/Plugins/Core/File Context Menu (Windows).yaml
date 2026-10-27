@@ -1,0 +1,21 @@
+# Context menu for files and folders under the cursor or selected.
+# Each entry: {command: command_name, caption: Text, args: {name: value}}.
+# "&" marks the access key. {caption: '-', id: name} is a separator; plug-ins and the
+# user file UserSettings\Plugins\User\Settings\File Context Menu.yaml can add entries.
+- {caption: '-', id: open}
+- {command: open_selected_files, caption: '&Open'}
+- {command: open_with, caption: Open wit&h...}
+- {caption: '-', id: clipboard}
+- {command: cut, caption: Cu&t}
+- {command: copy_to_clipboard, caption: '&Copy'}
+- {command: copy_file_name, caption: Copy name}
+- {command: copy_file_path, caption: Copy path}
+- {caption: '-', id: file_operations}
+- {command: move_to_trash, caption: '&Delete'}
+- {command: rename, caption: Rena&me}
+- {command: duplicate_file, caption: Duplicate...}
+- {caption: '-', id: archive}
+- {command: pack, caption: Add to archive...}
+- {command: pack_here, caption: Pack here...}
+- {caption: '-', id: properties}
+- {command: show_explorer_properties, caption: P&roperties}

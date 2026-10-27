@@ -8,15 +8,15 @@ Create this folder:
 UserSettings/Plugins/User/Hello World/
 ├── hello_world/
 │   └── __init__.py
-└── Key Bindings.json
+└── Key Bindings.yaml
 ```
 
 Add a key binding:
 
-```json title="Key Bindings.json"
-[
-  { "keys": ["Ctrl+Alt+H"], "command": "say_hi" }
-]
+```yaml title="Key Bindings.yaml"
+# Say hi with Ctrl+Alt+H.
+- keys: [Ctrl+Alt+H]
+  command: say_hi
 ```
 
 Add the command:

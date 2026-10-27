@@ -16,8 +16,8 @@ from fman_unittest.impl.plugins import StubErrorHandler
 from os.path import join
 from unittest import TestCase
 
-import json
 import sys
+import yaml
 
 setUpModule = qt_tests.setUpModule
 tearDownModule = qt_tests.tearDownModule
@@ -73,13 +73,45 @@ class FailToInstantiateDPL(DirectoryPaneListener):
 	def __init__(self, *args, **kwargs):
 		raise ValueError()
 
+class BundledCommandCategoryTest(TestCase):
+
+	CATEGORIES = {'Application', 'Settings', 'File', 'Clipboard', 'Selection',
+		'Navigation', 'View', 'Search', 'Favorites', 'Tools'}
+
+	def test_every_bundled_command_has_a_known_category(self):
+		from fman.impl.plugins.builtin import ToggleFullscreen, TourCommand
+		from fman.impl.plugins.command_registry import _get_category
+		from importlib import import_module
+		from inspect import isclass
+		from pathlib import Path
+		root = Path(__file__).resolve().parents[6]
+		plugin_dirs = sorted((root / 'src/main/resources/base/Plugins').iterdir())
+		plugin_dirs.append(root / 'plugins/BatchFileRenamer')
+		commands = {'TourCommand': TourCommand, 'ToggleFullscreen': ToggleFullscreen}
+		path_before = list(sys.path)
+		self.addCleanup(setattr, sys, 'path', path_before)
+		for plugin_dir in plugin_dirs:
+			if str(plugin_dir) not in sys.path:
+				sys.path.append(str(plugin_dir))
+			for init in sorted(plugin_dir.glob('*/__init__.py')):
+				module = import_module(init.parent.name)
+				for value in vars(module).values():
+					if isclass(value) and value not in (ApplicationCommand, DirectoryPaneCommand) \
+							and issubclass(value, (ApplicationCommand, DirectoryPaneCommand)):
+						commands[value.__name__] = value
+		self.assertGreater(len(commands), 100)
+		wrong = {name: _get_category(cls) for name, cls in commands.items()
+			if _get_category(cls) not in self.CATEGORIES and name != 'none'}
+		self.assertEqual({}, wrong)
+		self.assertEqual('', _get_category(commands['none']))
+
 class ExternalPluginTest(TestCase):
 	def test_load(self):
 		if not self._plugin.load():
 			self.fail(self._error_handler.error_messages)
-		with open(join(self._plugin_dir, 'Key Bindings.json'), 'r') as f:
-			bindings = json.load(f)
-		self.assertEqual(bindings, self._config.load_json('Key Bindings.json'))
+		with open(join(self._plugin_dir, 'Key Bindings.yaml'), 'r', encoding='utf-8') as f:
+			bindings = yaml.safe_load(f)
+		self.assertEqual(bindings, self._config.load_json('Key Bindings.yaml'))
 		plugin_font = join(self._plugin_dir, 'Open Sans.ttf')
 		self.assertEqual([plugin_font], self._font_database.loaded_fonts)
 		theme_css = join(self._plugin_dir, 'Theme.css')
@@ -119,7 +151,7 @@ class ExternalPluginTest(TestCase):
 		self.assertNotIn(self._plugin_dir, sys.path)
 		self.assertEqual([], self._theme.loaded_css_files)
 		self.assertEqual([], self._font_database.loaded_fonts)
-		self.assertIsNone(self._config.load_json('Key Bindings.json'))
+		self.assertIsNone(self._config.load_json('Key Bindings.yaml'))
 	def setUp(self):
 		super().setUp()
 		self._sys_path_before = list(sys.path)

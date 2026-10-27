@@ -1,0 +1,17 @@
+# Search files with ripgrep (Alt+F7): bundled defaults for the search form.
+# The form saves your last choices in UserSettings\Plugins\User\Settings\SearchFiles.yaml.
+
+# Name and content patterns: literal, glob or regex.
+name_mode: glob
+content_mode: literal
+# true: search subfolders.
+recursive: true
+# true: show the Size and Date Modified columns with header filters.
+extended: false
+# Content encoding: auto or windows-1252.
+encoding: auto
+# Upper limits; smaller values are allowed.
+max_rows: 10000
+max_text_bytes: 16777216
+max_file_lines: 200
+max_file_bytes: 52428800

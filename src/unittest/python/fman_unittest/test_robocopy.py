@@ -29,7 +29,7 @@ class RobocopyPackagingTest(TestCase):
 			specification = run_path(str(root / 'application.spec'), init_globals={
 				'SPECPATH': str(root), 'Analysis': Mock(), 'PYZ': Mock(), 'EXE': Mock(), 'COLLECT': Mock()})
 		datas = dict(format_binaries_and_datas(specification['datas'], workingdir=str(root)))
-		for name in ('Robocopy.json', 'README.md', 'robocopy_plugin/__init__.py',
+		for name in ('Robocopy.yaml', 'README.md', 'robocopy_plugin/__init__.py',
 				'robocopy_plugin/engine.py', 'robocopy_plugin/windows.py', 'robocopy_plugin/logs.py'):
 			self.assertEqual(str(PLUGIN_ROOT / name), datas[str(Path('resources/Plugins/Robocopy') / name)])
 
@@ -523,7 +523,7 @@ class RobocopyCommandTest(TestCase):
 				self.assertIsNotNone(release)
 				release()
 				raise OSError('No association')
-			with patch.object(plugin.fman, 'load_json', return_value={'log_enabled': True, 'open_log_on_finish': True}), \
+			with patch.object(plugin.fman, 'load_settings', return_value={'log_enabled': True, 'open_log_on_finish': True}), \
 					patch.object(plugin.fman, 'show_quicksearch', return_value=('C:\\typed', None)), \
 					patch.object(plugin.fman, 'submit_task', side_effect=submit), \
 					patch.object(plugin.os, 'startfile', side_effect=open_log) as viewer, \
@@ -545,7 +545,7 @@ class RobocopyCommandTest(TestCase):
 			opposite.get_path.return_value = 'file://D:/target'
 			pane.window.get_panes.return_value = [pane, opposite]
 			with patch.object(plugin.fman, 'show_quicksearch', return_value=None) as wizard, \
-					patch.object(plugin.fman, 'load_json', return_value={}), \
+					patch.object(plugin.fman, 'load_settings', return_value={}), \
 					patch.object(plugin.fman, 'submit_task') as submit:
 				plugin.CopyWithRobocopy(pane)()
 				submit.assert_not_called()

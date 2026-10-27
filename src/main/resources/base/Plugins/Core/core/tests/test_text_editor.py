@@ -51,17 +51,6 @@ class TextEditorArgumentsTest(TestCase):
 		self.assertEqual({'args': [sys.executable, '{file}', '{', '%PATH%', 'file {data}.txt'],
 			'shell': False}, prepare_launch(configuration, 'file {data}.txt'))
 
-	def test_legacy_options_and_templates_are_preserved(self):
-		configuration = {'args': [sys.executable, '--flag', '{file}'],
-			'cwd': 'C:\\Tools', 'shell': True, 'creationflags': 0}
-		before = deepcopy(configuration)
-		self.assertEqual({'args': [sys.executable, '--flag', 'C:\\file {one}.txt'],
-			'cwd': 'C:\\Tools', 'shell': True, 'creationflags': 0},
-			prepare_launch(configuration, 'C:\\file {one}.txt'))
-		self.assertEqual(before, configuration)
-		minimal = prepare_launch({'args': [sys.executable, '{file}']}, 'target.txt')
-		self.assertEqual({'args': [sys.executable, 'target.txt']}, minimal)
-
 	def test_invalid_configuration(self):
 		for configuration in (None, [], {}, {'args': []}, {'args': 'not argv'},
 			{'args': [None]}, {'args': [sys.executable, '{unknown}']},
@@ -87,18 +76,18 @@ class TextEditorWizardTest(TestCase):
 		self.addCleanup(self.directory.cleanup)
 		self.config = Config('Windows')
 		self.config.add_dir(self.directory.name)
-		self.original = {'editor': {'args': [sys.executable, '{file}']},
+		self.original = {'editor': {'executable': sys.executable, 'arguments': []},
 			'viewer': {'executable': sys.executable, 'arguments': ['--viewer']},
 			'unrelated': {'keep': True}}
 		self.config.save_json(SETTINGS, deepcopy(self.original))
 		self.mocks = {}
 		for name in ('show_quicksearch', 'show_file_open_dialog', 'show_prompt',
-			'show_status_message', 'show_alert', 'Popen', 'load_json', 'save_json', 'resolve'):
+			'show_status_message', 'show_alert', 'Popen', 'load_settings', 'save_settings', 'resolve'):
 			patcher = patch('core.text_editor.' + name)
 			self.mocks[name] = patcher.start()
 			self.addCleanup(patcher.stop)
-		self.mocks['load_json'].side_effect = self.config.load_json
-		self.mocks['save_json'].side_effect = self.config.save_json
+		self.mocks['load_settings'].side_effect = self.config.load_json
+		self.mocks['save_settings'].side_effect = self.config.save_json
 		self.mocks['resolve'].side_effect = lambda url: url
 		self.mocks['show_quicksearch'].return_value = ('', MANUAL)
 		self.mocks['show_file_open_dialog'].return_value = sys.executable
@@ -168,8 +157,8 @@ class TextEditorWizardTest(TestCase):
 		config.add_dir(base)
 		config.save_json(SETTINGS, deepcopy(self.original))
 		config.add_dir(user)
-		self.mocks['load_json'].side_effect = config.load_json
-		self.mocks['save_json'].side_effect = config.save_json
+		self.mocks['load_settings'].side_effect = config.load_json
+		self.mocks['save_settings'].side_effect = config.save_json
 		for role in ('editor', 'viewer'):
 			with self.subTest(role=role):
 				config.save_json(SETTINGS, deepcopy(self.original))
@@ -188,7 +177,7 @@ class TextEditorWizardTest(TestCase):
 			for error in (OSError('Read-only settings directory'), ValueError('Cannot save')):
 				with self.subTest(role=role, error=error):
 					self.mocks['show_quicksearch'].return_value = ('', 'Clear %s' % role)
-					self.mocks['save_json'].side_effect = error
+					self.mocks['save_settings'].side_effect = error
 					configure(role)
 					self.assertEqual(self.original, cached)
 					self.assertEqual(self.original, self.config.load_json(SETTINGS))
@@ -205,7 +194,7 @@ class TextEditorWizardTest(TestCase):
 					self.mocks['show_quicksearch'].return_value = ('', 'Clear %s' % role)
 					configure(role)
 					self.assert_persisted(settings)
-		self.mocks['save_json'].assert_not_called()
+		self.mocks['save_settings'].assert_not_called()
 		self.mocks['show_alert'].assert_not_called()
 		self.mocks['Popen'].assert_not_called()
 
@@ -237,16 +226,16 @@ class TextEditorWizardTest(TestCase):
 				self.assertIsNone(configure('editor'))
 				self.mocks[name].return_value = previous
 				self.assert_persisted(self.original)
-		self.mocks['save_json'].assert_not_called()
+		self.mocks['save_settings'].assert_not_called()
 		self.mocks['Popen'].assert_not_called()
 
 	def test_invalid_executable_and_save_failure_leave_cache_unchanged(self):
 		cached = self.config.load_json(SETTINGS)
 		self.mocks['show_file_open_dialog'].return_value = self.directory.name
 		self.assertIsNone(configure('editor'))
-		self.mocks['save_json'].assert_not_called()
+		self.mocks['save_settings'].assert_not_called()
 		self.mocks['show_file_open_dialog'].return_value = sys.executable
-		self.mocks['save_json'].side_effect = OSError('Read-only settings directory')
+		self.mocks['save_settings'].side_effect = OSError('Read-only settings directory')
 		self.assertIsNone(configure('editor'))
 		self.assertEqual(self.original, cached)
 		self.assertEqual(self.original, self.config.load_json(SETTINGS))
@@ -258,7 +247,7 @@ class TextEditorWizardTest(TestCase):
 		for url in (None, 'archive://file', as_url(self.directory.name),
 			as_url(str(Path(self.directory.name, 'missing.txt')))):
 			open_file(url, 'viewer')
-		self.mocks['load_json'].assert_not_called()
+		self.mocks['load_settings'].assert_not_called()
 		self.mocks['show_quicksearch'].assert_not_called()
 		self.mocks['Popen'].assert_not_called()
 
@@ -277,7 +266,7 @@ class TextEditorWizardTest(TestCase):
 					self.mocks['show_alert'].assert_called_once_with(
 						'No text %s was set. Use "Set text %s" in Command Center to define a text %s.' % (role, role, role))
 					self.assert_persisted(settings)
-		for name in ('show_quicksearch', 'show_file_open_dialog', 'show_prompt', 'save_json', 'Popen'):
+		for name in ('show_quicksearch', 'show_file_open_dialog', 'show_prompt', 'save_settings', 'Popen'):
 			self.mocks[name].assert_not_called()
 
 	def test_invalid_role_reports_error_without_setup_or_launch(self):
@@ -291,17 +280,17 @@ class TextEditorWizardTest(TestCase):
 			self.assertIn('The configured executable was not found.', self.mocks['show_alert'].call_args.args[0])
 			self.assertIn('"Set text %s" in Command Center' % role, self.mocks['show_alert'].call_args.args[0])
 			self.assert_persisted(settings)
-		for name in ('show_quicksearch', 'show_file_open_dialog', 'show_prompt', 'save_json', 'Popen'):
+		for name in ('show_quicksearch', 'show_file_open_dialog', 'show_prompt', 'save_settings', 'Popen'):
 			self.mocks[name].assert_not_called()
 
 	def test_configured_roles_launch_without_wizard_or_rewriting(self):
 		open_file(as_url(self.target), 'editor')
-		self.mocks['Popen'].assert_called_once_with(args=[sys.executable, self.target])
+		self.mocks['Popen'].assert_called_once_with(args=[sys.executable, self.target], shell=False)
 		self.mocks['Popen'].reset_mock()
 		open_file(as_url(self.target), 'viewer')
 		self.mocks['Popen'].assert_called_once_with(args=[sys.executable, '--viewer', self.target], shell=False)
 		self.mocks['show_quicksearch'].assert_not_called()
-		self.mocks['save_json'].assert_not_called()
+		self.mocks['save_settings'].assert_not_called()
 		self.assert_persisted(self.original)
 
 	def test_launch_and_resolution_errors_are_reported(self):

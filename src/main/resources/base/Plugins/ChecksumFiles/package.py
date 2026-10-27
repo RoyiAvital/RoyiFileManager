@@ -39,7 +39,7 @@ def package(destination):
     root = Path(__file__).resolve().parent
     try:
         shutil.copytree(root / 'checksum_files', destination / 'checksum_files', ignore=shutil.ignore_patterns('__pycache__', '*.pyc', '_vendor'))
-        for name in ('ChecksumFiles.json', 'README.md'):
+        for name in ('ChecksumFiles.yaml', 'README.md'):
             shutil.copy2(root / name, destination / name)
         vendor = destination / 'checksum_files' / '_vendor' / 'blake3'
         vendor.mkdir(parents=True)

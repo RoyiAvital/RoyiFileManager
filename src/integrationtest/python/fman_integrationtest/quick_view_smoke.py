@@ -8,7 +8,7 @@ import traceback
 
 
 def exercise(context, root, restart):
-	from fman import load_json, save_json
+	from fman import load_settings, save_settings
 	from fman.impl.quicksearch import Quicksearch
 	from fman.impl.util.qt.thread import run_in_main_thread
 	from fman.url import as_url
@@ -39,10 +39,10 @@ def exercise(context, root, restart):
 		window = context.main_window
 		assert getattr(window, '_quick_view_session', None) is None
 		assert getattr(window, '_quick_view_loader', None) is None
-		assert left.get_command_aliases('toggle_quick_view') == ('Toggle QuickView',)
+		assert left.get_command_aliases('toggle_quick_view') == ('Toggle QuickView', 'Preview')
 		assert any(binding['keys'] == ['Ctrl+Q'] and binding['command'] == 'toggle_quick_view' for binding in context.key_bindings.get_sanitized_bindings())
 		if not restart:
-			save_json('QuickView.json', {'untouched': 'preserved'})
+			save_settings('QuickView.yaml', {'untouched': 'preserved'})
 		left.place_cursor_at(as_url(root / 'left' / 'image.png'))
 		right_before = right.get_path(), right.get_file_under_cursor(), right.get_selected_files()
 		geometry_before = gui(lambda: (right._widget.layout(), right._widget._model, right._widget.focusProxy(), window.minimumSize(), window._splitter.sizes()))
@@ -52,7 +52,7 @@ def exercise(context, root, restart):
 		session = gui(lambda: window._quick_view_session)
 		canvas = session.overlay.canvas
 		assert gui(lambda: canvas.mode) == ('actual_size' if restart else 'fit')
-		assert load_json('QuickView.json')['untouched'] == 'preserved'
+		assert load_settings('QuickView.yaml')['untouched'] == 'preserved'
 		gui(lambda: QTest.keyClick(left._widget._file_view, Qt.Key_Tab))
 		wait_for(canvas.hasFocus, 'Tab did not focus canvas')
 		assert gui(context.plugin_support.get_active_pane) is None
@@ -61,7 +61,7 @@ def exercise(context, root, restart):
 		assert left._has_focus()
 		left.run_command('quick_view_actual_size')
 		assert gui(lambda: canvas.scale) == 1
-		assert load_json('QuickView.json')['image_mode'] == 'actual_size'
+		assert load_settings('QuickView.yaml')['image_mode'] == 'actual_size'
 		left.run_command('quick_view_zoom_in')
 		assert gui(lambda: canvas.scale) == 1.25
 		left.run_command('quick_view_pan', {'direction': 'right', 'large': True})

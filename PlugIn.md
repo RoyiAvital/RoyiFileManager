@@ -74,8 +74,8 @@ UserSettings/Plugins/User/MyPlugin/
     my_plugin/
         __init__.py
         ui.py
-    Key Bindings.json
-    MyPlugin.json
+    Key Bindings.yaml
+    MyPlugin.yaml
     Theme.css
 ```
 
@@ -86,28 +86,27 @@ bases are `ApplicationCommand`, `DirectoryPaneCommand`, `DirectoryPaneListener`,
 not discovered automatically. Use unique package names to avoid module collisions.
 Avoid importing other plug-ins' concrete extension classes into that namespace.
 
-Loading also registers JSON configuration, root-level `.ttf` fonts, `Theme.css`,
+Loading also registers YAML configuration, root-level `.ttf` fonts, `Theme.css`,
 key bindings, and context menus. Platform variants such as
-`Key Bindings (Windows).json` and `Theme (Windows).css` are supported. On unload,
+`Key Bindings (Windows).yaml` and `Theme (Windows).css` are supported. On unload,
 UI owners are invalidated before registrations and package modules are removed.
 There is no general documented `plugin_loaded()`/`plugin_unloaded()` hook; do not
 assume arbitrary import-time threads will be cleaned up by the loader.
 
 ### Key Bindings and Context Menus
 
-`Key Bindings.json` is a list of records with a registered `command`, nonempty
+`Key Bindings.yaml` is a YAML list of records with a registered `command`, nonempty
 `keys` list, and optional `args` dictionary. Keys use the host's Qt-style shortcut
 notation. The current dispatcher uses only `keys[0]`; use separate binding
 records for alternative shortcuts. Additional entries are not multi-step chords.
 
-```json
-[
-  { "keys": ["Ctrl+Alt+J"], "command": "show_example", "args": {"query": ""} }
-]
+```yaml
+# Open the example picker.
+- {keys: [Ctrl+Alt+J], command: show_example, args: {query: ''}}
 ```
 
-`File Context Menu.json` applies when a file item is under the mouse;
-`Folder Context Menu.json` applies to empty pane space. Records accept `command`,
+`File Context Menu.yaml` applies when a file item is under the mouse;
+`Folder Context Menu.yaml` applies to empty pane space. Records accept `command`,
 optional `args`, optional `caption`, and optional grouping `id`. A caption of
 `"-"` is a separator. Without a caption, the first command alias is used. Pane
 commands see the clicked item's context for visibility and execution, which may
@@ -122,10 +121,8 @@ The cursor override applies only on the command's thread. Capture
 `pane.get_file_under_cursor()` there before passing the URL to a Qt-thread helper
 or another worker; reading it on that other thread returns the ordinary cursor.
 
-```json
-[
-  { "id": "my_plugin", "command": "show_example", "caption": "Example" }
-]
+```yaml
+- {id: my_plugin, command: show_example, caption: Example}
 ```
 
 Source: [loader](src/main/python/fman/impl/plugins/plugin.py),
@@ -142,7 +139,8 @@ Import these APIs from `fman`.
 Subclass `ApplicationCommand`; the host constructs it with `window` and exposes
 `self.window`. Implement `__call__(self, ...)`; command arguments are keyword
 arguments. `aliases` defaults to a human-readable class name and can be
-overridden with a sequence of names. Keep constructors lightweight.
+overridden with a sequence of names. Set `category` as described below. Keep
+constructors lightweight.
 
 ### DirectoryPaneCommand
 
@@ -154,6 +152,14 @@ Subclass `DirectoryPaneCommand`; the host supplies `self.pane`. Implement:
 | `is_visible(self)` | Default `True`; return false to hide it from pane-command discovery/context menus. This is not authorization and does not block direct invocation. |
 | `get_chosen_files(self)` | Return selected URLs, otherwise the URL under the cursor as a one-element list, otherwise `[]`. |
 | `aliases` | Optional class-level sequence overriding aliases derived from the class name. |
+| `category` | Class-level string; the base class sets `''` (no category). |
+
+Command Center shows each command as `Category: Alias`, or just the alias when
+`category` is `''`. Typing a category name lists its commands; direct alias
+matches rank first. Context menus and the Help dialog show aliases only. Bundled
+commands use `Application`, `Settings`, `File`, `Clipboard`, `Selection`,
+`Navigation`, `View`, `Search`, `Favorites` and `Tools`; reuse one of these when
+it fits. A non-string `category` is treated as `''`.
 
 Class names become snake-case command IDs: `ShowExample` becomes `show_example`.
 Application command instances are reused; pane command instances are cached per
@@ -167,6 +173,7 @@ concurrent calls.
 | `get_application_commands()` | Return registered application command names. |
 | `run_application_command(name, args=None)` | Dispatch a registered application command; `args` is a keyword-argument dictionary. No command return-value/future contract. |
 | `get_application_command_aliases(command_name)` | Return aliases for a registered application command. |
+| `get_application_command_category(command_name)` | Return the category of a registered application command, or `''`. |
 | `load_plugin(plugin_path)` | Load a plug-in directory by native filesystem path; return a success boolean, with load errors reported by the host. |
 | `unload_plugin(plugin_path)` | Unload a previously loaded plug-in directory; an unloaded path raises `ValueError`. |
 
@@ -190,6 +197,7 @@ construct them with internal widgets yourself.
 | `get_commands()`                                                   | Registered pane command names.                                                                                                                                                                                                                                                    |
 | `run_command(name, args=None)`                                     | Run a pane command, honoring command rewrite listeners.                                                                                                                                                                                                                           |
 | `get_command_aliases(command_name)`                                | Aliases for a registered pane command.                                                                                                                                                                                                                                            |
+| `get_command_category(command_name)`                               | Category of a registered pane command, or `''`.                                                                                                                                                                                                                                   |
 | `is_command_visible(command_name)`                                 | Evaluate visibility in this pane's context.                                                                                                                                                                                                                                       |
 | `get_selected_files()`                                             | Selected file URLs; current highlight is separate.                                                                                                                                                                                                                                |
 | `get_file_under_cursor()`                                          | Current file URL, or no current value.                                                                                                                                                                                                                                            |
@@ -290,19 +298,29 @@ Do not manipulate Qt widgets from notification threads.
 
 | Function | Contract |
 | --- | --- |
-| `load_json(name, default=None, save_on_quit=False, *, preserve_on_reload=False)` | Load merged configuration by filename. Return `default` when no value exists. Can return a shared cached mutable object. |
-| `save_json(name, value=None)` | Persist a differential override; omitted/`None` value uses the cached value. Save completes before replacing the cache. |
+| `load_settings(name, default=None, save_on_quit=False)` | Load merged user settings from `<Name>.yaml` files. `name` must end with `.yaml`. Return `default` when no value exists. Can return a shared cached mutable object. |
+| `save_settings(name, value=None)` | Persist a differential override of `<Name>.yaml`; comments on retained keys and comment-only files are kept. |
+| `load_json(name, default=None, save_on_quit=False, *, preserve_on_reload=False)` | Load merged internal state from `<Name>.json` files. Same layering and caching as `load_settings`. |
+| `save_json(name, value=None)` | Persist internal state; omitted/`None` value uses the cached value. Save completes before replacing the cache. |
+
+Use `load_settings`/`save_settings` for options a user may edit; ship commented
+defaults as `<Name>.yaml` in the plug-in folder. Use `load_json`/`save_json` for
+state the plug-in manages itself. YAML files are read with the YAML 1.1 safe
+loader; a file with only comments counts as no value. Invalid files raise
+`ValueError`.
 
 Names are shared across loaded plug-ins, not automatically package-namespaced.
 Use distinctive filenames. Layers include generic and platform-specific files;
 dictionaries merge recursively, with later values winning unless both values are
 dictionaries. Nested lists replace earlier lists; top-level lists are prepended
-to earlier lists. Mismatched top-level JSON types raise `ValueError`; nested
+to earlier lists. Mismatched top-level types raise `ValueError`; nested
 values can change type. An empty dictionary does not clear an inherited
 dictionary: override individual entries instead.
 
 User overrides are normally written to
-`UserSettings/Plugins/User/Settings/<Name> (Windows).json`. Saves use a temporary
+`UserSettings/Plugins/User/Settings/<Name> (Windows).yaml` (or `.json`). The
+application file `AppSettings.yaml` is the exception: its user layer is
+`UserSettings/AppSettings.yaml`, without a platform variant. Saves use a temporary
 file followed by atomic replacement. Only changed keys are written, recursively
 omitting values equal to defaults. Removing inherited dictionary keys at any
 depth raises `ValueError`; keys present only in the user override can be removed.
@@ -655,7 +673,7 @@ do not imply permission to change host widget parenting, lifetime or internal
 model state arbitrarily. QuickList, QuickTable, QuickBoard and Panel are plain services;
 plug-ins need no Qt import for them. The widget exports `QuickList`, `Panel`,
 `IconButton`, `TextButton`, `DropDown` and `JsonSettings` were removed: use
-`show_quick_list`, `show_panel` controls and `load_json`/`save_json` instead.
+`show_quick_list`, `show_panel` controls and `load_settings`/`save_settings` instead.
 
 ### Qt-Free QuickBoard
 

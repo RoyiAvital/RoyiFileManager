@@ -233,9 +233,9 @@ def _seed_settings(settings, capture):
 			for name, path, added, opened, count in favorites
 		]}}
 	elif capture == 'directory-size':
-		documents = {'DirectorySize (Windows).json': {'enabled': True}}
+		documents = {'DirectorySize (Windows).yaml': {'enabled': True}}
 	elif capture == 'free-space':
-		documents = {'Status Bar (Windows).json': {'mode': 'single'}}
+		documents = {'Status Bar (Windows).yaml': {'mode': 'single'}}
 	elif capture in ('everything-search', 'everything-folders'):
 		documents = {'Everything (Windows).json': {
 			'folders': [str(windows / 'Web'), str(windows / 'Fonts')],

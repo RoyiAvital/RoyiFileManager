@@ -78,7 +78,7 @@ class FindFilesTest(TestCase):
 
 	def test_delivery_declarations_and_assets(self):
 		import ast
-		import json
+		import yaml
 		from pathlib import Path
 		root = Path(__file__).parents[4]
 		plugin = root / 'src/main/resources/base/Plugins/FindFiles'
@@ -89,7 +89,7 @@ class FindFilesTest(TestCase):
 		ast.parse(build)
 		self.assertIn("'FindFiles'", build)
 		self.assertIn('fd-find', (root / 'conda-lock.yml').read_text())
-		self.assertEqual([{'keys': ['Shift+F7'], 'command': 'find_files'}], json.loads((plugin / 'Key Bindings (Windows).json').read_text()))
+		self.assertEqual([{'keys': ['Shift+F7'], 'command': 'find_files'}], yaml.safe_load((plugin / 'Key Bindings (Windows).yaml').read_text()))
 		for name in ('LICENSE-MIT', 'THIRDPARTY.yml'):
 			self.assertGreater((plugin / 'licenses' / name).stat().st_size, 0)
 
@@ -118,7 +118,7 @@ class FindFilesTest(TestCase):
 		session.pending_settings = tuple(dict(DEFAULTS, type='ed').items())
 		session.saving = True
 		loaded = {'unknown': 'preserved'}
-		with patch('find_files.load_json', return_value=loaded), patch('find_files.save_json') as save:
+		with patch('find_files.load_settings', return_value=loaded), patch('find_files.save_settings') as save:
 			session.save_preferences()
 		self.assertEqual({'unknown': 'preserved'}, loaded)
 		self.assertEqual(dict(DEFAULTS, type='ed', unknown='preserved'), save.call_args.args[1])

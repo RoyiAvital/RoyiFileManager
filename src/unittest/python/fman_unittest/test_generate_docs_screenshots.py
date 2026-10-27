@@ -15,6 +15,7 @@ from uuid import uuid4
 
 import win32gui
 import win32process
+import yaml
 
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -738,8 +739,8 @@ screenshots._validate_image(screenshots._source_outputs(args.output_dir, 'batch-
 				patch.dict(os.environ, {'WINDIR': 'C:\\Windows'}):
 			settings = Path(temporary_directory)
 			screenshots._seed_settings(settings, 'directory-size')
-			document = json.loads((
-				settings / 'Plugins' / 'User' / 'Settings' / 'DirectorySize (Windows).json'
+			document = yaml.safe_load((
+				settings / 'Plugins' / 'User' / 'Settings' / 'DirectorySize (Windows).yaml'
 			).read_text(encoding='utf-8'))
 		self.assertEqual({'enabled': True}, document)
 

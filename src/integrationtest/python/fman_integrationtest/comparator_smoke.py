@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 def exercise(context, root, restart):
 	from core import comparator
-	from fman import load_json
+	from fman import load_settings
 	from fman.impl.quicksearch import Quicksearch
 	from fman.impl.util.qt.thread import run_in_main_thread
 	from fman.impl.widgets import Prompt
@@ -79,13 +79,13 @@ def exercise(context, root, restart):
 				left.run_command('set_file_comparator')
 				left.run_command('set_folder_comparator')
 		assert not dialog_errors, dialog_errors
-		settings = load_json(comparator.SETTINGS)
+		settings = load_settings(comparator.SETTINGS)
 		assert settings['file_comparator']['arguments'] == arguments
 		assert settings['folder_comparator']['arguments'] == arguments
 		if restart:
 			selection = 'Clear file comparator'
 			left.run_command('set_file_comparator')
-			settings = load_json(comparator.SETTINGS)
+			settings = load_settings(comparator.SETTINGS)
 			assert settings['file_comparator'] is None
 			assert settings['folder_comparator']['arguments'] == arguments
 		with patch.object(comparator, 'Popen', side_effect=launch):

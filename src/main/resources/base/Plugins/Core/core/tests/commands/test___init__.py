@@ -7,6 +7,7 @@ from core.commands import About, CreateAndEditFile, History, Move, NewEmptyFile,
 	_recent_commands, _COMMAND_PALETTE_HISTORY, CommandPalette, CommandPaletteItem
 from core.tests import StubUI
 from core.commands import _hidden_file_filter
+from core.quicksearch_matchers import display_positions
 from core.util import filenotfounderror
 from fman import OK, YES, NO
 from fman.impl.plugins.plugin import _get_command_name
@@ -18,6 +19,7 @@ from unittest.mock import call, Mock, patch
 import json
 import os
 import os.path
+import yaml
 
 @skipUnless(os.name == 'nt', 'Windows shell Properties')
 class ExplorerPropertiesTest(TestCase):
@@ -451,8 +453,8 @@ class PackTest(TestCase):
 	def test_same_folder_commands_are_exported_and_in_context_menu(self):
 		from core import DuplicateFile, PackHere
 		from pathlib import Path
-		menu_path = Path(__file__).resolve().parents[3] / 'File Context Menu (Windows).json'
-		entries = json.loads(menu_path.read_text(encoding='utf-8'))
+		menu_path = Path(__file__).resolve().parents[3] / 'File Context Menu (Windows).yaml'
+		entries = yaml.safe_load(menu_path.read_text(encoding='utf-8'))
 		for command_type, caption in ((DuplicateFile, 'Duplicate...'), (PackHere, 'Pack here...')):
 			with self.subTest(command=command_type.__name__):
 				matching = [entry for entry in entries if entry.get('command') == _get_command_name(command_type)]
@@ -587,7 +589,7 @@ class SameFolderOperationsTest(TestCase):
 		patcher = patch('fman.fs._get_mother_fs', return_value=filesystem)
 		patcher.start()
 		self.addCleanup(patcher.stop)
-		for name in ('show_prompt', 'show_alert', 'submit_task', 'load_json'):
+		for name in ('show_prompt', 'show_alert', 'submit_task', 'load_settings'):
 			patcher = patch('core.commands.' + name)
 			setattr(self, name, patcher.start())
 			self.addCleanup(patcher.stop)
@@ -595,7 +597,7 @@ class SameFolderOperationsTest(TestCase):
 			patcher = patch('fman.' + name, getattr(self, name))
 			patcher.start()
 			self.addCleanup(patcher.stop)
-		self.load_json.return_value = {'archive_handlers': {'.zip': 'zip://'}}
+		self.load_settings.return_value = {'archive_handlers': {'.zip': 'zip://'}}
 		self.submit_task.side_effect = lambda task: task()
 
 	def test_duplicate_creates_byte_identical_file_and_preserves_source(self):
@@ -874,15 +876,146 @@ class ExternalAppConfigurationTest(TestCase):
 	def test_terminal_and_explorer_keep_settings_and_missing_configuration_alerts(self):
 		from core import os_
 		for name, command in (('terminal', os_.open_terminal_in_directory), ('native_file_manager', os_.open_native_file_manager)):
-			with self.subTest(name=name), patch.object(os_, 'load_json', return_value={}), \
+			with self.subTest(name=name), patch.object(os_, 'load_settings', return_value={}), \
 				patch.object(os_, 'Popen') as process, patch.object(os_, 'show_alert') as alert:
 				command('C:/fixture')
 				process.assert_not_called()
-				self.assertIn('Core Settings.json', alert.call_args.args[0])
-			with patch.object(os_, 'load_json', return_value={name: {'args': ['app.exe', '{curr_dir}']}}), \
+				self.assertIn('AppSettings.yaml', alert.call_args.args[0])
+			with patch.object(os_, 'load_settings', return_value={name: {'args': ['app.exe', '{curr_dir}']}}), \
 				patch.object(os_, 'Popen') as process:
 				command('C:/fixture')
 				process.assert_called_once_with(args=['app.exe', 'C:/fixture'])
+
+
+class LiveRefreshSettingTest(TestCase):
+	def setUp(self):
+		from fman.impl.plugins.config import Config
+		from tempfile import TemporaryDirectory
+		from time import sleep
+		directory = TemporaryDirectory()
+		self.addCleanup(directory.cleanup)
+		self.config = Config('Windows')
+		self.config.add_dir(directory.name)
+		self.config.save_json('AppSettings.yaml', {'quickview_table_max_file_mb': 512})
+		def slow_save(name, value=None):
+			sleep(.05) # Widens the read-modify-save window a missing lock would lose
+			self.config.save_json(name, value)
+		self.save = Mock(side_effect=slow_save)
+		patcher = patch('fman.impl.model.file_watcher._load_settings',
+			side_effect=lambda: self.config.load_json('AppSettings.yaml', {}))
+		patcher.start()
+		self.addCleanup(patcher.stop)
+		for target in ('fman.load_settings', 'core.commands.load_settings', 'core.text_editor.load_settings'):
+			patcher = patch(target, side_effect=self.config.load_json)
+			patcher.start()
+			self.addCleanup(patcher.stop)
+		for target in ('fman.save_settings', 'core.commands.save_settings', 'core.text_editor.save_settings'):
+			patcher = patch(target, self.save)
+			patcher.start()
+			self.addCleanup(patcher.stop)
+
+	def stored(self):
+		return self.config.load_json('AppSettings.yaml')
+
+	def test_toggle_saves_setting_and_keeps_other_keys(self):
+		from core.commands import ToggleLiveRefreshDuringFileOperations
+		for expected, status in ((False, 'Off'), (True, 'On')):
+			with self.subTest(expected=expected), patch('core.commands.show_status_message') as message:
+				ToggleLiveRefreshDuringFileOperations(Mock())()
+				self.assertEqual({'quickview_table_max_file_mb': 512,
+					'live_refresh_during_file_operations': expected}, self.stored())
+				message.assert_called_once_with('Live refresh during file operations: ' + status, timeout_secs=5)
+
+	def test_save_failure_alerts_and_keeps_setting(self):
+		from core.commands import ToggleLiveRefreshDuringFileOperations
+		self.save.side_effect = OSError('read-only')
+		with patch('core.commands.show_alert') as alert, patch('core.commands.show_status_message') as message:
+			ToggleLiveRefreshDuringFileOperations(Mock())()
+		alert.assert_called_once_with('read-only')
+		message.assert_not_called()
+		self.assertEqual({'quickview_table_max_file_mb': 512}, self.stored())
+
+	def test_concurrent_core_settings_writers_keep_every_update(self):
+		import sys
+		from core import comparator, text_editor
+		from core.commands import ToggleLiveRefreshDuringFileOperations
+		from fman.impl.quick_view_csv import save_table_preset
+		from fman.ui import settings_resource
+		from threading import Thread
+		self.assertIs(settings_resource('AppSettings.yaml').lock, comparator._settings_lock)
+		toggle = lambda: ToggleLiveRefreshDuringFileOperations(Mock())()
+		editor = lambda: text_editor.configure('editor')
+		with patch('core.commands.show_status_message'), \
+			patch.object(text_editor, 'show_quicksearch', return_value=('', 'Notepad++')), \
+			patch.object(text_editor, 'show_file_open_dialog', return_value=sys.executable), \
+			patch.object(text_editor, 'show_status_message'), patch.object(text_editor, 'show_alert') as alert:
+			threads = [Thread(target=target) for target in (toggle, toggle, editor, lambda: save_table_preset(1024))]
+			for thread in threads:
+				thread.start()
+			for thread in threads:
+				thread.join(10)
+		alert.assert_not_called()
+		stored = self.stored()
+		self.assertTrue(stored['live_refresh_during_file_operations'])
+		self.assertEqual(1024, stored['quickview_table_max_file_mb'])
+		self.assertEqual(sys.executable, stored['editor']['executable'])
+
+
+class EditSettingsTest(TestCase):
+	def setUp(self):
+		from tempfile import TemporaryDirectory
+		directory = TemporaryDirectory()
+		self.addCleanup(directory.cleanup)
+		self.root = directory.name
+		self.path = os.path.join(self.root, 'AppSettings.yaml')
+		for target, kwargs in (('core.commands.DATA_DIRECTORY', dict(new=self.root)),
+				('core.commands.show_alert', {}), ('core.commands.show_status_message', {}),
+				('core.text_editor.open_file', dict(return_value=True)),
+				('core.text_editor._load_settings', dict(return_value={'editor': {'executable': 'editor.exe'}}))):
+			patcher = patch(target, **kwargs)
+			setattr(self, target.rsplit('.', 1)[1], patcher.start())
+			self.addCleanup(patcher.stop)
+
+	def run_command(self):
+		from core.commands import EditSettings
+		EditSettings(Mock())()
+
+	def test_creates_commented_template_and_opens_it_in_the_editor(self):
+		self.run_command()
+		with open(self.path, encoding='utf-8') as file:
+			text = file.read()
+		self.assertIsNone(yaml.safe_load(text), 'The template must only contain comments')
+		self.assertIn('# live_refresh_during_file_operations: true', text)
+		self.assertIn('# # false: panes refresh once', text)
+		self.open_file.assert_called_once_with(as_url(self.path), 'editor')
+		self.show_alert.assert_not_called()
+		self.assertIn('Restart', self.show_status_message.call_args.args[0])
+
+	def test_existing_file_is_kept(self):
+		with open(self.path, 'w', encoding='utf-8') as file:
+			file.write('live_refresh_during_file_operations: false\n')
+		self.run_command()
+		with open(self.path, encoding='utf-8') as file:
+			self.assertEqual('live_refresh_during_file_operations: false\n', file.read())
+		self.open_file.assert_called_once_with(as_url(self.path), 'editor')
+
+	def test_without_editor_alerts_and_creates_nothing(self):
+		self._load_settings.return_value = {}
+		self.run_command()
+		self.assertIn('Set text editor', self.show_alert.call_args.args[0])
+		self.assertFalse(os.path.exists(self.path))
+		self.open_file.assert_not_called()
+
+	def test_failed_launch_shows_no_restart_hint(self):
+		self.open_file.return_value = None
+		self.run_command()
+		self.show_status_message.assert_not_called()
+
+	def test_create_failure_alerts(self):
+		with patch('builtins.open', side_effect=PermissionError('denied')):
+			self.run_command()
+		self.assertIn('denied', self.show_alert.call_args.args[0])
+		self.open_file.assert_not_called()
 
 
 class AboutTest(TestCase):
@@ -1050,14 +1183,17 @@ class CommandPaletteRecentTest(TestCase):
 		self.pane = Mock()
 		self.aliases = {'alpha': ['Alpha'], 'beta': ['Beta'], 'files': ['Find files', 'Search files']}
 		self.app_aliases = {'exit': ['Exit']}
+		self.categories = {}
 		self.pane.get_commands.side_effect = lambda: list(self.aliases)
 		self.pane.is_command_visible.return_value = True
 		self.pane.get_command_aliases.side_effect = self.aliases.__getitem__
+		self.pane.get_command_category.side_effect = lambda name: self.categories.get(name, '')
 		patches = [
-			patch('core.commands.load_json', side_effect=lambda name, **kwargs:
-				self.bindings if name == 'Key Bindings.json' else self.document),
+			patch('core.commands.load_json', return_value=self.document),
+			patch('core.commands.load_settings', side_effect=lambda name, **kwargs: self.bindings),
 			patch('core.commands.get_application_commands', side_effect=lambda: list(self.app_aliases)),
 			patch('core.commands.get_application_command_aliases', side_effect=self.app_aliases.__getitem__),
+			patch('core.commands.get_application_command_category', side_effect=lambda name: self.categories.get(name, '')),
 			patch('fman.ui.settings_resource', return_value=Resource())
 		]
 		for patcher in patches:
@@ -1122,12 +1258,39 @@ class CommandPaletteRecentTest(TestCase):
 		with patch('core.commands.show_quicksearch', side_effect=show):
 			self.palette()
 		return items
-	def test_empty_history_preserves_titles_order_hints_and_highlights(self):
+	def test_empty_query_sorts_by_label_with_hints_and_no_highlights(self):
 		items = self.open()
-		self.assertEqual(['Beta', 'Exit', 'Alpha', 'Find files'], [item.title for item in items])
-		self.assertEqual(['', '', 'Ctrl+A', ''], [item.hint for item in items])
+		self.assertEqual(['Alpha', 'Beta', 'Exit', 'Find files'], [item.title for item in items])
+		self.assertEqual(['Ctrl+A', '', '', ''], [item.hint for item in items])
 		self.assertTrue(all(not item.highlight for item in items))
-	def test_lowercases_query_once_and_each_visited_alias_once(self):
+	def test_category_labels_group_and_rank_after_title_matches(self):
+		self.categories.update({'alpha': 'File', 'files': 'Search', 'exit': 'Application'})
+		self.assertEqual(['Application: Exit', 'Beta', 'File: Alpha', 'Search: Find files'],
+			[item.title for item in self.open()])
+		items = self.open('fi')
+		self.assertEqual([('Search: Find files', [8, 9]), ('File: Alpha', [0, 1])],
+			[(item.title, item.highlight) for item in items])
+		self.assertEqual('Ctrl+A', items[1].hint)
+		self.assertEqual(['File: Alpha'], [item.title for item in self.open('file:')])
+		self.seed(('pane', 'alpha'))
+		self.assertEqual(['File: Alpha', 'Search: Find files'], [item.title for item in self.open('fi')])
+	def test_best_alias_wins_over_first_matching_alias(self):
+		self.aliases.clear()
+		self.aliases['copy'] = ['Recolor', 'Copy']
+		self.categories['copy'] = 'File'
+		items = self.open('co')
+		self.assertEqual([('File: Copy', [6, 7])], [(item.title, item.highlight) for item in items])
+	def test_unicode_category_highlights_use_title_utf16_positions(self):
+		self.aliases.clear()
+		self.app_aliases.clear()
+		self.aliases.update({'turkish': ['Edit'], 'emoji': ['Edit']})
+		self.categories.update({'turkish': '\u0130', 'emoji': '\U0001f527 Tools'})
+		items = {item.title: item.highlight for item in self.open('i edit')}
+		self.assertEqual([0, 2, 3, 4, 5, 6], items['\u0130: Edit'])
+		items = {item.title: item.highlight for item in self.open('edit')}
+		self.assertEqual([3, 4, 5, 6], items['\u0130: Edit'])
+		self.assertEqual([10, 11, 12, 13], items['\U0001f527 Tools: Edit'])
+	def test_lowercases_query_once_and_each_alias_once(self):
 		class CountedText(str):
 			def __new__(cls, value):
 				instance = super().__new__(cls, value)
@@ -1149,17 +1312,14 @@ class CommandPaletteRecentTest(TestCase):
 				self.assertEqual(1, counted_query.lower_calls)
 				for aliases in (self.aliases, self.app_aliases):
 					for values in aliases.values():
-						visited = True
 						for alias in values:
-							self.assertEqual(int(visited), alias.lower_calls)
-							if visited and any(matcher(str(alias).lower(), query.lower()) is not None
-								for matcher in self.palette._MATCHERS):
-								visited = False
+							self.assertEqual(1, alias.lower_calls)
 				for item in items:
-					self.assertIsInstance(item.title, CountedText)
-					highlights = [matcher(str(item.title).lower(), query.lower())
+					title = str(item.title)
+					highlights = [matcher(title.lower(), query.lower())
 						for matcher in self.palette._MATCHERS]
-					self.assertEqual(next(value for value in highlights if value is not None), item.highlight)
+					first = next(value for value in highlights if value is not None)
+					self.assertEqual(display_positions(title, title.lower(), first), item.highlight)
 
 	def test_suggestion_pass_keeps_visibility_aliases_and_bindings_live(self):
 		self.assertEqual(['Alpha'], [item.title for item in self.palette._suggest_commands('alpha')])
@@ -1417,10 +1577,10 @@ class NewEmptyFileTest(TestCase):
 		touch_mock.assert_called_once_with('file:///folder/hidden.txt')
 	def test_ctrl_n_binding(self):
 		bindings_path = os.path.abspath(os.path.join(
-			os.path.dirname(__file__), '..', '..', '..', 'Key Bindings.json'
+			os.path.dirname(__file__), '..', '..', '..', 'Key Bindings.yaml'
 		))
 		with open(bindings_path, encoding='utf-8') as bindings_file:
-			bindings = json.load(bindings_file)
+			bindings = yaml.safe_load(bindings_file)
 		self.assertIn(
 			{'keys': ['Ctrl+N'], 'command': 'new_empty_file'}, bindings
 		)
@@ -1446,11 +1606,13 @@ class NewEmptyFileTest(TestCase):
 
 class TextEditorCommandsTest(TestCase):
 	def test_command_center_identifiers_and_aliases(self):
+		from core.commands import EditSettings
 		for command, name, alias in (
 			(OpenWithEditor, 'open_with_editor', 'Edit'),
 			(ViewFile, 'view_file', 'View'),
 			(SetTextEditor, 'set_text_editor', 'Set text editor'),
-			(SetTextViewer, 'set_text_viewer', 'Set text viewer')):
+			(SetTextViewer, 'set_text_viewer', 'Set text viewer'),
+			(EditSettings, 'edit_settings', 'Edit settings')):
 			with self.subTest(command=name):
 				self.assertEqual(name, _get_command_name(command))
 				self.assertEqual((alias,), command.aliases)

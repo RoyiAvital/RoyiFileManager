@@ -817,7 +817,7 @@ class ToggleMetadataTest(TestCase):
 	def test_real_config_persists_toggle_and_preserves_unrelated_settings(self):
 		from fman.impl.plugins.config import Config
 		from search_file_fuzzy import ToggleSearchResultMetadata
-		import json
+		import yaml
 		with TemporaryDirectory() as root:
 			user_settings = Path(root) / 'UserSettings/Plugins/User/Settings'
 			user_settings.mkdir(parents=True)
@@ -825,27 +825,27 @@ class ToggleMetadataTest(TestCase):
 			config = Config('Windows')
 			config.add_dir(str(bundled))
 			config.add_dir(str(user_settings))
-			original = dict(config.load_json('SearchFileFuzzy.json'))
+			original = dict(config.load_json('SearchFileFuzzy.yaml'))
 			original['max_results'] = 17
-			config.save_json('SearchFileFuzzy.json', original)
-			with patch('search_file_fuzzy.load_json', side_effect=config.load_json), \
-				patch('search_file_fuzzy.save_json', side_effect=config.save_json), \
+			config.save_json('SearchFileFuzzy.yaml', original)
+			with patch('search_file_fuzzy.load_settings', side_effect=config.load_json), \
+				patch('search_file_fuzzy.save_settings', side_effect=config.save_json), \
 				patch('search_file_fuzzy.show_status_message'):
 				ToggleSearchResultMetadata(Mock())()
 			reloaded = Config('Windows')
 			reloaded.add_dir(str(bundled))
 			reloaded.add_dir(str(user_settings))
-			self.assertTrue(reloaded.load_json('SearchFileFuzzy.json')['show_metadata'])
-			self.assertEqual(17, reloaded.load_json('SearchFileFuzzy.json')['max_results'])
+			self.assertTrue(reloaded.load_json('SearchFileFuzzy.yaml')['show_metadata'])
+			self.assertEqual(17, reloaded.load_json('SearchFileFuzzy.yaml')['max_results'])
 			self.assertFalse(original['show_metadata'])
-			saved = json.loads((user_settings / 'SearchFileFuzzy (Windows).json').read_text())
+			saved = yaml.safe_load((user_settings / 'SearchFileFuzzy (Windows).yaml').read_text())
 			self.assertEqual({'max_results': 17, 'show_metadata': True}, saved)
 
 	def test_toggle_copies_settings_and_preserves_keys(self):
 		from search_file_fuzzy import ToggleSearchResultMetadata
 		configured = {'mode': 'regular', 'max_results': 7}
-		with patch('search_file_fuzzy.load_json', side_effect=lambda *args, **kwargs: configured), \
-			patch('search_file_fuzzy.save_json') as save, \
+		with patch('search_file_fuzzy.load_settings', side_effect=lambda *args, **kwargs: configured), \
+			patch('search_file_fuzzy.save_settings') as save, \
 			patch('search_file_fuzzy.show_status_message') as status:
 			def saved(name, values):
 				nonlocal configured
@@ -867,8 +867,8 @@ class ToggleMetadataTest(TestCase):
 		):
 			with self.subTest(error=type(error).__name__):
 				configured = {'show_metadata': False, 'max_results': 17}
-				with patch('search_file_fuzzy.load_json', return_value=configured), \
-					patch('search_file_fuzzy.save_json', side_effect=error), \
+				with patch('search_file_fuzzy.load_settings', return_value=configured), \
+					patch('search_file_fuzzy.save_settings', side_effect=error), \
 					patch('search_file_fuzzy.show_status_message') as status:
 					ToggleSearchResultMetadata(Mock())()
 					self.assertEqual({'show_metadata': False, 'max_results': 17}, configured)
@@ -883,7 +883,7 @@ class MetadataCommandTest(TestCase):
 		self.pane.get_path.return_value = 'test://root'
 		self.entry = SearchEntry('test://root/empty.txt', 'empty.txt', 'empty.txt', 0)
 		for name, options in (
-			('load_json', {'return_value': {'show_metadata': True}}),
+			('load_settings', {'return_value': {'show_metadata': True}}),
 			('build_index', {'return_value': IndexResult([self.entry], False)}),
 			('show_quicksearch', {'return_value': None}), ('show_status_message', {}),
 			('clear_status_message', {}), ('submit_task', {'side_effect': lambda task: task()}),
@@ -991,7 +991,7 @@ class MetadataCommandTest(TestCase):
 
 
 class SettingsTest(TestCase):
-	@patch('search_file_fuzzy.load_json')
+	@patch('search_file_fuzzy.load_settings')
 	def test_metadata_requires_boolean_and_override_wins(self, load):
 		for configured in ({}, {'show_metadata': 'true'}, {'show_metadata': 1}):
 			load.return_value = configured
@@ -1002,9 +1002,9 @@ class SettingsTest(TestCase):
 		load.return_value = {'show_metadata': False}
 		self.assertIs(True, _get_settings(metadata=True)['show_metadata'])
 
-	@patch('search_file_fuzzy.load_json')
-	def test_invalid_values_use_defaults(self, load_json):
-		load_json.return_value = {
+	@patch('search_file_fuzzy.load_settings')
+	def test_invalid_values_use_defaults(self, load_settings):
+		load_settings.return_value = {
 			'mode': 'unknown',
 			'max_recursive_entries': 0,
 			'max_results': 'invalid',
@@ -1018,8 +1018,8 @@ class SettingsTest(TestCase):
 		self.assertEqual(100, settings['max_results'])
 		self.assertNotIn('include_hidden', settings)
 
-	@patch('search_file_fuzzy.load_json', return_value={'mode': 'fuzzy'})
-	def test_command_argument_overrides_configured_mode(self, load_json):
+	@patch('search_file_fuzzy.load_settings', return_value={'mode': 'fuzzy'})
+	def test_command_argument_overrides_configured_mode(self, load_settings):
 		self.assertEqual('regular', _get_settings('regular')['mode'])
 
 
@@ -1053,6 +1053,7 @@ class SearchCommandTest(TestCase):
 							return ([{'show_hidden_files': True}, {'show_hidden_files': False}]
 								if name == 'Panes.json' else {'include_hidden': not hidden})
 						with patch('search_file_fuzzy.load_json', side_effect=settings), \
+								patch('search_file_fuzzy.load_settings', side_effect=settings), \
 								patch('search_file_fuzzy.build_index', return_value=IndexResult([], False)) as build, \
 								patch('search_file_fuzzy.submit_task', side_effect=lambda task: task()), \
 								patch('search_file_fuzzy.show_status_message'), \
@@ -1077,6 +1078,7 @@ class SearchCommandTest(TestCase):
 					def show(get_items, query=''):
 						shown.extend(item.title for item in get_items(''))
 					with patch('search_file_fuzzy.load_json', side_effect=settings), \
+							patch('search_file_fuzzy.load_settings', side_effect=settings), \
 							patch('search_file_fuzzy.build_index', side_effect=AssertionError('Rescan')), \
 							patch('search_file_fuzzy.show_quicksearch', side_effect=show), \
 							patch('search_file_fuzzy.show_status_message'), \

@@ -26,8 +26,8 @@ def file_paths(directory):
 	return result
 
 
-def verify_files(directory, expected, size):
-	paths = file_paths(directory)
+def verify_files(directory, expected, size, ignored=frozenset()):
+	paths = {name: path for name, path in file_paths(directory).items() if name not in ignored}
 	if paths.keys() != expected.keys():
 		raise ValueError('Copy file count or names differ')
 	for name, path in paths.items():
@@ -66,14 +66,17 @@ def validate_result(result, count, size, selected_count=None):
 	return result
 
 
-def child(directory, viewport, count, size, scratch=None):
+def child(directory, viewport, count, size, scratch=None, live_refresh=True, destination_entries=0):
 	directory = Path(directory).resolve(strict=True)
 	expected = {name: hashlib.sha256(path.read_bytes()).hexdigest() for name, path in file_paths(directory).items()}
 	top_level = {name.split('/')[0] for name in expected}
 	row_count = len(top_level)
 	expected_directories = {parent.as_posix() for name in expected for parent in Path(name).parents if parent != Path('.')}
+	fillers = frozenset('filler-%06d' % index for index in range(destination_entries))
 	if len(expected) != count:
 		raise ValueError('Copy fixture count differs from catalog')
+	if fillers & top_level:
+		raise ValueError('Destination fillers collide with copy fixture names')
 	verify_files(directory, expected, size)
 	if shutil.disk_usage(directory).free < count * size + 64 * 1024**2:
 		raise OSError('Insufficient space for copy benchmark destination')
@@ -81,6 +84,11 @@ def child(directory, viewport, count, size, scratch=None):
 		root = Path(temporary)
 		destination, settings = root / 'destination', root / 'UserSettings'
 		destination.mkdir()
+		for name in fillers:
+			(destination / name).touch(exist_ok=False)
+		if not live_refresh:
+			settings.mkdir()
+			(settings / 'AppSettings.yaml').write_text('live_refresh_during_file_operations: false\n', encoding='utf-8')
 		os.environ['ROYIFILEMANAGER_USER_SETTINGS'] = str(settings)
 		import core.commands as commands
 		from core.fileoperations import CopyFiles
@@ -202,8 +210,12 @@ def child(directory, viewport, count, size, scratch=None):
 				def loaded():
 					panes = context.window.get_panes()
 					return (len(panes) == 2 and panes[0].get_path() == as_url(directory) and
-						panes[0]._widget._model.rowCount() == row_count and panes[1].get_path() == as_url(destination))
+						panes[0]._widget._model.rowCount() == row_count and panes[1].get_path() == as_url(destination) and
+						panes[1]._widget._model.rowCount() == destination_entries)
 				wait_for(loaded, 'Copy fixture did not load')
+				from fman.impl.model.file_watcher import live_refresh_enabled
+				if live_refresh_enabled() != live_refresh:
+					raise RuntimeError('Live refresh setting was not applied')
 				pane, opposite = context.window.get_panes()
 				view = pane._widget._file_view
 				state['view'] = view
@@ -240,12 +252,12 @@ def child(directory, viewport, count, size, scratch=None):
 					raise TimeoutError('Copy command did not finish')
 				if errors:
 					raise RuntimeError('\n'.join(errors))
-				wait_for(lambda: opposite._widget._model.rowCount() == row_count, 'Destination pane did not refresh')
+				wait_for(lambda: opposite._widget._model.rowCount() == row_count + destination_entries, 'Destination pane did not refresh')
 				transfer['refresh_complete_ms'] = (perf_counter() - state['confirmed']) * 1000
 				transfer.update(copied_count=len(committed), bytes_copied=count * size,
 					throughput_mib_s=count * size / 2**20 / (transfer['wall_ms'] / 1000))
 				verify_files(directory, expected, size)
-				verify_files(destination, expected, size)
+				verify_files(destination, expected, size, fillers)
 				samples.extend((selection, transfer))
 			except BaseException:
 				errors.append(traceback.format_exc())

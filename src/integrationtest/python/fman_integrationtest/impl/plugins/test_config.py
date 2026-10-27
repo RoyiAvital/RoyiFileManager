@@ -177,6 +177,72 @@ class ConfigTest(TestCase):
 		rmtree(self._dir_2)
 		super().tearDown()
 
+class AppSettingsTest(TestCase):
+	def setUp(self):
+		self.root = mkdtemp()
+		self.addCleanup(rmtree, self.root)
+		self.bundled = join(self.root, 'Core')
+		self.user = join(self.root, 'Plugins', 'User', 'Settings')
+		self.app_settings = join(self.root, 'AppSettings.yaml')
+		write_differential_json({'archive_handlers': {'.zip': 'zip://'}, 'terminal': {'args': 'cmd'}}, [],
+			join(self.bundled, 'AppSettings.yaml'))
+
+	def config(self):
+		from os import makedirs
+		makedirs(self.user, exist_ok=True)
+		config = Config('Windows', self.app_settings)
+		config.add_dir(self.bundled)
+		config.add_dir(self.user)
+		return config
+
+	def read(self, path):
+		with open(path, encoding='utf-8') as file:
+			return file.read()
+
+	def test_user_layer_is_top_level_app_settings_file(self):
+		import yaml
+		config = self.config()
+		value = config.load_json('AppSettings.yaml', {})
+		value = dict(value, editor={'executable': 'editor.exe', 'arguments': []})
+		config.save_json('AppSettings.yaml', value)
+		self.assertEqual({'editor': {'executable': 'editor.exe', 'arguments': []}},
+			yaml.safe_load(self.read(self.app_settings)))
+		self.assertFalse(exists(join(self.user, 'AppSettings.yaml')))
+		self.assertEqual(value, self.config().load_json('AppSettings.yaml'))
+		self.assertEqual(self.app_settings, config.locate('AppSettings.yaml')[-1])
+		self.assertFalse(any('(Windows)' in path for path in config.locate('AppSettings.yaml')))
+		self.assertIn(join(self.bundled, 'Status Bar (Windows).yaml'), config.locate('Status Bar.yaml'))
+		self.assertNotIn(self.app_settings, config.locate('AppSettings.yaml', self.bundled))
+		self.assertNotIn(self.app_settings, config.locate('Status Bar.yaml'))
+		self.assertNotIn(self.app_settings, Config('Windows').locate('AppSettings.yaml'))
+
+	def test_saves_keep_user_comments(self):
+		with open(self.app_settings, 'w', encoding='utf-8') as file:
+			file.write('# Header\n# terminal:\n#   args: wt\n')
+		config = self.config()
+		self.assertEqual({'archive_handlers': {'.zip': 'zip://'}, 'terminal': {'args': 'cmd'}},
+			config.load_json('AppSettings.yaml'))
+		config.save_json('AppSettings.yaml', dict(config.load_json('AppSettings.yaml'), live_refresh_during_file_operations=False))
+		self.assertTrue(self.read(self.app_settings).startswith('# Header\n# terminal:\n#   args: wt\n'))
+		with open(self.app_settings, 'a', encoding='utf-8') as file:
+			file.write('# Viewer for logs\nviewer: {executable: v.exe, arguments: []}  # set by hand\n')
+		config = self.config()
+		value = config.load_json('AppSettings.yaml')
+		self.assertEqual({'executable': 'v.exe', 'arguments': []}, value['viewer'])
+		config.save_json('AppSettings.yaml', dict(value, live_refresh_during_file_operations=True))
+		text = self.read(self.app_settings)
+		self.assertIn('# Header', text)
+		self.assertIn('# Viewer for logs', text)
+		self.assertIn('# set by hand', text)
+		self.assertIn('live_refresh_during_file_operations: true', text)
+
+	def test_invalid_yaml_is_a_value_error(self):
+		with open(self.app_settings, 'w', encoding='utf-8') as file:
+			file.write('editor: [unclosed\n')
+		with self.assertRaises(ValueError):
+			self.config().load_json('AppSettings.yaml')
+
+
 class LoadJsonTest(TestCase):
 	def test_nonexistent_file(self):
 		self.assertIsNone(load_json(['non-existent']))

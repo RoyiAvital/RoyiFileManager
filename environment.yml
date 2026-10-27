@@ -5,6 +5,7 @@ dependencies:
   - python>=3.14,<3.15
   - pyqt=5.15.*
   - pyinstaller>=6,<7
+  - pyyaml
   - pywin32
   - pywinpty
   - send2trash

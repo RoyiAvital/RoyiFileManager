@@ -51,6 +51,8 @@ class PluginSupport:
 		return self._appcmd_registry.get_commands()
 	def get_application_command_aliases(self, command_name):
 		return self._appcmd_registry.get_command_aliases(command_name)
+	def get_application_command_category(self, command_name):
+		return self._appcmd_registry.get_command_category(command_name)
 	def run_application_command(self, name, args=None):
 		if args is None:
 			args = {}

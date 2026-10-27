@@ -4,7 +4,7 @@ from weakref import WeakKeyDictionary
 import ntpath
 import os
 
-from fman import DirectoryPaneCommand, NO, YES, QuicksearchItem, Task, load_json, show_alert, show_prompt, show_quicksearch, show_status_message, submit_task
+from fman import DirectoryPaneCommand, NO, YES, QuicksearchItem, Task, load_settings, show_alert, show_prompt, show_quicksearch, show_status_message, submit_task
 from fman.fs import notify_file_added, notify_file_changed
 from fman.ui import QuickTableColumn, QuickTableRow, UiController, settings_resource, show_quick_table
 from fman.url import as_human_readable, as_url
@@ -74,8 +74,8 @@ def _capture(run, selection):
         root_url = run.pane.get_path()
         selected = tuple(run.pane.get_selected_files()) if selection else ()
         highlighted_url = run.pane.get_file_under_cursor() if not selection else None
-        with settings_resource('ChecksumFiles.json').lock:
-            settings = engine.Settings.from_mapping(load_json('ChecksumFiles.json', default={}))
+        with settings_resource('ChecksumFiles.yaml').lock:
+            settings = engine.Settings.from_mapping(load_settings('ChecksumFiles.yaml', default={}))
         current_url = run.pane.get_path()
         run.check()
         if changed.is_set() or current_url != root_url:
@@ -130,6 +130,7 @@ def show_results(results, pane, manifest):
 
 
 class GenerateChecksumFile(DirectoryPaneCommand):
+    category = 'Tools'
     aliases = ('Generate checksum file',)
 
     def __call__(self):
@@ -181,6 +182,7 @@ class GenerateChecksumFile(DirectoryPaneCommand):
 
 
 class VerifyChecksum(DirectoryPaneCommand):
+    category = 'Tools'
     aliases = ('Verify checksum file',)
 
     def __call__(self):

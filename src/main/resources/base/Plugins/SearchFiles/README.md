@@ -122,17 +122,12 @@ filename regex. These are local measurements, not throughput guarantees.
 
 ## Settings and Distribution
 
-[SearchFiles.json](SearchFiles.json) is the settings entry point; engine and
-recursion defaults live in [search_files/__init__.py](search_files/__init__.py).
+[SearchFiles.yaml](SearchFiles.yaml) lists every setting with its default and a
+comment; engine and recursion defaults also live in
+[search_files/__init__.py](search_files/__init__.py).
 The two modes (`name_mode`, `content_mode`), recursion, `extended` and validated limits persist
-under `UserSettings`; queries and results are session-only. Mode values are
+in `SearchFiles (Windows).yaml` under `UserSettings`; queries and results are session-only. Mode values are
 `literal`, `glob` and `regex`, defaulting to filename Glob/content Literal.
-Old `name_regex`/`content_regex` booleans migrate automatically; valid new modes
-take precedence. Old keys are removed on the next settings save.
-Preferences from `SearchFileContent.json` remain readable as a fallback;
-explicit `SearchFiles.json` values take precedence. New preferences are saved
-to `SearchFiles (Windows).json` without modifying the legacy file. The bundled
-settings file is empty so defaults cannot mask migrated preferences.
 `encoding` accepts `auto` (UTF-8/UTF-16 BOM detection) or
 `windows-1252`. Limits may be lowered, not raised above the defaults.
 

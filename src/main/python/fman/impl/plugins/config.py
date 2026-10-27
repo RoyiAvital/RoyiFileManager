@@ -3,10 +3,16 @@ from os.path import dirname, splitext, join
 from threading import RLock
 
 import json
+import yaml
+
+# Bundled defaults stay in plug-in folders; the user layer is UserSettings\AppSettings.yaml.
+APP_SETTINGS = 'AppSettings.yaml'
+SETTINGS_SUFFIX = '.yaml'
 
 class Config:
-	def __init__(self, platform):
+	def __init__(self, platform, app_settings_path=None):
 		self._platform = platform
+		self._app_settings_path = app_settings_path
 		self._plugin_dirs = []
 		self._cache = {}
 		self._save_on_quit = set()
@@ -50,7 +56,10 @@ class Config:
 			dirs_to_search = [in_dir] if in_dir else self._plugin_dirs
 			for dir_ in dirs_to_search:
 				result.append(join(dir_, file_name))
-				result.append(join(dir_, platform_specific_name))
+				if file_name != APP_SETTINGS:
+					result.append(join(dir_, platform_specific_name))
+			if in_dir is None and file_name == APP_SETTINGS and self._app_settings_path:
+				result.append(self._app_settings_path)
 			return result
 	def on_quit(self):
 		with self._lock:
@@ -99,12 +108,28 @@ def read_json_file(path):
 		with open(path, 'r') as source:
 			return json.load(source)
 
+def is_settings_file(path):
+	return str(path).lower().endswith(SETTINGS_SUFFIX)
+
+def read_settings_file(path):
+	"""Read a YAML settings file or a JSON file; a YAML file with only comments returns None."""
+	if not is_settings_file(path):
+		return read_json_file(path)
+	with open(path, 'r', encoding='utf-8-sig') as source:
+		text = source.read()
+	try:
+		return yaml.load(text, Loader=yaml.CSafeLoader)
+	except yaml.YAMLError as error:
+		raise ValueError(str(error)) from None
+
 def load_json(paths):
 	result = None
 	for path in paths:
 		try:
-			next_value = read_json_file(path)
+			next_value = read_settings_file(path)
 		except FileNotFoundError:
+			continue
+		if next_value is None and is_settings_file(path):
 			continue
 		if result is None:
 			result = type(next_value)(next_value)
@@ -130,15 +155,48 @@ def write_differential_json(obj, paths, dest_path):
 		tmp_file = dest_path + '.tmp%d' % getpid()
 		makedirs(dirname(tmp_file), exist_ok=True)
 		try:
-			with open(tmp_file, 'w') as f:
-				json.dump(difference, f, indent=2)
-				f.write('\n')
+			if is_settings_file(dest_path):
+				_write_settings(difference, dest_path, tmp_file)
+			else:
+				with open(tmp_file, 'w') as f:
+					json.dump(difference, f, indent=2)
+					f.write('\n')
 			replace(tmp_file, dest_path)
 		finally:
 			try:
 				unlink(tmp_file)
 			except FileNotFoundError:
 				pass
+
+def _write_settings(value, dest_path, tmp_file):
+	"""Write YAML, keeping the comments of keys and items that remain in the file."""
+	from ruamel.yaml import YAML
+	document = YAML()
+	document.indent(mapping=2, sequence=4, offset=2)
+	document.width = 4096
+	try:
+		with open(dest_path, 'r', encoding='utf-8-sig') as source:
+			text = source.read()
+	except FileNotFoundError:
+		text = ''
+	existing = document.load(text) if text.strip() else None
+	with open(tmp_file, 'w', encoding='utf-8', newline='\n') as target:
+		if existing is None and text.strip():
+			target.write(text.rstrip('\n') + '\n') # A comment-only file keeps its comments
+		document.dump(_merge_commented(existing, value), target)
+
+def _merge_commented(old, new):
+	if isinstance(old, dict) and isinstance(new, dict):
+		for key in [key for key in old if key not in new]:
+			del old[key]
+		for key, value in new.items():
+			old[key] = _merge_commented(old[key], value) if key in old else value
+		return old
+	if isinstance(old, list) and isinstance(new, list) and len(old) == len(new):
+		for index, value in enumerate(new):
+			old[index] = _merge_commented(old[index], value)
+		return old
+	return new
 
 def get_differential_json(obj, paths, final_path):
 	old_obj = load_json(paths + [final_path])

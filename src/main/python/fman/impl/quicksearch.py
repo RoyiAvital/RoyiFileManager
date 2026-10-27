@@ -2,9 +2,9 @@ from fman.impl.util.qt import Key_Tab, Key_Down, Key_Up, Key_PageDown, \
 	Key_PageUp, UserRole, AlignRight, AlignVCenter, \
 	NoFocus, FramelessWindowHint, AlignTop, AccessibleTextRole
 from PyQt5.QtCore import QAbstractListModel, QVariant, QModelIndex, QSize, \
-	QPointF, QRectF, QPoint, pyqtSignal
-from PyQt5.QtGui import QFont, QTextLayout, QTextCharFormat, QBrush, \
-	QKeySequence
+	QPointF, QRectF, QPoint, Qt, pyqtSignal
+from PyQt5.QtGui import QFont, QFontMetricsF, QTextLayout, QTextCharFormat, \
+	QBrush, QKeySequence
 from PyQt5.QtWidgets import QDialog, QLayout, QFrame, QVBoxLayout, QLineEdit, \
 	QListView, QStyledItemDelegate, QApplication, QStyle
 
@@ -184,6 +184,9 @@ class QuicksearchItemDelegate(QStyledItemDelegate):
 		return QuicksearchItemRenderer(item, option, self._css)
 
 class QuicksearchItemRenderer:
+
+	HINT_GAP = 12
+
 	def __init__(self, item, option, css):
 		# Convert to str(...) in case the (fman API) user didn't pass a string:
 		self._title = str(item.title)
@@ -229,12 +232,18 @@ class QuicksearchItemRenderer:
 	def _draw_hint(self, painter):
 		if not self._hint:
 			return
-		font = QFont(self._option.font)
-		font.setPointSize(int(self._css['hint']['font-size_pts']))
-		painter.setFont(font)
+		painter.setFont(self._hint_font())
 		painter.setPen(self._css['hint']['color'])
 		rect = self._get_title_rect()
-		painter.drawText(rect, AlignRight | AlignVCenter, self._hint)
+		painter.drawText(rect, AlignRight | AlignVCenter, self.fitted_hint())
+	def fitted_hint(self):
+		available = self._get_title_rect().width() - self._layout_title()[1] - self.HINT_GAP
+		metrics = QFontMetricsF(self._hint_font())
+		return metrics.elidedText(self._hint, Qt.ElideMiddle, max(available, 0))
+	def _hint_font(self):
+		font = QFont(self._option.font)
+		font.setPointSize(int(self._css['hint']['font-size_pts']))
+		return font
 	def _draw_description(self, painter):
 		if not self._description:
 			return

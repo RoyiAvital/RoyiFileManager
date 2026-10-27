@@ -1,0 +1,2 @@
+# Key binding for file hashes; see the Core plug-in's Key Bindings.yaml for the format.
+- {keys: [Ctrl+H], command: calculate_file_hash}

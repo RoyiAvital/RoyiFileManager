@@ -16,7 +16,7 @@ import weakref
 
 
 SUFFIXES = frozenset(('.csv', '.tsv'))
-SETTINGS = 'Core Settings.json'
+SETTINGS = 'AppSettings.yaml'
 SETTING = 'quickview_table_max_file_mb'
 PRESETS = ((512, 192), (1024, 384), (2048, 768))
 DEFAULT_PRESET = 2048
@@ -45,23 +45,25 @@ def table_preset(settings):
 
 
 def load_table_preset():
-	from fman import load_json
+	from fman import load_settings
 	try:
-		return table_preset(load_json(SETTINGS, default={}))
+		return table_preset(load_settings(SETTINGS, default={}))
 	except (OSError, ValueError):
 		return DEFAULT_PRESET
 
 
 def save_table_preset(megabytes):
-	from fman import load_json, save_json
+	from fman import load_settings, save_settings
+	from fman.ui import settings_resource
 	if megabytes not in dict(PRESETS):
 		raise ValueError('Unsupported QuickView table limit')
-	settings = load_json(SETTINGS, default={})
-	if not isinstance(settings, dict):
-		raise ValueError('%s must contain an object.' % SETTINGS)
-	settings = dict(settings)
-	settings[SETTING] = megabytes
-	save_json(SETTINGS, settings)
+	with settings_resource(SETTINGS).lock:
+		settings = load_settings(SETTINGS, default={})
+		if not isinstance(settings, dict):
+			raise ValueError('AppSettings.yaml must contain a mapping.')
+		settings = dict(settings)
+		settings[SETTING] = megabytes
+		save_settings(SETTINGS, settings)
 
 
 def preset_limits(megabytes):

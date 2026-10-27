@@ -1,6 +1,6 @@
 from core.commands.util import is_hidden
 from core.quicksearch_matchers import path_starts_with, basename_starts_with, \
-	contains_substring, contains_chars
+	contains_substring, contains_chars, display_positions
 from fman import DirectoryPaneCommand, show_quicksearch, load_json, \
 	DirectoryPaneListener, QuicksearchItem
 from fman.fs import exists, resolve
@@ -17,6 +17,7 @@ import sys
 __all__ = ['GoTo', 'GoToListener']
 
 class GoTo(DirectoryPaneCommand):
+	category = 'Navigation'
 	def __call__(self, query=''):
 		visited_paths = self._get_visited_paths()
 		get_items = SuggestLocations(visited_paths)
@@ -280,13 +281,15 @@ class SuggestLocations:
 		use_tilde = \
 			not query.startswith(os.path.dirname(self.fs.expanduser('~')))
 		result = [[] for _ in self._MATCHERS]
+		lower_query = query.lower()
 		for dir_ in dirs:
 			title = self._unexpand_user(dir_) if use_tilde else dir_
+			lower_title = title.lower()
 			for i, matcher in enumerate(self._MATCHERS):
-				match = matcher(title.lower(), query.lower())
+				match = matcher(lower_title, lower_query)
 				if match is not None:
 					result[i].append(QuicksearchItem(
-						dir_, title, highlight=match
+						dir_, title, highlight=display_positions(title, lower_title, match)
 					))
 					break
 		return list(chain.from_iterable(result))

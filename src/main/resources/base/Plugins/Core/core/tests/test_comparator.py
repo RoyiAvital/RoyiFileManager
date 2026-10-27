@@ -149,16 +149,16 @@ class ComparatorWizardTest(TestCase):
 		self.config.add_dir(self.directory.name)
 		self.original = {'file_comparator': {'executable': sys.executable, 'arguments': ['--files']},
 			'folder_comparator': {'executable': sys.executable, 'arguments': ['--folders']},
-			'editor': {'args': [sys.executable, '{file}']}, 'unrelated': {'keep': True}}
+			'editor': {'executable': sys.executable, 'arguments': []}, 'unrelated': {'keep': True}}
 		self.config.save_json(SETTINGS, deepcopy(self.original))
 		self.mocks = {}
 		for name in ('show_quicksearch', 'show_file_open_dialog', 'show_prompt',
-			'show_status_message', 'show_alert', 'load_json', 'save_json', 'Popen'):
+			'show_status_message', 'show_alert', 'load_settings', 'save_settings', 'Popen'):
 			patcher = patch('core.comparator.' + name)
 			self.mocks[name] = patcher.start()
 			self.addCleanup(patcher.stop)
-		self.mocks['load_json'].side_effect = self.config.load_json
-		self.mocks['save_json'].side_effect = self.config.save_json
+		self.mocks['load_settings'].side_effect = self.config.load_json
+		self.mocks['save_settings'].side_effect = self.config.save_json
 		self.mocks['show_quicksearch'].return_value = ('', MANUAL)
 		self.mocks['show_file_open_dialog'].return_value = sys.executable
 		self.mocks['show_prompt'].return_value = ('', True)
@@ -204,7 +204,7 @@ class ComparatorWizardTest(TestCase):
 					self.assertIsNone(configure(role))
 					self.mocks[name].return_value = previous
 					self.assert_persisted(self.original)
-		self.mocks['save_json'].assert_not_called()
+		self.mocks['save_settings'].assert_not_called()
 		self.mocks['Popen'].assert_not_called()
 
 	def test_clear_masks_inheritance_and_leaves_other_role(self):
@@ -226,7 +226,7 @@ class ComparatorWizardTest(TestCase):
 			self.config.save_json(SETTINGS, settings)
 			self.mocks['show_quicksearch'].return_value = ('', 'Clear file comparator')
 			configure('file')
-		self.mocks['save_json'].assert_not_called()
+		self.mocks['save_settings'].assert_not_called()
 
 	def test_unrelated_edits_preserved_and_same_role_conflicts(self):
 		for changed_key in ('unrelated', 'file_comparator'):
@@ -247,15 +247,15 @@ class ComparatorWizardTest(TestCase):
 	def test_invalid_settings_and_failed_save_preserve_cache(self):
 		cached = self.config.load_json(SETTINGS)
 		for error in (OSError('Read only'), ValueError('Invalid save')):
-			self.mocks['save_json'].side_effect = error
+			self.mocks['save_settings'].side_effect = error
 			self.assertIsNone(configure('file'))
 			self.assertEqual(self.original, cached)
 			self.assert_persisted(self.original)
 		self.mocks['show_status_message'].assert_not_called()
 		self.mocks['Popen'].assert_not_called()
-		self.mocks['load_json'].side_effect = lambda *args, **kwargs: []
+		self.mocks['load_settings'].side_effect = lambda *args, **kwargs: []
 		self.assertIsNone(configure('folder'))
-		self.assertIn('must contain an object', self.mocks['show_alert'].call_args.args[0])
+		self.assertIn('must contain a mapping', self.mocks['show_alert'].call_args.args[0])
 
 
 class ComparatorCommandTest(TestCase):

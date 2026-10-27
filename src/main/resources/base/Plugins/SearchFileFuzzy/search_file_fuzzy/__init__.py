@@ -3,7 +3,7 @@ from datetime import datetime
 from threading import Event
 
 from fman import ApplicationCommand, DirectoryPaneCommand, QuicksearchItem, \
-	Task, clear_status_message, load_json, save_json, show_quicksearch, \
+	Task, clear_status_message, load_json, load_settings, save_settings, show_quicksearch, \
 	show_status_message, submit_task
 from fman.impl.status_bar import format_size
 from fman.url import as_human_readable
@@ -21,6 +21,7 @@ _DEFAULT_SETTINGS = {
 
 
 class SearchFilesInCurrentFolder(DirectoryPaneCommand):
+	category = 'Search'
 	aliases = ('Find files in current folder',)
 
 	def __call__(self, mode=None, query='', metadata=None):
@@ -28,6 +29,7 @@ class SearchFilesInCurrentFolder(DirectoryPaneCommand):
 
 
 class SearchFilesRecursively(DirectoryPaneCommand):
+	category = 'Search'
 	aliases = ('Find files recursively', 'Find files in subfolders')
 
 	def __call__(self, mode=None, query='', metadata=None):
@@ -35,18 +37,19 @@ class SearchFilesRecursively(DirectoryPaneCommand):
 
 
 class ToggleSearchResultMetadata(ApplicationCommand):
-	aliases = ('Toggle find result metadata', 'Find files: toggle modified date and size')
+	category = 'Search'
+	aliases = ('Toggle find result metadata', 'Toggle modified date and size in find results')
 
 	def is_visible(self):
 		return True
 
 	def __call__(self):
 		enabled = not _get_settings()['show_metadata']
-		configured = load_json('SearchFileFuzzy.json', default={})
+		configured = load_settings('SearchFileFuzzy.yaml', default={})
 		values = dict(configured) if isinstance(configured, dict) else {}
 		values['show_metadata'] = enabled
 		try:
-			save_json('SearchFileFuzzy.json', values)
+			save_settings('SearchFileFuzzy.yaml', values)
 		except ValueError as error:
 			show_status_message('Find result metadata settings conflict: %s' % error, timeout_secs=5)
 			return
@@ -183,8 +186,8 @@ def describe_metadata(entry):
 
 
 def _get_settings(mode=None, metadata=None):
-	configured = load_json(
-		'SearchFileFuzzy.json', default=_DEFAULT_SETTINGS.copy()
+	configured = load_settings(
+		'SearchFileFuzzy.yaml', default=_DEFAULT_SETTINGS.copy()
 	)
 	result = _DEFAULT_SETTINGS.copy()
 	if isinstance(configured, dict):

@@ -122,8 +122,8 @@ def native_smoke(path):
         assert not any(name.startswith('checksum_files._vendor.blake3') for name in sys.modules)
         with TemporaryDirectory() as directory:
             config.add_dir(directory)
-            Path(directory, 'ChecksumFiles.json').write_text('{}', encoding='utf-8')
-            assert config.load_json('ChecksumFiles.json')['default_algorithm'] == 'sha256'
+            Path(directory, 'ChecksumFiles.yaml').write_text('{}', encoding='utf-8')
+            assert config.load_json('ChecksumFiles.yaml')['default_algorithm'] == 'sha256'
             source = Path(directory) / 'data'
             source.write_bytes(b'abc')
             algorithm = engine.BY_ID['blake3']

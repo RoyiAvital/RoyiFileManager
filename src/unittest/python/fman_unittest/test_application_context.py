@@ -107,7 +107,7 @@ import sys
 from pathlib import Path
 from time import monotonic
 from unittest.mock import Mock, patch
-from fman import CANCEL, YES, load_json
+from fman import CANCEL, YES, load_settings
 from fman.impl.application_context import get_application_context
 from fman.url import as_url
 from PyQt5.QtCore import QEvent, QEventLoop, QTimer, Qt
@@ -205,10 +205,10 @@ try:
 	with patch('fman.impl.nonexistent_shortcut_handler.show_alert', return_value=YES):
 		handler._offer_to_customize_keybindings('', 'Left', 'go_up')
 		handler._offer_to_customize_keybindings('', 'Right', 'open')
-	bindings = load_json('Key Bindings.json')
+	bindings = load_settings('Key Bindings.yaml')
 	assert any(item['keys'] == ['Left'] and item['command'] == 'go_up' for item in bindings)
 	assert any(item['keys'] == ['Right'] and item['command'] == 'open' for item in bindings)
-	settings_files = list((root / 'UserSettings' / 'Plugins' / 'User' / 'Settings').glob('Key Bindings*.json'))
+	settings_files = list((root / 'UserSettings' / 'Plugins' / 'User' / 'Settings').glob('Key Bindings*.yaml'))
 	assert settings_files
 	press(Qt.Key_Left)
 	until(lambda: settled(as_url(root)))

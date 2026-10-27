@@ -70,8 +70,8 @@ assigned by default.
 
 ## Settings
 
-Defaults are in [Robocopy.json](Robocopy.json). Put only your overrides in
-`UserSettings/Plugins/User/Settings/Robocopy (Windows).json`, then reload plug-ins.
+Defaults are in [Robocopy.yaml](Robocopy.yaml). Put only your overrides in
+`UserSettings/Plugins/User/Settings/Robocopy (Windows).yaml`, then reload plug-ins.
 Settings are captured when a command starts; changing them does not alter an active
 transfer. Unknown options and invalid types/ranges are rejected.
 
@@ -127,14 +127,12 @@ copy success under concurrent changes. Exit 0 must not be read as "all moved".
 
 Logging and automatic opening are **disabled by default**. With those defaults,
 no log file is created or opened. To save and open one, set both options in
-`UserSettings/Plugins/User/Settings/Robocopy (Windows).json` and reload plug-ins:
+`UserSettings/Plugins/User/Settings/Robocopy (Windows).yaml` and reload plug-ins:
 
-```json
-{
-  "log_enabled": true,
-  "open_log_on_finish": true,
-  "log_retention_count": 20
-}
+```yaml
+log_enabled: true
+open_log_on_finish: true
+log_retention_count: 20
 ```
 
 Logs live in `UserSettings/Local/Robocopy/Logs` (under the configured portable data

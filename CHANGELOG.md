@@ -7,6 +7,96 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-10-27  
+
+This release focuses on faster batch file operations: Copy, Delete, Move.  
+It groups the _Command Palette_ into **Categories** for easier exploration.  
+User facing configuration / settings files are converted to `yaml` format. 
+It allows comments so the configuration files are self documenting.
+
+### Added
+
+- Command Center groups commands by category, for example **File: Copy**,
+  **Settings: Edit settings** and **View: Toggle hidden files**. Typing a
+  category name lists its commands; direct name matches still rank first. An
+  empty query lists commands grouped by category after recent ones. Categories:
+  Application, Settings, File, Clipboard, Selection, Navigation, View, Search,
+  Favorites and Tools. Context menus are unchanged.
+- Plug-in API: commands declare a `category` (`''` for none);
+  `DirectoryPane.get_command_category()` and
+  `get_application_command_category()` return it.
+- **Toggle live refresh during file operations** in the Command Center, saved as
+  `live_refresh_during_file_operations` in `AppSettings.yaml`. On (default)
+  keeps the current behavior: panes update while Copy, Move, Delete and other
+  file operations run. Off refreshes each affected pane once when the operation
+  ends, including on error or cancel, which makes operations much faster in
+  folders shown in a pane. Copying 10,000 files of 4 KiB until the destination
+  pane shows them:
+
+  | Destination before copy | Live refresh (default) | Live refresh off |
+  | ----------------------- | ---------------------: | ---------------: |
+  | Empty                   | 63.5 s                 | 10.4 s           |
+  | 200,000 files           | 71.1 s                 | 10.3 s           |
+
+  Medians of three runs (`copy.flat`, `copy.flat.deferred`, `copy.flat.large`,
+  `copy.flat.large.deferred` in the full performance suite).
+- **Edit settings** in the Command Center opens `UserSettings\AppSettings.yaml`
+  in the configured text editor. If missing, it is created with every option
+  listed as a comment. Without a text editor it shows an alert.
+- Plug-in API: `load_settings(name)` and `save_settings(name, value)` read and
+  write user-editable `<Name>.yaml` settings. `load_json` / `save_json` remain for
+  internal state.
+
+### Changed
+
+- User configuration files are YAML and may contain `#` comments: application
+  settings, plug-in settings, key bindings and context menus (for example
+  `Key Bindings (Windows).yaml`, `File Context Menu (Windows).yaml`,
+  `Status Bar.yaml`, `DirectorySize.yaml`, `QuickView.yaml`, `FindFiles.yaml`,
+  `SearchFiles.yaml`, `SearchFileFuzzy.yaml`, `Robocopy.yaml`,
+  `CalculateFileHash.yaml`, `ChecksumFiles.yaml`). Saving keeps the file's
+  comments. Bundled defaults list every option with a comment. Application state
+  (`Panes`, `Favorites`, `Visited Paths`, `Sort Settings`, command history, Apps,
+  File Associations, Everything) stays JSON.
+  **Migration:** existing `.json` user settings files are no longer read. Copy
+  their values into the matching `.yaml` file; JSON content is valid YAML, so a
+  file can usually be renamed as is.
+- Application settings (text editor and viewer, comparators, terminal, Explorer,
+  archive handlers, QuickView table limit, live refresh) are saved in
+  `UserSettings\AppSettings.yaml`. The former `Core Settings.json` /
+  `Core Settings (Windows).json` files under `UserSettings\Plugins\User\Settings`
+  are no longer read; copy their values into `AppSettings.yaml` manually.
+  `AppSettings.yaml` has no `(Windows)` variant.
+  Plug-ins read these settings with `load_settings('AppSettings.yaml')`.
+- QuickView image commands are named **QuickView fit**, **QuickView 100%**,
+  **QuickView zoom in**, **QuickView zoom out** and **QuickView pan**; their
+  command IDs are unchanged.
+- QuickSearch lists, including the Command Center, are 10% wider (`165ex`), so
+  every bundled command fits with its shortcuts and **Recent** at 100% scaling.
+
+### Removed
+
+- Legacy text editor launch mappings (`args` templates with `{file}`); configure
+  the editor again with **Set text editor**.
+- Search Files no longer reads `SearchFileContent.json` or the old
+  `name_regex` / `content_regex` keys; use `name_mode` / `content_mode`.
+
+### Fixed
+
+- Concurrent saves to application settings (text editor and viewer, comparators,
+  QuickView table limit) no longer overwrite each other's changes.
+- A long QuickSearch hint (for example several shortcuts plus **Recent**) no
+  longer draws over the item title; it is shortened in the middle instead.
+- Command Center and Go to (`Ctrl+P`) highlight the right characters in names
+  with emoji or letters that lengthen when lowercased (such as `İ`).
+
+### Documentation
+
+- Configuration and performance pages describe live refresh during file
+  operations and its trade-off.
+- Configuration, plug-in and API pages describe YAML settings, comments and
+  `load_settings` / `save_settings`.
+
 ## [0.18.1] - 2026-10-26
 
 ### Fixed

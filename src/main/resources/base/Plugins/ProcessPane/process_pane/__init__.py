@@ -66,6 +66,7 @@ class Pid(Column):
 
 
 class ShowProcesses(DirectoryPaneCommand):
+	category = 'Tools'
 	aliases = ("Show OS' processes",)
 
 	def __call__(self):
@@ -81,6 +82,7 @@ class ShowProcesses(DirectoryPaneCommand):
 
 
 class EndProcess(DirectoryPaneCommand):
+	category = 'Tools'
 	def is_visible(self):
 		return self.pane.get_path() == ROOT and bool(self.get_chosen_files())
 
@@ -153,6 +155,7 @@ class ProcessPaneListener(DirectoryPaneListener):
 
 
 class ProcessOperationUnsupported(DirectoryPaneCommand):
+	category = 'Tools'
 	def __call__(self):
 		show_alert('Processes are not files. Use F8 to end one process, or refresh the list.')
 

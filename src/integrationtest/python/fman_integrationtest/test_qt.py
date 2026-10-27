@@ -14,6 +14,7 @@ from threading import Event
 from unittest import TestCase
 
 import sys
+import yaml
 
 class QtIT(TestCase):
 	def run(self, result=None):
@@ -599,7 +600,7 @@ class QuickViewPdfIT(QtIT):
 		from unittest.mock import patch
 		def load(request, canceled):
 			return load_preview(request, canceled, self.filesystem.resolve)
-		with patch('fman.load_json', return_value={}):
+		with patch('fman.load_settings', return_value={}):
 			return (session_type or QuickViewSession)(self.window, *self.panes, load=load)
 
 	def fake_controller(self, mode):
@@ -801,7 +802,7 @@ class QuickViewCsvIT(QtIT):
 		def load(request, canceled):
 			return load_preview(request, canceled, self.filesystem.resolve)
 		settings = {} if preset is None else {'quickview_table_max_file_mb': preset}
-		with patch('fman.load_json', return_value=settings):
+		with patch('fman.load_settings', return_value=settings):
 			return QuickViewSession(self.window, *self.panes, load=load)
 
 	def finish(self, session):
@@ -987,8 +988,8 @@ class QuickViewCsvIT(QtIT):
 		from unittest.mock import Mock, patch
 		saved = {}
 		pane = Mock()
-		with patch('fman.load_json', return_value={'other': 1}), \
-				patch('fman.save_json', side_effect=lambda name, value: saved.update({name: value})), \
+		with patch('fman.load_settings', return_value={'other': 1}), \
+				patch('fman.save_settings', side_effect=lambda name, value: saved.update({name: value})), \
 				patch('fman.show_quicksearch', return_value=('', 512)) as chooser, \
 				patch('fman.show_status_message'), \
 				patch('fman.impl.quick_view_csv.notify_table_limit_changed') as notify:
@@ -997,10 +998,10 @@ class QuickViewCsvIT(QtIT):
 		self.assertEqual(['512 MB', '1,024 MB', '2,048 MB'], [item.title for item in items])
 		self.assertIn('(current)', items[2].hint)
 		self.assertEqual(2, chooser.call_args.kwargs['item'])
-		self.assertEqual({'Core Settings.json': {'other': 1, 'quickview_table_max_file_mb': 512}}, saved)
+		self.assertEqual({'AppSettings.yaml': {'other': 1, 'quickview_table_max_file_mb': 512}}, saved)
 		notify.assert_called_once_with()
-		with patch('fman.load_json', return_value={}), patch('fman.show_quicksearch', return_value=None), \
-				patch('fman.save_json') as save:
+		with patch('fman.load_settings', return_value={}), patch('fman.show_quicksearch', return_value=None), \
+				patch('fman.save_settings') as save:
 			SetQuickViewTableLimit(pane)()
 		save.assert_not_called()
 
@@ -1018,7 +1019,7 @@ class QuickViewTextIT(QtIT):
 		from PyQt5.QtTest import QTest
 		from unittest.mock import patch
 		def check():
-			with patch('fman.load_json', return_value={}):
+			with patch('fman.load_settings', return_value={}):
 				session = QuickViewSession(self.window, *self.panes)
 				session.timer.stop()
 			try:
@@ -1059,7 +1060,7 @@ class QuickViewTextIT(QtIT):
 		from PyQt5.QtTest import QTest
 		from unittest.mock import patch
 		def check():
-			with patch('fman.load_json', return_value={}):
+			with patch('fman.load_settings', return_value={}):
 				session = QuickViewSession(self.window, *self.panes)
 				session.timer.stop()
 			try:
@@ -1106,7 +1107,7 @@ class QuickViewTextIT(QtIT):
 		from PyQt5.QtTest import QTest
 		from unittest.mock import patch
 		def check():
-			with patch('fman.load_json', return_value={}):
+			with patch('fman.load_settings', return_value={}):
 				session = QuickViewSession(self.window, *self.panes)
 				session.timer.stop()
 			try:
@@ -1260,7 +1261,7 @@ class QuickViewTextIT(QtIT):
 					self.assertTrue(all(isinstance(color, str) for color in request.colors))
 					loads.append(request)
 					return load_preview(request, canceled, self.filesystem.resolve)
-				with patch('fman.load_json', return_value={}):
+				with patch('fman.load_settings', return_value={}):
 					session = self.run_in_app(RecordingSession, self.window, *panes, load=load)
 				try:
 					self.assertTrue(ready.wait(5), 'Text result did not reach Qt')
@@ -1312,7 +1313,7 @@ class QuickViewTextIT(QtIT):
 				started.set()
 				release.wait(5)
 			return load_preview(request, canceled, self.filesystem.resolve)
-		with patch('fman.load_json', return_value={}):
+		with patch('fman.load_settings', return_value={}):
 			session = self.run_in_app(RecordingSession, self.window, *self.panes, load=load)
 		self.addCleanup(session.shutdown)
 		self.assertTrue(ready.wait(5))
@@ -1349,7 +1350,7 @@ class QuickViewImagesIT(QtIT):
 				self.assertEqual(QApplication.instance().thread(), QThread.currentThread())
 				payload.setImageData(image)
 			clipboard.setImage.side_effect = copy_image
-			with patch('fman.load_json', return_value={}), patch('fman.impl.quick_view.QApplication.clipboard', return_value=clipboard) as access:
+			with patch('fman.load_settings', return_value={}), patch('fman.impl.quick_view.QApplication.clipboard', return_value=clipboard) as access:
 				session = QuickViewSession(self.window, *self.panes)
 				session.timer.stop()
 				try:
@@ -1458,7 +1459,7 @@ class QuickViewImagesIT(QtIT):
 		def load(request, canceled):
 			worker.append(QThread.currentThread() != QApplication.instance().thread())
 			return load_image(request, canceled, self.filesystem.resolve)
-		with patch('fman.load_json', return_value={'other': 7}), patch('fman.save_json') as save:
+		with patch('fman.load_settings', return_value={'other': 7}), patch('fman.save_settings') as save:
 			def create():
 				session = QuickViewSession(self.window, *self.panes, owner=owner, load=load)
 				session.overlay.canvas.changed.connect(lambda: ready.set() if session.overlay.canvas.image is not None else None)
@@ -1483,7 +1484,7 @@ class QuickViewImagesIT(QtIT):
 				self.assertTrue(self.panes[0].hasFocus())
 				self.assertEqual(2, len(self.window.get_panes()))
 			self.run_in_app(check)
-			save.assert_called_once_with('QuickView.json', {'other': 7, 'image_mode': 'actual_size'})
+			save.assert_called_once_with('QuickView.yaml', {'other': 7, 'image_mode': 'actual_size'})
 			owner.invalidate()
 			self.assertTrue(session.closed)
 			self.assertIsNone(self.window._quick_view_session)
@@ -1524,7 +1525,7 @@ class QuickViewImagesIT(QtIT):
 					session.overlay.set_title('previous.png')
 					source._model.location_loaded.connect(on_loaded)
 					return session
-				with patch('fman.load_json', return_value={}), patch.object(LocalFileSystem, 'scan', scan_directory):
+				with patch('fman.load_settings', return_value={}), patch.object(LocalFileSystem, 'scan', scan_directory):
 					session = self.run_in_app(create)
 					try:
 						from fman import _set_path_onerror
@@ -1567,7 +1568,7 @@ class QuickViewImagesIT(QtIT):
 					if 'file://' + path == as_url(destination):
 						raise error
 					return scan(provider, path, check)
-				with patch('fman.load_json', return_value={}):
+				with patch('fman.load_settings', return_value={}):
 					session = self.run_in_app(QuickViewSession, self.window, *self.panes,
 						load=Mock(return_value=ImageResult(message='preview')))
 				try:
@@ -1640,7 +1641,7 @@ class QuickViewImagesIT(QtIT):
 			image.fill(QColor('red' if first else 'blue'))
 			return ImageResult(image, format='png')
 		self.addCleanup(release.set)
-		with patch('fman.load_json', return_value={}):
+		with patch('fman.load_settings', return_value={}):
 			first = self.run_in_app(lambda: QuickViewSession(self.window, *self.panes, load=load))
 			self.addCleanup(first.shutdown)
 			self.assertTrue(started.wait(5))
@@ -1674,7 +1675,7 @@ class QuickViewImagesIT(QtIT):
 		def load(request, canceled):
 			loads.append(request.url)
 			return load_image(request, canceled, self.filesystem.resolve)
-		with patch('fman.load_json', return_value={}), patch('fman.save_json') as save:
+		with patch('fman.load_settings', return_value={}), patch('fman.save_settings') as save:
 			def create():
 				session = QuickViewSession(self.window, *self.panes, load=load)
 				session.overlay.canvas.changed.connect(lambda: ready.set() if session.overlay.canvas.image is not None else None)
@@ -1728,7 +1729,7 @@ class QuickViewImagesIT(QtIT):
 		from PyQt5.QtCore import QEvent, QPoint, QPointF
 		from PyQt5.QtGui import QColor, QImage, QMouseEvent, QWheelEvent
 		from unittest.mock import patch
-		with patch('fman.load_json', return_value={}), patch('fman.save_json', side_effect=PermissionError('denied')):
+		with patch('fman.load_settings', return_value={}), patch('fman.save_settings', side_effect=PermissionError('denied')):
 			def check():
 				session = QuickViewSession(self.window, *self.panes)
 				try:
@@ -1885,6 +1886,26 @@ class FilterBarIT(QtIT):
 		self.drain(pane)
 		self.assertEqual('Filter ".py$": 2 of 6 items', self.status())
 
+	def test_deferred_refresh_survives_leaving_and_reentering_destination(self):
+		from fman.impl.model.file_watcher import deferred_refresh
+		from fman.url import as_url
+		pane = self.panes[0]
+		other = self.root / 'other'
+		other.mkdir()
+		before = len(list(self.root.iterdir()))
+		with deferred_refresh():
+			copied = self.root / 'copied.txt'
+			copied.write_bytes(b'')
+			self.filesystem.notify_file_added(as_url(copied))
+			self.navigate(pane, other)
+			self.navigate(pane, self.root)
+			self.assertEqual(before + 1, self.run_in_app(pane._model.rowCount))
+			late = self.root / 'late.txt'
+			late.write_bytes(b'')
+			self.filesystem.notify_file_added(as_url(late))
+		self.drain(pane)
+		self.assertEqual(before + 2, self.run_in_app(pane._model.rowCount))
+
 	def test_two_panes_and_unfiltered_noop(self):
 		from unittest.mock import patch
 		self.set_query('rep')
@@ -2006,9 +2027,9 @@ class FilterBarIT(QtIT):
 		self.assertFalse(self.run_in_app(self.window._timer.isActive))
 		bindings = KeyBindings()
 		bindings.register_command('toggle_selection')
-		path = Path(__file__).parents[3] / 'main/resources/base/Plugins/Core/Key Bindings.json'
+		path = Path(__file__).parents[3] / 'main/resources/base/Plugins/Core/Key Bindings.yaml'
 		with path.open(encoding='utf-8') as stream:
-			space_binding = [binding for binding in json.load(stream) if binding['keys'] == ['Space']]
+			space_binding = [binding for binding in yaml.safe_load(stream) if binding['keys'] == ['Space']]
 		self.assertEqual([], bindings.load(space_binding))
 		public_pane = Mock(get_commands=Mock(return_value=['toggle_selection']))
 		public_pane.run_command.side_effect = lambda name, args: pane.toggle_selection(pane.get_file_under_cursor())
@@ -2046,9 +2067,9 @@ class FilterBarIT(QtIT):
 		pane.reload()
 		self.drain(pane)
 		bindings = KeyBindings()
-		path = Path(__file__).parents[3] / 'main/resources/base/Plugins/Core/Key Bindings (Windows).json'
-		configuration = json.loads(path.read_text(encoding='utf-8')) + \
-			json.loads((path.parent / 'Key Bindings.json').read_text(encoding='utf-8'))
+		path = Path(__file__).parents[3] / 'main/resources/base/Plugins/Core/Key Bindings (Windows).yaml'
+		configuration = yaml.safe_load(path.read_text(encoding='utf-8')) + \
+			yaml.safe_load((path.parent / 'Key Bindings.yaml').read_text(encoding='utf-8'))
 		commands = {binding['command'] for binding in configuration}
 		for command in commands:
 			bindings.register_command(command)
@@ -2127,10 +2148,10 @@ class FilterBarIT(QtIT):
 		):
 			registry.register_command(name, command)
 			bindings.register_command(name)
-		path = Path(__file__).parents[3] / 'main/resources/base/Plugins/Core/Key Bindings.json'
+		path = Path(__file__).parents[3] / 'main/resources/base/Plugins/Core/Key Bindings.yaml'
 		with path.open(encoding='utf-8') as stream:
 			self.assertEqual([], bindings.load([
-				binding for binding in json.load(stream)
+				binding for binding in yaml.safe_load(stream)
 				if binding['command'] in registry.get_commands()
 			]))
 		public_pane = Mock(get_commands=registry.get_commands,
@@ -2871,7 +2892,7 @@ class PatternSelectionIT(QtIT):
 		from fman.impl.util.qt.key_event import QtKeyEvent
 		from pathlib import Path
 		import json
-		bindings = json.loads((Path(__file__).parents[3] / 'main/resources/base/Plugins/Core/Key Bindings (Windows).json').read_text())
+		bindings = yaml.safe_load((Path(__file__).parents[3] / 'main/resources/base/Plugins/Core/Key Bindings (Windows).yaml').read_text(encoding='utf-8'))
 		for key, spelling, command in ((Qt.Key_Plus, 'Num++', 'select_by_pattern'),
 			(Qt.Key_Minus, 'Num+-', 'deselect_by_pattern'), (Qt.Key_Asterisk, 'Num+*', 'invert_selection')):
 			self.assertIn({'keys': [spelling], 'command': command}, bindings)
@@ -3596,7 +3617,7 @@ class SnapshotFilterBarIT(FilterBarIT):
 		pane = self.panes[0]
 		path = self.root / 'report.txt'
 		pane.place_cursor_at(as_url(path))
-		with patch('fman.load_json', return_value={}):
+		with patch('fman.load_settings', return_value={}):
 			session = self.run_in_app(QuickViewSession, self.window, pane, self.panes[1])
 		def install_image():
 			session.timer.stop()
@@ -3900,8 +3921,8 @@ class DirectorySizeIT(QtIT):
 		(self.root / 'plain.txt').write_bytes(b'abc')
 		settings_dir = self.root / 'UserSettings/Plugins/User/Settings'
 		settings_dir.mkdir(parents=True)
-		(settings_dir / 'DirectorySize (Windows).json').write_text(
-			json.dumps({'enabled': False, 'max_entries': 200000}), encoding='utf-8')
+		(settings_dir / 'DirectorySize (Windows).yaml').write_text(
+			'# Disabled for this test\nenabled: false\nmax_entries: 200000\n', encoding='utf-8')
 		script = r'''
 import sys, traceback
 from pathlib import Path
@@ -4025,7 +4046,7 @@ sys.exit(context.run())
 		from unittest.mock import Mock, patch
 		window = self.run_in_app(MainWindow, Mock(), Mock(), Mock(), Mock(), 'null://')
 		try:
-			with patch('core.directory_size.save_json'), \
+			with patch('core.directory_size.save_settings'), \
 				patch('core.directory_size.scan_parents'), \
 				patch('core.directory_size.show_status_message', side_effect=window.show_status_message):
 				for mode in (DISABLED, ACTIVE_PANE):
@@ -4087,8 +4108,8 @@ sys.exit(context.run())
 				palette()
 		applications.register_command('command_palette', Palette)
 		bindings.register_command('command_palette')
-		with (core_path / 'Key Bindings (Windows).json').open(encoding='utf-8') as stream:
-			core_bindings = json.load(stream)
+		with (core_path / 'Key Bindings (Windows).yaml').open(encoding='utf-8') as stream:
+			core_bindings = yaml.safe_load(stream)
 		palette_binding = [binding for binding in core_bindings if binding['keys'] == ['Ctrl+Shift+P']]
 		feature_bindings = [binding for binding in core_bindings if binding['command'] in
 			('toggle_directory_size_column', 'sort_by_directory_size', 'show_directory_size')]
@@ -4115,8 +4136,8 @@ sys.exit(context.run())
 		with patch.object(plugin, '_load_packages', return_value=[core]), \
 			patch.object(plugin, '_iterate_classes', return_value=feature_classes), \
 			patch.object(plugin, '_load_key_bindings', side_effect=load_feature_bindings), \
-			patch.object(module, 'load_json', side_effect=config.load_json), \
-			patch.object(module, 'save_json', side_effect=config.save_json), \
+			patch.object(module, 'load_settings', side_effect=config.load_json), \
+			patch.object(module, 'save_settings', side_effect=config.save_json), \
 			patch('fman.fs._get_mother_fs', return_value=self.filesystem), \
 			patch.object(module, 'show_status_message') as status, patch.object(module, 'show_alert') as alert, \
 			patch('fman._get_ui') as ui:
@@ -4138,7 +4159,7 @@ sys.exit(context.run())
 				self.service._future.result(5)
 				self.drain_models()
 				status.assert_called_once_with('Directory sizes: On', timeout_secs=5)
-				self.assertTrue(config.load_json('DirectorySize.json')['enabled'])
+				self.assertTrue(config.load_json('DirectorySize.yaml')['enabled'])
 				for pane in self.panes:
 					self.assertEqual(self.columns, tuple(pane.get_columns()))
 				shortcut(Qt.Key_F4, Qt.ControlModifier)
@@ -4154,7 +4175,7 @@ sys.exit(context.run())
 				self.assertTrue(support.load_plugin(str(plugin_path)))
 				self.service = plugin._services[0]
 				self.owner = self.service.owner
-				self.assertTrue(config.load_json('DirectorySize.json')['enabled'],
+				self.assertTrue(config.load_json('DirectorySize.yaml')['enabled'],
 					'Reloading the plug-in lost the persisted setting')
 				self.assertTrue(self.service.enabled,
 					'Restored service settings: %r' % self.service.settings)
@@ -4239,7 +4260,7 @@ sys.exit(context.run())
 			loaded = Event()
 			pane.set_path(as_url(self.root), callback=loaded.set)
 			self.assertTrue(loaded.wait(5))
-			with patch('core.directory_size.load_json', return_value={}):
+			with patch('core.directory_size.load_settings', return_value={}):
 				self.service.on_pane_added(pane)
 		self.drain_models()
 		self.columns = ('core.Name', 'core.Size', 'core.Modified')
@@ -4256,12 +4277,12 @@ sys.exit(context.run())
 		self.owner = UiOwner()
 		self.service = DirectorySizeService(Mock(), self.owner)
 		self.owner.attach(self.service.dispose)
-		with patch('core.directory_size.load_json', side_effect=config.load_json) as load:
+		with patch('core.directory_size.load_settings', side_effect=config.load_json) as load:
 			self.service.start()
 			load.assert_not_called()
 			config.add_dir(str(self.root / 'AnotherPlugin'))
 			config.add_dir(str(self.root / 'Settings'))
-			config.save_json('DirectorySize.json', {'enabled': True, 'max_files': 2})
+			config.save_json('DirectorySize.yaml', {'enabled': True, 'max_files': 2})
 			with patch('core.directory_size.scan_parents') as scan:
 				for pane in self.panes:
 					self.service.on_pane_added(pane)
@@ -4269,7 +4290,7 @@ sys.exit(context.run())
 			self.assertTrue(self.service.enabled)
 			self.assertEqual(2, self.service.settings['max_files'])
 			self.assertEqual(2, scan.call_args.args[1])
-			load.assert_called_once_with('DirectorySize.json', default={})
+			load.assert_called_once_with('DirectorySize.yaml', default={})
 
 	def close_panes(self):
 		self.owner.invalidate()
@@ -4523,8 +4544,8 @@ class ProcessPaneIT(QtIT):
 			commands.register_command(name, command)
 			bindings.register_command(name)
 		plugins = Path(__file__).parents[3] / 'main/resources/base/Plugins'
-		with (plugins / 'Core/Key Bindings.json').open(encoding='utf-8') as stream:
-			binding = [entry for entry in json.load(stream) if entry['keys'] == ['F8']]
+		with (plugins / 'Core/Key Bindings.yaml').open(encoding='utf-8') as stream:
+			binding = [entry for entry in yaml.safe_load(stream) if entry['keys'] == ['F8']]
 		self.assertEqual(1, len(binding))
 		self.assertEqual([], bindings.load(binding))
 		config = Config('Windows')
@@ -4789,7 +4810,7 @@ class UnpackArchiveIT(QtIT):
 				self.assertEqual(as_url(archive), pane.get_file_under_cursor())
 				self.assertIn('unpack_archive', registry.get_commands())
 				self.assertEqual(('Unpack archive', 'Extract archive'), registry.get_command_aliases('unpack_archive'))
-				with patch('core.commands.load_json', return_value={'archive_handlers': {'.zip': 'zip://'}}), \
+				with patch('core.commands.load_settings', return_value={'archive_handlers': {'.zip': 'zip://'}}), \
 					patch('core.commands.samefile', side_effect=filesystem.samefile), \
 					patch('core.commands.is_dir', side_effect=filesystem.is_dir), \
 					patch('core.commands.prepare_copy', side_effect=prepare), \
@@ -5198,8 +5219,8 @@ class EverythingFoldersIT(QtIT):
 			commands.register_command(name, command)
 			bindings.register_command(name)
 		plugins = Path(__file__).parents[3] / 'main/resources/base/Plugins'
-		with (plugins / 'Core/Key Bindings.json').open(encoding='utf-8') as stream:
-			self.assertEqual([], bindings.load([entry for entry in json.load(stream)
+		with (plugins / 'Core/Key Bindings.yaml').open(encoding='utf-8') as stream:
+			self.assertEqual([], bindings.load([entry for entry in yaml.safe_load(stream)
 				if entry['command'] in commands.get_commands()]))
 		config, context = Config('Windows'), Mock()
 		plugin = ExternalPlugin(str(plugins / 'Everything'), config, Mock(), Mock(), context,
@@ -5288,6 +5309,7 @@ class EverythingFoldersIT(QtIT):
 		self.public_panes[0].set_sort_column('everything_search.IndexedFolderPath')
 		self.drain(self.panes[0])
 		with patch('search_file_fuzzy.load_json', return_value={}), \
+				patch('search_file_fuzzy.load_settings', return_value={}), \
 				patch('search_file_fuzzy.show_status_message'), patch('search_file_fuzzy.clear_status_message'), \
 				patch('search_file_fuzzy.show_quicksearch', return_value=None) as picker:
 			self.public_panes[0].run_command('search_files_in_current_folder', {'query': 'Alpha'})
@@ -5398,6 +5420,7 @@ class SearchFileSyntaxIT(QtIT):
 				finally:
 					dialog.deleteLater()
 			with patch('search_file_fuzzy.load_json', return_value={}), \
+				patch('search_file_fuzzy.load_settings', return_value={}), \
 				patch('search_file_fuzzy.show_status_message'), \
 				patch('search_file_fuzzy.clear_status_message'), \
 				patch('search_file_fuzzy.show_quicksearch', side_effect=lambda *args, **kwargs:
@@ -5436,6 +5459,7 @@ class SearchFileMetadataIT(QtIT):
 		for target, options in (
 			('fman._get_ui', {'return_value': Mock(create_progress_dialog=create_progress)}),
 			('search_file_fuzzy.load_json', {'return_value': {}}),
+			('search_file_fuzzy.load_settings', {'return_value': {}}),
 			('search_file_fuzzy.show_status_message', {}),
 			('search_file_fuzzy.clear_status_message', {}),
 		):
@@ -5483,6 +5507,7 @@ class SearchFileMetadataIT(QtIT):
 			def inspect():
 				self.assertEqual(QApplication.instance().thread(), QThread.currentThread())
 				with patch('search_file_fuzzy.load_json', side_effect=AssertionError('Query settings I/O')), \
+						patch('search_file_fuzzy.load_settings', side_effect=AssertionError('Query settings I/O')), \
 						patch('search_file_fuzzy.indexer.os.scandir', side_effect=AssertionError('Query scan')):
 					self.assertCountEqual(expected, [item.title for item in get_items('')])
 					self.assertEqual(['.gitignore'], [item.title for item in get_items('gitignore')])
@@ -5504,6 +5529,7 @@ class SearchFileMetadataIT(QtIT):
 					self.run_in_app(setattr, widget, 'listing', Listing.create(as_url(root),
 						names, attributes=(0, FILE_ATTRIBUTE_HIDDEN, 0)))
 				with patch('search_file_fuzzy.load_json', side_effect=settings), \
+						patch('search_file_fuzzy.load_settings', side_effect=settings), \
 						patch('search_file_fuzzy.show_quicksearch', side_effect=show):
 					for pane, hidden in zip(window.get_panes(), (True, False)):
 						expected = list(names) if hidden else ['visible.txt', '.gitignore']
@@ -5512,7 +5538,7 @@ class SearchFileMetadataIT(QtIT):
 								with self.subTest(hidden=hidden, command=command.__name__, metadata=metadata):
 									loads.clear()
 									command(pane)(metadata=metadata)
-									self.assertEqual(['SearchFileFuzzy.json', 'Panes.json'], loads)
+									self.assertEqual(['SearchFileFuzzy.yaml', 'Panes.json'], loads)
 									self.assertEqual(0, self.run_in_app(pane._widget.receivers,
 										pane._widget.location_changed))
 			finally:
@@ -5664,6 +5690,7 @@ class CommandPaletteRecentIT(QtIT):
 		pane.get_commands.return_value = ['copy', 'files']
 		pane.is_command_visible.return_value = True
 		pane.get_command_aliases.side_effect = {'copy': ['Copy'], 'files': ['Find files']}.__getitem__
+		pane.get_command_category.side_effect = {'copy': 'File', 'files': 'Search'}.__getitem__
 		document = {'recent': [{'kind': 'pane', 'name': 'files'}]}
 		loads = []
 		def load(name, **kwargs):
@@ -5683,10 +5710,10 @@ class CommandPaletteRecentIT(QtIT):
 			errors = []
 			def inspect():
 				try:
-					self.assertEqual('Find files', dialog._curr_items[0].title)
+					self.assertEqual('Search: Find files', dialog._curr_items[0].title)
 					self.assertEqual('Recent', dialog._curr_items[0].hint)
 					dialog._query.setText('copy')
-					self.assertEqual(['Copy'], [item.title for item in dialog._curr_items])
+					self.assertEqual(['File: Copy'], [item.title for item in dialog._curr_items])
 					self.assertEqual('', dialog._curr_items[0].hint)
 					dialog._query.setText('file')
 					self.assertEqual('Recent', dialog._curr_items[0].hint)
@@ -5711,6 +5738,7 @@ class CommandPaletteRecentIT(QtIT):
 			finally:
 				dialog.deleteLater()
 		with patch('core.commands.load_json', side_effect=load), \
+			patch('core.commands.load_settings', return_value=[]), \
 			patch('core.commands.get_application_commands', return_value=[]), \
 			patch('fman.ui.settings_resource', return_value=Resource()), \
 			patch('core.commands.show_quicksearch', side_effect=lambda *args, **kwargs:
@@ -5718,6 +5746,34 @@ class CommandPaletteRecentIT(QtIT):
 			palette()
 		self.assertEqual(2, len(loads))
 		pane.run_command.assert_not_called()
+	def test_long_hint_is_elided_instead_of_overlapping_the_title(self):
+		from fman import QuicksearchItem
+		from fman.impl.quicksearch import QuicksearchItemRenderer
+		from fman.impl.theme import Theme
+		from PyQt5.QtCore import QRect
+		from PyQt5.QtWidgets import QListView, QStyleOptionViewItem
+		from pathlib import Path
+		from unittest.mock import Mock
+		def check():
+			theme = Theme(Mock(), [])
+			theme.load(str(Path(__file__).parents[3] / 'main/resources/base/Plugins/Core/Theme.css'))
+			css = theme.get_quicksearch_item_css()
+			view = QListView()
+			try:
+				option = QStyleOptionViewItem()
+				option.initFrom(view)
+				item = QuicksearchItem('value', 'Navigation: Move cursor down',
+					hint='Down, Num+Down, Shift+Down, Num+Insert, Ins \u00b7 Recent')
+				option.rect = QRect(0, 0, 2000, 1)
+				self.assertEqual(item.hint, QuicksearchItemRenderer(item, option, css).fitted_hint())
+				option.rect = QRect(0, 0, 400, 1)
+				fitted = QuicksearchItemRenderer(item, option, css).fitted_hint()
+				self.assertNotEqual(item.hint, fitted)
+				self.assertTrue(fitted.startswith('Down'))
+				self.assertTrue(fitted.endswith('Recent'))
+			finally:
+				view.deleteLater()
+		self.run_in_app(check)
 
 class ClipboardCommandsIT(QtIT):
 	def setUp(self):
@@ -5739,9 +5795,9 @@ class ClipboardCommandsIT(QtIT):
 			def url(self, index):
 				return index.data(Qt.UserRole)
 		root = Path(__file__).parents[3] / 'main/resources/base/Plugins/Core'
-		self.menu_config = json.loads((root / 'File Context Menu (Windows).json').read_text(encoding='utf-8'))
-		self.background_config = json.loads((root / 'Folder Context Menu (Windows).json').read_text(encoding='utf-8'))
-		self.bindings_config = json.loads((root / 'Key Bindings.json').read_text(encoding='utf-8'))
+		self.menu_config = yaml.safe_load((root / 'File Context Menu (Windows).yaml').read_text(encoding='utf-8'))
+		self.background_config = yaml.safe_load((root / 'Folder Context Menu (Windows).yaml').read_text(encoding='utf-8'))
+		self.bindings_config = yaml.safe_load((root / 'Key Bindings.yaml').read_text(encoding='utf-8'))
 		self.completed = Event()
 		self.errors = Mock()
 		callback = Mock()
@@ -5825,33 +5881,35 @@ class ClipboardCommandsIT(QtIT):
 		from fman import clipboard
 		from unittest.mock import patch
 		palette = CommandPalette(self.pane)
-		with patch('core.commands.load_json', return_value=self.bindings_config), \
+		with patch('core.commands.load_settings', return_value=self.bindings_config), \
+			patch('core.commands.load_json', return_value={}), \
 			patch('core.commands.get_application_commands', return_value=[]):
 			self.assertEqual([{'keys': ['F11'], 'command': 'copy_file_path'}],
 				[binding for binding in self.bindings_config if binding['keys'] == ['F11']])
 			self._select([0, 1])
-			self.assertEqual(['Copy item(s) name', 'Copy item(s) path'],
+			self.assertEqual(['Clipboard: Copy item(s) name', 'Clipboard: Copy item(s) path'],
 				[item.title for item in palette._suggest_commands('copy')])
+			name, path = 'Clipboard: Copy item(s) name', 'Clipboard: Copy item(s) path'
 			for row, expected in ((0, 'report.tar.gz'), (1, 'Folder notes'), (2, 'caf\u00e9.txt')):
 				self._select([row])
 				items = {item.title: item for item in palette._suggest_commands('copy')}
-				self.assertEqual({'Copy item(s) name', 'Copy item(s) path'}, set(items))
-				self.assertEqual('Shift+F11', items['Copy item(s) name'].hint)
-				self.assertEqual('F11', items['Copy item(s) path'].hint)
-				for title, text in (('Copy item(s) name', expected),
-					('Copy item(s) path', 'C:\\clipboard-test\\' + expected)):
+				self.assertEqual({name, path}, set(items))
+				self.assertEqual('Shift+F11', items[name].hint)
+				self.assertEqual('F11', items[path].hint)
+				for title, text in ((name, expected),
+					(path, 'C:\\clipboard-test\\' + expected)):
 					items[title].value()
 					self.assertEqual(text, clipboard.get_text())
 					self.assertFalse(self.run_in_app(lambda: QApplication.clipboard().mimeData().hasUrls()))
 			self._select([0, 1])
 			items = {item.title: item for item in palette._suggest_commands('copy')}
-			items['Copy item(s) name'].value()
+			items[name].value()
 			self.assertEqual('report.tar.gz\nFolder notes', clipboard.get_text())
-			items['Copy item(s) path'].value()
+			items[path].value()
 			self.assertEqual('C:\\clipboard-test\\report.tar.gz\nC:\\clipboard-test\\Folder notes', clipboard.get_text())
 			self._select([], -1)
 			items = palette._suggest_commands('copy')
-			self.assertEqual(['Copy item(s) path'], [item.title for item in items])
+			self.assertEqual([path], [item.title for item in items])
 			items[0].value()
 			self.assertEqual('C:\\clipboard-test', clipboard.get_text())
 		self.errors.report.assert_not_called()
@@ -6150,7 +6208,7 @@ class RobocopyIT(QtIT):
 			release()
 			self.assertIn('Robocopy finished', Path(path).read_text(encoding='utf-16'))
 			raise OSError('Viewer fixture failure')
-		with patch.object(self.plugin.fman, 'load_json', return_value={'log_enabled': True, 'open_log_on_finish': True}), \
+		with patch.object(self.plugin.fman, 'load_settings', return_value={'log_enabled': True, 'open_log_on_finish': True}), \
 				patch.object(self.plugin.os, 'startfile', side_effect=view) as viewer:
 			self.public_panes[0].run_command('copy_with_robocopy')
 			viewer.assert_called_once()
@@ -6182,7 +6240,7 @@ class RobocopyIT(QtIT):
 						self.assertEqual('Canceling...', self.progress[-1]._text)
 					return child
 				with patch.object(engine, 'probe'), patch.object(windows, 'OwnedProcess', side_effect=launch), \
-						patch.object(self.plugin.fman, 'load_json', return_value={'log_enabled': True, 'open_log_on_finish': True}), \
+						patch.object(self.plugin.fman, 'load_settings', return_value={'log_enabled': True, 'open_log_on_finish': True}), \
 						patch.object(self.plugin.os, 'startfile') as viewer:
 					self.plugin.CopyWithRobocopy(self.public_panes[0])()
 					if unload:
@@ -6245,7 +6303,7 @@ class TextEditorIT(QtIT):
 		self.addCleanup(self.directory.cleanup)
 		self.config = Config('Windows')
 		self.config.add_dir(self.directory.name)
-		self.config.save_json('Core Settings.json', {
+		self.config.save_json('AppSettings.yaml', {
 			'editor': {'executable': sys.executable, 'arguments': []},
 			'viewer': {'executable': sys.executable, 'arguments': []}})
 		self.dialogs = []
@@ -6327,14 +6385,14 @@ class TextEditorIT(QtIT):
 		self.selection = 'CudaText'
 		SetTextViewer(Mock())()
 		self.assertEqual(['preset', 'executable'], self.dialogs)
-		self.assertEqual(['-r', '-n', '-ns', '-nh'], self.config.load_json('Core Settings.json')['viewer']['arguments'])
+		self.assertEqual(['-r', '-n', '-ns', '-nh'], self.config.load_json('AppSettings.yaml')['viewer']['arguments'])
 		self.selection = 'Manual configuration'
 		arguments = ['-c', 'import json,sys;print(json.dumps(sys.argv[1:]))', 'C:\\My Files\\session.ini', '', 'a"b']
 		self.argument_line = list2cmdline(arguments)
 		SetTextEditor(Mock())()
 		self.assertEqual(['preset', 'executable', 'preset', 'executable', 'arguments'], self.dialogs)
 		self.assertEqual([], self.errors)
-		settings = self.config.load_json('Core Settings.json')
+		settings = self.config.load_json('AppSettings.yaml')
 		self.assertEqual(arguments, settings['editor']['arguments'])
 		self.assertEqual(['-r', '-n', '-ns', '-nh'], settings['viewer']['arguments'])
 		target = Path(self.directory.name, 'file {data} \u754c.txt')
@@ -6383,14 +6441,14 @@ class TextEditorIT(QtIT):
 				self.assertEqual(['preset', 'executable'], self.dialogs)
 				reloaded = Config('Windows')
 				reloaded.add_dir(self.directory.name)
-				self.assertEqual(arguments, reloaded.load_json('Core Settings.json')[role]['arguments'])
+				self.assertEqual(arguments, reloaded.load_json('AppSettings.yaml')[role]['arguments'])
 
 	def test_clear_from_setup_list_persists_without_additional_dialogs(self):
 		from copy import deepcopy
 		from core.commands import SetTextEditor, SetTextViewer
 		from fman.impl.plugins.config import Config
 		from unittest.mock import Mock, patch
-		expected = deepcopy(self.config.load_json('Core Settings.json'))
+		expected = deepcopy(self.config.load_json('AppSettings.yaml'))
 		with patch('core.text_editor.Popen') as launch:
 			for role, command in (('editor', SetTextEditor), ('viewer', SetTextViewer)):
 				self.selection = 'Clear %s' % role
@@ -6398,7 +6456,7 @@ class TextEditorIT(QtIT):
 				expected[role] = None
 				reloaded = Config('Windows')
 				reloaded.add_dir(self.directory.name)
-				self.assertEqual(expected, reloaded.load_json('Core Settings.json'))
+				self.assertEqual(expected, reloaded.load_json('AppSettings.yaml'))
 				self.assertEqual('Text %s cleared.' % role,
 					self.run_in_app(self.window._status_bar_text.text))
 			launch.assert_not_called()
@@ -6409,12 +6467,12 @@ class TextEditorIT(QtIT):
 		from copy import deepcopy
 		from core.commands import SetTextEditor
 		from unittest.mock import Mock, patch
-		original = deepcopy(self.config.load_json('Core Settings.json'))
+		original = deepcopy(self.config.load_json('AppSettings.yaml'))
 		with patch('core.text_editor.Popen') as launch:
 			for stage in ('preset', 'executable', 'arguments'):
 				self.cancel = stage
 				SetTextEditor(Mock())()
-				self.assertEqual(original, self.config.load_json('Core Settings.json'))
+				self.assertEqual(original, self.config.load_json('AppSettings.yaml'))
 			launch.assert_not_called()
 		self.assertEqual([], self.errors)
 
@@ -6447,7 +6505,7 @@ class ComparatorIT(QtIT):
 			(root / 'child').mkdir()
 		self.config = Config('Windows')
 		self.config.add_dir(str(self.root / 'settings'))
-		self.config.save_json('Core Settings.json', {
+		self.config.save_json('AppSettings.yaml', {
 			'file_comparator': {'executable': sys.executable, 'arguments': []},
 			'folder_comparator': {'executable': sys.executable, 'arguments': []}})
 		self.errors = Mock()
@@ -6653,13 +6711,13 @@ class ComparatorIT(QtIT):
 					reloaded = Config('Windows')
 					reloaded.add_dir(str(self.root / 'settings'))
 					expected = ['--literal', 'two words'] if selection == 'Manual configuration' else list(next(preset for preset in PRESETS if preset[0] == selection)[2 if role == 'file' else 3])
-					self.assertEqual(expected, reloaded.load_json('Core Settings.json')[role + '_comparator']['arguments'])
+					self.assertEqual(expected, reloaded.load_json('AppSettings.yaml')[role + '_comparator']['arguments'])
 				canceled = True
 				command(self.left)()
 				canceled = False
 				selection = 'Clear %s comparator' % role
 				command(self.left)()
-				self.assertIsNone(self.config.load_json('Core Settings.json')[role + '_comparator'])
+				self.assertIsNone(self.config.load_json('AppSettings.yaml')[role + '_comparator'])
 		self.assertEqual([], errors)
 		self.alert.assert_not_called()
 		self.launch.assert_not_called()
@@ -9423,7 +9481,7 @@ class HashResultIT(QtIT):
 		self.owner = UiOwner()
 		for target, options in (
 			('calculate_file_hash.HashController.owner', {'new': self.owner}),
-			('calculate_file_hash.load_json', {'return_value': {}}),
+			('calculate_file_hash.load_settings', {'return_value': {}}),
 			('calculate_file_hash.submit_task', {'side_effect': lambda task: task()}),
 			('calculate_file_hash.show_status_message', {}),
 			('calculate_file_hash.ui.show_status_message', {}),
@@ -9584,7 +9642,7 @@ class HashResultIT(QtIT):
 		from calculate_file_hash import CalculateFileHash, Task
 		from calculate_file_hash.hashing import HashResult
 		from unittest.mock import patch
-		with patch('calculate_file_hash.load_json', return_value={'auto_copy': True}):
+		with patch('calculate_file_hash.load_settings', return_value={'auto_copy': True}):
 			CalculateFileHash(self.pane)()
 		window = self.controller.show(self.pane)
 		self.assertEqual(self.run_in_app(window.output.text), self.run_in_app(lambda: QApplication.clipboard().text()))

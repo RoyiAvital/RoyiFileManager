@@ -1,7 +1,7 @@
 # Human-maintained definitions. The runner never rewrites this file.
 schema_version: 1
 suite_id: royifilemanager.desktop
-suite_revision: 15
+suite_revision: 16
 protocol:
   repetitions: 3
   cache: warm
@@ -85,3 +85,7 @@ full_tests:
   - {id: selection.medium, revision: 5, workload: selection, fixture: flat-medium-v1, selection_count: 1000}
   - {id: copy.flat, revision: 2, workload: copy, fixture: copy-flat-v1}
   - {id: copy.tree, revision: 2, workload: copy, fixture: copy-tree-v1}
+  # Live versus deferred pane refresh (CodeReview007); fillers are untimed zero-byte destination files.
+  - {id: copy.flat.deferred, revision: 1, workload: copy, fixture: copy-flat-v1, live_refresh: false}
+  - {id: copy.flat.large, revision: 1, workload: copy, fixture: copy-flat-v1, destination_entries: 200000}
+  - {id: copy.flat.large.deferred, revision: 1, workload: copy, fixture: copy-flat-v1, live_refresh: false, destination_entries: 200000}

@@ -454,8 +454,9 @@ rewrites the YAML or an existing result, and older raw records remain readable.
 
 Run `python build.py measure` for the regular seventeen-row performance report,
 including five selection patterns each for small and large folders. Add `--full`
-to include medium-folder cases and two Copy workloads: 10,000 flat files at 4 KiB
-and a 1,000-file tree at 8 KiB per file,
+to include medium-folder cases and five Copy workloads: 10,000 flat files at 4 KiB
+and a 1,000-file tree at 8 KiB per file, plus the flat copy with live refresh off
+and into a 200,000-entry destination with live refresh on and off,
 with separate
 full-run history. Selection latency and selected-file readback are measured
 separately. See the [performance protocol](src/performancetest/README.md).
@@ -506,7 +507,7 @@ to 25 seconds.
 
 `python build.py measure --full` adds medium (50,000-file) pane loading, refresh,
 Filter Bar, Fuzzy Find, QuickView, navigation and selection cases, plus Copy.
-The eight extra workloads produce twenty-two workloads and twenty-five overview rows total; refresh
+The eleven extra workloads produce twenty-five workloads and twenty-eight overview rows total; refresh
 averages 24 case medians and navigation 42. Medium selections use the same five
 patterns, with 1,000 rows for each complex pattern. Full history and reports live
 separately under `UserSettings/Performance/Full`. Regular runs do not prepare or

@@ -65,6 +65,11 @@
 - [x] CHANGE: Rename the _Command Palette_ menu item: `Copy file path` to `Copy item(s) path` and show its shortcut key.
 - [x] BUG: The _Command Palette_ item `Copy paths to clipboard` is a duplicate.
 - [x] BUG: Choosing `Properties` on the _Right Click Menu_ on a file / folder crash the application.
+- [x] FEATURE: Add option in _Command Palette_ for "Edit settings" which opens the settings file in the text editor (If defined, else shows alert).
+- [x] Change: Application level settings file should be called `AppSettings.json`. It should be at the top level of `UserSettings`.
+- [x] CHANGE: The general settings file should not have OS level variants.
+- [x] CHANGE: Convert the settings file into YAML / TOML (Which is faster to parse). Add comments to hint the options and valid values.
+- [x] CHANGE: Group the _Command Palette_ items into groups: "Application: About", "Application: Edit settings", "File System: Edit".
 
 ## Performance
 

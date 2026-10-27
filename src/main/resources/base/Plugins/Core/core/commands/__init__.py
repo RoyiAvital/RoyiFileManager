@@ -6,7 +6,7 @@ from core.os_ import open_terminal_in_directory, open_native_file_manager, \
 	get_popen_kwargs_for_opening
 from core.util import listdir_absolute, is_parent
 from core.quicksearch_matchers import contains_chars, \
-	contains_chars_after_separator
+	contains_chars_after_separator, display_positions
 from core.quick_view import switch_quick_view as _switch_quick_view
 from fman import *
 from fman.fs import exists, touch, mkdir, is_dir, delete, samefile, \
@@ -36,6 +36,7 @@ import sys
 from .goto import *
 
 class About(ApplicationCommand):
+	category = 'Application'
 	def __call__(self):
 		from fman.impl.application_context import get_application_context
 		version = get_application_context().build_settings['version']
@@ -50,6 +51,7 @@ class About(ApplicationCommand):
 		)
 
 class Help(ApplicationCommand):
+	category = 'Application'
 
 	aliases = ('Help', 'Show keyboard shortcuts', 'Show key bindings')
 
@@ -58,36 +60,44 @@ class Help(ApplicationCommand):
 		get_application_context().show_shortcuts()
 
 class MoveCursorDown(DirectoryPaneCommand):
+	category = 'Navigation'
 	def __call__(self, toggle_selection=False):
 		self.pane.move_cursor_down(toggle_selection)
 
 class MoveCursorUp(DirectoryPaneCommand):
+	category = 'Navigation'
 	def __call__(self, toggle_selection=False):
 		self.pane.move_cursor_up(toggle_selection)
 
 class MoveCursorHome(DirectoryPaneCommand):
+	category = 'Navigation'
 	def __call__(self, toggle_selection=False):
 		self.pane.move_cursor_home(toggle_selection)
 
 class MoveCursorEnd(DirectoryPaneCommand):
+	category = 'Navigation'
 	def __call__(self, toggle_selection=False):
 		self.pane.move_cursor_end(toggle_selection)
 
 class MoveCursorPageUp(DirectoryPaneCommand):
+	category = 'Navigation'
 	def __call__(self, toggle_selection=False):
 		self.pane.move_cursor_page_up(toggle_selection)
 
 class MoveCursorPageDown(DirectoryPaneCommand):
+	category = 'Navigation'
 	def __call__(self, toggle_selection=False):
 		self.pane.move_cursor_page_down(toggle_selection)
 
 class ToggleSelection(DirectoryPaneCommand):
+	category = 'Selection'
 	def __call__(self):
 		file_under_cursor = self.pane.get_file_under_cursor()
 		if file_under_cursor:
 			self.pane.toggle_selection(file_under_cursor)
 
 class MoveToTrash(DirectoryPaneCommand):
+	category = 'File'
 
 	aliases = ('Delete', 'Move to trash', 'Move to recycle bin')
 
@@ -110,6 +120,7 @@ _TRASH_UNSUPPORTED = (
 )
 
 class DeletePermanently(DirectoryPaneCommand):
+	category = 'File'
 	def __call__(self, urls=None):
 		if urls is None:
 			urls = self.get_chosen_files()
@@ -188,6 +199,7 @@ def _describe(files, template='%d files'):
 	return template % len(files)
 
 class GoUp(DirectoryPaneCommand):
+	category = 'Navigation'
 
 	aliases = ('Go up', 'Go to parent directory')
 
@@ -219,6 +231,7 @@ def go_up(pane):
 		pass
 
 class Open(DirectoryPaneCommand):
+	category = 'File'
 	def __call__(self, url=None):
 		if url is None:
 			url = self.pane.get_file_under_cursor()
@@ -245,6 +258,7 @@ class OpenListener(DirectoryPaneListener):
 		self.pane.run_command('open', {'url': file_url})
 
 class OpenDirectory(DirectoryPaneCommand):
+	category = 'File'
 	def __call__(self, url):
 		from fman.impl.navigation import current_request
 		request = current_request()
@@ -280,6 +294,7 @@ class OpenDirectory(DirectoryPaneCommand):
 		return False
 
 class OpenFile(DirectoryPaneCommand):
+	category = 'File'
 	def __call__(self, url):
 		_open_files([url], self.pane)
 	def is_visible(self):
@@ -354,6 +369,7 @@ def _open_local_files_win(paths, pane):
 			pass
 
 class OpenSelectedFiles(DirectoryPaneCommand):
+	category = 'File'
 	def __call__(self):
 		file_under_cursor = self.pane.get_file_under_cursor()
 		selected_files = self.pane.get_selected_files()
@@ -365,6 +381,7 @@ class OpenSelectedFiles(DirectoryPaneCommand):
 		return bool(self.get_chosen_files())
 
 class OpenWithEditor(DirectoryPaneCommand):
+	category = 'File'
 
 	aliases = ('Edit',)
 	role = 'editor'
@@ -380,6 +397,7 @@ class ViewFile(OpenWithEditor):
 	role = 'viewer'
 
 class SetTextEditor(DirectoryPaneCommand):
+	category = 'Settings'
 	aliases = ('Set text editor',)
 	role = 'editor'
 
@@ -391,7 +409,46 @@ class SetTextViewer(SetTextEditor):
 	aliases = ('Set text viewer',)
 	role = 'viewer'
 
+class EditSettings(ApplicationCommand):
+	category = 'Settings'
+	aliases = ('Edit settings',)
+
+	def __call__(self):
+		from core.text_editor import _load_settings, open_file
+		try:
+			configured = bool(_load_settings().get('editor'))
+		except ValueError as error:
+			show_alert(str(error))
+			return
+		if not configured:
+			show_alert('No text editor was set. Use "Set text editor" in Command Center '
+				'to define a text editor.')
+			return
+		from fman.impl.plugins.config import APP_SETTINGS
+		path = os.path.join(DATA_DIRECTORY, APP_SETTINGS)
+		try:
+			os.makedirs(DATA_DIRECTORY, exist_ok=True)
+			with open(path, 'x', encoding='utf-8') as file:
+				file.write(_app_settings_template())
+		except FileExistsError:
+			pass
+		except OSError as error:
+			show_alert('Could not create %s: %s' % (path, error))
+			return
+		if open_file(as_url(path), 'editor'):
+			show_status_message('Restart %s after saving settings.' % APP_NAME, timeout_secs=5)
+
+def _app_settings_template():
+	from fman.impl.plugins.config import APP_SETTINGS
+	defaults = PurePath(__file__).parents[2] / APP_SETTINGS
+	with open(defaults, encoding='utf-8') as file:
+		lines = file.read().splitlines()
+	header = ['# %s application settings. Values here override the defaults below.' % APP_NAME,
+		'# Uncomment a line and change its value, then restart %s.' % APP_NAME, '#']
+	return '\n'.join(header + [('# ' + line) if line else '#' for line in lines]) + '\n'
+
 class SetFileComparator(DirectoryPaneCommand):
+	category = 'Settings'
 	aliases = ('Set file comparator',)
 	role = 'file'
 
@@ -404,6 +461,7 @@ class SetFolderComparator(SetFileComparator):
 	role = 'folder'
 
 class CompareFiles(DirectoryPaneCommand):
+	category = 'Tools'
 	aliases = ('Compare files',)
 	role = 'file'
 
@@ -478,6 +536,7 @@ def _place_cursor_at(pane, file_url):
 		pass
 
 class NewEmptyFile(DirectoryPaneCommand):
+	category = 'File'
 
 	aliases = ('New file', 'Create file', 'New empty file', 'Create empty file', 'Touch')
 
@@ -522,6 +581,7 @@ def _find_extension_start(file_name, start=0):
 		return None
 
 class _TreeCommand(DirectoryPaneCommand):
+	category = 'File'
 	_defer_preparation = False
 	def __call__(self, files=None, dest_dir=None):
 		if files is None:
@@ -820,6 +880,7 @@ class Symlink(_TreeCommand):
 		show_alert('Sorry, can only create symlinks between local files.')
 
 class Rename(DirectoryPaneCommand):
+	category = 'File'
 	def __call__(self):
 		file_under_cursor = self.pane.get_file_under_cursor()
 		if file_under_cursor:
@@ -905,6 +966,7 @@ class _Rename(Task):
 				pass
 
 class CreateDirectory(DirectoryPaneCommand):
+	category = 'File'
 
 	aliases = (
 		'New folder', 'Create folder', 'New directory', 'Create directory'
@@ -949,6 +1011,7 @@ def _fs_implements(scheme, method_name):
 	return method.__func__ is not getattr(FileSystem, method_name)
 
 class OpenTerminal(DirectoryPaneCommand):
+	category = 'Tools'
 
 	aliases = (
 		'Terminal', 'Shell', 'Open terminal', 'Open shell'
@@ -964,6 +1027,7 @@ class OpenTerminal(DirectoryPaneCommand):
 		open_terminal_in_directory(path)
 
 class OpenNativeFileManager(DirectoryPaneCommand):
+	category = 'Tools'
 	def __call__(self):
 		url = self.pane.get_path()
 		scheme = splitscheme(url)[0]
@@ -973,6 +1037,7 @@ class OpenNativeFileManager(DirectoryPaneCommand):
 		open_native_file_manager(as_human_readable(url))
 
 class CopyFilePath(DirectoryPaneCommand):
+	category = 'Clipboard'
 	aliases = ('Copy item(s) path',)
 
 	def __call__(self):
@@ -982,6 +1047,7 @@ class CopyFilePath(DirectoryPaneCommand):
 		_report_clipboard_action('Copied', to_copy, ' to the clipboard', 'path')
 
 class GoToClipboardPath(DirectoryPaneCommand):
+	category = 'Navigation'
 	aliases = ('Go to clipboard path', 'Open clipboard location')
 
 	def __call__(self):
@@ -997,6 +1063,7 @@ class GoToClipboardPath(DirectoryPaneCommand):
 		self.pane.run_command('open_directory', {'url': url})
 
 class GoToLinkTarget(DirectoryPaneCommand):
+	category = 'Navigation'
 	aliases = ('Go to link target', 'Reveal link target')
 
 	def is_visible(self):
@@ -1056,6 +1123,7 @@ def _clipboard_location(text):
 	return as_url(ntpath.normpath(path))
 
 class CopyFileName(DirectoryPaneCommand):
+	category = 'Clipboard'
 	aliases = ('Copy item(s) name',)
 
 	def __call__(self):
@@ -1079,6 +1147,7 @@ def _report_clipboard_action(verb, files, suffix='', ftype='file'):
 	show_status_message(message, timeout_secs=3)
 
 class CopyToClipboard(DirectoryPaneCommand):
+	category = 'Clipboard'
 	def __call__(self):
 		files = self.get_chosen_files()
 		if files:
@@ -1090,6 +1159,7 @@ class CopyToClipboard(DirectoryPaneCommand):
 		return bool(self.pane.get_file_under_cursor())
 
 class Cut(DirectoryPaneCommand):
+	category = 'Clipboard'
 	def __call__(self):
 		files = self.get_chosen_files()
 		if files:
@@ -1101,6 +1171,7 @@ class Cut(DirectoryPaneCommand):
 		return bool(self.pane.get_file_under_cursor())
 
 class Paste(DirectoryPaneCommand):
+	category = 'Clipboard'
 	def __call__(self):
 		files = clipboard.get_files()
 		if not files:
@@ -1114,6 +1185,7 @@ class Paste(DirectoryPaneCommand):
 		return bool(clipboard.get_files())
 
 class PasteCut(DirectoryPaneCommand):
+	category = 'Clipboard'
 	def __call__(self):
 		files = clipboard.get_files()
 		if not any(map(exists, files)):
@@ -1126,14 +1198,17 @@ class PasteCut(DirectoryPaneCommand):
 		})
 
 class SelectAll(DirectoryPaneCommand):
+	category = 'Selection'
 	def __call__(self):
 		self.pane.select_all()
 
 class Deselect(DirectoryPaneCommand):
+	category = 'Selection'
 	def __call__(self):
 		self.pane.clear_selection()
 
 class InvertSelection(DirectoryPaneCommand):
+	category = 'Selection'
 	@run_in_main_thread
 	def __call__(self, *args, **kwargs):
 		selected = self.pane.get_selected_files()
@@ -1141,6 +1216,7 @@ class InvertSelection(DirectoryPaneCommand):
 		self.pane.deselect(selected)
 
 class SelectSameExtension(DirectoryPaneCommand):
+	category = 'Selection'
 	aliases = ('Select same extension', 'Select files with the same extension')
 
 	def __call__(self):
@@ -1164,23 +1240,46 @@ class SelectSameExtension(DirectoryPaneCommand):
 			if not directory and os.path.splitext(name)[1].casefold() == extension])
 
 class SelectByPattern(DirectoryPaneCommand):
+	category = 'Selection'
 	aliases = ('Select by pattern', 'Select group')
 
 	def __call__(self):
 		self.pane._widget.begin_pattern_selection(True)
 
 class DeselectByPattern(DirectoryPaneCommand):
+	category = 'Selection'
 	aliases = ('Deselect by pattern', 'Deselect group')
 
 	def __call__(self):
 		self.pane._widget.begin_pattern_selection(False)
 
 class ToggleHiddenFiles(DirectoryPaneCommand):
+	category = 'View'
 
 	aliases = ('Toggle hidden files', 'Show / hide hidden files')
 
 	def __call__(self):
 		_toggle_hidden_files(self.pane, not _is_showing_hidden_files(self.pane))
+
+class ToggleLiveRefreshDuringFileOperations(ApplicationCommand):
+	category = 'Settings'
+
+	aliases = ('Toggle live refresh during file operations',)
+
+	def __call__(self):
+		from fman.impl.model.file_watcher import LIVE_REFRESH, SETTINGS, live_refresh_enabled
+		from fman.ui import settings_resource
+		try:
+			with settings_resource(SETTINGS).lock:
+				enabled = not live_refresh_enabled()
+				settings = load_settings(SETTINGS, default={})
+				settings = dict(settings) if isinstance(settings, dict) else {}
+				settings[LIVE_REFRESH] = enabled
+				save_settings(SETTINGS, settings)
+		except (OSError, ValueError) as error:
+			show_alert(str(error))
+			return
+		show_status_message('Live refresh during file operations: ' + ('On' if enabled else 'Off'), timeout_secs=5)
 
 class InitHiddenFilesFilter(DirectoryPaneListener):
 	def __init__(self, *args, **kwargs):
@@ -1246,6 +1345,7 @@ def _snapshot_hidden_file_filter():
 _hidden_file_filter.snapshot_filter = _snapshot_hidden_file_filter
 
 class _OpenInPaneCommand(DirectoryPaneCommand):
+	category = 'Navigation'
 	def __call__(self):
 		panes = self.pane.window.get_panes()
 		num_panes = len(panes)
@@ -1289,6 +1389,7 @@ class OpenInLeftPane(_OpenInPaneCommand):
 		return max(this_pane - 1, 0)
 
 class ShowVolumes(DirectoryPaneCommand):
+	category = 'Navigation'
 
 	aliases = ('Show volumes', 'Show drives')
 
@@ -1347,6 +1448,7 @@ def _recent_commands(registered=None, executed=None):
 		return tuple(recent)
 
 class CommandPalette(DirectoryPaneCommand):
+	category = 'Application'
 
 	_MATCHERS = (contains_chars_after_separator(' '), contains_chars)
 
@@ -1386,28 +1488,30 @@ class CommandPalette(DirectoryPaneCommand):
 			self._last_query = self._last_cmd_name = ''
 			self._last_cmd_kind = 'pane'
 	def _suggest_commands(self, query):
-		result = [[] for _ in self._MATCHERS]
-		key_bindings = load_json('Key Bindings.json')
+		# Per matcher, an alias match ranks above a match that needs the category.
+		buckets = [[] for _ in range(2 * len(self._MATCHERS))]
+		key_bindings = load_settings('Key Bindings.yaml', default=[])
 		query = query.lower()
-		for cmd_name, aliases, command in self._get_all_commands():
+		for cmd_name, aliases, category, command in self._get_all_commands():
+			prefix = category + ': ' if category else ''
+			best = None
 			for alias in aliases:
-				lower_alias = alias.lower()
-				this_alias_matched = False
-				for i, matcher in enumerate(self._MATCHERS):
-					highlight = matcher(lower_alias, query)
-					if highlight is not None:
-						shortcuts = _get_shortcuts_for_command(key_bindings, cmd_name)
-						hint = ', '.join(shortcuts)
-						item = QuicksearchItem(command, alias, highlight, hint)
-						result[i].append(item)
-						this_alias_matched = True
-						break
-				if this_alias_matched:
-					# Don't check the other aliases:
-					break
-		for results in result:
-			results.sort(key=lambda item: (len(item.title), item.title))
-		ranked = list(chain.from_iterable(result))
+				found = _match_command_alias(self._MATCHERS, alias, prefix, query)
+				if found is not None and (best is None or found[0] < best[0]):
+					best = found
+			if best is None:
+				continue
+			bucket, alias, label, lowered, positions = best
+			highlight = display_positions(label, lowered, positions)
+			hint = ', '.join(_get_shortcuts_for_command(key_bindings, cmd_name))
+			order = len(label if bucket % 2 else alias), label
+			buckets[bucket].append((order, QuicksearchItem(command, label, highlight, hint)))
+		if query:
+			ranked = [item for bucket in buckets
+				for _, item in sorted(bucket, key=lambda entry: entry[0])]
+		else:
+			ranked = sorted((item for bucket in buckets for _, item in bucket),
+				key=lambda item: item.title.casefold())
 		if not self._recent:
 			return ranked
 		by_identity = {item.value.identity: item for item in ranked}
@@ -1424,13 +1528,30 @@ class CommandPalette(DirectoryPaneCommand):
 			if not self.pane.is_command_visible(cmd_name):
 				continue
 			aliases = self.pane.get_command_aliases(cmd_name)
+			category = self.pane.get_command_category(cmd_name)
 			command = CommandPaletteItem(self.pane.run_command, cmd_name)
-			result.append((cmd_name, aliases, command))
+			result.append((cmd_name, aliases, category, command))
 		for cmd_name in get_application_commands():
 			aliases = get_application_command_aliases(cmd_name)
+			category = get_application_command_category(cmd_name)
 			command = CommandPaletteItem(run_application_command, cmd_name, 'application')
-			result.append((cmd_name, aliases, command))
+			result.append((cmd_name, aliases, category, command))
 		return result
+
+def _match_command_alias(matchers, alias, prefix, query):
+	lower_alias = alias.lower()
+	lower_prefix = prefix.lower()
+	lower_label = lower_prefix + lower_alias
+	label = prefix + alias
+	for i, matcher in enumerate(matchers):
+		positions = matcher(lower_alias, query)
+		if positions is not None:
+			return 2 * i, alias, label, lower_label, [index + len(lower_prefix) for index in positions]
+		if prefix:
+			positions = matcher(lower_label, query)
+			if positions is not None:
+				return 2 * i + 1, alias, label, lower_label, positions
+	return None
 
 def _get_shortcuts_for_command(key_bindings, command):
 	shortcuts_occupied_by_other_commands = set()
@@ -1438,15 +1559,15 @@ def _get_shortcuts_for_command(key_bindings, command):
 		try:
 			binding_cmd = binding['command']
 		except (KeyError, TypeError):
-			# Malformed Key Bindings.json
+			# Malformed Key Bindings.yaml
 			continue
 		try:
 			shortcut = binding['keys'][0]
 		except (KeyError, IndexError, TypeError):
-			# Malformed Key Bindings.json
+			# Malformed Key Bindings.yaml
 			continue
 		if not isinstance(shortcut, str):
-			# Malformed Key Bindings.json
+			# Malformed Key Bindings.yaml
 			continue
 		if binding_cmd == command:
 			if shortcut not in shortcuts_occupied_by_other_commands:
@@ -1465,6 +1586,7 @@ class CommandPaletteItem:
 		self._run_fn(self.name)
 
 class Quit(ApplicationCommand):
+	category = 'Application'
 
 	aliases = ('Quit', 'Exit')
 
@@ -1472,6 +1594,7 @@ class Quit(ApplicationCommand):
 		sys.exit(0)
 
 class ZenOfFman(ApplicationCommand):
+	category = 'Application'
 	aliases = (f'Zen of {APP_NAME}',)
 	def __call__(self):
 		show_alert(
@@ -1486,14 +1609,17 @@ class ZenOfFman(ApplicationCommand):
 		)
 
 class OpenDataDirectory(DirectoryPaneCommand):
+	category = 'Application'
 	def __call__(self):
 		self.pane.set_path(as_url(DATA_DIRECTORY))
 
 class GoBack(DirectoryPaneCommand):
+	category = 'Navigation'
 	def __call__(self):
 		HistoryListener.INSTANCES[self.pane].go_back()
 
 class GoForward(DirectoryPaneCommand):
+	category = 'Navigation'
 	def __call__(self):
 		HistoryListener.INSTANCES[self.pane].go_forward()
 
@@ -1565,6 +1691,7 @@ def _list_plugins(dir_path):
 		return []
 
 class RemovePlugin(ApplicationCommand):
+	category = 'Application'
 
 	aliases = ('Remove plugin', 'Uninstall plugin')
 
@@ -1597,6 +1724,7 @@ class RemovePlugin(ApplicationCommand):
 				yield QuicksearchItem(plugin_dir, plugin_name, highlight=match)
 
 class ReloadPlugins(ApplicationCommand):
+	category = 'Application'
 	def __call__(self):
 		plugins = _get_plugins()
 		with PreservePanePaths(self.window):
@@ -1646,6 +1774,7 @@ def _get_user_plugins():
 	return result
 
 class ListPlugins(DirectoryPaneCommand):
+	category = 'Application'
 	def __call__(self):
 		result = show_quicksearch(self._get_matching_plugins)
 		if result:
@@ -1688,6 +1817,7 @@ except ImportError as e:
 			)
 
 class UnpackArchive(DirectoryPaneCommand):
+	category = 'File'
 	aliases = ('Unpack archive', 'Extract archive')
 	def __call__(self):
 		directory = self.pane.get_path()
@@ -1701,7 +1831,7 @@ class UnpackArchive(DirectoryPaneCommand):
 				raise ValueError('Unpack requires a local archive in the current folder.')
 			if not samefile(dirname(source), directory) or is_dir(source):
 				raise ValueError('Choose an archive file directly inside the current folder.')
-			settings = load_json('Core Settings.json', default={})
+			settings = load_settings('AppSettings.yaml', default={})
 			handlers = settings.get('archive_handlers') if isinstance(settings, Mapping) else None
 			name, scheme = _unpack_archive_name(basename(source), handlers)
 			destination = join(directory, name)
@@ -1732,7 +1862,7 @@ def _unpack_archive_name(file_name, handlers):
 		not scheme.endswith('://') or len(scheme) <= 3
 		for suffix, scheme in handlers.items()
 	):
-		raise ValueError('Invalid archive_handlers in Core Settings.json.')
+		raise ValueError('Invalid archive_handlers in AppSettings.yaml.')
 	match = _get_archive_handler(file_name, handlers)
 	if match is None:
 		raise ValueError('This archive format is not supported.')
@@ -1776,6 +1906,7 @@ def _unpack_error_text(error, destination):
 	return str(error)
 
 class Pack(DirectoryPaneCommand):
+	category = 'File'
 
 	aliases = 'Pack to archive (.zip, .7z, .tar)', 'Compress...'
 
@@ -1847,7 +1978,7 @@ def _get_handler_for_archive(file_name):
 
 def _get_archive_handler(file_name, handlers=None):
 	if handlers is None:
-		settings = load_json('Core Settings.json', default={})
+		settings = load_settings('AppSettings.yaml', default={})
 		handlers = settings.get('archive_handlers', {})
 	archive_types = sorted(
 		handlers.items(),
@@ -1878,6 +2009,7 @@ class ArchiveOpenListener(DirectoryPaneListener):
 					return 'open_directory', new_args
 
 class Reload(DirectoryPaneCommand):
+	category = 'View'
 
 	aliases = ('Reload', 'Refresh')
 
@@ -1885,6 +2017,7 @@ class Reload(DirectoryPaneCommand):
 		self.pane.reload()
 
 class SwitchPanes(DirectoryPaneCommand):
+	category = 'View'
 	def __call__(self, pane_index=None):
 		if _switch_quick_view(self.pane, pane_index):
 			return
@@ -1895,6 +2028,7 @@ class SwitchPanes(DirectoryPaneCommand):
 		pane.focus()
 
 class SyncPaneLocation(DirectoryPaneCommand):
+	category = 'View'
 	aliases = ('Sync pane location',)
 
 	def __call__(self):
@@ -1913,6 +2047,7 @@ class SyncPaneLocation(DirectoryPaneCommand):
 		return len(self.pane.window.get_panes()) > 1
 
 class SwapPanes(DirectoryPaneCommand):
+	category = 'View'
 	aliases = ('Swap pane locations',)
 
 	def is_visible(self):
@@ -1932,6 +2067,7 @@ class SwapPanes(DirectoryPaneCommand):
 			right.set_path(left_url)
 
 class SortByColumn(DirectoryPaneCommand):
+	category = 'View'
 
 	_MATCHERS = (contains_chars_after_separator(' '), contains_chars)
 
@@ -2005,10 +2141,12 @@ class RememberSortSettings(DirectoryPaneListener):
 		save_json('Sort Settings.json')
 
 class Minimize(ApplicationCommand):
+	category = 'Application'
 	def __call__(self):
 		self.window.minimize()
 
 class ResetWindowGeometry(ApplicationCommand):
+	category = 'Application'
 	aliases = ('Reset window geometry',)
 	def __call__(self):
 		from fman.impl.application_context import get_application_context
@@ -2030,6 +2168,7 @@ class LocationBarListener(DirectoryPaneListener):
 			)
 
 class OpenWith(DirectoryPaneCommand):
+	category = 'File'
 
 	aliases = 'Open with...',
 
@@ -2262,6 +2401,7 @@ class RemoveApp(QuicksearchScreen):
 		Configure(self._files).show()
 
 class CompareDirectories(DirectoryPaneCommand):
+	category = 'Tools'
 	def __call__(self):
 		this = self.pane
 		panes = this.window.get_panes()
@@ -2317,6 +2457,7 @@ class none(DirectoryPaneCommand):
 
 
 class GoToRootOfCurrentDrive(DirectoryPaneCommand):
+	category = 'Navigation'
 	def __call__(self):
 		url = self.pane.get_path()
 		scheme = splitscheme(url)[0]

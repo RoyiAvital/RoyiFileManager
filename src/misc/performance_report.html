@@ -118,6 +118,7 @@ const names = {'pane.load.small':'Pane Loading / Small','pane.load.large':'Pane 
 Object.assign(names, {'pane.load.medium':'Pane Loading / Medium','filter.medium':'Filter Bar / Medium','fuzzy.medium':'Fuzzy Find / Medium','quickview.medium':'QuickView Images / Medium','selection.medium':'Selections / Medium','quickview.text.small':'QuickView Text / Small','quickview.text.large':'QuickView Text / Large','quickview.text.medium':'QuickView Text / Medium'});
 Object.assign(names, {'copy.files':'Copy / 15,000 Files'});
 Object.assign(names, {'copy.flat':'Copy / Flat (10,000 Files)','copy.tree':'Copy / Tree (1,000 Files)'});
+Object.assign(names, {'copy.flat.deferred':'Copy / Flat, Deferred Refresh','copy.flat.large':'Copy / Flat into 200k','copy.flat.large.deferred':'Copy / Flat into 200k, Deferred Refresh'});
 Object.assign(names, {'csv.load':'QuickView Table / 64 MB CSV'});
 const format = value => Number.isFinite(value) ? value.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) : '\u2014';
 const numberText = (value, unit='ms') => Number.isFinite(value) ? format(value) + ' ' + unit : '\u2014';

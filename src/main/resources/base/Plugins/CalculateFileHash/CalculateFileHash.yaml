@@ -1,0 +1,12 @@
+# File hash settings: bundled defaults.
+# Override in UserSettings\Plugins\User\Settings\CalculateFileHash.yaml.
+
+# Initially selected algorithm: sha256, sha1, md5, sha384, sha512, sha3_256, sha3_512,
+# blake2b, blake2s or crc32.
+default_algorithm: sha256
+# true: remember the last accepted algorithm as the new default.
+remember_last_algorithm: false
+# true: copy a completed hash to the clipboard automatically.
+auto_copy: false
+# Read chunk size in MiB; clamped to 1-64.
+chunk_size_mib: 4

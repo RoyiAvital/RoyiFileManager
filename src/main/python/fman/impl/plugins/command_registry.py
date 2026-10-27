@@ -54,6 +54,8 @@ class ApplicationCommandRegistry(CommandRegistry):
 			return command.aliases
 		except AttributeError:
 			return _get_default_aliases(command.__class__)
+	def get_command_category(self, name):
+		return _get_category(self._commands[name])
 	def is_command_visible(self, name):
 		command = self._commands[name]
 		return command.is_visible()
@@ -111,6 +113,8 @@ class PaneCommandRegistry(CommandRegistry):
 			return command_class.aliases
 		except AttributeError:
 			return _get_default_aliases(command_class)
+	def get_command_category(self, name):
+		return _get_category(self._command_classes[name])
 	def is_command_visible(self, name, pane, file_under_cursor=_DEFAULT):
 		command = self._get_command(pane, name)
 		if command is None:
@@ -155,6 +159,10 @@ class PaneCommandRegistry(CommandRegistry):
 			pane._override_file_under_cursor(file_under_cursor)
 		with context:
 			yield
+
+def _get_category(command):
+	category = getattr(command, 'category', '')
+	return category.strip() if isinstance(category, str) else ''
 
 def _get_default_aliases(cmd_class):
 	return re.sub(r'([a-z])([A-Z])', r'\1 \2', cmd_class.__name__)\

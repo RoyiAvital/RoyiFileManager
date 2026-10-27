@@ -42,3 +42,17 @@ Results use Windows and NTFS with warm caches and three fresh processes per test
 | Settled Working Memory     | 771.1 [MiB] | 771.3 [MiB] | 167.4 [MiB] | 160.3 [MiB] | 145.5 [MiB] |
 
 All runs used alternating fresh processes, warm OS caches, hidden filtering enabled and QuickView and extended status disabled. Do not chain percentages across the two runs.
+
+## File Operations: Live and Deferred Refresh
+
+Copying 10,000 files of 4 KiB with Ctrl+A and F5 until the destination pane shows
+every file. Medians of three fresh processes, in seconds; lower is better.
+
+| Destination Before Copy | Live Refresh (Default) | Live Refresh Off |
+| ----------------------- | ---------------------: | ---------------: |
+| Empty                   | 63.5                   | 10.4             |
+| 200,000 files           | 71.1                   | 10.3             |
+
+With live refresh on, the destination pane rescans during the whole copy. Turn it
+off with **Toggle live refresh during file operations**; see
+[Configuration](configuration.md#live-refresh-during-file-operations).

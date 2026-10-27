@@ -10,16 +10,15 @@ from fman.impl.shortcuts import collect_shortcuts
 
 class CollectShortcutsTest(TestCase):
 	def test_bundled_text_commands_are_available_in_shortcut_list(self):
-		from json import load
-		path = Path(__file__).resolve().parents[4] / 'main/resources/base/Plugins/Core/Key Bindings.json'
+		import yaml
+		path = Path(__file__).resolve().parents[4] / 'main/resources/base/Plugins/Core/Key Bindings.yaml'
 		commands = {'view_file', 'open_with_editor', 'create_and_edit_file'}
 		self.assertEqual([
 			('Core', 'view_file', 'F3'),
 			('Core', 'open_with_editor', 'F4'),
 			('Core', 'create_and_edit_file', 'Shift+F4')
 		], collect_shortcuts([str(path)], commands))
-		with path.open() as file:
-			bindings = load(file)
+		bindings = yaml.safe_load(path.read_text(encoding='utf-8'))
 		for shortcut in ('F3', 'F4', 'Shift+F4'):
 			self.assertEqual(1, sum(shortcut in binding['keys'] for binding in bindings))
 
@@ -52,7 +51,7 @@ class CollectShortcutsTest(TestCase):
 				{'keys': ['F1']},
 				{'keys': ['F2'], 'command': 'valid'}
 			])
-			result = collect_shortcuts([join(root, 'missing.json'), valid])
+			result = collect_shortcuts([join(root, 'missing.yaml'), valid])
 
 		self.assertEqual([('Core', 'valid', 'F2')], result)
 
@@ -73,7 +72,7 @@ class CollectShortcutsTest(TestCase):
 	def _write(root, plugin_name, bindings):
 		plugin_dir = join(root, plugin_name)
 		makedirs(plugin_dir)
-		path = join(plugin_dir, 'Key Bindings.json')
+		path = join(plugin_dir, 'Key Bindings.yaml')
 		with open(path, 'w') as file:
 			dump(bindings, file)
 		return path
@@ -125,19 +124,19 @@ class ShortcutSuggestionsTest(TestCase):
 			with self.subTest(answer=answer), TemporaryDirectory() as root:
 				settings = Path(root, 'Plugins', 'User', 'Settings')
 				settings.mkdir(parents=True)
-				path = settings / 'Key Bindings.json'
+				path = settings / 'Key Bindings.yaml'
 				bindings = [{'keys': ['F3'], 'command': 'view_file'}]
 				path.write_text(json.dumps(bindings), encoding='utf-8')
 				with patch.object(shortcuts, 'DATA_DIRECTORY', root), \
 					patch.object(shortcuts, 'show_alert', return_value=answer), \
-					patch.object(shortcuts, 'load_json', return_value=bindings), \
-					patch.object(shortcuts, 'save_json', side_effect=lambda _: path.write_text(json.dumps(bindings), encoding='utf-8')) as save, \
+					patch.object(shortcuts, 'load_settings', return_value=bindings), \
+					patch.object(shortcuts, 'save_settings', side_effect=lambda _: path.write_text(json.dumps(bindings), encoding='utf-8')) as save, \
 					patch.object(shortcuts, 'unload_plugin') as unload, \
 					patch.object(shortcuts, 'load_plugin') as load:
 					shortcuts.NonexistentShortcutHandler(Mock(), {}, Mock())._offer_to_customize_keybindings('', 'Left', 'go_up')
 					if answer == YES:
 						self.assertEqual({'keys': ['Left'], 'command': 'go_up'}, json.loads(path.read_text())[0])
-						save.assert_called_once_with('Key Bindings.json')
+						save.assert_called_once_with('Key Bindings.yaml')
 						unload.assert_called_once_with(str(settings))
 						load.assert_called_once_with(str(settings))
 					else:

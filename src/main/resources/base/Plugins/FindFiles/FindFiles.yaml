@@ -1,0 +1,23 @@
+# Find files with fd (Shift+F7): bundled defaults for the search form.
+# The form saves your last choices in UserSettings\Plugins\User\Settings\FindFiles.yaml.
+
+# Name pattern: literal, glob or regex.
+pattern_mode: glob
+# Case matching: sensitive, insensitive or smart (sensitive only with an upper-case letter).
+case_mode: smart
+# Entry type: all, f (files), d (folders), l (symbolic links), x (executables),
+# ef (empty files), ed (empty folders), s, p, b or c (special files).
+type: f
+# true: match the pattern against the full path instead of the name.
+full_path: false
+# true: search subfolders.
+recursive: true
+# true: include hidden entries.
+hidden: false
+# true: skip paths ignored by .gitignore files.
+honor_gitignore: true
+# true: follow symbolic links and junctions.
+follow_symlinks: false
+# Size units for the Min and Max fields: b, k, m or g (powers of 1,000).
+min_size_unit: b
+max_size_unit: b

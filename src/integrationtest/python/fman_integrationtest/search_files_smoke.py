@@ -6,6 +6,7 @@ import sys
 from tempfile import TemporaryDirectory
 from threading import Event, Thread
 from time import perf_counter
+import yaml
 import traceback
 
 
@@ -123,9 +124,9 @@ def exercise(context, root, output, layout_only=False):
 			return
 		gui(lambda: host.controls['name_mode'][1].group.button(2).click())
 		gui(lambda: host.controls['content_mode'][1].group.button(1).click())
-		settings = root / 'UserSettings/Plugins/User/Settings/SearchFiles (Windows).json'
+		settings = root / 'UserSettings/Plugins/User/Settings/SearchFiles (Windows).yaml'
 		wait_for(lambda: not session.saving, 'Search preferences did not settle')
-		saved = json.loads(settings.read_text(encoding='utf-8'))
+		saved = yaml.safe_load(settings.read_text(encoding='utf-8'))
 		assert saved['name_mode'] == 'regex' and saved['content_mode'] == 'glob'
 		assert not {'name_regex', 'content_regex', 'name', 'content'} & saved.keys()
 		gui(lambda: session.panel.update(values={'name': 'report\\.txt$', 'content': '*needle*'}))

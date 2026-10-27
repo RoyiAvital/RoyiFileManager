@@ -61,32 +61,26 @@ class SearchEngineTest(TestCase):
 			self.assertTrue(completed.wait(2), 'Search command did not run')
 			search.assert_called_once()
 
-	def test_settings_survive_plugin_rename(self):
+	def test_settings_round_trip_keeps_user_comments(self):
 		from fman.impl.plugins.config import Config
-		from search_files import DEFAULTS, LEGACY_SETTINGS_NAME, SETTINGS_NAME, SearchSession, load_settings, settings_snapshot
+		from search_files import DEFAULTS, SETTINGS_NAME, SearchSession, read_settings, settings_snapshot
 		from threading import Event, Lock
 		from types import SimpleNamespace
 		import search_files
 		plugin_root = Path(search_files.__file__).parents[1]
 		with TemporaryDirectory() as root:
+			user_file = Path(root, 'SearchFiles (Windows).yaml')
+			user_file.write_text('# My search defaults\nmax_rows: 37  # enough\nother: 7\n', encoding='utf-8')
 			config = Config('Windows')
 			config.add_dir(str(plugin_root))
 			config.add_dir(root)
-			legacy = {'recursive': False, 'max_rows': 37, 'name_regex': True, 'other': 7}
-			config.save_json(LEGACY_SETTINGS_NAME, legacy)
-			legacy_path = Path(root, 'SearchFileContent (Windows).json')
-			original = legacy_path.read_bytes()
-			with patch('search_files.load_json', side_effect=config.load_json), \
-				patch('search_files.save_json', side_effect=config.save_json):
-				self.assertEqual(dict(DEFAULTS, recursive=False, max_rows=37, name_mode='regex'),
-					settings_snapshot(load_settings()))
-				self.assertFalse(Path(root, 'SearchFiles (Windows).json').exists())
-				config.save_json(SETTINGS_NAME, {'recursive': True, 'name_mode': 'literal'})
-				settings = settings_snapshot(load_settings())
-				self.assertEqual(dict(DEFAULTS, max_rows=37, name_mode='literal'), settings)
+			with patch('search_files.load_settings', side_effect=config.load_json), \
+				patch('search_files.save_settings', side_effect=config.save_json):
+				settings = settings_snapshot(read_settings())
+				self.assertEqual(dict(DEFAULTS, max_rows=37), settings)
 				session = SearchSession.__new__(SearchSession)
 				session.save_lock = Lock()
-				session.pending_settings = tuple(settings.items())
+				session.pending_settings = tuple(dict(settings, name_mode='literal').items())
 				session.saving = True
 				session.owner = SimpleNamespace(active=True)
 				session.panel = SimpleNamespace(cancelled=Event())
@@ -94,8 +88,11 @@ class SearchEngineTest(TestCase):
 			reloaded = Config('Windows')
 			reloaded.add_dir(str(plugin_root))
 			reloaded.add_dir(root)
-			self.assertEqual(dict(settings, other=7), reloaded.load_json(SETTINGS_NAME))
-			self.assertEqual(original, legacy_path.read_bytes())
+			self.assertEqual(dict(settings, name_mode='literal', other=7), reloaded.load_json(SETTINGS_NAME))
+			text = user_file.read_text(encoding='utf-8')
+			self.assertIn('# My search defaults', text)
+			self.assertIn('max_rows: 37  # enough', text)
+			self.assertIn('name_mode: literal', text)
 
 	def test_name_only_options(self):
 		for mode in ('glob', 'literal', 'regex'):
@@ -137,22 +134,18 @@ class SearchEngineTest(TestCase):
 		with self.assertRaises(ValueError):
 			Collector(Options('C:\\root', '', '*')).accept_path('C:\\outside\\file.txt')
 
-	def test_pattern_mode_settings_migration(self):
+	def test_bundled_defaults_and_invalid_modes(self):
 		from search_files import DEFAULTS, SETTINGS_NAME, settings_snapshot
 		import search_files
-		base = json.loads((Path(search_files.__file__).parents[1] / SETTINGS_NAME).read_text(encoding='utf-8'))
+		import yaml
+		base = yaml.safe_load((Path(search_files.__file__).parents[1] / SETTINGS_NAME).read_text(encoding='utf-8'))
+		self.assertEqual(DEFAULTS, base)
 		self.assertEqual(DEFAULTS, settings_snapshot(base))
-		legacy = dict(base, name_regex=True, content_regex=True)
-		self.assertEqual('regex', settings_snapshot(legacy)['name_mode'])
-		self.assertEqual('regex', settings_snapshot(legacy)['content_mode'])
-		self.assertEqual('literal', settings_snapshot(dict(legacy, name_mode='literal'))['name_mode'])
-		self.assertEqual('glob', settings_snapshot(dict(legacy, content_mode='glob'))['content_mode'])
-		self.assertEqual('regex', settings_snapshot(dict(legacy, content_mode='invalid'))['content_mode'])
-		self.assertEqual('glob', settings_snapshot({'name_regex': False})['name_mode'])
-		self.assertEqual('literal', settings_snapshot({'content_regex': False})['content_mode'])
+		self.assertEqual('regex', settings_snapshot(dict(base, name_mode='regex'))['name_mode'])
+		self.assertEqual('literal', settings_snapshot(dict(base, content_mode='invalid'))['content_mode'])
 		self.assertEqual('literal', settings_snapshot({'content_mode': []})['content_mode'])
 
-	def test_mode_save_removes_old_flags_and_preserves_other_settings(self):
+	def test_mode_save_preserves_other_settings(self):
 		from search_files import DEFAULTS, SearchSession
 		from threading import Event, Lock
 		from types import SimpleNamespace
@@ -162,12 +155,10 @@ class SearchEngineTest(TestCase):
 		session.saving = True
 		session.owner = SimpleNamespace(active=True)
 		session.panel = SimpleNamespace(cancelled=Event())
-		with patch('search_files.load_json', return_value={'name_regex': True, 'content_regex': False, 'other': 7}), \
-				patch('search_files.save_json') as save:
+		with patch('search_files.load_settings', return_value={'other': 7}), \
+				patch('search_files.save_settings') as save:
 			session.save_preferences()
 			saved = save.call_args.args[1]
-			self.assertNotIn('name_regex', saved)
-			self.assertNotIn('content_regex', saved)
 			self.assertEqual('glob', saved['content_mode'])
 			self.assertEqual(7, saved['other'])
 			self.assertFalse(session.saving)

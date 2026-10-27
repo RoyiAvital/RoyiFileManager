@@ -32,6 +32,7 @@ class BuiltinPlugin(Plugin):
 
 		plugin = self
 		class ToggleExtendedStatusBar(ApplicationCommand):
+			category = 'View'
 			aliases = ('Toggle extended status bar',)
 			@run_in_main_thread
 			def __call__(self):
@@ -47,7 +48,7 @@ class BuiltinPlugin(Plugin):
 	def name(self):
 		return 'Builtin'
 	def initialize_status_bar(self):
-		settings = self._config.load_json('Status Bar.json', default={})
+		settings = self._config.load_json('Status Bar.yaml', default={})
 		self._status_settings = validate_status_bar_settings(settings)
 		self._window.set_extended_status_bar(self._status_settings)
 	def toggle_extended_status_bar(self):
@@ -56,7 +57,7 @@ class BuiltinPlugin(Plugin):
 		self._status_settings['mode'] = next_status_bar_mode(
 			self._status_settings['mode']
 		)
-		self._config.save_json('Status Bar.json', self._status_settings)
+		self._config.save_json('Status Bar.yaml', self._status_settings)
 		self._window.set_extended_status_bar(self._status_settings)
 		mode_names = {'disabled': 'Disabled', 'single': 'Active pane'}
 		show_status_message(
@@ -65,6 +66,7 @@ class BuiltinPlugin(Plugin):
 		)
 
 class TourCommand(DirectoryPaneCommand):
+	category = 'Application'
 	def __init__(self, pane, controller, tour_factory):
 		super().__init__(pane)
 		self._controller = controller
@@ -73,6 +75,7 @@ class TourCommand(DirectoryPaneCommand):
 		self._controller.start(self._tour_factory(self.pane), step)
 
 class ToggleFullscreen(ApplicationCommand):
+	category = 'View'
 	@run_in_main_thread
 	def __call__(self):
 		w = self.window._widget

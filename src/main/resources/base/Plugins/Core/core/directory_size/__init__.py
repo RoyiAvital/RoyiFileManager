@@ -1,5 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
-from fman import ApplicationCommand, DirectoryPaneCommand, Task, load_json, save_json, \
+from fman import ApplicationCommand, DirectoryPaneCommand, Task, load_settings, save_settings, \
 	show_alert, show_status_message
 from fman.impl.plugins.plugin import PluginService
 from fman.impl.status_bar import format_size
@@ -15,7 +15,7 @@ from core.directory_size.calculator import DirSize, scan_parents, walk_directory
 import os
 
 
-SETTINGS = 'DirectorySize.json'
+SETTINGS = 'DirectorySize.yaml'
 COLUMN = 'core.Size'
 DEFAULTS = {'enabled': False, 'max_files': 10000000}
 _service = None
@@ -121,7 +121,7 @@ class DirectorySizeService(PluginService):
 		self._panes.append(pane)
 		if not self._initialized:
 			self._initialized = True
-			self.settings = settings_snapshot(load_json(SETTINGS, default={}))
+			self.settings = settings_snapshot(load_settings(SETTINGS, default={}))
 			self.set_enabled(self.settings['enabled'])
 			return
 		if self.enabled:
@@ -247,7 +247,7 @@ class DirectorySizeService(PluginService):
 				return
 			settings = dict(self.settings, enabled=not self.enabled)
 			try:
-				save_json(SETTINGS, settings)
+				save_settings(SETTINGS, settings)
 			except (OSError, ValueError) as error:
 				show_alert(str(error))
 				return
@@ -272,6 +272,7 @@ class DirectorySizeService(PluginService):
 
 
 class ToggleDirectorySizeColumn(ApplicationCommand):
+	category = 'View'
 	aliases = ('Toggle directory sizes',)
 	def is_visible(self):
 		return True
@@ -281,6 +282,7 @@ class ToggleDirectorySizeColumn(ApplicationCommand):
 
 
 class RecalculateDirectorySizes(ApplicationCommand):
+	category = 'View'
 	def is_visible(self):
 		return _service is not None and _service.enabled
 	def __call__(self):
@@ -289,6 +291,7 @@ class RecalculateDirectorySizes(ApplicationCommand):
 
 
 class SortByDirectorySize(DirectoryPaneCommand):
+	category = 'View'
 	def is_visible(self):
 		return _service is not None and _service.enabled and self.pane.get_path().startswith('file://') and COLUMN in self.pane.get_columns()
 	@run_in_main_thread
@@ -299,6 +302,7 @@ class SortByDirectorySize(DirectoryPaneCommand):
 
 
 class ShowDirectorySize(DirectoryPaneCommand):
+	category = 'View'
 	def is_visible(self):
 		return self.pane.get_path().startswith('file://')
 	def __call__(self):

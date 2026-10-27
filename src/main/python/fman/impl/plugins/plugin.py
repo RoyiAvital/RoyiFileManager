@@ -3,11 +3,10 @@ from fman.fs import FileSystem, Column
 from fman.impl.font_database import FontError
 from fman.impl.util import listdir_absolute
 from fman.impl.ui import UiController, UiOwner
-from fman.impl.plugins.config import read_json_file
+from fman.impl.plugins.config import read_settings_file
 from glob import glob
 from importlib.util import module_from_spec, spec_from_file_location
 from inspect import getmro
-from json import JSONDecodeError
 from os.path import join, isdir, basename, isfile
 from threading import Thread
 
@@ -222,28 +221,30 @@ class ExternalPlugin(Plugin):
 			self._add_unload_action(self._unregister_package, package)
 	def _load_key_bindings(self):
 		self._configure_component_from_json(
-			self._key_bindings, 'Key Bindings.json'
+			self._key_bindings, 'Key Bindings.yaml'
 		)
 	def _load_context_menu(self):
 		provider = self._context_menu_provider
 		for fname, context in (
-			('File Context Menu.json', provider.FILE_CONTEXT),
-			('Folder Context Menu.json', provider.FOLDER_CONTEXT)
+			('File Context Menu.yaml', provider.FILE_CONTEXT),
+			('Folder Context Menu.yaml', provider.FOLDER_CONTEXT)
 		):
 			self._configure_component_from_json(provider, fname, fname, context)
 	def _configure_component_from_json(self, component, json_name, *args):
 		for json_file in self._config.locate(json_name, self._path):
 			try:
-				config = read_json_file(json_file)
+				config = read_settings_file(json_file)
 			except FileNotFoundError:
 				pass
-			except JSONDecodeError as e:
+			except ValueError as e:
 				self._error_handler.report(
 					'Could not load %s: %s' % (json_name, e.args[0]), exc=False
 				)
 			except Exception:
 				self._error_handler.report('Could not load %s.' % json_name)
 			else:
+				if config is None:
+					continue
 				errors = component.load(config, *args)
 				self._add_unload_action(component.unload, config, *args)
 				for error in errors:

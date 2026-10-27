@@ -159,6 +159,11 @@ class SuggestLocationsTest(TestCase):
 		self._check_query_returns(
 			'sub', ['~/My-substr', '~/s-u-b-s-t-r'], [[5, 6, 7], [2, 4, 6]]
 		)
+	def test_unicode_highlights_use_utf16_positions_of_the_title(self):
+		visited = {self.home_dir + os.sep + name: 1 for name in ('\U0001f4c1 Photos', '\u0130zmir')}
+		self.instance = SuggestLocations(visited, self.fs)
+		self._check_query_returns('photos', ['~/\U0001f4c1 Photos'], [[5, 6, 7, 8, 9, 10]])
+		self._check_query_returns('zmir', ['~/\u0130zmir'], [[3, 4, 5, 6]])
 	def setUp(self):
 		root = 'C:'
 		files = {

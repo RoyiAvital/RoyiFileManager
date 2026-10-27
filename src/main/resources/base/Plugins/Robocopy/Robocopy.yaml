@@ -1,0 +1,19 @@
+# Robocopy transfer settings: bundled defaults.
+# Override in UserSettings\Plugins\User\Settings\Robocopy.yaml.
+
+# Copy threads (/MT): 1-32.
+threads: 8
+# Retries per failed file (/R): 0-10.
+retries: 1
+# Seconds between retries (/W): 0-30.
+retry_wait_seconds: 1
+# true: restartable mode (/Z), slower but resumes interrupted large files.
+restartable: false
+# true: unbuffered I/O (/J), for very large files.
+unbuffered: false
+# true: write a Robocopy log for each operation.
+log_enabled: false
+# true: open the log when the operation ends; requires log_enabled.
+open_log_on_finish: false
+# Number of logs kept: 1-100.
+log_retention_count: 20

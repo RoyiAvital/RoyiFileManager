@@ -90,7 +90,8 @@ def load_catalog(path=CATALOG):
 				not positive(protocol.get('selection_timeout_seconds')):
 				raise ValueError('Invalid selection definition: ' + identity)
 		if test['workload'] == 'copy' and (catalog['fixtures'][test['fixture']]['kind'] != 'copy' or
-				not positive(protocol.get('copy_timeout_seconds'))):
+				not positive(protocol.get('copy_timeout_seconds')) or type(test.get('live_refresh', True)) is not bool or
+				type(test.get('destination_entries', 0)) is not int or test.get('destination_entries', 0) < 0):
 			raise ValueError('Invalid copy definition: ' + identity)
 		if (test['workload'] == 'csv') != (catalog['fixtures'][test['fixture']]['kind'] == 'csv'):
 			raise ValueError('CSV workloads require CSV fixtures: ' + identity)

@@ -1,0 +1,41 @@
+# Core key bindings for Windows; combined with Key Bindings.yaml.
+# Each entry: {keys: [Shortcut], command: command_name, args: {name: value}}.
+# Override or add bindings in UserSettings\Plugins\User\Settings\Key Bindings.yaml.
+
+# Panes and navigation.
+- {keys: [Ctrl+Right], command: open_in_right_pane}
+- {keys: [Ctrl+Left], command: open_in_left_pane}
+- {keys: [Ctrl+U], command: swap_panes}
+- {keys: [Ctrl+P], command: go_to}
+- {keys: [Ctrl+Shift+P], command: command_palette}
+- {keys: [Alt+Left], command: go_back}
+- {keys: [Alt+Right], command: go_forward}
+- {keys: [Alt+Up], command: go_up}
+- {keys: [Ctrl+\], command: go_to_root_of_current_drive}
+- {keys: [Ctrl+R], command: reload}
+
+# Selection and clipboard.
+- {keys: [Ins], command: move_cursor_down, args: {toggle_selection: true}}
+- {keys: [Ctrl+A], command: select_all}
+- {keys: [Ctrl+D], command: deselect}
+- {keys: [Num+*], command: invert_selection}
+- {keys: [Num++], command: select_by_pattern}
+- {keys: [Num+-], command: deselect_by_pattern}
+- {keys: [Ctrl+C], command: copy_to_clipboard}
+- {keys: [Ctrl+X], command: cut}
+- {keys: [Ctrl+V], command: paste}
+
+# Display.
+- {keys: [Ctrl+S], command: toggle_extended_status_bar}
+- {keys: [Ctrl+Q], command: toggle_quick_view}
+- {keys: [Ctrl+.], command: toggle_hidden_files}
+- {keys: [Ctrl+Shift+D], command: toggle_directory_size_column}
+- {keys: [Ctrl+Shift+Enter], command: show_directory_size}
+- {keys: [Ctrl+F1], command: sort_by_column, args: {column_index: 0}}
+- {keys: [Ctrl+F2], command: sort_by_column, args: {column_index: 1}}
+- {keys: [Ctrl+F3], command: sort_by_column, args: {column_index: 2}}
+- {keys: [Ctrl+F4], command: sort_by_directory_size}
+
+# Files.
+- {keys: [Alt+F5], command: pack}
+- {keys: [Alt+Enter], command: show_explorer_properties}

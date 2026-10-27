@@ -148,7 +148,8 @@ def child(test, catalog, directory, algorithm, profile_directory, selection_case
 	if workload == 'copy':
 		from fman_performancetest.copy import child as copy
 		fixture = catalog['fixtures'][test['fixture']]
-		return copy(directory, protocol['viewport'], fixture['files'], fixture['bytes_per_file'], scratch)
+		return copy(directory, protocol['viewport'], fixture['files'], fixture['bytes_per_file'], scratch,
+			live_refresh=test.get('live_refresh', True), destination_entries=test.get('destination_entries', 0))
 	if workload == 'selection':
 		from fman_performancetest.selection import selection_cases
 		from fman_performancetest.pane_rendering_benchmark import child as pane

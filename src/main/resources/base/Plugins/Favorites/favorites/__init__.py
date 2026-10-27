@@ -19,6 +19,7 @@ _invalid_entries_reported = False
 
 
 class AddCurrentFolderToFavorites(DirectoryPaneCommand):
+	category = 'Favorites'
 	aliases = ('Add current folder to favorites',)
 
 	def __call__(self):
@@ -57,6 +58,7 @@ class AddCurrentFolderToFavorites(DirectoryPaneCommand):
 
 
 class ShowFavorites(DirectoryPaneCommand):
+	category = 'Favorites'
 	aliases = ('Open favorites manager', 'Favorites Manager', 'Favorites', 'Show favorites', 'Bookmarks')
 
 	def __call__(self, query=''):
@@ -64,6 +66,7 @@ class ShowFavorites(DirectoryPaneCommand):
 
 
 class RemoveFromFavorites(DirectoryPaneCommand):
+	category = 'Favorites'
 	aliases = ('Remove from favorites',)
 
 	def is_visible(self):
@@ -103,6 +106,7 @@ class RemoveFromFavorites(DirectoryPaneCommand):
 
 
 class RenameFavorite(DirectoryPaneCommand):
+	category = 'Favorites'
 	aliases = ('Rename favorite',)
 
 	def is_visible(self):

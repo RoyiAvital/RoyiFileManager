@@ -28,7 +28,7 @@ class Settings:
 	@classmethod
 	def load(cls, value):
 		if not isinstance(value, dict):
-			raise ValueError('Robocopy.json must contain an object.')
+			raise ValueError('Robocopy.yaml must contain a mapping.')
 		unknown = set(value) - set(cls.__dataclass_fields__)
 		if unknown:
 			raise ValueError('Unknown Robocopy setting: ' + ', '.join(sorted(unknown)))

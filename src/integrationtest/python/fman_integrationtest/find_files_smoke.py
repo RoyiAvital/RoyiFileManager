@@ -1,10 +1,10 @@
-import json
 import os
 from pathlib import Path
 import sys
 from tempfile import TemporaryDirectory
 from threading import Event, Thread
 import traceback
+import yaml
 
 
 def exercise(context, root, output):
@@ -108,8 +108,8 @@ def exercise(context, root, output):
 		gui(lambda: host.controls['case_mode'][1].set_value('sensitive'))
 		gui(lambda: host.controls['hidden'][1].click())
 		wait_for(lambda: not session.saving, 'Preferences did not settle')
-		settings = root / 'UserSettings/Plugins/User/Settings/FindFiles (Windows).json'
-		saved = json.loads(settings.read_text(encoding='utf-8'))
+		settings = root / 'UserSettings/Plugins/User/Settings/FindFiles (Windows).yaml'
+		saved = yaml.safe_load(settings.read_text(encoding='utf-8'))
 		assert saved['case_mode'] == 'sensitive' and saved['hidden']
 		assert not {'pattern', 'max_results', 'start_date', 'min_size'} & saved.keys()
 		gui(lambda: session.panel.update(values={'pattern': '*.txt', 'max_results': None}))

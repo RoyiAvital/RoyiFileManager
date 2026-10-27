@@ -6,9 +6,13 @@ Settings live in `UserSettings` beside the application.
 
 Copy this folder to back up or move your configuration.
 
-Application and plug-in JSON files are written with two-space indentation and a
-final newline. Existing files keep their format until rewritten; unchanged
-plug-in settings are not rewritten.
+User configuration files (`AppSettings.yaml`, plug-in settings, key bindings and
+context menus) use [YAML](https://yaml.org) and may contain `#` comments. When
+{{ app_name }} saves a setting, it keeps the file's comments and only writes values
+that differ from the defaults. Bundled defaults list every option with a comment.
+
+Application state (`Panes`, `Favorites`, `Visited Paths`, `Sort Settings`, command
+history) stays in JSON files managed by the application.
 
 ## Application Settings
 
@@ -23,7 +27,14 @@ Most preferences save automatically as you use the application:
 
 Close {{ app_name }} before editing configuration files by hand.
 
-User overrides live in:
+Application settings (text editor and viewer, comparators, terminal, Explorer,
+archive handlers, QuickView table limit, live refresh) live in:
+
+```text
+UserSettings\AppSettings.yaml
+```
+
+Plug-in settings, key bindings and menus live in:
 
 ```text
 UserSettings\Plugins\User\Settings
@@ -55,7 +66,7 @@ Restart {{ app_name }} after external edits.
 
 ### Fuzzy Find
 
-Use `SearchFileFuzzy.json`.
+Use `SearchFileFuzzy.yaml`.
 
 | Parameter               | Default | Effect                                                            |
 | ----------------------- | ------: | ----------------------------------------------------------------- |
@@ -69,16 +80,15 @@ Limits must be positive integers. Larger values can use more time and memory.
 Hidden entries follow the active pane. Press ++ctrl+period++ before searching
 to show or hide them.
 
-```json
-{
-  "max_recursive_entries": 100000,
-  "max_results": 250
-}
+```yaml
+# Index larger trees and show more results.
+max_recursive_entries: 100000
+max_results: 250
 ```
 
 ### Search Files
 
-Use `SearchFiles.json`.
+Use `SearchFiles.yaml`.
 
 | Parameter        | Default   | Effect                                              |
 | ---------------- | --------: | --------------------------------------------------- |
@@ -96,7 +106,7 @@ Numeric limits must be positive. They can be lowered, but not raised above their
 
 ### Find Files with `fd`
 
-Use `FindFiles.json` or change these options in the Find Files panel.
+Use `FindFiles.yaml` or change these options in the Find Files panel.
 
 | Parameter                        | Default | Effect                                              |
 | -------------------------------- | ------: | --------------------------------------------------- |
@@ -118,23 +128,23 @@ The results table retains at most 10,000 rows or 16 MiB. An uncapped search can 
 
 | File                     | Parameter                 | Default    | Effect                                                                 |
 | ------------------------ | ------------------------- | ---------: | ---------------------------------------------------------------------- |
-| `Status Bar.json`        | `mode`                    | `disabled` | Use `disabled` or `single` (active pane). ++ctrl+s++ toggles the mode. |
-| `Status Bar.json`        | `max_entries`             | 5,000      | Maximum pane entries inspected for status totals.                      |
-| `Status Bar.json`        | `size_divisor`            | 1,024      | Use 1,024 for KiB or 1,000 for KB.                                     |
-| `DirectorySize.json`     | `enabled`                 | `false`    | Enable automatic directory totals.                                     |
-| `DirectorySize.json`     | `max_files`               | 10,000,000 | Regular files counted per root. Use `0` for unlimited.                 |
+| `Status Bar.yaml`        | `mode`                    | `disabled` | Use `disabled` or `single` (active pane). ++ctrl+s++ toggles the mode. |
+| `Status Bar.yaml`        | `max_entries`             | 5,000      | Maximum pane entries inspected for status totals.                      |
+| `Status Bar.yaml`        | `size_divisor`            | 1,024      | Use 1,024 for KiB or 1,000 for KB.                                     |
+| `DirectorySize.yaml`     | `enabled`                 | `false`    | Enable automatic directory totals.                                     |
+| `DirectorySize.yaml`     | `max_files`               | 10,000,000 | Regular files counted per root. Use `0` for unlimited.                 |
 | `Favorites.json`         | `max_favorites`           | 200        | Maximum saved favorites before replacement is offered.                 |
-| `CalculateFileHash.json` | `default_algorithm`       | `sha256`   | Initially selected hash algorithm.                                     |
-| `CalculateFileHash.json` | `remember_last_algorithm` | `false`    | Remember the last accepted algorithm.                                  |
-| `CalculateFileHash.json` | `auto_copy`               | `false`    | Copy a completed current result automatically.                         |
-| `CalculateFileHash.json` | `chunk_size_mib`          | 4          | Read chunk size. Values are clamped to 1–64 MiB.                       |
-| `QuickView.json`         | `image_mode`              | `fit`      | Use `fit` or `actual_size`.                                            |
+| `CalculateFileHash.yaml` | `default_algorithm`       | `sha256`   | Initially selected hash algorithm.                                     |
+| `CalculateFileHash.yaml` | `remember_last_algorithm` | `false`    | Remember the last accepted algorithm.                                  |
+| `CalculateFileHash.yaml` | `auto_copy`               | `false`    | Copy a completed current result automatically.                         |
+| `CalculateFileHash.yaml` | `chunk_size_mib`          | 4          | Read chunk size. Values are clamped to 1–64 MiB.                       |
+| `QuickView.yaml`         | `image_mode`              | `fit`      | Use `fit` or `actual_size`.                                            |
 
 ### QuickView Table Limit
 
 Run **Set QuickView table limit** in the Command Center to choose the largest CSV/TSV
 file shown as a table. The choice is saved as `quickview_table_max_file_mb` in
-`Core Settings.json`.
+`AppSettings.yaml`.
 
 | Largest File | Table Engine Memory | Default |
 | -----------: | ------------------: | :-----: |
@@ -149,6 +159,29 @@ Table View keeps a temporary cache under `UserSettings\Cache\QuickViewCsv`, up t
 twice the file size (at most 8 GiB), and deletes it when the preview closes.
 Filtering files of long, varied non-English text can need more; Table View then
 stops that filter with a cache-limit message.
+
+### Live Refresh During File Operations
+
+By default, panes update while Copy, Move, Delete and other file operations run.
+Every update rescans the shown folder, so an operation slows down, and more so in
+large folders.
+
+Run **Toggle live refresh during file operations** in the Command Center to turn
+this off or on. The choice is saved as `live_refresh_during_file_operations` in
+`AppSettings.yaml` (default `true`) and applies from the next operation.
+
+| Live Refresh | Panes During an Operation                                          | Speed                                |
+| ------------ | ------------------------------------------------------------------ | ------------------------------------ |
+| On (default) | Show files as they are copied, moved or deleted.                   | Slower, and slower in large folders. |
+| Off          | Update once when the operation ends, including on error or cancel. | Faster.                              |
+
+See [measured copy times](performance.md#file-operations-live-and-deferred-refresh)
+for both modes.
+
+With live refresh off, a pane keeps its previous contents during the operation, so
+an item already moved or deleted can still be selected until it ends. Ctrl+R,
+navigation and changes made by other programs or commands still show the progress
+so far.
 
 ### Fixed Safety Limits
 
@@ -169,24 +202,19 @@ These values are not user-configurable.
 
 Press ++f1++ to view active shortcuts.
 
-Create `Key Bindings (Windows).json` in the user Settings folder to add custom bindings:
+Create `Key Bindings (Windows).yaml` in the user Settings folder to add custom bindings:
 
-```json
-[
-  {
-    "keys": ["Ctrl+Alt+F"],
-    "command": "find_files"
-  }
-]
+```yaml
+# Find files with Ctrl+Alt+F.
+- keys: [Ctrl+Alt+F]
+  command: find_files
 ```
 
 Your bindings take precedence over the built-in ones.
 To disable a built-in shortcut, bind it to `none`:
 
-```json
-[
-  { "keys": ["Delete"], "command": "none" }
-]
+```yaml
+- {keys: [Delete], command: none}
 ```
 
 This keeps ++f8++ for the Recycle Bin and disables ++delete++.
@@ -204,13 +232,11 @@ Right-click a file for its file menu, or empty pane space for a separate folder 
   <figcaption>Right-click a file to open its context menu.</figcaption>
 </figure>
 
-To add a file-menu command, create or edit `UserSettings\Plugins\User\Settings\File Context Menu (Windows).json`:
+To add a file-menu command, create or edit `UserSettings\Plugins\User\Settings\File Context Menu (Windows).yaml`:
 
-```json
-[
-  { "caption": "-", "id": "clipboard" },
-  { "command": "copy_paths_to_clipboard", "caption": "Copy full path(s)" }
-]
+```yaml
+- {caption: '-', id: clipboard}
+- {command: copy_paths_to_clipboard, caption: Copy full path(s)}
 ```
 
 If the file already exists, add the entries to its list. The matching `clipboard` ID inserts the command in that section of the built-in menu; the command copies marked paths, or the clicked file's path when nothing is marked.
@@ -219,7 +245,7 @@ If the file already exists, add the entries to its list. The matching `clipboard
 - `command` names a plug-in command in snake_case; optional `args` supplies its arguments.
 - `id` identifies an insertion point so user entries can join a built-in section. Commands whose `is_visible()` returns false are omitted.
 
-Use `Folder Context Menu (Windows).json` in the same Settings folder to customize the empty-space menu. Run **Reload plugins** in the Command Center to apply changes.
+Use `Folder Context Menu (Windows).yaml` in the same Settings folder to customize the empty-space menu. Run **Reload plugins** in the Command Center to apply changes.
 
 ## Appearance
 
@@ -293,20 +319,16 @@ Press ++f9++ to open a terminal in the current folder.
 
 Press ++f10++ to open the folder in Explorer.
 
-Windows defaults work without configuration. Advanced users can override them in `Core Settings (Windows).json`:
+Windows defaults work without configuration. Advanced users can override them in `AppSettings.yaml`:
 
-```json
-{
-  "terminal": {
-    "args": ["C:\\Tools\\Terminal\\terminal.exe"],
-    "cwd": "{curr_dir}",
-    "shell": false
-  },
-  "native_file_manager": {
-    "args": ["C:\\Tools\\FileManager\\manager.exe", "{curr_dir}"],
-    "shell": false
-  }
-}
+```yaml
+terminal:
+  args: ['C:\Tools\Terminal\terminal.exe']
+  cwd: '{curr_dir}'
+  shell: false
+native_file_manager:
+  args: ['C:\Tools\FileManager\manager.exe', '{curr_dir}']
+  shell: false
 ```
 
 Replace the example executable paths with installed programs.
@@ -315,6 +337,13 @@ Replace the example executable paths with installed programs.
 
 Configuration files are layered. User values override bundled defaults.
 
-Use `Core Settings (Windows).json` for advanced Core overrides. Tool setup commands write only their changed values there.
+Use `UserSettings\AppSettings.yaml` for application overrides. Tool setup commands write only their changed values there.
+Unlike plug-in settings, it has no `(Windows)` variant.
 
-Back up `UserSettings` before manual changes. Invalid JSON is reported when the related plug-in loads.
+Run **Edit settings** in the Command Center to open this file in the configured
+text editor. If missing, it is created with every option listed as a comment;
+remove the `#` from an option to change it. Without a text editor, an alert
+points to **Set text editor**. Restart {{ app_name }} after saving: running
+commands keep the loaded values and can write them back.
+
+Back up `UserSettings` before manual changes. Invalid YAML is reported when the related plug-in loads.

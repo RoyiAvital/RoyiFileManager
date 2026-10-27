@@ -55,3 +55,16 @@ def contains_chars_after_separator(separator):
 		if not query:
 			return positions
 	return match
+
+
+def display_positions(text, lowered, positions):
+	"""Map positions in lowered == text.lower() to Qt (UTF-16) positions in text."""
+	if positions is None or text.isascii() or len(lowered) == len(text) and \
+			len(text.encode('utf-16-le', 'surrogatepass')) == 2 * len(text):
+		return positions
+	units, unit = [], 0
+	for char in text:
+		width = 2 if ord(char) > 0xffff else 1
+		units.extend([range(unit, unit + width)] * len(char.lower()))
+		unit += width
+	return sorted({value for position in positions for value in units[position]})

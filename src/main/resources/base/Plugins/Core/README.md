@@ -153,12 +153,12 @@ bindings retain their normal precedence. File operations still use the actual
 covered directory as their opposite-pane destination; QuickView does not block
 operations or restore old directory state when closed.
 
-Command Center also offers **QuickView: Fit**, **100%**, **Zoom in**, **Zoom out**
-and **Pan** when an image is ready. Their command IDs are `quick_view_fit`,
+Command Center also offers **QuickView fit**, **QuickView 100%**, **QuickView zoom in**,
+**QuickView zoom out** and **QuickView pan** (category **View**) when an image is ready. Their command IDs are `quick_view_fit`,
 `quick_view_actual_size`, `quick_view_zoom_in`, `quick_view_zoom_out` and
 `quick_view_pan`; Pan accepts `direction` (`left`, `right`, `up`, `down`, default
 `down`) and `large` (default `false`). These commands have no additional default
-bindings. Only explicit Fit/100% preferences are saved to `QuickView.json` under
+bindings. Only explicit Fit/100% preferences are saved to `QuickView.yaml` under
 UserSettings, using `image_mode` values `fit` and `actual_size`.
 
 Images support local and accessible UNC regular files, including resolved local
@@ -232,7 +232,7 @@ UTF-8, UTF-16 LE with a byte order mark, and Latin-1; Latin-1 bytes 0x80-0x9F
 
 **Set QuickView table limit** (`set_quick_view_table_limit`) chooses the largest
 table file: 512, 1,024 or 2,048 MB (default), with 192, 384 or 768 MiB of engine
-memory. It is stored as `quickview_table_max_file_mb` in `Core Settings.json`.
+memory. It is stored as `quickview_table_max_file_mb` in `AppSettings.yaml`.
 The cache quota is twice the file size, at least 16 MiB and at most 8 GiB.
 
 ### Text, Markdown and Code
@@ -313,13 +313,11 @@ Core owns this feature, including its background service and commands. No
 separate DirectorySize plug-in, column override or plug-in-to-Core hook is used.
 Restart the updated application to discard a previously loaded standalone column.
 Defaults are in code; overrides retain the existing settings location:
-`UserSettings/Plugins/User/Settings/DirectorySize (Windows).json`.
+`UserSettings/Plugins/User/Settings/DirectorySize (Windows).yaml`.
 
-```json
-{
-	"enabled": false,
-	"max_files": 10000000
-}
+```yaml
+enabled: false
+max_files: 10000000  # 0 means unlimited
 ```
 
 The default limit is 10,000,000 regular files per directory root, for both
@@ -329,7 +327,7 @@ for a custom cap. Invalid values use the default; restart after external setting
 edits. Legacy `max_entries` is ignored so the former 200,000-entry default cannot
 cap new scans. Legacy `show_file_sizes` is also ignored: ordinary file sizes are
 always shown. Units follow
-`size_divisor` in `Status Bar.json`. Existing custom command IDs remain valid:
+`size_divisor` in `Status Bar.yaml`. Existing custom command IDs remain valid:
 `toggle_directory_size_column`, `sort_by_directory_size`,
 `recalculate_directory_sizes` and `show_directory_size`.
 
@@ -391,6 +389,15 @@ path support or change the Windows Registry.
 
 Avoid changing transfer sources or destinations concurrently. These checks do not
 provide a filesystem transaction or protection against hostile path replacement.
+
+### Live Refresh During File Operations
+
+**Toggle live refresh during file operations** switches the application setting
+`live_refresh_during_file_operations` in `AppSettings.yaml` (default `true`). When it is off, panes skip
+the rescans a Copy, Move, Delete, Rename, Pack or Unpack task requests and refresh
+once when the task ends, including on error or cancel. Ctrl+R, navigation and
+other commands still refresh immediately. Missing or invalid values keep live
+refresh on. The setting is read when each task starts.
 
 ## Duplicate a File
 
@@ -477,6 +484,9 @@ local, but later archive operations beneath it may hit the same parser limitatio
 - `Shift+F4` / **Edit new file**: create a file, if missing, then open it in the editor.
 - `Ctrl+N` / **New file**: create an empty file without opening the editor.
   Existing files are left unchanged.
+- **Edit settings**: open `UserSettings\AppSettings.yaml`
+  in the editor. If missing, it is created with every option listed as a comment.
+  Without an editor it shows the same alert as `F4`. Restart the application after saving.
 
 Press `Ctrl+Shift+P` and run **Set text editor** or **Set text viewer**.
 Choose Notepad++, CudaText, Notepad 4, EmEditor, Ecode, Royi Text Editor, or **Manual configuration**.
@@ -513,12 +523,11 @@ customize the arguments for any program. No detection or installation occurs.
 Saved configurations are not updated automatically; select the preset again in
 **Set text editor** or **Set text viewer** to apply changed defaults.
 
-Each configured role stores only `executable` and an `arguments` list in the
-user-layer Core Settings JSON under `UserSettings/Plugins/User/Settings`.
+Each configured role stores only `executable` and an `arguments` list in
+`UserSettings/AppSettings.yaml`.
 Clearing stores `null` so inherited settings cannot restore the program after a
 restart. Clearing an already-unset role does not save again. The roles are
-independent. Existing legacy editor launch mappings, including their `{file}`
-templates and `cwd`/`shell` options, still work until explicitly reconfigured.
+independent.
 
 ## File and Folder Comparators
 
@@ -573,14 +582,15 @@ Canceling setup leaves settings unchanged. **Clear file comparator** or
 **Clear folder comparator**, last in the respective setup list, clears only that
 role. Unconfigured commands point to setup without opening it automatically.
 Settings persist as `file_comparator` / `folder_comparator` objects containing
-`executable` and `arguments` in user-layer Core Settings JSON. Clearing stores `null`;
+`executable` and `arguments` in `UserSettings/AppSettings.yaml`. Clearing stores `null`;
 other roles and editor/viewer settings are preserved. A concurrent change to the
 same role during setup requires retrying. Preset switches follow vendor CLI
 documentation; verify behavior with the installed version, especially new windows.
 
 ## Examples
 
-* [Key Bindings.json](Key%20Bindings.json) defines the default key bindings
+* [Key Bindings.yaml](Key%20Bindings.yaml) defines the default key bindings
+* [AppSettings.yaml](AppSettings.yaml) lists every application setting with its default
 * [Theme.css](Theme.css) defines fman's visual appearance (to [some extent](https://github.com/fman-users/fman/issues/45))
 * [commands/](core/commands/__init__.py) implements virtually all commands
 * [local/](core/fs/local/__init__.py) lets fman work with the files on your local hard drive

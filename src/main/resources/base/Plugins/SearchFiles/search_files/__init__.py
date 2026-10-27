@@ -1,15 +1,14 @@
 from threading import Lock, Thread
 from time import monotonic
 
-from fman import DirectoryPaneCommand, load_json, save_json, show_status_message
+from fman import DirectoryPaneCommand, load_settings, save_settings, show_status_message
 from fman.ui import Action, Choice, Label, QuickTableColumn, QuickTableRow, TextField, Toggle, UiController, settings_resource, show_panel, show_quick_table
 from fman.url import as_human_readable
 from search_files.engine import Options, Runner
 from search_files.query import compile_text_filter
 
 
-SETTINGS_NAME = 'SearchFiles.json'
-LEGACY_SETTINGS_NAME = 'SearchFileContent.json'
+SETTINGS_NAME = 'SearchFiles.yaml'
 DEFAULTS = {'name_mode': 'glob', 'content_mode': 'literal', 'recursive': True,
 	'extended': False, 'encoding': 'auto', 'max_rows': 10000, 'max_text_bytes': 16 * 1024 * 1024,
 	'max_file_lines': 200, 'max_file_bytes': 50 * 1024 * 1024}
@@ -24,13 +23,9 @@ EXTENDED_COLUMNS = (QuickTableColumn('File Path', 'file_path'), QuickTableColumn
 TRUNCATED = {'Complete': False, 'Limited': True, 'Stopped': True}
 
 
-def load_settings():
-	legacy = load_json(LEGACY_SETTINGS_NAME, default={})
-	current = load_json(SETTINGS_NAME, default={})
-	result = dict(legacy) if isinstance(legacy, dict) else {}
-	if isinstance(current, dict):
-		result.update(current)
-	return result
+def read_settings():
+	current = load_settings(SETTINGS_NAME, default={})
+	return dict(current) if isinstance(current, dict) else {}
 
 
 def settings_snapshot(values):
@@ -39,11 +34,8 @@ def settings_snapshot(values):
 	result = dict(DEFAULTS)
 	for name, default in DEFAULTS.items():
 		value = values.get(name, default)
-		if name in ('name_mode', 'content_mode'):
-			fallback = 'regex' if values.get(name.replace('_mode', '_regex')) is True else default
-			value = values.get(name, fallback)
-			if value not in ('literal', 'glob', 'regex'):
-				value = fallback
+		if name in ('name_mode', 'content_mode') and value not in ('literal', 'glob', 'regex'):
+			continue
 		if type(value) is type(default):
 			if type(default) is int and not 1 <= value <= default:
 				continue
@@ -136,11 +128,9 @@ class SearchSession:
 				with resource.lock:
 					if not self.owner.active or self.panel.cancelled.is_set():
 						continue
-					updated = load_settings()
-					updated.pop('name_regex', None)
-					updated.pop('content_regex', None)
+					updated = read_settings()
 					updated.update(values)
-					save_json(SETTINGS_NAME, updated)
+					save_settings(SETTINGS_NAME, updated)
 					notification = resource.committed(tuple(updated.items()))
 				resource.publish(notification)
 			except (OSError, ValueError) as error:
@@ -233,6 +223,7 @@ class SearchSession:
 
 
 class SearchFiles(DirectoryPaneCommand):
+	category = 'Search'
 	aliases = ('Search files', 'Search text in files')
 
 	def is_visible(self):
@@ -247,7 +238,7 @@ class SearchFiles(DirectoryPaneCommand):
 			return
 		try:
 			with settings_resource(SETTINGS_NAME).lock:
-				settings = settings_snapshot(load_settings())
+				settings = settings_snapshot(read_settings())
 		except (OSError, ValueError) as error:
 			show_status_message('Could not load search preferences: ' + str(error), timeout_secs=3)
 			settings = dict(DEFAULTS)

@@ -15,12 +15,13 @@ import sys
 
 __all__ = [
 	'ApplicationCommand', 'DirectoryPaneCommand', 'DirectoryPaneListener',
-	'load_json', 'save_json',
+	'load_json', 'save_json', 'load_settings', 'save_settings',
 	'show_alert', 'show_prompt', 'show_status_message', 'clear_status_message',
 	'show_file_open_dialog',
 	'show_quicksearch', 'QuicksearchItem',
 	'get_application_commands', 'run_application_command',
-	'get_application_command_aliases', 'load_plugin', 'unload_plugin',
+	'get_application_command_aliases', 'get_application_command_category',
+	'load_plugin', 'unload_plugin',
 	'clipboard',
 	'submit_task', 'Task',
 	'PLATFORM', 'APP_VERSION', 'DATA_DIRECTORY',
@@ -53,6 +54,9 @@ def _get_data_directory():
 DATA_DIRECTORY = _get_data_directory()
 
 class ApplicationCommand:
+
+	category = ''
+
 	def __init__(self, window):
 		self.window = window
 	def __call__(self, *args, **kwargs):
@@ -144,6 +148,8 @@ class DirectoryPane:
 			self._widget.cancel_pattern_selection()
 	def get_command_aliases(self, command_name):
 		return self._command_registry.get_command_aliases(command_name)
+	def get_command_category(self, command_name):
+		return self._command_registry.get_command_category(command_name)
 	def is_command_visible(self, command_name):
 		return self._command_registry.is_command_visible(command_name, self)
 
@@ -260,6 +266,9 @@ class Window:
 		return pane
 
 class DirectoryPaneCommand:
+
+	category = ''
+
 	def __init__(self, pane):
 		self.pane = pane
 	def __call__(self, *args, **kwargs):
@@ -307,6 +316,20 @@ def load_json(name, default=None, save_on_quit=False, *, preserve_on_reload=Fals
 def save_json(name, value=None):
 	return _get_plugin_support().save_json(name, value)
 
+def load_settings(name, default=None, save_on_quit=False):
+	"""Load layered YAML settings ('Name.yaml'); user files may contain comments."""
+	_check_settings_name(name)
+	return _get_plugin_support().load_json(name, default, save_on_quit)
+
+def save_settings(name, value=None):
+	"""Save the user layer of 'Name.yaml', keeping comments on retained keys."""
+	_check_settings_name(name)
+	return _get_plugin_support().save_json(name, value)
+
+def _check_settings_name(name):
+	if not name.lower().endswith('.yaml'):
+		raise ValueError('Settings names end with .yaml: %r' % name)
+
 def show_alert(text, buttons=OK, default_button=OK):
 	return _get_ui().show_alert(text, buttons, default_button)
 
@@ -353,6 +376,9 @@ def run_application_command(name, args=None):
 
 def get_application_command_aliases(command_name):
 	return _get_plugin_support().get_application_command_aliases(command_name)
+
+def get_application_command_category(command_name):
+	return _get_plugin_support().get_application_command_category(command_name)
 
 def load_plugin(plugin_path):
 	return _get_plugin_support().load_plugin(plugin_path)
@@ -408,11 +434,13 @@ class Task:
 		return self._title
 
 def submit_task(task):
+	from fman.impl.model.file_watcher import deferred_refresh, live_refresh_enabled
 	dialog = _get_ui().create_progress_dialog(task.get_title(), task.get_size())
 	dialog_before = task._dialog
 	task._dialog = dialog
 	try:
-		task()
+		with deferred_refresh(not live_refresh_enabled()):
+			task()
 	except Task.Canceled:
 		pass
 	finally:

@@ -5,7 +5,7 @@ from core.fileoperations import ArchiveUpdateError
 from core.util import filenotfounderror
 from datetime import datetime
 from errno import EEXIST, EIO
-from fman import PLATFORM, load_json, Task
+from fman import PLATFORM, load_settings, Task
 from fman.fs import FileSystem
 from fman.url import as_url, splitscheme, as_human_readable, basename
 from hashlib import sha256
@@ -40,7 +40,7 @@ class _7ZipFileSystem(FileSystem):
 		self._fs = fs
 		self._suffixes = suffixes
 	def _load_suffixes_from_json(self):
-		settings = load_json('Core Settings.json', default={})
+		settings = load_settings('AppSettings.yaml', default={})
 		archive_handlers = settings.get('archive_handlers', {})
 		return set(
 			suffix for suffix, scheme in archive_handlers.items()

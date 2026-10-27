@@ -17,7 +17,7 @@ traversal uses `os.scandir`; other schemes use their provider APIs.
 These commands and the fd panel (`Shift+F7`) are named **Find Files**. Only
 the ripgrep panel (`Alt+F7`) is named **Search Files**. Displaying result
 metadata here does not change filename matching into metadata filtering.
-Command IDs, key bindings and the `SearchFileFuzzy.json` settings name are unchanged.
+Command IDs and key bindings are unchanged; settings live in `SearchFileFuzzy.yaml`.
 
 Selecting a result opens its containing folder and places the cursor on the
 file. Directories are traversed but are not included in the results. Unreadable
@@ -194,19 +194,17 @@ python src/performancetest/run.py legacy-metadata
 
 ## Settings
 
-The defaults are stored in `SearchFileFuzzy.json`:
+The defaults are stored in [SearchFileFuzzy.yaml](SearchFileFuzzy.yaml):
 
-```json
-{
-	"mode": "fuzzy",
-	"max_recursive_entries": 50000,
-	"max_results": 100,
-	"show_metadata": false
-}
+```yaml
+mode: fuzzy
+max_recursive_entries: 50000
+max_results: 100
+show_metadata: false
 ```
 
 Create
-`UserSettings/Plugins/User/Settings/SearchFileFuzzy.json` to override individual
+`UserSettings/Plugins/User/Settings/SearchFileFuzzy (Windows).yaml` to override individual
 values without changing the bundled plug-in. Set `mode` to `fuzzy` for
 subsequence matching or `regular` for normalized, case-insensitive substring
 matching. `max_recursive_entries` bounds the number of files and directories

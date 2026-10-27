@@ -1,0 +1,11 @@
+# Find files (Ctrl+F, Ctrl+Shift+F) settings: bundled defaults.
+# Override in UserSettings\Plugins\User\Settings\SearchFileFuzzy.yaml.
+
+# fuzzy: subsequence matching with fzf-style operators. regular: substring matching.
+mode: fuzzy
+# Maximum entries indexed by a recursive search.
+max_recursive_entries: 50000
+# Maximum results shown.
+max_results: 100
+# true: show modified date and size; "Toggle find result metadata" switches it.
+show_metadata: false

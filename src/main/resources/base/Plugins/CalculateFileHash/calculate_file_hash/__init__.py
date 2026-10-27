@@ -1,6 +1,6 @@
 from calculate_file_hash.hashing import AVAILABLE_ALGORITHMS, compute_hash, default_algorithm, settings_snapshot
 from calculate_file_hash.ui import HashController
-from fman import DirectoryPaneCommand, QuicksearchItem, Task, load_json, save_json, show_quicksearch, show_status_message, submit_task
+from fman import DirectoryPaneCommand, QuicksearchItem, Task, load_settings, save_settings, show_quicksearch, show_status_message, submit_task
 from fman.ui import settings_resource
 from threading import Lock
 from weakref import WeakKeyDictionary
@@ -9,7 +9,7 @@ import os
 import stat
 
 
-_SETTINGS_NAME = 'CalculateFileHash.json'
+_SETTINGS_NAME = 'CalculateFileHash.yaml'
 _settings_lock = settings_resource(_SETTINGS_NAME).lock
 _busy_lock = Lock()
 _busy_panes = WeakKeyDictionary()
@@ -18,7 +18,7 @@ _warned_default = False
 
 def _load_settings():
 	with _settings_lock:
-		return settings_snapshot(load_json(_SETTINGS_NAME, default={}))
+		return settings_snapshot(load_settings(_SETTINGS_NAME, default={}))
 
 
 def _default(settings):
@@ -35,13 +35,13 @@ def _default(settings):
 
 def _remember(algorithm, owner):
 	with _settings_lock:
-		loaded = load_json(_SETTINGS_NAME, default={})
+		loaded = load_settings(_SETTINGS_NAME, default={})
 		settings = settings_snapshot(loaded)
 		if not owner.active or not settings['remember_last_algorithm'] or settings['default_algorithm'] == algorithm:
 			return
 		updated = dict(loaded)
 		updated['default_algorithm'] = algorithm
-		save_json(_SETTINGS_NAME, updated)
+		save_settings(_SETTINGS_NAME, updated)
 
 
 def _algorithm_items(query, configured):
@@ -73,6 +73,7 @@ class _HashFileTask(Task):
 
 
 class CalculateFileHash(DirectoryPaneCommand):
+	category = 'Tools'
 	aliases = ('Calculate file hash', 'File hash', 'Checksum')
 
 	def is_visible(self):

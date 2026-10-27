@@ -1,0 +1,10 @@
+# Context menu for the empty area of a folder.
+# Each entry: {command: command_name, caption: Text, args: {name: value}}.
+# "&" marks the access key. {caption: '-', id: name} is a separator; plug-ins and the
+# user file UserSettings\Plugins\User\Settings\Folder Context Menu.yaml can add entries.
+- {caption: '-', id: clipboard}
+- {command: paste, caption: '&Paste'}
+- {caption: '-', id: new}
+- {command: create_directory, caption: New &Folder}
+- {caption: '-', id: properties}
+- {command: show_explorer_properties, caption: P&roperties}

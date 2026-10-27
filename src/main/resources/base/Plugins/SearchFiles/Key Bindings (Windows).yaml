@@ -1,0 +1,2 @@
+# Key binding for Search files with ripgrep; see the Core plug-in's Key Bindings.yaml for the format.
+- {keys: [Alt+F7], command: search_files}

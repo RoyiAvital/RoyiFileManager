@@ -1,0 +1,3 @@
+# Key bindings for Find files; see the Core plug-in's Key Bindings.yaml for the format.
+- {keys: [Ctrl+F], command: search_files_in_current_folder}
+- {keys: [Ctrl+Shift+F], command: search_files_recursively}

@@ -1,0 +1,2 @@
+# Key binding for Everything search; see the Core plug-in's Key Bindings.yaml for the format.
+- {keys: [Ctrl+E], command: search_file_by_everything}

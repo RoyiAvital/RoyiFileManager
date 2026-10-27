@@ -28,16 +28,15 @@ match a published checksum, not for collision-resistant security decisions.
 
 ## Settings
 
-Override bundled defaults in
-`UserSettings/Plugins/User/Settings/CalculateFileHash (Windows).json`:
+Defaults and comments are in [CalculateFileHash.yaml](CalculateFileHash.yaml).
+Override them in
+`UserSettings/Plugins/User/Settings/CalculateFileHash (Windows).yaml`:
 
-```json
-{
-  "default_algorithm": "sha256",
-  "remember_last_algorithm": false,
-  "auto_copy": false,
-  "chunk_size_mib": 4
-}
+```yaml
+default_algorithm: sha256
+remember_last_algorithm: false
+auto_copy: false
+chunk_size_mib: 4  # 1-64
 ```
 
 An invalid default falls back through SHA-256, SHA-512, SHA-384, SHA3-256,

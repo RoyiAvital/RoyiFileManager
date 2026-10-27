@@ -60,6 +60,10 @@ Type an action. Press ++enter++.
 
 The Command Center is the fastest way to discover features.
 
+Commands are grouped by category, for example **File: Copy** or
+**Settings: Edit settings**. Type a category name such as `view` to list its
+commands, or type the command name directly.
+
 Try **Bookmarks** for Favorites, **Extract archive** for Unpack, or **Preview**
 for QuickView. These are alternate names for the same commands.
 

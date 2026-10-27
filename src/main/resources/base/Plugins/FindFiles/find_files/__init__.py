@@ -1,7 +1,7 @@
 from threading import Lock, Thread
 from time import monotonic
 
-from fman import DirectoryPaneCommand, load_json, save_json, show_status_message
+from fman import DirectoryPaneCommand, load_settings, save_settings, show_status_message
 from fman.impl.status_bar import format_size
 from fman.impl.util.qt.thread import run_in_main_thread
 from fman.ui import Action, Choice, DateField, IntegerField, Label, Select, Separator, QuickTableColumn, QuickTableRow, TextField, Toggle, UiController, settings_resource, show_panel, show_quick_table
@@ -9,7 +9,7 @@ from fman.url import as_human_readable
 from find_files.engine import Options, Runner, TYPES, UNITS, arguments, count_text
 
 
-SETTINGS_NAME = 'FindFiles.json'
+SETTINGS_NAME = 'FindFiles.yaml'
 COLUMNS = (QuickTableColumn('Path', 'entry_path'),
 	QuickTableColumn('Size', 'numeric', unit='bytes', format=format_size, missing=''),
 	QuickTableColumn('Modified', 'date', missing=''))
@@ -138,10 +138,10 @@ class FindSession:
 				with resource.lock:
 					if not self.owner.active or self.panel.cancelled.is_set():
 						continue
-					loaded = load_json(SETTINGS_NAME, default={})
+					loaded = load_settings(SETTINGS_NAME, default={})
 					updated = dict(loaded) if isinstance(loaded, dict) else {}
 					updated.update(values)
-					save_json(SETTINGS_NAME, updated)
+					save_settings(SETTINGS_NAME, updated)
 					notification = resource.committed(tuple(updated.items()))
 				resource.publish(notification)
 			except (OSError, ValueError) as error:
@@ -228,6 +228,7 @@ class FindSession:
 
 
 class FindFiles(DirectoryPaneCommand):
+	category = 'Search'
 	aliases = ('Find files with fd', 'Find files')
 
 	def is_visible(self):
@@ -242,7 +243,7 @@ class FindFiles(DirectoryPaneCommand):
 			return
 		try:
 			with settings_resource(SETTINGS_NAME).lock:
-				settings = settings_snapshot(load_json(SETTINGS_NAME, default={}))
+				settings = settings_snapshot(load_settings(SETTINGS_NAME, default={}))
 		except (OSError, ValueError) as error:
 			show_status_message('Could not load Find Files preferences: ' + str(error), timeout_secs=3)
 			settings = dict(DEFAULTS)

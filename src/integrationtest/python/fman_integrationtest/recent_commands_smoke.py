@@ -10,10 +10,11 @@ import traceback
 def exercise(context, root, phase):
 	from core.commands import CommandPalette, ReloadPlugins, SortByColumn, _recent_commands
 	from fman.url import as_url
-	from fman.impl.quicksearch import Quicksearch
+	from fman.impl.quicksearch import Quicksearch, QuicksearchItemRenderer
 	from fman.impl.util.qt.thread import run_in_main_thread
-	from PyQt5.QtCore import QThread, QTimer
+	from PyQt5.QtCore import QRect, QThread, QTimer
 	from PyQt5.QtGui import QFont, QFontMetricsF
+	from PyQt5.QtWidgets import QStyleOptionViewItem
 	gui = lambda function: run_in_main_thread(function)()
 	commands = ('select_all', 'deselect', 'reload')
 	expected = tuple(('pane', name) for name in reversed(commands))
@@ -69,16 +70,18 @@ def exercise(context, root, phase):
 						hint_font = QFont(dialog._items.font())
 						hint_font.setPointSize(int(css['hint']['font-size_pts']))
 						available = dialog._items.viewport().width() - css['padding-left_px'] - css['padding-right_px']
+						option = QStyleOptionViewItem()
+						option.initFrom(dialog._items)
+						option.rect = QRect(0, 0, dialog._items.viewport().width(), 1)
 						checked = 0
 						for item in dialog._curr_items:
 							title_width = QFontMetricsF(title_font).horizontalAdvance(item.title)
-							hint = item.hint.removesuffix(' \u00b7 Recent')
-							baseline = title_width + QFontMetricsF(hint_font).horizontalAdvance(hint)
-							if baseline + 12 <= available:
-								recent_hint = hint + ' \u00b7 Recent' if hint else 'Recent'
-								width = title_width + QFontMetricsF(hint_font).horizontalAdvance(recent_hint)
-								assert width + 12 <= available, 'New hint overlap: ' + item.title
-								checked += 1
+							fitted = QuicksearchItemRenderer(item, option, css).fitted_hint()
+							width = title_width + QFontMetricsF(hint_font).horizontalAdvance(fitted)
+							assert width + QuicksearchItemRenderer.HINT_GAP <= available + 1, 'Hint overlap: ' + item.title
+							if 'Recent' in item.hint:
+								assert fitted.endswith('Recent'), 'Recent hidden: ' + item.title
+							checked += 1
 						output = Path('target/recent-commands-%s-%s.png' % (os.environ['QT_SCALE_FACTOR'], phase))
 						output.parent.mkdir(parents=True, exist_ok=True)
 						assert dialog.grab().save(str(output))

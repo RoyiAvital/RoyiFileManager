@@ -22,10 +22,18 @@ from fman import DirectoryPaneCommand, show_status_message
 
 
 class ShowCurrentFile(DirectoryPaneCommand):
+    category = "Navigation"
+    aliases = ("Show current file",)
+
     def __call__(self):
         file_url = self.pane.get_file_under_cursor()
         show_status_message(file_url or "No file selected")
 ```
+
+The Command Center lists it as **Navigation: Show current file**. Set
+`category = ""` for no category. Bundled categories are `Application`,
+`Settings`, `File`, `Clipboard`, `Selection`, `Navigation`, `View`, `Search`,
+`Favorites` and `Tools`.
 
 ## Pane Essentials
 
@@ -45,13 +53,20 @@ Paths in the API are URLs. Use `fman.url` helpers to convert them.
 
 ## Settings
 
-```python
-from fman import load_json, save_json
+User-editable settings are YAML files and may contain comments:
 
-settings = load_json("MyPlugin.json", {"enabled": True})
+```python
+from fman import load_settings, save_settings
+
+settings = load_settings("MyPlugin.yaml", {"enabled": True})
 settings["enabled"] = False
-save_json("MyPlugin.json", settings)
+save_settings("MyPlugin.yaml", settings)
 ```
+
+Ship commented defaults as `MyPlugin.yaml` in the plug-in folder. Saving writes
+only values that differ from those defaults and keeps the user's comments.
+
+Use `load_json` and `save_json` for internal state that users do not edit.
 
 Keep mutable data under `UserSettings`.
 

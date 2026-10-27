@@ -11,6 +11,7 @@ import re
 import win32gui
 
 class ShowExplorerProperties(DirectoryPaneCommand):
+	category = 'File'
 
 	aliases = 'Properties',
 

@@ -62,7 +62,7 @@ absolute path. Results are modal: a successful Go To closes them and focuses the
 pane; Enter or Escape closes them and returns to the Panel.
 Empty searches report their count in the Panel status.
 
-Only mode, case, type, toggles and size units persist in `FindFiles.json`.
+Only mode, case, type, toggles and size units persist in `FindFiles.yaml`.
 Patterns, bounds and Max Results are session-only. Section dividers separate
 contexts; controls share a 28-pixel height and align along each line's bottom.
 At the default 1280-pixel window width this three-band dock matches Search

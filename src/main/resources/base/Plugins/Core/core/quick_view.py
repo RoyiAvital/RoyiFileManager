@@ -27,6 +27,7 @@ def switch_quick_view(pane, pane_index):
 
 
 class ToggleQuickView(DirectoryPaneCommand):
+	category = 'View'
 	aliases = ('Toggle QuickView', 'Preview')
 
 	@run_in_main_thread
@@ -59,6 +60,7 @@ def _ready_session(pane):
 
 
 class _ImageCommand(DirectoryPaneCommand):
+	category = 'View'
 	def is_visible(self):
 		return _ready_session(self.pane) is not None
 
@@ -70,36 +72,37 @@ class _ImageCommand(DirectoryPaneCommand):
 
 
 class QuickViewFit(_ImageCommand):
-	aliases = ('QuickView: Fit',)
+	aliases = ('QuickView fit',)
 	def __call__(self):
 		self._act('fit')
 
 
 class QuickViewActualSize(_ImageCommand):
-	aliases = ('QuickView: 100%',)
+	aliases = ('QuickView 100%',)
 	def __call__(self):
 		self._act('actual_size')
 
 
 class QuickViewZoomIn(_ImageCommand):
-	aliases = ('QuickView: Zoom in',)
+	aliases = ('QuickView zoom in',)
 	def __call__(self):
 		self._act('zoom_in')
 
 
 class QuickViewZoomOut(_ImageCommand):
-	aliases = ('QuickView: Zoom out',)
+	aliases = ('QuickView zoom out',)
 	def __call__(self):
 		self._act('zoom_out')
 
 
 class QuickViewPan(_ImageCommand):
-	aliases = ('QuickView: Pan',)
+	aliases = ('QuickView pan',)
 	def __call__(self, direction='down', large=False):
 		self._act('pan', (direction, large))
 
 
 class SetQuickViewTableLimit(DirectoryPaneCommand):
+	category = 'Settings'
 	aliases = ('Set QuickView table limit',)
 
 	def __call__(self):

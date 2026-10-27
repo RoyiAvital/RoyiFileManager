@@ -46,8 +46,8 @@ class CalculateFileHashPluginTest(TestCase):
 			self.assertTrue(HashController.owner.active)
 			with TemporaryDirectory() as settings_path:
 				config.add_dir(settings_path)
-				Path(settings_path, 'CalculateFileHash.json').write_text('{}', encoding='utf-8')
-				self.assertEqual('sha256', config.load_json('CalculateFileHash.json')['default_algorithm'])
+				Path(settings_path, 'CalculateFileHash.yaml').write_text('# User overrides\n', encoding='utf-8')
+				self.assertEqual('sha256', config.load_json('CalculateFileHash.yaml')['default_algorithm'])
 		finally:
 			plugin.unload()
 		self.assertFalse(HashController.owner.active)

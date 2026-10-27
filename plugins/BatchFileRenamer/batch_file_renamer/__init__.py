@@ -16,6 +16,7 @@ def supported_host():
 
 
 class BatchFileRenamer(fman.DirectoryPaneCommand):
+	category = 'Tools'
 	aliases = ('Batch File Renamer',)
 
 	def is_visible(self):

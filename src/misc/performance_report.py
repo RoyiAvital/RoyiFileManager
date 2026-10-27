@@ -136,7 +136,7 @@ def headline(identity, metrics):
 	if identity.startswith('pane.'):
 		metric, label = 'first_paint_ms', 'First populated paint'
 	elif identity.startswith('copy.'):
-		metric, label = 'copy.transfer.wall_ms', 'Copy completion including preparation'
+		metric, label = 'copy.transfer.refresh_complete_ms', 'Copy until the destination pane shows every file'
 	elif identity.startswith('csv.'):
 		metric, label = 'csv.full.input_to_paint_ms', 'Full table import paint'
 	elif identity.startswith('quickview.text.'):

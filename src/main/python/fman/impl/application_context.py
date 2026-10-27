@@ -12,7 +12,7 @@ from fman.impl.plugins import PluginSupport, CommandCallback, PluginFactory
 from fman.impl.plugins.builtin import BuiltinPlugin, NullFileSystem
 from fman.impl.plugins.command_registry import PaneCommandRegistry, \
 	ApplicationCommandRegistry
-from fman.impl.plugins.config import Config
+from fman.impl.plugins.config import APP_SETTINGS, Config
 from fman.impl.plugins.context_menu import ContextMenuProvider
 from fman.impl.plugins.discover import find_plugin_dirs
 from fman.impl.plugins.error import PluginErrorHandler
@@ -53,6 +53,9 @@ def get_application_context():
 	return fbs_appctxt.get_application_context(
 		DevelopmentApplicationContext, FrozenApplicationContext
 	)
+
+def get_existing_application_context():
+	return fbs_appctxt._application_context
 
 class DevelopmentApplicationContext(ApplicationContext):
 	def __init__(self):
@@ -140,7 +143,7 @@ class DevelopmentApplicationContext(ApplicationContext):
 		pane_commands = pane.get_commands()
 		application_commands = self.plugin_support.get_application_commands()
 		shortcuts = collect_shortcuts(
-			self.config.locate('Key Bindings.json'),
+			self.config.locate('Key Bindings.yaml'),
 			pane_commands | application_commands
 		)
 		def get_command_title(command):
@@ -181,7 +184,7 @@ class DevelopmentApplicationContext(ApplicationContext):
 		return IconProvider(qt_icon_provider, fs, icons_dir)
 	@cached_property
 	def config(self):
-		return Config(PLATFORM)
+		return Config(PLATFORM, join(DATA_DIRECTORY, APP_SETTINGS))
 	@cached_property
 	def tour_controller(self):
 		return TourController()

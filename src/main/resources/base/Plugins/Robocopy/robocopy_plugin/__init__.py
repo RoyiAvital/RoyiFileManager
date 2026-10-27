@@ -14,6 +14,7 @@ class RobocopyOwner(ui.UiController):
 
 
 class CopyWithRobocopy(fman.DirectoryPaneCommand):
+	category = 'File'
 	aliases = ('Copy with robocopy',)
 
 	def __call__(self):
@@ -21,6 +22,7 @@ class CopyWithRobocopy(fman.DirectoryPaneCommand):
 
 
 class MoveWithRobocopy(fman.DirectoryPaneCommand):
+	category = 'File'
 	aliases = ('Move with robocopy',)
 
 	def __call__(self):
@@ -59,7 +61,7 @@ def _invoke(command, move):
 			default = engine.from_url(opposite.get_path()) if opposite else ''
 		except ValueError:
 			default = ''
-		settings = engine.Settings.load(fman.load_json('Robocopy.json', default={}))
+		settings = engine.Settings.load(fman.load_settings('Robocopy.yaml', default={}))
 		title = 'Move with robocopy' if move else 'Copy with robocopy'
 		if closed.is_set() or not owner.active:
 			return

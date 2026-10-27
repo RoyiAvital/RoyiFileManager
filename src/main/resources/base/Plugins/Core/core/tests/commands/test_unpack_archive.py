@@ -27,11 +27,11 @@ class UnpackArchiveTest(TestCase):
 		self.pane.get_selected_files.return_value = []
 		self.pane.get_file_under_cursor.return_value = as_url(self.source)
 		self.command = UnpackArchive(self.pane)
-		for name in ('show_alert', 'show_prompt', 'show_status_message', 'submit_task', 'load_json', 'samefile', 'is_dir', 'prepare_copy'):
+		for name in ('show_alert', 'show_prompt', 'show_status_message', 'submit_task', 'load_settings', 'samefile', 'is_dir', 'prepare_copy'):
 			patcher = patch('core.commands.' + name)
 			setattr(self, name, patcher.start())
 			self.addCleanup(patcher.stop)
-		self.load_json.return_value = {'archive_handlers': {'.zip': 'zip://'}}
+		self.load_settings.return_value = {'archive_handlers': {'.zip': 'zip://'}}
 		self.samefile.side_effect = lambda first, second: os.path.samefile(as_human_readable(first), as_human_readable(second))
 		self.is_dir.side_effect = lambda url: Path(as_human_readable(url)).is_dir()
 		self.backend = ZipFileSystem(StubFS(), {'.zip'})
@@ -149,11 +149,11 @@ class UnpackArchiveTest(TestCase):
 		self.assertEqual(b'payload', (self.root / 'Reports/file.txt').read_bytes())
 		self.assert_no_success()
 	def test_invalid_settings_or_missing_backend_reports_failure(self):
-		self.load_json.return_value = {'archive_handlers': []}
+		self.load_settings.return_value = {'archive_handlers': []}
 		self.command()
 		self.submit_task.assert_not_called()
-		self.show_alert.assert_called_with('Invalid archive_handlers in Core Settings.json.')
-		self.load_json.return_value = {'archive_handlers': {'.zip': 'missing://'}}
+		self.show_alert.assert_called_with('Invalid archive_handlers in AppSettings.yaml.')
+		self.load_settings.return_value = {'archive_handlers': {'.zip': 'missing://'}}
 		self.prepare_copy.side_effect = FileNotFoundError('Archive handler unavailable')
 		self.command()
 		self.show_alert.assert_called_with('Archive handler unavailable')
@@ -171,7 +171,7 @@ class UnpackArchiveTest(TestCase):
 		archive = self.root / 'archive.zip.7z'
 		_run_7zip(['a', str(archive), self.source.name], cwd=str(self.root))
 		original = archive.read_bytes()
-		self.load_json.return_value = {'archive_handlers': {'.zip': 'zip://', '.7z': '7z://'}}
+		self.load_settings.return_value = {'archive_handlers': {'.zip': 'zip://', '.7z': '7z://'}}
 		self.prepare_copy.side_effect = SevenZipFileSystem(StubFS(), {'.7z'}).prepare_copy
 		self.pane.get_file_under_cursor.return_value = as_url(archive)
 		self.command()
@@ -233,9 +233,9 @@ class UnpackNamingTest(TestCase):
 		for name, expected in (('Reports.zip', ('Reports', 'zip://')), ('My FILE.ZIPX', ('My FILE', 'zip://')), ('backup.TAR.GZ', ('backup', 'tar://'))):
 			with self.subTest(name=name):
 				self.assertEqual(expected, _unpack_archive_name(name, handlers))
-				with patch('core.commands.load_json', return_value={'archive_handlers': handlers}):
+				with patch('core.commands.load_settings', return_value={'archive_handlers': handlers}):
 					self.assertEqual(expected[1], _get_handler_for_archive(name))
-		with patch('core.commands.load_json', return_value={'archive_handlers': handlers}):
+		with patch('core.commands.load_settings', return_value={'archive_handlers': handlers}):
 			self.assertIsNone(_get_handler_for_archive('plain.txt'))
 	def test_invalid_names_and_configuration(self):
 		for handlers in (None, [], {'.ZIP': 'zip://'}, {'zip': 'zip://'}, {'.': 'zip://'}, {'.zip': ''}, {'.zip': '://'}, {1: 'zip://'}):

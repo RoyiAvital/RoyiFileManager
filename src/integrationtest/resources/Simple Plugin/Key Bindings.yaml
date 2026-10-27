@@ -1,0 +1,3 @@
+# Test plug-in key bindings.
+- {keys: [Enter], command: test_command, args: {success: true}}
+- {keys: [Space], command: command_raising_error}

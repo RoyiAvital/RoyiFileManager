@@ -4,7 +4,7 @@ from PyQt5.QtGui import QFontDatabase
 from PyQt5.QtWidgets import QDialog, QDialogButtonBox, QLabel, QLineEdit, \
 	QHeaderView, QTabWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout
 
-from fman.impl.plugins.config import read_json_file
+from fman.impl.plugins.config import read_settings_file
 
 
 def collect_shortcuts(paths, available_commands=None):
@@ -12,7 +12,7 @@ def collect_shortcuts(paths, available_commands=None):
 	occupied = set()
 	for path in reversed(paths):
 		try:
-			bindings = read_json_file(path)
+			bindings = read_settings_file(path)
 		except (FileNotFoundError, OSError, ValueError):
 			continue
 		if not isinstance(bindings, list):

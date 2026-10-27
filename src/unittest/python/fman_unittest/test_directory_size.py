@@ -86,13 +86,13 @@ class DirectorySizeCommandTest(TestCase):
 		service = DirectorySizeService(Mock(), Mock(active=True))
 		service._active = True
 		service.set_enabled = lambda enabled: setattr(service, 'enabled', enabled)
-		with patch('core.directory_size.save_json') as save, patch('core.directory_size.show_status_message') as status:
+		with patch('core.directory_size.save_settings') as save, patch('core.directory_size.show_status_message') as status:
 			service.toggle()
-			save.assert_called_once_with('DirectorySize.json', dict(service.settings, enabled=True))
+			save.assert_called_once_with('DirectorySize.yaml', dict(service.settings, enabled=True))
 			status.assert_called_once_with('Directory sizes: On', timeout_secs=5)
 			service.toggle()
 			self.assertEqual('Directory sizes: Off', status.call_args.args[0])
-		with patch('core.directory_size.save_json', side_effect=PermissionError('denied')), \
+		with patch('core.directory_size.save_settings', side_effect=PermissionError('denied')), \
 			patch('core.directory_size.show_status_message') as status, patch('core.directory_size.show_alert') as alert:
 			service.toggle()
 			self.assertFalse(service.enabled)

@@ -503,7 +503,7 @@ class ChecksumPackageTest(TestCase):
         datas = dict(format_binaries_and_datas(specification['datas'], workingdir=str(build.ROOT)))
         binaries = dict(format_binaries_and_datas(specification['binaries'], workingdir=str(build.ROOT)))
         root = Path('resources/Plugins/ChecksumFiles')
-        for name in ('ChecksumFiles.json', 'checksum_files/__init__.py', 'checksum_files/commands.py', 'checksum_files/engine.py', 'README.md', 'checksum_files/_vendor/blake3/__init__.py', 'checksum_files/_vendor/blake3/LICENSE'):
+        for name in ('ChecksumFiles.yaml', 'checksum_files/__init__.py', 'checksum_files/commands.py', 'checksum_files/engine.py', 'README.md', 'checksum_files/_vendor/blake3/__init__.py', 'checksum_files/_vendor/blake3/LICENSE'):
             self.assertIn(str(root / name), datas)
         self.assertIn(str(root / 'checksum_files/_vendor/blake3/blake3.cp314-win_amd64.pyd'), binaries)
 
@@ -544,7 +544,7 @@ class ChecksumCommandTest(TestCase):
         self.pane.get_path.return_value = 'file://C:/checks'
         self.pane.get_selected_files.return_value = []
         self.pane.get_file_under_cursor.return_value = None
-        self.settings = patch.object(commands, 'load_json', return_value={})
+        self.settings = patch.object(commands, 'load_settings', return_value={})
         self.settings.start()
         self.addCleanup(self.settings.stop)
 

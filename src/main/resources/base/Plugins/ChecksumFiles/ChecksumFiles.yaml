@@ -1,0 +1,14 @@
+# Checksum file settings: bundled defaults.
+# Override in UserSettings\Plugins\User\Settings\ChecksumFiles.yaml.
+
+# Algorithm preselected when creating checksum files: crc32, md5, blake3, sha1, sha224,
+# sha256, sha384, sha512, sha3_224, sha3_256, sha3_384 or sha3_512.
+default_algorithm: sha256
+# Encoding of file names in checksum files: utf-8 or utf-8-sig (with BOM).
+filename_encoding: utf-8-sig
+# true: "/" separators, LF line endings and UTF-8 without BOM.
+unix_format: false
+# Read chunk size in MiB: 1-64.
+chunk_size_mib: 4
+# BLAKE3 worker threads: 0 (automatic) to 16.
+blake3_threads: 0

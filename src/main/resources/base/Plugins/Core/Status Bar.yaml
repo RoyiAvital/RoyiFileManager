@@ -1,0 +1,9 @@
+# Status bar settings: bundled defaults.
+# Override in UserSettings\Plugins\User\Settings\Status Bar.yaml.
+
+# disabled: status messages only. single: totals for the active pane. Ctrl+S toggles.
+mode: disabled
+# Maximum pane entries inspected for the totals.
+max_entries: 5000
+# 1024 shows KiB, MiB...; 1000 shows KB, MB...
+size_divisor: 1024

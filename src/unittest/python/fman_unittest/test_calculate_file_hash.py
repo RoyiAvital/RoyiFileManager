@@ -125,8 +125,8 @@ class HashCommandTest(TestCase):
 		for target, options in (
 			('HashController.owner', {'new': self.owner}),
 			('HashController.show', {'return_value': SimpleNamespace(session=self.session)}),
-			('load_json', {'return_value': self.settings}),
-			('save_json', {}), ('show_status_message', {}),
+			('load_settings', {'return_value': self.settings}),
+			('save_settings', {}), ('show_status_message', {}),
 			('submit_task', {'side_effect': submit}),
 			('_warned_default', {'new': False}),
 		):
@@ -193,10 +193,10 @@ class HashCommandTest(TestCase):
 	def test_remember_copies_settings_and_save_failure_still_hashes(self):
 		self.settings.update(remember_last_algorithm=True, chunk_size_mib=65, auto_copy='invalid', custom='preserved')
 		self.plugin.CalculateFileHash(self.pane)(algorithm='sha512')
-		saved = self.plugin.save_json.call_args.args[1]
+		saved = self.plugin.save_settings.call_args.args[1]
 		self.assertEqual(dict(self.settings, default_algorithm='sha512'), saved)
 		self.assertNotIn('default_algorithm', self.settings)
-		self.plugin.save_json.side_effect = OSError('read-only settings')
+		self.plugin.save_settings.side_effect = OSError('read-only settings')
 		self.plugin.CalculateFileHash(self.pane)(algorithm='sha512')
 		self.assertIsNotNone(self.session.complete.call_args.args[1])
 		self.assertNotIn('default_algorithm', self.settings)

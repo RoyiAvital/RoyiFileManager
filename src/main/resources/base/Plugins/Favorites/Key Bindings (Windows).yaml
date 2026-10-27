@@ -1,0 +1,2 @@
+# Key binding for Favorites; see the Core plug-in's Key Bindings.yaml for the format.
+- {keys: [Ctrl+B], command: show_favorites}

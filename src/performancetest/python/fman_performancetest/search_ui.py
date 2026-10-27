@@ -50,7 +50,7 @@ def child(dataset, mode, repeat, max_entries, query_definitions=None, direct=Fal
 			raise RuntimeError('Settings isolation failed')
 		user = settings / 'Plugins/User/Settings'
 		user.mkdir(parents=True)
-		(user / 'SearchFileFuzzy.json').write_text(json.dumps(dict(
+		(user / 'SearchFileFuzzy.yaml').write_text(json.dumps(dict(
 			max_recursive_entries=max_entries, max_results=100, include_hidden=True, show_metadata=False)), encoding='utf-8')
 		(user / 'Panes.json').write_text(json.dumps([dict(show_hidden_files=True)] * 2), encoding='utf-8')
 		directory = dataset if direct else dataset / ('recursive' if mode == 'recursive' else 'flat')

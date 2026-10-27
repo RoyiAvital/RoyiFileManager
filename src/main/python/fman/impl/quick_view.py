@@ -467,7 +467,7 @@ class LoaderBridge(QObject):
 class QuickViewSession(QObject):
 	def __init__(self, window, source, target, owner=None, load=None):
 		super().__init__(window)
-		from fman import load_json
+		from fman import load_settings
 		self.window, self.source, self.target, self.owner = window, source, target, owner
 		self.closed = False
 		self._connections = []
@@ -484,7 +484,7 @@ class QuickViewSession(QObject):
 		self._csv_reset()
 		from fman.impl.quick_view_csv import load_table_preset
 		self.table_preset = load_table_preset()
-		settings = load_json('QuickView.json', default={})
+		settings = load_settings('QuickView.yaml', default={})
 		self.preferred_mode = settings.get('image_mode', 'fit') if isinstance(settings, dict) else 'fit'
 		if self.preferred_mode not in ('fit', 'actual_size'):
 			self.preferred_mode = 'fit'
@@ -890,12 +890,12 @@ class QuickViewSession(QObject):
 		if name in ('fit', 'actual_size'):
 			canvas.set_mode(name)
 			self.preferred_mode = name
-			from fman import load_json, save_json
+			from fman import load_settings, save_settings
 			try:
-				settings = load_json('QuickView.json', default={})
+				settings = load_settings('QuickView.yaml', default={})
 				settings = dict(settings) if isinstance(settings, dict) else {}
 				settings['image_mode'] = name
-				save_json('QuickView.json', settings)
+				save_settings('QuickView.yaml', settings)
 			except (OSError, ValueError):
 				self.window.show_status_message('QuickView preference could not be saved.', 3)
 		elif name in ('zoom', 'zoom_in', 'zoom_out'):

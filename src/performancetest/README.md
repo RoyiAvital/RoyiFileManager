@@ -26,9 +26,9 @@ python build.py measure --full
 ```
 
 Full mode adds six workloads on a 50,000-file flat folder: pane loading, refresh,
-Filter Bar, Fuzzy Find, QuickView and selections, plus two Copy workloads.
+Filter Bar, Fuzzy Find, QuickView and selections, plus five Copy workloads.
 Navigation is included in pane
-and QuickView workloads. It runs twenty-two workloads with the same three
+and QuickView workloads. It runs twenty-five workloads with the same three
 repetitions and protocols; it does not enable profiling or legacy stress tests.
 
 ## Report and Version History
@@ -65,8 +65,8 @@ is the mean of five full selection-interaction case medians for its folder size.
 or failed selection cases suppress that aggregate. Details
 retain every case so the aggregate cannot conceal individual regressions.
 
-Full reports have twenty-five rows, including the additional medium pane, Filter
-Bar, Fuzzy Find, QuickView Images, QuickView Text, Selections / Medium and two Copy rows.
+Full reports have twenty-eight rows, including the additional medium pane, Filter
+Bar, Fuzzy Find, QuickView Images, QuickView Text, Selections / Medium and five Copy rows.
 Readback spans fifteen case medians. Refresh remains
 one aggregate, now across 24 case medians; Navigation averages 42. Both require
 all expected medium cases as well as small/large cases before showing an average.
@@ -86,7 +86,7 @@ stable names, not list positions. A query/action is identified by the pair
 semantics or measurement boundaries. Change fixture IDs when changing contents.
 
 `tests` defines the regular suite; `full_tests` contains the six optional medium
-definitions and both Copy cases. Records store the effective mode's definitions. Regular runs
+definitions and the five Copy cases. Records store the effective mode's definitions. Regular runs
 do not create, verify or scan medium or Copy fixtures. Explicit diagnostic `--test` patterns
 can match either list, independently of `--full`.
 
@@ -121,12 +121,22 @@ fixtures and results are local; nothing is uploaded.
 ### Copy Workload
 
 Copy runs only with `python build.py measure --full` (or an explicit diagnostic
-selection). The two cases are:
+selection). The cases are:
 
 - `copy.flat`: 10,000 ordinary files, exactly 4,096 bytes each, seed 1732.
 - `copy.tree`: 1,000 files, exactly 8,192 bytes each, seed 1733. Ten root branches
   contain five buckets each and nested chains of one to six levels, exercising
   breadth and depth. Selected root entries and copied files are counted separately.
+- `copy.flat.deferred`, `copy.flat.large` and `copy.flat.large.deferred`: the
+  `copy.flat` files with live refresh off (`live_refresh: false`), into a
+  destination holding 200,000 zero-byte `filler-NNNNNN` files
+  (`destination_entries: 200000`), or both. Live refresh off is written to the
+  child's isolated `AppSettings.yaml` and checked after startup. Fillers are
+  created before the application starts and are untimed.
+
+The Copy headline is `refresh_complete_ms`: confirmation of the destination prompt
+until the destination pane shows every copied file (plus fillers). Task completion
+(`wall_ms`) is reported alongside.
 
 Sources are verified read-only fixtures; every repetition uses a new disposable
 destination outside them. Allow about 94 MiB for both sources plus destinations,
@@ -143,7 +153,7 @@ work and dispatch time remain inside the interval. Selected-URL readback runs
 afterward and is not added to it. Revision 1 instead timed only the follow-up
 key; those historical values remain unchanged and are not comparable to revision 2.
 Fixture contents, repetitions and first-file/total-copy boundaries are unchanged.
-The Copy headline includes preparation but excludes source setup, content
+The Copy headline excludes source setup, content
 verification and cleanup. All source/destination bytes and file counts must match.
 Tree verification also requires matching relative paths and directory structure.
 Three repetitions are used; a failed or timed-out copy is never a successful result.
@@ -332,7 +342,7 @@ For selection-only diagnostics across all three sizes:
 `python src/performancetest/run.py suite --test "selection.*"`.
 For medium only: `python src/performancetest/run.py suite --test "selection.medium"`.
 Use `python build.py measure` for the regular fourteen-workload report and history.
-Use `python build.py measure --full` for all twenty-two workloads and separate full history.
+Use `python build.py measure --full` for all twenty-five workloads and separate full history.
 
 ## JSON Records
 

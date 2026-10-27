@@ -1,9 +1,9 @@
 from collections.abc import Mapping
 from core.external_program import MAX_COMMAND_UNITS, _check_argv, _check_text, parse_arguments
-from core.util import strformat_dict_values
-from fman import QuicksearchItem, load_json, save_json, show_alert, \
+from fman import QuicksearchItem, load_settings, save_settings, show_alert, \
 	show_file_open_dialog, show_prompt, show_quicksearch, show_status_message
 from fman.fs import resolve
+from fman.ui import settings_resource
 from fman.url import as_human_readable, splitscheme
 from subprocess import Popen, list2cmdline
 
@@ -19,36 +19,30 @@ PRESETS = (
 	('Ecode', ('--zen-mode',), ('--zen-mode', '--read-only')),
 	('Royi Text Editor', (), ('--read-only',)),
 )
-SETTINGS = 'Core Settings.json'
+SETTINGS = 'AppSettings.yaml'
 MANUAL = 'Manual configuration'
 
 
 def prepare_launch(configuration, file_path):
 	_check_text(file_path)
-	if not isinstance(configuration, Mapping):
+	if not isinstance(configuration, Mapping) or 'executable' not in configuration:
 		raise ValueError('No valid program is configured.')
-	if 'executable' in configuration:
-		executable = configuration['executable']
-		arguments = configuration.get('arguments')
-		_check_text(executable)
-		if not isinstance(arguments, list):
-			raise ValueError('Arguments must be a list of strings.')
-		if os.path.splitext(executable)[1].lower() != '.exe':
-			raise ValueError('Choose an .exe file.')
-		result = {'args': [executable, *arguments, file_path], 'shell': False}
-	else:
-		try:
-			result = strformat_dict_values(configuration, {'file': file_path})
-		except (KeyError, IndexError, AttributeError, TypeError, ValueError) as error:
-			raise ValueError('Invalid legacy program template: %s' % error) from error
-	_check_argv(result.get('args'))
+	executable = configuration['executable']
+	arguments = configuration.get('arguments')
+	_check_text(executable)
+	if not isinstance(arguments, list):
+		raise ValueError('Arguments must be a list of strings.')
+	if os.path.splitext(executable)[1].lower() != '.exe':
+		raise ValueError('Choose an .exe file.')
+	result = {'args': [executable, *arguments, file_path], 'shell': False}
+	_check_argv(result['args'])
 	return result
 
 
 def _load_settings():
-	settings = load_json(SETTINGS, default={})
+	settings = load_settings(SETTINGS, default={})
 	if not isinstance(settings, dict):
-		raise ValueError('Core Settings.json must contain an object.')
+		raise ValueError('AppSettings.yaml must contain a mapping.')
 	return settings
 
 
@@ -57,12 +51,6 @@ def _prefill(configuration):
 		return '', ''
 	executable = configuration.get('executable', '')
 	arguments = configuration.get('arguments', [])
-	if 'executable' not in configuration:
-		legacy_args = configuration.get('args')
-		if isinstance(legacy_args, list) and legacy_args:
-			executable = legacy_args[0]
-			arguments = [argument for argument in legacy_args[1:]
-				if isinstance(argument, str) and '{file}' not in argument]
 	if not isinstance(executable, str):
 		executable = ''
 	if not isinstance(arguments, list) or any(not isinstance(arg, str) for arg in arguments):
@@ -85,10 +73,11 @@ def configure(role):
 		selection = choice[1]
 		if selection == clear_option:
 			action = 'clear'
-			settings = dict(_load_settings())
-			if settings.get(role) is not None:
-				settings[role] = None
-				save_json(SETTINGS, settings)
+			with settings_resource(SETTINGS).lock:
+				settings = dict(_load_settings())
+				if settings.get(role) is not None:
+					settings[role] = None
+					save_settings(SETTINGS, settings)
 			show_status_message('Text %s cleared.' % role, timeout_secs=3)
 			return
 		executable = show_file_open_dialog(
@@ -106,9 +95,10 @@ def configure(role):
 			arguments = list(preset[1 if role == 'editor' else 2])
 		configuration = {'executable': executable, 'arguments': arguments}
 		prepare_launch(configuration, '')
-		settings = dict(_load_settings())
-		settings[role] = configuration
-		save_json(SETTINGS, settings)
+		with settings_resource(SETTINGS).lock:
+			settings = dict(_load_settings())
+			settings[role] = configuration
+			save_settings(SETTINGS, settings)
 	except (OSError, ValueError, TypeError) as error:
 		show_alert('Could not %s text %s: %s' % (action, role, error))
 		return
@@ -135,6 +125,7 @@ def open_file(url, role):
 			return
 		kwargs = prepare_launch(configuration, file_path)
 		Popen(**kwargs)
+		return True
 	except (OSError, ValueError, TypeError) as error:
 		show_alert('Could not open file in text %s: %s\n'
 			'Use "Set text %s" in Command Center to check its configuration.' % (role, error, role))

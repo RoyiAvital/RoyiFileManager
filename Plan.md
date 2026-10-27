@@ -2,8 +2,10 @@
 
 ## Pending
 
+- [Code Review 008: Edge Cases, Safety and Responsiveness](Plan/CodeReview008.md)
 - [Code Review 099: Deferred Work and Release Gates](Plan/CodeReview099.md)
 - [Date Format: Locale or ISO](Plan/DateFormat.md)
+- [File System and Pane Architecture 003: Item Tables](Plan/FSPaneArch003.md)
 - [Filter Files 002: Multiple Terms (AND)](Plan/FilterFiles002.md)
 - [Filesystem Link Operation Policy](Plan/LinkOperationPolicy.md)
 - [Find Files 003: Everything-Style Query Syntax](Plan/FindFiles003.md)
@@ -26,6 +28,8 @@
 - [Code Review 004: Low-Risk Responsiveness Improvements](Done/CodeReview004.md)
 - [Code Review 005: fman Leftovers and Non-Windows Code](Done/CodeReview005.md)
 - [Code Review 006: Bugs and Unneeded Edge Cases](Done/CodeReview006.md)
+- [Code Review 007: Live Refresh During File Operations](Done/CodeReview007.md)
+- [Command Palette 001: Categories](Done/CommandPalette001.md)
 - [Concise README Features](Done/ConciseReadmeFeatures.md)
 - [Context Window Capitalization](Done/ContextWindowCapitalization.md)
 - [Correct Provenance Metadata](Done/CorrectProvenanceMetadata.md)

@@ -1,0 +1,42 @@
+# Application settings: bundled defaults.
+# Override any value in UserSettings\AppSettings.yaml (run "Edit settings").
+# Tool commands such as "Set text editor" write their choices there.
+
+# Archive suffix -> file system scheme used to browse and unpack it.
+# Suffixes are lower case and start with "."; schemes end with "://".
+archive_handlers:
+  .zip: zip://
+  .zipx: zip://
+  .jar: zip://
+  .xpi: zip://
+  .7z: 7z://
+  .tar: tar://
+
+# F9 terminal. args: a command string (with shell: true) or a list of arguments.
+# cwd and args may use {curr_dir}, the folder of the active pane.
+terminal:
+  args: start C:\Windows\System32\cmd.exe
+  shell: true
+  cwd: '{curr_dir}'
+
+# F10 native file manager; same keys as terminal.
+native_file_manager:
+  args: [start, explorer, '{curr_dir}']
+  shell: true
+
+# Text editor (F4) and viewer (F3); set with "Set text editor" / "Set text viewer".
+# Shape: {executable: C:\path\editor.exe, arguments: [--flag]}; null means not set.
+editor: null
+viewer: null
+
+# File and folder comparators; set with "Set file comparator" / "Set folder comparator".
+# Same shape as editor.
+file_comparator: null
+folder_comparator: null
+
+# Largest CSV/TSV file shown as a QuickView table, in MB: 512, 1024 or 2048.
+quickview_table_max_file_mb: 2048
+
+# true: panes update while Copy, Move and Delete run.
+# false: panes refresh once when the operation ends (faster).
+live_refresh_during_file_operations: true
