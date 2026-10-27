@@ -10,7 +10,7 @@
 - [Find Files 003: Everything-Style Query Syntax](Plan/FindFiles003.md)
 - [Flat View](Plan/FlatView.md)
 - [PyQt6 Migration](Plan/PyQt6Migration.md)
-- [QuickView 002: Videos and Animated Images](Plan/QuickView002.md)
+- [QuickView 006: Videos (after PyQt6 Migration)](Plan/QuickView006.md)
 - [Roadmap 002: Before 1.0.000](Plan/Roadmap002.md)
 - [UI Design 001: Application Theme](Plan/UIDesign001.md)
 
@@ -57,6 +57,7 @@
 - [Pane Rendering 001: Reuse Entry Hidden Attributes](Done/PaneRendering001.md)
 - [Process Pane](Done/ProcessPane.md)
 - [QuickView 001: Initial Design and Images](Done/QuickView001.md)
+- [QuickView 002: Animated Images](Done/QuickView002.md)
 - [QuickView 003: Text-Based Files](Done/QuickView003.md)
 - [QuickView 004: PDF Preview](Done/QuickView004.md)
 - [QuickView 005: CSV and TSV Tables](Done/QuickView005.md)

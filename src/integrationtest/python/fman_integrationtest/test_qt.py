@@ -347,18 +347,38 @@ class WindowsCleanupIT(QtIT):
 	def test_windows_drag_actions_and_move_acknowledgment(self):
 		def check():
 			from fman.impl.view.drag_and_drop import DragAndDrop
+			from PyQt5.QtCore import QUrl
 			from PyQt5.QtWidgets import QTableView
 			from unittest.mock import Mock, patch
 			view = DragAndDrop()
+			model = Mock()
+			model.get_location.return_value = 'file://D:/target'
 			try:
-				for modifiers, action in ((Qt.NoModifier, Qt.MoveAction), (Qt.ControlModifier, Qt.CopyAction), (Qt.AltModifier, Qt.MoveAction)):
-					event = Mock()
-					event.keyboardModifiers.return_value = modifiers
-					with patch.object(QTableView, 'dropEvent') as dispatch:
-						view.dropEvent(event)
-						dispatch.assert_called_once_with(event)
-					event.setDropAction.assert_called_once_with(action)
-					self.assertEqual(action == Qt.MoveAction, event.ignore.called)
+				same, other = [QUrl.fromLocalFile('D:/source/a.txt')], [QUrl.fromLocalFile('C:/Users/me/Desktop/a.txt')]
+				mixed = same + other
+				share = [QUrl.fromLocalFile('//server/share/a.txt')]
+				for sources, modifiers, action in (
+						(same, Qt.NoModifier, Qt.MoveAction), (other, Qt.NoModifier, Qt.CopyAction),
+						(mixed, Qt.NoModifier, Qt.CopyAction), (share, Qt.NoModifier, Qt.CopyAction),
+						(other, Qt.ShiftModifier, Qt.MoveAction), (same, Qt.ControlModifier, Qt.CopyAction),
+						(same, Qt.AltModifier, Qt.MoveAction), (other, Qt.AltModifier, Qt.CopyAction)):
+					with self.subTest(sources=[url.toString() for url in sources], modifiers=modifiers):
+						event = Mock()
+						event.keyboardModifiers.return_value = modifiers
+						event.mimeData.return_value.urls.return_value = sources
+						with patch.object(view, 'model', return_value=model), \
+								patch.object(QTableView, 'dropEvent') as dispatch:
+							view.dropEvent(event)
+							dispatch.assert_called_once_with(event)
+						event.setDropAction.assert_called_once_with(action)
+						self.assertEqual(action == Qt.MoveAction, event.ignore.called)
+						hover = Mock()
+						hover.keyboardModifiers.return_value = modifiers
+						hover.mimeData.return_value.urls.return_value = sources
+						with patch.object(view, 'model', return_value=model), \
+								patch.object(QTableView, 'dragMoveEvent'):
+							view.dragMoveEvent(hover)
+						hover.setDropAction.assert_called_once_with(action)
 			finally:
 				view.deleteLater()
 		self.run_in_app(check)
@@ -1433,6 +1453,79 @@ class QuickViewImagesIT(QtIT):
 				finally:
 					session.close()
 				self.assertEqual(image, payload.imageData())
+		self.run_in_app(check)
+
+	def test_animations_play_pause_and_stop_on_switch(self):
+		from fman.impl.quick_view import QuickViewSession
+		from fman.impl.quick_view_images import ImageRequest, ImageResult, load_image
+		from fman.url import as_url
+		from fman_unittest.test_quick_view_animation import apng_bytes, color, gif_bytes
+		from PyQt5.QtGui import QImage, QMovie
+		from PyQt5.QtTest import QTest
+		from unittest.mock import patch
+		def check():
+			for name, data in (('anim.gif', gif_bytes(delay=2)), ('anim.png', apng_bytes(delay=(2, 100)))):
+				with self.subTest(name=name):
+					path = self.root / name
+					path.write_bytes(data)
+					result = load_image(ImageRequest(1, as_url(path)), lambda: False, lambda url: url)
+					self.assertEqual(2, result.frames)
+					with patch('fman.load_settings', return_value={}):
+						session = QuickViewSession(self.window, *self.panes)
+					session.timer.stop()
+					try:
+						overlay, canvas = session.overlay, session.overlay.canvas
+						session.show_result(result)
+						self.assertTrue(overlay.play.isVisible())
+						self.assertIn('2 frames', overlay.metadata.text())
+						canvas.zoom(2)
+						scale = canvas.scale
+						seen = set()
+						for _ in range(100):
+							seen.add(color(canvas.image, 0, 0))
+							if len(seen) == 2:
+								break
+							QTest.qWait(10)
+						self.assertEqual(2, len(seen), 'Frames did not change')
+						self.assertEqual(('custom', scale), (canvas.mode, canvas.scale))
+						canvas.setFocus()
+						QTest.keyClick(canvas, Qt.Key_Space)
+						self.assertEqual(QMovie.Paused, session._animation.state())
+						self.assertEqual('Play animation (Space)', overlay.play.toolTip())
+						paused = color(canvas.image, 0, 0)
+						QTest.qWait(100)
+						self.assertEqual(paused, color(canvas.image, 0, 0))
+						overlay.play.click()
+						self.assertEqual(QMovie.Running, session._animation.state())
+						overlay.hide()
+						self.assertEqual(QMovie.Paused, session._animation.state())
+						overlay.show()
+						self.assertEqual(QMovie.Running, session._animation.state())
+						still = QImage(4, 3, QImage.Format_RGB32)
+						still.fill(Qt.blue)
+						session.show_result(ImageResult(still, format='png'))
+						self.assertIsNone(session._animation)
+						self.assertFalse(overlay.play.isVisible())
+						self.assertFalse(canvas.animated)
+						session.show_result(result)
+						self.assertIsNotNone(session._animation)
+						session._animation_error(session._animation)
+						self.assertIn('Animation stopped', overlay.metadata.text())
+						session._clear('Loading')
+						session.show_result(ImageResult(still, format='png'))
+						self.assertNotIn('Animation stopped', overlay.metadata.text())
+						session.show_result(result)
+						session._animation_error(session._animation)
+						session.show_result(ImageResult(message='Cannot decode image', kind='error'))
+						self.assertNotIn('Animation stopped', overlay.metadata.text())
+						session.show_result(ImageResult(still, format='png'))
+						self.assertNotIn('Animation stopped', overlay.metadata.text())
+						session.show_result(result)
+						self.assertIsNotNone(session._animation)
+					finally:
+						session.close()
+					QTest.qWait(50)
+					path.rename(path.with_name('renamed-' + name))
 		self.run_in_app(check)
 
 	def make_image(self, name='image.png', width=600, height=400, color='red', image_format='PNG'):

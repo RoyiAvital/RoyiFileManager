@@ -1,5 +1,5 @@
 from PyQt5.QtCore import QEvent, QObject, QPoint, QPointF, QRect, QRectF, Qt, QTimer, pyqtSignal, pyqtSlot
-from PyQt5.QtGui import QBrush, QIcon, QImage, QPainter
+from PyQt5.QtGui import QBrush, QIcon, QImage, QMovie, QPainter
 from PyQt5.QtWidgets import (
 	QAbstractScrollArea, QApplication, QButtonGroup, QHBoxLayout, QLabel,
 	QSizePolicy, QStackedLayout, QStyle, QToolButton, QVBoxLayout, QWidget
@@ -21,6 +21,7 @@ class PreviewCanvas(QAbstractScrollArea):
 		self.source = source
 		self.message = 'No file selected'
 		self.image = None
+		self.animated = False
 		self.mode = 'fit'
 		self.scale = 1.0
 		self._ratio = self.devicePixelRatioF()
@@ -50,6 +51,15 @@ class PreviewCanvas(QAbstractScrollArea):
 		self._drag = None
 		self.viewport().setCursor(Qt.OpenHandCursor if image is not None else Qt.ArrowCursor)
 		self._refresh(center=True)
+
+	def set_frame(self, image):
+		"""Show the next animation frame, keeping the fit/zoom mode and scroll position."""
+		resized = self.image is None or image.size() != self.image.size()
+		self.image = image
+		if resized:
+			self._refresh()
+		else:
+			self.viewport().update()
 
 	def _origin(self, size=None):
 		if self.image is None:
@@ -134,6 +144,8 @@ class PreviewCanvas(QAbstractScrollArea):
 			return
 		if key in (Qt.Key_Tab, Qt.Key_Backtab, Qt.Key_Escape):
 			self.source.setFocus()
+		elif self.animated and modifiers == Qt.NoModifier and key == Qt.Key_Space:
+			self.image_action.emit('play_pause', None)
 		elif modifiers == Qt.NoModifier and key in (Qt.Key_F, Qt.Key_1):
 			self.image_action.emit('fit' if key == Qt.Key_F else 'actual_size', None)
 		elif modifiers in (Qt.NoModifier, Qt.ShiftModifier) and key in (Qt.Key_Plus, Qt.Key_Equal, Qt.Key_Minus):
@@ -209,6 +221,7 @@ class PreviewCanvas(QAbstractScrollArea):
 class QuickViewOverlay(QWidget):
 	close_requested = pyqtSignal()
 	text_mode_requested = pyqtSignal(str)
+	visibility_changed = pyqtSignal(bool)
 
 	def __init__(self, window, source, target):
 		super().__init__(window.centralWidget())
@@ -217,6 +230,8 @@ class QuickViewOverlay(QWidget):
 		self._disposed = False
 		self._title = 'QuickView'
 		self.image_format = ''
+		self.frame_count = 0
+		self.animation_note = ''
 		self.pdf_view = None
 		self.csv_view = None
 		self.setAutoFillBackground(True)
@@ -266,6 +281,13 @@ class QuickViewOverlay(QWidget):
 			button.clicked.connect(lambda checked=False, action=name: self.canvas.image_action.emit(action, None))
 			self.buttons[name] = button
 			controls.addWidget(button)
+		# Kept out of self.buttons: it is shown only while an animation plays, not with the image controls.
+		self.play = QToolButton(self)
+		self.play.setFocusPolicy(Qt.NoFocus)
+		self.play.clicked.connect(lambda checked=False: self.canvas.image_action.emit('play_pause', None))
+		self.play.hide()
+		self.set_playing(True)
+		controls.addWidget(self.play)
 		self.metadata = QLabel(self)
 		self.metadata.setTextFormat(Qt.PlainText)
 		self.metadata.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
@@ -382,8 +404,34 @@ class QuickViewOverlay(QWidget):
 				button.setChecked(name == canvas.mode)
 		self.modes.setExclusive(True)
 		text = '' if canvas.image is None else '%s  %s x %s  |  %g%%' % (self.image_format.upper(), canvas.image.width(), canvas.image.height(), round(canvas.scale * 100, 1))
+		if text and self.frame_count > 1:
+			text += '  |  %d frames' % self.frame_count
+		if text and self.animation_note:
+			text += '  |  ' + self.animation_note
 		self.metadata.setText(text)
 		self.metadata.setToolTip(text)
+
+	def set_animation(self, frames):
+		self.frame_count = frames
+		self.animation_note = ''
+		self.canvas.animated = frames > 1
+		self.play.setVisible(frames > 1 and self.content.currentWidget() is self.canvas)
+		self.set_playing(True)
+		self.update_controls()
+
+	def set_playing(self, playing):
+		text = 'Pause animation (Space)' if playing else 'Play animation (Space)'
+		self.play.setIcon(self.style().standardIcon(QStyle.SP_MediaPause if playing else QStyle.SP_MediaPlay))
+		self.play.setToolTip(text)
+		self.play.setAccessibleName(text)
+
+	def showEvent(self, event):
+		super().showEvent(event)
+		self.visibility_changed.emit(True)
+
+	def hideEvent(self, event):
+		super().hideEvent(event)
+		self.visibility_changed.emit(False)
 
 	def sync_geometry(self, *_):
 		if self._disposed:
@@ -477,6 +525,8 @@ class QuickViewSession(QObject):
 		self._url = None
 		self._text_content = None
 		self._pdf_controller = None
+		self._animation = None
+		self._animation_paused = False
 		self._csv_controller = None
 		self._csv = None
 		self._csv_generation = 0
@@ -500,6 +550,7 @@ class QuickViewSession(QObject):
 		self._connect(self.overlay.close_requested, self.close)
 		self._connect(self.overlay.canvas.image_action, self.image_action)
 		self._connect(self.overlay.text_mode_requested, self.text_mode)
+		self._connect(self.overlay.visibility_changed, self._animation_visibility)
 		self._connect(source._file_view.selectionModel().currentChanged, self.cursor_changed)
 		self._connect(source._model.modelAboutToBeReset, self._model_resetting)
 		self._connect(source._model.modelReset, self._model_reset_done)
@@ -552,6 +603,7 @@ class QuickViewSession(QObject):
 	def _clear(self, message):
 		self.timer.stop()
 		self.generation = self.bridge.loader.invalidate()
+		self._stop_animation()
 		self._text_content = None
 		self._clear_pdf()
 		self._clear_csv()
@@ -601,6 +653,7 @@ class QuickViewSession(QObject):
 			self._text_colors(), self._text_content))
 
 	def show_result(self, result):
+		self._stop_animation()
 		if result.kind == 'csv':
 			self._clear_pdf()
 			self._show_csv(result)
@@ -625,6 +678,70 @@ class QuickViewSession(QObject):
 		self.overlay.clear_text()
 		self.overlay.image_format = result.format
 		self.overlay.canvas.set_image(result.image, self.preferred_mode, result.message)
+		if result.frames > 1:
+			self._start_animation(result)
+
+	# -- Animated images ------------------------------------------------------------------
+
+	def _start_animation(self, result):
+		from fman.impl.quick_view_animation import create_movie
+		movie = create_movie(result, self)
+		if movie is None:
+			return
+		self._animation, self._animation_paused = movie, False
+		movie.frameChanged.connect(lambda number, movie=movie: self._animation_frame(movie))
+		movie.finished.connect(lambda movie=movie: self._animation_finished(movie))
+		movie.error.connect(lambda *_, movie=movie: self._animation_error(movie))
+		self.overlay.set_animation(result.frames)
+		movie.start()
+		if not self.overlay.isVisible():
+			movie.setPaused(True)
+			self.overlay.set_playing(False)
+
+	def _stop_animation(self):
+		movie, self._animation = self._animation, None
+		if movie is not None:
+			movie.blockSignals(True)
+			movie.stop()
+			movie.deleteLater()
+		if movie is not None or self.overlay.animation_note:
+			self.overlay.set_animation(0)
+
+	def _animation_frame(self, movie):
+		if movie is self._animation:
+			self.overlay.canvas.set_frame(movie.currentImage())
+
+	def _animation_finished(self, movie):
+		if movie is self._animation:
+			self.overlay.set_playing(False)
+
+	def _animation_error(self, movie):
+		if movie is self._animation:
+			self._stop_animation()
+			self.overlay.animation_note = 'Animation stopped'
+			self.overlay.update_controls()
+
+	def _toggle_animation(self):
+		movie = self._animation
+		if movie is None:
+			return
+		if movie.state() == QMovie.Running:
+			movie.setPaused(True)
+			self._animation_paused = True
+		else:
+			movie.start()
+			self._animation_paused = False
+		self.overlay.set_playing(movie.state() == QMovie.Running)
+
+	def _animation_visibility(self, visible):
+		movie = self._animation
+		if movie is None or self._animation_paused:
+			return
+		if not visible and movie.state() == QMovie.Running:
+			movie.setPaused(True)
+		elif visible and movie.state() == QMovie.Paused:
+			movie.setPaused(False)
+		self.overlay.set_playing(movie.state() == QMovie.Running)
 
 	# -- CSV/TSV Table View -----------------------------------------------------------------
 
@@ -904,12 +1021,15 @@ class QuickViewSession(QObject):
 			canvas.pan(*value)
 		elif name == 'copy_image':
 			QApplication.clipboard().setImage(canvas.image)
+		elif name == 'play_pause':
+			self._toggle_animation()
 
 	def close(self, *_):
 		if self.closed:
 			return
 		self.closed = True
 		self._text_content = None
+		self._stop_animation()
 		if self._pdf_controller is not None:
 			self._pdf_controller.invalidate()
 		if self._csv_controller is not None:

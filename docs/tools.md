@@ -34,7 +34,10 @@ of launching the external viewer. Configure F3/F4 through
 - View JPEG (`.jpg`, `.jpeg`), PNG, BMP, GIF, ICO, TIFF (`.tif`, `.tiff`) and WebP images.
 - Fit, zoom and pan the image.
 - Show it at 100% or copy its decoded pixels.
-- Animated images show a still frame. Format availability depends on the bundled Qt codecs.
+- Animated GIF, WebP and APNG (`.png` or `.apng`) images play when shown and follow the file's loop
+  count. A Play/Pause button appears only for animations; ++space++ toggles it.
+  Animations above 16 MP per frame show a still frame.
+- Format availability depends on the bundled Qt codecs.
 
 ### QuickView for PDF Files
 

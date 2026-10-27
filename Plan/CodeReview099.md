@@ -1,7 +1,9 @@
 # Code Review 099: Deferred Work and Release Gates
 
 Status: Backlog, 2026-09-25. Items require individual review and approval; this
-document does not authorize implementation or certify a release.
+document does not authorize implementation or certify a release. Updated
+2026-10-27: C13 and FO02 are done, C06 and C11 partly; see
+[Resolved Elsewhere](#resolved-elsewhere).
 
 ## Task
 
@@ -36,14 +38,14 @@ of the six completed optimizations in [CodeReview004](../Done/CodeReview004.md).
 | C03 | Item 26: case-aware Compare Directories                                                                                         | Policy decision first. Windows local/UNC/mapped folders can differ in case semantics; no blanket normcase. Listing-error retention is already fixed.                                                                                                                            |
 | C04 | Restore local-to-archive Move with verified source retention                                                                    | Major transfer design. Current pre-mutation refusal contains the original source-loss bug. Couple packing, warnings, verification, cancellation and source deletion in one safe operation; preserve existing archive data.                                                      |
 | C05 | Broader overwrite/metadata compatibility                                                                                        | Larger decision for known-hardlinked destinations, non-Windows overwrite and source named streams. Ordinary Windows staged overwrite/ACL recovery is implemented; do not redo it or weaken retained refusals. Cross-format archive moves remain unsupported.                    |
-| C06 | Cross-device move cancellation and partial completion                                                                           | Investigate real-volume behavior and failure sequencing; do not claim mocked device IDs validate it. Preserve source after failed composite copy and truthful partial outcomes.                                                                                                 |
+| C06 | Cross-device move cancellation and partial completion                                                                           | **Partly fixed** in [CodeReview008](../Done/CodeReview008.md) F01/F02: the composite copy runs under the move's progress and Cancel, and a changed or canceled source is kept. Still open: real second-volume and network validation (R02); do not claim mocked device IDs validate it. |
 | C07 | Merge source/destination type mismatch                                                                                          | Small early refusal is preferred to a prompt redesign. Currently safe but late task errors; decide clear file-versus-directory behavior before mutation.                                                                                                                        |
 | C08 | Comparator on providers returning unknown identity                                                                              | Retain refusal until alias policy is reviewed. Path-string equality alone cannot prove distinct objects; zero inode does not characterize every FAT/exFAT volume.                                                                                                               |
 | C09 | Generic icon cached after transient shell extraction failure                                                                    | Cosmetic retry policy, not worker-start rollback (already fixed). No retry timer or unbounded per-paint shell requests.                                                                                                                                                         |
 | C10 | Cosmetic hiding of copy/recovery staging                                                                                        | Previously deferred for per-file metadata cost. Keep visible staging unless a separately measured design justifies its cost; no automatic hide/unhide restoration.                                                                                                              |
-| C11 | Malformed individual session fields                                                                                             | Focused schema/consumer review. Non-object JSON roots and atomic saves are already handled; do not swallow arbitrary errors.                                                                                                                                                    |
+| C11 | Malformed individual session fields                                                                                             | **Partly fixed** in [CodeReview008](../Done/CodeReview008.md) F03: invalid `window_geometry`/`window_state` fall back to defaults. Still open: review of the other session fields (panes, column widths). Non-object JSON roots and atomic saves are already handled; do not swallow arbitrary errors. |
 | C12 | Callback mutation, broader command concurrency and plug-in unload recovery                                                      | Potentially larger lifecycle investigations. Thread-local cursor isolation and comparator handoff are already fixed; do not reopen those as unresolved defects.                                                                                                                 |
-| C13 | Unused string construction in CopyPathsToClipboard                                                                              | Confirmed in `CopyPathsToClipboard.__call__` in [Core commands](../src/main/resources/base/Plugins/Core/core/commands/__init__.py): `files = '\n'.join(to_copy)` is unused before a second, human-readable join. Remove only the unused allocation; no large performance claim. |
+| C13 | Unused string construction in CopyPathsToClipboard                                                                              | **Done**: `CopyPathsToClipboard` was removed as a duplicate command, together with the unused join. Tests assert it no longer exists.                                                                                                                                          |
 | C14 | Optional fixed-local-drive Go To history pruning                                                                                | Earlier alternative only, not a requirement. Bounded history without background probes is the accepted default; do not reintroduce mapped-drive/UNC blocking.                                                                                                                   |
 | C15 | Broader search, archive enumeration, directory-size and painting optimization                                                   | Unselected investigations, not proven defects. Preserve existing bounds/generations; use current-code evidence and FSPaneArch002 before any larger design.                                                                                                                      |
 
@@ -121,12 +123,12 @@ acceptance remain separate from the completed preparation fixes.
 | ID   | Priority / Owner                               | Next Step And Completion Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | ---- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | FO01 | P2, host pane model/native crash investigation | Investigate the native access violation during destination refresh in the preserved 0.14.0 run `11dd3575-73fe-41f1-abbc-dbe1ba8d2bc5`. Last Python frames were `reconcile`/`project`; they do not identify the native failing component. Reproduce with disposable files, a fixed source/harness and an attached native debugger; capture a dump, native stack, loaded modules, Python/Qt versions and source/binary hashes. No dump was captured in the original run or this follow-up; local artifacts may be absent in another checkout. Do not enable Registry-based dump settings or inspect user data. Passing retries do not close this release risk; require a diagnosed fix and regression, or explicit release-risk acceptance. |
-| FO02 | P3, status capture in widgets/status_bar       | Separately design immutable listing/selection-range capture on Qt and expansion on the existing status worker. Preserve size freshness, limits, cancellation and the disabled no-op path. Historical 218 ms capture at 200k rows is motivation, not a new measurement. Require parity and action-to-next-input timings with status enabled before approval. This owns the deferred status proposal independently of Copy.                                                                                                                                                                                                                                                                                                                 |
+| FO02 | P3, status capture in widgets/status_bar       | **Done** in [CodeReview008](../Done/CodeReview008.md) F06: the Qt thread captures the immutable listing tuples and the selection (about 1 µs at 200,000 rows); entries are built on the existing status worker. Counts, size limits, cancellation and the disabled no-op path are unchanged. Not measured: action-to-next-input with status enabled. |
 | FO03 | P3, Core transfer scheduling                   | Keep streaming Option B and compact prepared records deferred. Reopen only when compatible measurements miss an explicitly agreed first-file or memory budget and the user accepts late conflict prompts and partial completion on later refusal. Prefer compact records within A if memory alone is the issue. Any B design must specify breadth-first traversal, Move dependencies, provider fallbacks and truthful partial outcomes; do not introduce a production A/B switch implicitly.                                                                                                                                                                                                                                              |
 | FO04 | P3, local Move device inference                | Accept the per-source missing-parent walk in vanilla A for now. Historical 5k-file medians were 653/900/1262 ms for existing/one/three missing levels; no current speed claim. Consider operation-scoped inference sharing only after frequent large moves into new folders justify the contract and lifecycle cost. Preserve provider fallbacks and prepare-before-create ordering; no global metadata cache or bulk transfer scanner.                                                                                                                                                                                                                                                                                                   |
 
-FO01 is unresolved, not fixed or certified by FileOperations001. FO02-FO04 are
-optional, separately approved changes. Existing R02/R05/R06 and C06 retain
+FO01 is unresolved, not fixed or certified by FileOperations001. FO02 is done;
+FO03-FO04 are optional, separately approved changes. Existing R02/R05/R06 and C06 retain
 real-volume, privileged-link, network and packaged-release checks.
 
 ### ChecksumFiles Release Checks
@@ -174,13 +176,21 @@ API surface. Keep the ordinary synchronous Quicksearch contract unchanged.
   folder enumeration was established. Initial text is installed before signal
   connection; scan observation can reuse the initial listing. Do not remove the
   observation/watch handshake as an optimization.
-- `ListingModel.find` builds a name map on its first lookup, and enabled status
-  capture materializes entries on Qt before worker aggregation. These are real
-  scaling surfaces, but a cache/payload redesign is not yet a small proven win.
-  Keep them under C15 and FSPaneArch002; do not eagerly allocate more maps for
-  every projection or silently change status-size freshness/limits.
+- `ListingModel.find` builds a name map on its first lookup. This is a real
+  scaling surface, but a cache/payload redesign is not yet a small proven win.
+  Keep it under C15 and FSPaneArch002; do not eagerly allocate more maps for
+  every projection. (Status capture on Qt was fixed by FO02.)
 - A whole-range `dataChanged` signal is not evidence that Qt repaints every row.
   C02 still needs dependency and cache evidence before narrowing notifications.
+
+### Resolved Elsewhere
+
+| ID   | State      | Where                                                     | Remaining                                         |
+| ---- | ---------- | --------------------------------------------------------- | ------------------------------------------------- |
+| C06  | Partly     | [CodeReview008](../Done/CodeReview008.md) F01, F02        | Real second-volume and network validation (R02).  |
+| C11  | Partly     | [CodeReview008](../Done/CodeReview008.md) F03             | Other session fields.                             |
+| C13  | Done       | `CopyPathsToClipboard` removed as a duplicate command     | None.                                             |
+| FO02 | Done       | [CodeReview008](../Done/CodeReview008.md) F06             | Action-to-next-input timing with status enabled.  |
 
 ## Alternatives
 
@@ -346,3 +356,15 @@ Their references describe that historical scope, not new work approved here.
   FileOperations001 reviews. Native dump capture and diagnosis remain open;
   status/streaming/device-inference work remains separate and unapproved.
   No historical measurements, review records or release gates were waived.
+
+### 2026_10_27 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Claude Opus 5.5
+- Effort: High
+- Context Window: 872K
+- Outcome: Recorded work already fixed elsewhere: C13 and FO02 done, C06 and
+  C11 partly (CodeReview008). Remaining parts and release gates stay open; no
+  gate is waived.

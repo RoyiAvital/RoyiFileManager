@@ -42,7 +42,8 @@ this task only when the QuickLook plan is approved and depends on `QtPdf` or
 binding switch is validated before the viewer code is written. Other triggers
 that would also justify starting it: a Python upgrade without a conda-forge
 PyQt5 build, or a Windows rendering defect fixed only in Qt 6. Until then the
-plan stays as the ready procedure.
+plan stays as the ready procedure. Video preview,
+[QuickView006](QuickView006.md), waits for this migration.
 
 ## Scope
 

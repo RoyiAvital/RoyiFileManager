@@ -140,9 +140,10 @@ work while off.
 | Arrows / `Shift+arrows`                | Pan 32 / 128 logical pixels                               |
 | Drag, wheel / `Shift+wheel`            | Pan with mouse, vertically / horizontally                 |
 | Copy Image button                      | Copy the loaded image to the clipboard at full resolution |
+| Play/Pause button / `Space`            | Pause or resume an animation (shown only for animations)  |
 
-Copy Image copies decoded pixels, not the file or zoomed viewport. GIF/APNG
-previews contribute only the displayed still image, not the animation. It replaces
+Copy Image copies decoded pixels, not the file or zoomed viewport. For an
+animation it copies the frame on screen. It replaces
 the clipboard without changing `Ctrl+C`; copying large images can increase memory
 use. The button is disabled until an image is ready.
 
@@ -164,8 +165,12 @@ UserSettings, using `image_mode` values `fit` and `actual_size`.
 Images support local and accessible UNC regular files, including resolved local
 symlinks. Image limits are 64 MiB encoded, 128 million pixels and 65,536 pixels per edge.
 The normalized image can use about 488 MiB; temporary decoding/conversion buffers
-can exceed that substantially. Only the first image/frame is shown. No archive
-extraction, animation, SVG rasterization, video, prefetch or image
+can exceed that substantially. Animated GIF and WebP play through Qt's `QMovie`;
+APNG, which Qt 5 cannot animate, is played by a small reader that hands each
+frame to Qt's PNG decoder. Animations start when shown, follow the file's loop
+count, pause while QuickView is hidden and keep one decoded frame at a time.
+Frames over 16 MP show the first frame only. No archive
+extraction, SVG rasterization, video, prefetch or image
 cache is included. Cancellation discards stale results; it cannot interrupt a
 blocked native read, but disabling QuickView and exiting do not wait for it.
 

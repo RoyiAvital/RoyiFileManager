@@ -41,6 +41,21 @@ See [Keyboard Shortcuts](shortcuts.md) for more file operations.
 
 Press ++ctrl+u++ to swap the two pane locations without moving files.
 
+### Drag and Drop
+
+Drag files onto a pane or a folder in it, from the other pane or from Explorer.
+As in Explorer:
+
+| Drop                            | Action |
+| ------------------------------- | ------ |
+| Onto a folder on another drive  | Copy   |
+| Onto a folder on the same drive | Move   |
+| With ++ctrl++ held              | Copy   |
+| With ++shift++ held             | Move   |
+
+Network shares count as separate drives. Files dragged out of archives are
+always copied.
+
 ### Duplicate In The Same Folder
 
 **Duplicate item** in Command Center, or **Duplicate...** in the context menu,

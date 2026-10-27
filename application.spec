@@ -54,6 +54,7 @@ hidden_imports = [
 	'fman.impl.ui.session', 'fman.impl.ui.output', 'fman.impl.navigation',
 	'fman.impl.ui.table', 'fman.impl.ui.table_data', 'fman.impl.ui.facade',
 	'fman.impl.quick_view',
+	'fman.impl.quick_view_animation',
 	'fman.impl.quick_view_pdf', 'fman.impl.quick_view_pdf_view', '_quick_view_pdf_worker',
 	'fman.impl.quick_view_csv', '_quick_view_csv_worker',
 	'PyQt5.QtSvg'

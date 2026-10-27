@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.2] - 2026-10-27 
+
+This version extends the _QuickView_ capabilities by adding support for animated images.  
+The supported formats are: Animated PNG (`png` / `apng`),  GIF (`gif`), WebP (`webp`).
+
+### Added
+
+- QuickView plays animated GIF, WebP and APNG (`.png` or `.apng`) images. They start when shown and
+  follow the file's loop count. A Play/Pause button, shown only for animations,
+  and `Space` pause and resume them; fit, zoom and pan stay unchanged across
+  frames, and Copy Image copies the frame on screen. Animations pause while
+  QuickView is hidden. Frames over 16 MP still show only the first frame.
+
+### Changed
+
+- The **About** window has an olive border (`#75715e`) that sets it apart from
+  the panes, which share its background.
+
+### Fixed
+
+- Dragging files to a folder on another drive moved them. As in Explorer, a drop
+  now copies across drives or shares and moves within one; `Ctrl` always copies
+  and `Shift` always moves. The drag cursor shows the action.
+
 ## [0.19.1] - 2026-10-27 
 
 This release focuses on smoothing and easing edge cases.

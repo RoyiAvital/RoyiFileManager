@@ -54,7 +54,7 @@ QuickList QLineEdit {
 }
 
 #about {
-	border: 1px solid palette(mid);
+	border: 1px solid #75715e;
 }
 
 #about-version, #about-hint {

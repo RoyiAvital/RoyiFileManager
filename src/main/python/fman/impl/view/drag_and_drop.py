@@ -1,6 +1,8 @@
 from fman.impl.util.qt import MoveAction, NoButton, \
-	ControlModifier, CopyAction
-from PyQt5.QtCore import QItemSelectionModel as QISM
+	ControlModifier, CopyAction, from_qurl
+from fman.url import as_human_readable, splitscheme
+from ntpath import splitdrive
+from PyQt5.QtCore import Qt, QItemSelectionModel as QISM
 from PyQt5.QtWidgets import QTableView, QAbstractItemView
 
 class DragAndDrop(QTableView):
@@ -64,13 +66,39 @@ class DragAndDrop(QTableView):
 				if generation == getattr(self, '_view_generation', None):
 					self.selectionModel().select(selection, QISM.ClearAndSelect)
 					self.selectionModel().setCurrentIndex(current, QISM.NoUpdate)
+	def dragMoveEvent(self, event):
+		super().dragMoveEvent(event)
+		if event.isAccepted():
+			event.setDropAction(self._drop_action(event))
+			event.accept()
 	def dropEvent(self, event):
-		modifiers = event.keyboardModifiers()
-		do_copy = modifiers & ControlModifier
-		action = CopyAction if do_copy else MoveAction
+		action = self._drop_action(event)
 		event.setDropAction(action)
 		super().dropEvent(event)
 		if action == MoveAction:
 			# If we accept the event (which super().dropEvent(...) does above),
 			# then Windows moves the file to the Recycle Bin!!! Avoid this:
 			event.ignore()
+	def _drop_action(self, event):
+		"""Like Explorer: Ctrl copies, Shift moves, otherwise copy across volumes and move within one."""
+		modifiers = event.keyboardModifiers()
+		if modifiers & ControlModifier:
+			return CopyAction
+		if modifiers & Qt.ShiftModifier:
+			return MoveAction
+		destination = _volume(self.model().get_location())
+		sources = [_volume(qurl) for qurl in event.mimeData().urls()]
+		if destination is not None and any(source != destination for source in sources):
+			return CopyAction
+		return MoveAction
+
+def _volume(url):
+	"""The drive (`c:`) or UNC share of a local file URL or QUrl; None otherwise."""
+	try:
+		if not isinstance(url, str):
+			url = from_qurl(url)
+		if splitscheme(url)[0] != 'file://':
+			return None
+	except ValueError:
+		return None
+	return splitdrive(as_human_readable(url))[0].casefold()

@@ -34,6 +34,8 @@ class ImageResult:
 	fingerprint: tuple = ()
 	kind: str = 'image'
 	path: str = ''
+	frames: int = 0
+	animation: object = None
 
 
 def load_preview(request, canceled, resolve=None):
@@ -60,7 +62,7 @@ def load_preview(request, canceled, resolve=None):
 		except (OSError, ValueError) as error:
 			return ImageResult(message='Cannot preview PDF: ' + str(error), kind='error')
 	if PureWindowsPath(request.url).suffix.lower() in (
-		'.jpg', '.jpeg', '.png', '.bmp', '.gif', '.ico', '.tif', '.tiff', '.webp', '.avif', '.heic'
+		'.jpg', '.jpeg', '.png', '.apng', '.bmp', '.gif', '.ico', '.tif', '.tiff', '.webp', '.avif', '.heic'
 	):
 		return load_image(request, canceled, resolve)
 	from fman.impl.quick_view_text import load_text
@@ -141,15 +143,36 @@ def load_image(request, canceled, resolve=None):
 				return ImageResult(message='Decoded image exceeds memory allowance', kind='error')
 			image.setDevicePixelRatio(1)
 			check()
+			frames, animation = _animation(reader, device, image_format, size)
+			check()
 			if _fingerprint(before) != _fingerprint(os.stat(path)):
 				return ImageResult(message='File changed while loading', kind='error')
-			return ImageResult(image, format=image_format.decode('ascii'), fingerprint=_fingerprint(before))
+			return ImageResult(image, format=image_format.decode('ascii'), fingerprint=_fingerprint(before),
+				path=path if frames > 1 else '', frames=frames, animation=animation)
 		finally:
 			device.close()
 	except InterruptedError:
 		return None
 	except (OSError, ValueError) as error:
 		return ImageResult(message='Cannot preview file: ' + str(error), kind='error')
+
+
+def _animation(reader, device, image_format, size):
+	"""(frame count, APNG index or None); animations over 16 MP per frame stay still images."""
+	from fman.impl.quick_view_animation import MAX_ANIMATION_PIXELS, has_apng_control, parse_apng
+	if size.width() * size.height() > MAX_ANIMATION_PIXELS:
+		return 0, None
+	if image_format in (b'gif', b'webp'):
+		frames = reader.imageCount() if reader.supportsAnimation() else 0
+		return (frames, None) if frames > 1 else (0, None)
+	if image_format == b'png' and has_apng_control(device):
+		try:
+			animation = parse_apng(bytes(device.readAll()))
+		except ValueError:
+			return 0, None
+		if animation is not None:
+			return len(animation.frames), animation
+	return 0, None
 
 
 class ImageLoader:
