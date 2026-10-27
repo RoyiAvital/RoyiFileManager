@@ -70,6 +70,7 @@
 - [x] CHANGE: The general settings file should not have OS level variants.
 - [x] CHANGE: Convert the settings file into YAML / TOML (Which is faster to parse). Add comments to hint the options and valid values.
 - [x] CHANGE: Group the _Command Palette_ items into groups: "Application: About", "Application: Edit settings", "File System: Edit".
+- [ ] CHANGE: Merge the _Zen_ into the _About_ window.
 
 ## Performance
 

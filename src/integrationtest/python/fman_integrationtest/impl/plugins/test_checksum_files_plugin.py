@@ -25,6 +25,16 @@ class ChecksumFilesPluginTest(TestCase):
     def test_source_commands_are_bundled_without_installation(self):
         self._run_application_probe()
 
+    def test_palette_failure_is_reported_without_a_modal_dialog(self):
+        from unittest.mock import patch
+        probe = PORTABLE_PROBE.replace(
+            'titles = {item.title for item in suggest(query)}',
+            "raise AssertionError('Injected palette failure.')")
+        self.assertNotEqual(PORTABLE_PROBE, probe)
+        with patch(__name__ + '.PORTABLE_PROBE', probe):
+            with self.assertRaisesRegex(AssertionError, 'Injected palette failure'):
+                self._run_application_probe()
+
     def _run_application_probe(self, executable=None):
         import build
         import json
@@ -224,12 +234,12 @@ class ChecksumProbe(DirectoryPaneListener):
             def inspect_palette(suggest, **kwargs):
                 for query in ('', 'checksum'):
                     titles = {item.title for item in suggest(query)}
-                    assert {'Generate checksum file', 'Verify checksum file'} <= titles
+                    assert {'Tools: Generate checksum file', 'Tools: Verify checksum file'} <= titles, titles
                     palette_queries.append(query)
                 return None
             core_commands.show_quicksearch = inspect_palette
             try:
-                self.pane.run_command('command_palette')
+                core_commands.CommandPalette(self.pane)()
             finally:
                 core_commands.show_quicksearch = original_quicksearch
             report['palette_queries'] = palette_queries
