@@ -30,7 +30,7 @@ match a published checksum, not for collision-resistant security decisions.
 
 Defaults and comments are in [CalculateFileHash.yaml](CalculateFileHash.yaml).
 Override them in
-`UserSettings/Plugins/User/Settings/CalculateFileHash (Windows).yaml`:
+`UserSettings/Plugins/User/Settings/CalculateFileHash.yaml`:
 
 ```yaml
 default_algorithm: sha256

@@ -71,7 +71,7 @@ assigned by default.
 ## Settings
 
 Defaults are in [Robocopy.yaml](Robocopy.yaml). Put only your overrides in
-`UserSettings/Plugins/User/Settings/Robocopy (Windows).yaml`, then reload plug-ins.
+`UserSettings/Plugins/User/Settings/Robocopy.yaml`, then reload plug-ins.
 Settings are captured when a command starts; changing them does not alter an active
 transfer. Unknown options and invalid types/ranges are rejected.
 
@@ -127,7 +127,7 @@ copy success under concurrent changes. Exit 0 must not be read as "all moved".
 
 Logging and automatic opening are **disabled by default**. With those defaults,
 no log file is created or opened. To save and open one, set both options in
-`UserSettings/Plugins/User/Settings/Robocopy (Windows).yaml` and reload plug-ins:
+`UserSettings/Plugins/User/Settings/Robocopy.yaml` and reload plug-ins:
 
 ```yaml
 log_enabled: true

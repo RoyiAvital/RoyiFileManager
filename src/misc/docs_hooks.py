@@ -10,7 +10,7 @@ load_build_settings = run_path(
 
 def on_config(config):
 	root = Path(config.config_file_path).resolve().parent
-	settings = load_build_settings(root / 'src/build/settings/base.json')
+	settings = load_build_settings(root / 'src/build/settings/AppMeta.json')
 	name = settings['app_name']
 	config.site_name = name
 	config.copyright = '%s is a fast keyboard focused file manager for Windows.' % name

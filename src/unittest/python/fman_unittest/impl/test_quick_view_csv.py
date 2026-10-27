@@ -54,6 +54,17 @@ class EngineTest(TestCase):
 				self.assertEqual(kind, raised.exception.kind)
 			self.assertIsNone(self.engine.connection)
 
+	def test_tsv_follows_strict_quoted_rules(self):
+		data = 'id\ttitle\n1\t"Dune" by Herbert\n2\tplain\n'
+		for options in ({}, {'delimiter': 'tab', 'header': 'yes'}):
+			with self.subTest(options=options), self.assertRaises(CsvError) as raised:
+				self.open(data, name='books.tsv', **options)
+			self.assertEqual('parse', raised.exception.kind)
+			self.assertIn('strict CSV rules', str(raised.exception))
+			self.assertNotIn('search space', str(raised.exception))
+		self.open('id\tsize\n1\t27" monitor\n2\t"a\tb"\n', name='sizes.tsv')
+		self.assertEqual([(1, ['1', '27" monitor']), (2, ['2', 'a\tb'])], self.all_rows())
+
 	def test_encodings(self):
 		self.open(b'a,b\n1,caf\xe9\n', encoding='latin-1', delimiter='comma', header='yes')
 		self.assertEqual([(1, ['1', 'caf\u00e9'])], self.all_rows())
@@ -198,6 +209,21 @@ class EngineTest(TestCase):
 		self.engine.release()
 		self.assertFalse(directory.exists())
 
+	def test_open_uses_only_a_new_requested_cache_folder(self):
+		root = self.root / 'cache'
+		requested = root / 's-1-requested'
+		self.engine.begin(1)
+		self.engine.open(self.write('a\n1\n'), LIMIT, 192, {}, lambda *args: None, str(requested))
+		self.assertEqual(str(requested), self.engine.directory)
+		self.assertTrue((requested / 'table.duckdb').exists())
+		self.engine.release()
+		(root / 's-2-existing').mkdir()
+		for directory in (str(self.root / 's-3-outside'), str(root / 'x-4-prefix'), str(root / 's-2-existing'), 5):
+			with self.subTest(directory=directory), self.assertRaises(CsvError) as raised:
+				self.engine.open(self.write('a\n1\n'), LIMIT, 192, {}, lambda *args: None, directory)
+			self.assertEqual('access', raised.exception.kind)
+		self.assertTrue((root / 's-2-existing').is_dir())
+
 	def test_canceled_fold_is_rolled_back_and_retried(self):
 		data = 'a,b\n' + ''.join('%d,v\u00e9%d\n' % (index, index) for index in range(50))
 		# Call 2 follows the column creation, call 3 is inside the staging loop.
@@ -302,8 +328,50 @@ class ControllerModelTest(TestCase):
 		controller.action(1, 'cell', position=3, column=0)
 		controller.query(1, 2, [], 'x', None)
 		self.assertIsNone(controller._action)
-		controller._receive(dict(type='copy', epoch=0, generation=1, operation=1, revision=1), b'{"text":"old"}')
+		controller._receive(dict(type='copy', epoch=0, generation=1, operation=1, revision=1), b'old')
 		self.assertEqual([], done)
+
+	def test_copy_text_arrives_as_raw_utf8(self):
+		from fman.impl.quick_view_csv import CsvController
+		controller = CsvController()
+		self.addCleanup(controller.deleteLater)
+		done = []
+		controller.action_done.connect(lambda *values: done.append(values))
+		controller._ready, controller._generation, controller._revision = True, 1, 1
+		controller._active = dict(type='copy', epoch=0, generation=1, operation=1, revision=1)
+		text = '\x01\u00e9\t"x"\r\n'
+		controller._receive(dict(type='copy', epoch=0, generation=1, operation=1, revision=1), text.encode('utf-8'))
+		self.assertEqual({'text': text}, done[0][3])
+
+	def test_filter_typing_keeps_a_query_that_prepares_needed_folds(self):
+		from unittest.mock import patch
+		from fman.impl.quick_view_csv import CsvController
+		controller = CsvController()
+		self.addCleanup(controller.deleteLater)
+		projected = []
+		controller.projected.connect(lambda *values: projected.append(values))
+		controller._ready, controller._generation, controller._revision, controller._columns = True, 1, 1, 3
+		def active(filters, text='', sort=None, revision=1):
+			controller._active = dict(type='query', epoch=0, generation=1, operation=1, revision=revision,
+				filters=filters, text=text, sort=sort)
+		with patch.object(controller, '_cancel') as cancel, patch.object(controller, '_pump'):
+			for running, (filters, text), folded, canceled in (
+					(([[1, 'fuzzy', 'a']], ''), ([[1, 'fuzzy', 'ab']], ''), set(), False),
+					(([[1, 'fuzzy', 'a']], ''), ([[1, 'fuzzy', 'ab']], 'x'), set(), False),
+					(([[1, 'fuzzy', 'a']], ''), ([[1, 'fuzzy', 'ab']], ''), {1}, True),
+					(([[1, 'fuzzy', 'a']], ''), ([[2, 'fuzzy', 'ab']], ''), set(), True),
+					(([], 'a'), ([[1, 'fuzzy', 'ab']], ''), set(), True)):
+				with self.subTest(running=running, filters=filters, text=text, folded=folded):
+					cancel.reset_mock()
+					controller._folded = set(folded)
+					active(*running)
+					controller.query(1, controller._revision + 1, filters, text, None)
+					self.assertEqual(canceled, cancel.called)
+			active([[1, 'fuzzy', 'a']], revision=controller._revision - 1)
+			controller._receive(dict(type='projection', epoch=0, generation=1, operation=1,
+				revision=controller._revision - 1, count=5, folded=[1]), b'')
+		self.assertEqual({1}, controller._folded)
+		self.assertEqual([], projected)
 
 	def test_model_requests_the_rest_of_a_short_page(self):
 		from fman.impl.quick_view_csv import CsvModel

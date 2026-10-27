@@ -2,13 +2,14 @@ from fbs_runtime import application_context as fbs_appctxt
 from fbs_runtime.application_context import cached_property
 from fbs_runtime.application_context.PyQt5 import ApplicationContext
 from fbs_runtime.excepthook import StderrExceptionHandler
-from fman import PLATFORM, DATA_DIRECTORY, Window
+from fman import DATA_DIRECTORY, Window
 from fman.impl.controller import Controller
 from fman.impl.font_database import FontDatabase
 from fman.impl.tour_state import TourState
 from fman.impl.model.icon_provider import IconProvider
 from fman.impl.nonexistent_shortcut_handler import NonexistentShortcutHandler
-from fman.impl.plugins import PluginSupport, CommandCallback, PluginFactory
+from fman.impl.plugins import PluginSupport, CommandCallback, PluginFactory, \
+	SETTINGS_PLUGIN_NAME
 from fman.impl.plugins.builtin import BuiltinPlugin, NullFileSystem
 from fman.impl.plugins.command_registry import PaneCommandRegistry, \
 	ApplicationCommandRegistry
@@ -184,7 +185,8 @@ class DevelopmentApplicationContext(ApplicationContext):
 		return IconProvider(qt_icon_provider, fs, icons_dir)
 	@cached_property
 	def config(self):
-		return Config(PLATFORM, join(DATA_DIRECTORY, APP_SETTINGS))
+		return Config(join(DATA_DIRECTORY, APP_SETTINGS),
+			join(DATA_DIRECTORY, 'Plugins', 'User', SETTINGS_PLUGIN_NAME))
 	@cached_property
 	def tour_controller(self):
 		return TourController()

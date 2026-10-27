@@ -39,7 +39,7 @@ class ApplicationContextTest(TestCase):
 
 	def test_startup_uses_product_version(self):
 		settings_path = Path(__file__).resolve().parents[4] / \
-			'src/build/settings/base.json'
+			'src/build/settings/AppMeta.json'
 		version = json.loads(settings_path.read_text(encoding='utf-8'))['version']
 		context = fman_application_context.DevelopmentApplicationContext()
 		context.mother_fs = Mock()
@@ -57,7 +57,7 @@ class ApplicationContextTest(TestCase):
 
 	def test_frozen_startup_uses_cached_bundled_settings(self):
 		with TemporaryDirectory() as bundle_dir:
-			settings_path = Path(bundle_dir) / 'resources/build-settings/base.json'
+			settings_path = Path(bundle_dir) / 'resources/build-settings/AppMeta.json'
 			settings_path.parent.mkdir(parents=True)
 			settings_path.write_text(
 				json.dumps({'app_name': 'RfmRenameProbe', 'version': '9.8.7'}), encoding='utf-8'
@@ -241,9 +241,9 @@ try:
 		assert [model.index(index, 0).data() for index in range(2)] == [expected_drive, 'Network...']
 		pane.set_path(as_url(fixture))
 		until(lambda: settled(as_url(fixture)))
-	with patch.object(commands, 'show_alert') as alert:
-		commands.ZenOfFman(context.window)()
-		assert 'Updates should be transparent and continuous' not in alert.call_args.args[0]
+	from core.about import ZEN
+	assert 'Updates should be transparent and continuous' not in ZEN
+	assert 'zen_of_fman' not in context.plugin_support.get_application_commands()
 
 	manual = root / 'UserSettings' / 'Plugins' / 'Third-party' / 'ManualProbe'
 	package = manual / 'manual_cleanup_probe'

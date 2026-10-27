@@ -96,7 +96,7 @@ def exercise(context, root, phase):
 			QTimer.singleShot(0, ready)
 		gui(lambda: context.main_window.before_dialog.connect(inspect))
 		try:
-			history_path = root / 'UserSettings/Plugins/User/Settings/Command Palette History (Windows).json'
+			history_path = root / 'UserSettings/Plugins/User/Settings/Command Palette History.json'
 			if phase == 'record':
 				assert not history_path.exists()
 				assert not _recent_commands()

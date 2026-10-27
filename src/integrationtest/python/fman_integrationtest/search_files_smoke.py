@@ -124,7 +124,7 @@ def exercise(context, root, output, layout_only=False):
 			return
 		gui(lambda: host.controls['name_mode'][1].group.button(2).click())
 		gui(lambda: host.controls['content_mode'][1].group.button(1).click())
-		settings = root / 'UserSettings/Plugins/User/Settings/SearchFiles (Windows).yaml'
+		settings = root / 'UserSettings/Plugins/User/Settings/SearchFiles.yaml'
 		wait_for(lambda: not session.saving, 'Search preferences did not settle')
 		saved = yaml.safe_load(settings.read_text(encoding='utf-8'))
 		assert saved['name_mode'] == 'regex' and saved['content_mode'] == 'glob'

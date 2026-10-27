@@ -312,8 +312,8 @@ warnings; cancellation does not report an unfinished total as complete.
 Core owns this feature, including its background service and commands. No
 separate DirectorySize plug-in, column override or plug-in-to-Core hook is used.
 Restart the updated application to discard a previously loaded standalone column.
-Defaults are in code; overrides retain the existing settings location:
-`UserSettings/Plugins/User/Settings/DirectorySize (Windows).yaml`.
+Defaults are in [DirectorySize.yaml](DirectorySize.yaml); overrides go in
+`UserSettings/Plugins/User/Settings/DirectorySize.yaml`.
 
 ```yaml
 enabled: false

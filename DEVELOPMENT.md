@@ -140,7 +140,7 @@ Releases are built by the `Release` GitHub Actions workflow
 (`.github/workflows/release.yml`). It never runs on ordinary pushes; it runs
 only when a version tag is pushed:
 
-1. Set `version` in `src/build/settings/base.json`.
+1. Set `version` in `src/build/settings/AppMeta.json`.
 2. In `CHANGELOG.md`, add `## [X.Y.Z]` below the first section,
    `## [Unreleased]`, and move this release's entries into it. A
    ` - YYYY-MM-DD` date suffix is optional. Section bodies are free-form and

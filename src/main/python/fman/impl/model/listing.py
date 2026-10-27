@@ -6,7 +6,7 @@ import sys
 
 from fman.impl.model.drag_and_drop import DragAndDrop
 from fman.impl.model.file_watcher import FileWatcher
-from fman.impl.status_bar import StatusEntry
+from fman.impl.status_bar import StatusEntries
 from fman.impl.util import Event
 from fman.impl.util.qt.thread import run_in_main_thread
 from fman.listing import reconcile
@@ -592,13 +592,13 @@ class ListingModel(DragAndDrop):
 		"""Return fully loaded status entries for the currently displayed rows.
 
 		Pending scans and unknown size or modification-time metadata do not
-		affect this completeness guarantee.
+		affect this completeness guarantee. The capture is O(1); entries are
+		built when iterated, on the status worker.
 		"""
-		entries = []
-		for index in self._visible:
-			url = join(self._location, self._displayed.names[index])
-			entries.append(StatusEntry(url, self._displayed.is_dir[index], True, url in selected_urls))
-		return tuple(entries)
+		if not self._displayed:
+			return StatusEntries(self._location, (), (), (), selected_urls)
+		return StatusEntries(self._location, self._displayed.names, self._displayed.is_dir,
+			self._visible, selected_urls)
 	@run_in_main_thread
 	def sort(self, column, order=Qt.AscendingOrder):
 		ascending = order == Qt.AscendingOrder

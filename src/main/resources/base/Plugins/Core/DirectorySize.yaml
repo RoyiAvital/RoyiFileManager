@@ -1,0 +1,8 @@
+# Directory sizes: bundled defaults.
+# Override any value in UserSettings\Plugins\User\Settings\DirectorySize.yaml.
+
+# true: show directory totals in the Size column of local panes (Ctrl+Shift+D toggles).
+enabled: false
+
+# Regular files counted per directory root; 0 means unlimited.
+max_files: 10000000

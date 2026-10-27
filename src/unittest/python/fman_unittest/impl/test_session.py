@@ -245,6 +245,19 @@ class SessionManagerWindowTest(TestCase):
 		self.assertEqual([], window._widget.restored_geometries)
 		self.assertEqual(1, window._widget.show_calls)
 
+	def test_invalid_geometry_or_state_falls_back_to_defaults(self):
+		for geometry, state in (('abcde', _encode(b'state')), (_encode(b'rejected'), 7), (12, 'abcde')):
+			with self.subTest(geometry=geometry, state=state):
+				settings = {'window_geometry': geometry, 'window_state': state, 'panes': [{}, {}]}
+				window = _Window()
+				with patch('fman.impl.session.Thread'):
+					SessionManager(settings, None, None, 'test', True).show_main_window(window)
+				self.assertEqual([(1280, 800)], window._widget.resize_calls)
+				self.assertEqual(1, window._widget.show_calls)
+				self.assertNotIn('window_geometry', settings)
+				self.assertEqual(state == _encode(b'state'), 'window_state' in settings)
+				self.assertEqual([(b'state', 1)] if state == _encode(b'state') else [], window._widget.restored_states)
+
 
 class _Window:
 	def __init__(self):
@@ -286,6 +299,7 @@ class _MainWindow:
 
 	def restoreGeometry(self, geometry):
 		self.restored_geometries.append(geometry)
+		return geometry != b'rejected'
 
 	def restoreState(self, state, version):
 		self.restored_states.append((state, version))

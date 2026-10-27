@@ -726,7 +726,7 @@ screenshots._validate_image(screenshots._source_outputs(args.output_dir, 'batch-
 			settings = Path(temporary_directory)
 			screenshots._seed_settings(settings, 'favorites')
 			document = json.loads((
-				settings / 'Plugins' / 'User' / 'Settings' / 'Favorites (Windows).json'
+				settings / 'Plugins' / 'User' / 'Settings' / 'Favorites.json'
 			).read_text(encoding='utf-8'))
 		urls = [favorite['url'] for favorite in document['favorites']]
 		self.assertIn('file://C:', urls)
@@ -740,7 +740,7 @@ screenshots._validate_image(screenshots._source_outputs(args.output_dir, 'batch-
 			settings = Path(temporary_directory)
 			screenshots._seed_settings(settings, 'directory-size')
 			document = yaml.safe_load((
-				settings / 'Plugins' / 'User' / 'Settings' / 'DirectorySize (Windows).yaml'
+				settings / 'Plugins' / 'User' / 'Settings' / 'DirectorySize.yaml'
 			).read_text(encoding='utf-8'))
 		self.assertEqual({'enabled': True}, document)
 
@@ -751,14 +751,14 @@ screenshots._validate_image(screenshots._source_outputs(args.output_dir, 'batch-
 				)), patch.object(screenshots.os, 'getpid', return_value=12345):
 			settings = Path(temporary_directory)
 			screenshots._seed_settings(settings, 'everything-search')
-			document = json.loads((settings / 'Plugins/User/Settings/Everything (Windows).json')
+			document = json.loads((settings / 'Plugins/User/Settings/Everything.json')
 				.read_text(encoding='utf-8'))
 			self.assertEqual({'folders': ['C:\\Windows\\Web', 'C:\\Windows\\Fonts'],
 				'instance': 'RoyiFileManagerDocs_12345'}, document)
 			self.assertEqual((Path('C:\\Windows\\Web'), Path('C:\\Windows\\Fonts')),
 				screenshots._source_capture_paths('everything-search'))
 			screenshots._seed_settings(settings, 'everything-folders')
-			self.assertEqual(document, json.loads((settings / 'Plugins/User/Settings/Everything (Windows).json')
+			self.assertEqual(document, json.loads((settings / 'Plugins/User/Settings/Everything.json')
 				.read_text(encoding='utf-8')))
 			self.assertEqual((Path('C:\\Windows\\Web'), Path('C:\\Windows\\Fonts')),
 				screenshots._source_capture_paths('everything-folders'))

@@ -48,6 +48,17 @@ class FavoritesStoreTest(TestCase):
 
 		self.assertEqual(2, len(store.favorites))
 
+	def test_file_identity_ignores_case_but_not_unicode_folding(self):
+		store = FavoritesStore(windows=True)
+		store.add('file:///C:/Stra\u00dfe', 'Sharp s')
+		store.add('file:///C:/strasse', 'Double s')
+		store.add('file:///c:/STRASSE', 'Upper')
+		store.add('file:///C:/\u00c4rger', 'Umlaut')
+		store.add('file:///C:/\u00e4rger', 'Lower umlaut')
+
+		self.assertEqual(['Umlaut', 'Double s', 'Sharp s'], [favorite.name for favorite in store.favorites])
+		self.assertEqual('file:///C:/strasse', store.favorites[1].url)
+
 	def test_drive_root_uses_human_readable_name(self):
 		store = FavoritesStore(windows=True)
 

@@ -89,7 +89,7 @@ class FindFilesTest(TestCase):
 		ast.parse(build)
 		self.assertIn("'FindFiles'", build)
 		self.assertIn('fd-find', (root / 'conda-lock.yml').read_text())
-		self.assertEqual([{'keys': ['Shift+F7'], 'command': 'find_files'}], yaml.safe_load((plugin / 'Key Bindings (Windows).yaml').read_text()))
+		self.assertEqual([{'keys': ['Shift+F7'], 'command': 'find_files'}], yaml.safe_load((plugin / 'Key Bindings.yaml').read_text()))
 		for name in ('LICENSE-MIT', 'THIRDPARTY.yml'):
 			self.assertGreater((plugin / 'licenses' / name).stat().st_size, 0)
 
@@ -219,6 +219,20 @@ class FindFilesTest(TestCase):
 		collector.accept(b'file.txt')
 		self.assertEqual(1, collector.total)
 		self.assertEqual([], collector.rows)
-		for raw in (b'../escape', b'/absolute', b'C:/absolute', b'file:stream', b'', b'\xff'):
+		invalid = (b'../escape', b'/absolute', b'C:/absolute', b'file:stream', b'', b'\xff')
+		for raw in invalid:
+			collector.accept(raw)
+		self.assertEqual(1 + len(invalid), collector.total)
+		self.assertEqual([], collector.rows)
+		for raw in invalid:
 			with self.subTest(raw=raw), self.assertRaises((ValueError, UnicodeError)):
+				Collector(self.options).accept(raw)
+		for raw in invalid:
+			with self.subTest(after_row_cap=raw):
+				collector = Collector(replace(self.options, max_rows=1))
+				collector.accept(b'kept.txt')
+				self.assertFalse(collector.limited)
 				collector.accept(raw)
+				self.assertTrue(collector.limited)
+				self.assertEqual(2, collector.total)
+				self.assertEqual(['kept.txt'], [row.relative_path for row in collector.rows])

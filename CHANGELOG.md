@@ -7,6 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.1] - 2026-10-27 
+
+This release focuses on smoothing and easing edge cases.
+
+### Added
+
+- On startup, every missing user settings file is created from the plug-in's
+  bundled `<Name>.yaml` defaults with each option commented out, including
+  `UserSettings\AppSettings.yaml`. `Key Bindings.yaml`, `File Context Menu.yaml`
+  and `Folder Context Menu.yaml` get a short commented header with an example.
+  Existing files are never changed.
+- Bundled `DirectorySize.yaml` and `QuickView.yaml` defaults.
+
+### Changed
+
+- Configuration and state files no longer have `(Windows)` variants: they are
+  plain `<Name>.yaml` / `<Name>.json` (for example `Key Bindings.yaml`,
+  `Favorites.json`, `Panes.json`). Bundled Windows theme rules are merged into
+  `Theme.css`.
+  **Migration:** in `UserSettings\Plugins\User\Settings`, remove ` (Windows)`
+  from the names of existing files, for example `Favorites (Windows).json` to
+  `Favorites.json`; otherwise favorites, pane state, visited paths and history
+  start empty. Old `.json` settings files are ignored.
+- Plug-ins with user settings must ship commented `<Name>.yaml` defaults.
+- **About** opens a frameless window with the icon, version, description,
+  project and documentation links, and the Zen of RoyiFileManager. It closes
+  with Esc, Enter or a click elsewhere. The separate **Zen of RoyiFileManager**
+  command is removed; searching for it finds **About**.
+- The application metadata file `src/build/settings/base.json` is renamed to
+  `AppMeta.json`.
+- Moving files to another drive copies with the move's own progress and Cancel.
+- Copying many small files reuses one read buffer (about 4% faster for
+  2,000 files of 4 KiB in a local check).
+- Status bar counts and sizes are prepared on the worker thread; selecting in a
+  folder of 200,000 entries no longer blocks the window for about 0.1 s.
+- Find Files counts results past the table limit without checking each one,
+  so searches with many matches finish sooner.
+- QuickView Table View: a filter that is still preparing a column keeps running
+  when you type more, instead of starting over after every pause.
+- QuickView Table View load errors are reported as format errors with a hint on
+  DuckDB's strict CSV rules; TSV files follow the same rules.
+
+### Removed
+
+- The unused bundled `Plugins\Core\AppSettings.json`, left over from before the
+  YAML conversion. Defaults are in `AppSettings.yaml`.
+
+### Fixed
+
+- Moving a file to another drive deleted the source even when it changed during
+  the copy. The source is now kept and the move reports an error. Cancel after
+  a file was copied keeps its source.
+- A damaged saved window position no longer stops the application from starting;
+  the default size is used.
+- Favorites no longer merges different folders such as `Straße` and `Strasse`.
+- **Quit** from the Command Center no longer shows an error.
+- Quitting with a QuickView table open left its temporary cache (up to twice the
+  file size) on disk.
+- Copying QuickView table cells full of control characters failed with an
+  unrelated PDF message.
+- **New folder** with an invalid name, or in a read-only folder, shows the reason
+  instead of a plug-in error report.
+
 ## [0.19.0] - 2026-10-27  
 
 This release focuses on faster batch file operations: Copy, Delete, Move.  

@@ -3,6 +3,8 @@ from datetime import datetime
 
 from fman.url import as_human_readable, basename, normalize, splitscheme
 
+import ntpath
+
 
 DEFAULT_MAX_FAVORITES = 200
 Favorite = namedtuple('Favorite', 'name url')
@@ -177,7 +179,8 @@ class FavoritesStore:
 		if windows is None:
 			windows = True
 		if windows and scheme == 'file://':
-			return url.casefold()
+			# Simple per-character lowercase, like Windows names; casefold() would merge ß and ss.
+			return ntpath.normcase(url)
 		return url
 
 	@staticmethod

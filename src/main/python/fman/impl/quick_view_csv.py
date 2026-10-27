@@ -12,6 +12,7 @@ from PyQt5.QtWidgets import QAbstractItemView, QApplication, QCheckBox, QComboBo
 import os
 import stat
 import sys
+import uuid
 import weakref
 
 
@@ -27,6 +28,7 @@ WINDOW_ROWS = 10000000
 WINDOW_MARGIN = 1000000
 START_TIMEOUT = 15000
 CANCEL_TIMEOUT = 2000
+QUIT_TIMEOUT = 2000
 FILTER_DELAY = 200
 PENDING_PAGES = 6
 DELIMITER_OPTIONS = (('auto', 'Auto'), ('comma', 'Comma'), ('semicolon', 'Semicolon'), ('tab', 'Tab'), ('pipe', 'Pipe'))
@@ -154,6 +156,7 @@ class CsvController(QObject):
 		self._canceling = False
 		self._generation = None
 		self._revision = 0
+		self._columns, self._folded = 0, set()
 		self._open = None
 		self._query = None
 		self._action = None
@@ -168,7 +171,8 @@ class CsvController(QObject):
 		self.drain = QTimer(self)
 		self.drain.setSingleShot(True)
 		self.drain.timeout.connect(self._read)
-		QApplication.instance().aboutToQuit.connect(self.shutdown)
+		self._quitting = False
+		QApplication.instance().aboutToQuit.connect(self._quit)
 		if window is not None:
 			window.closed.connect(self.shutdown)
 
@@ -182,6 +186,7 @@ class CsvController(QObject):
 		if self._disposed:
 			return
 		self._generation, self._revision = generation, 0
+		self._columns, self._folded = 0, set()
 		self._open = dict(path=path, limit=limit, memory=memory, options=dict(options), cache=cache_root())
 		self._query = self._action = None
 		self._pages = []
@@ -198,9 +203,25 @@ class CsvController(QObject):
 		self._pages = []
 		# Actions carry positions of the old projection; they must not run against the new one.
 		self._action = None
-		if self._active is not None and self._active['type'] in ('query', 'page', 'find', 'copy', 'cell'):
+		if self._active is not None and self._active['type'] in ('query', 'page', 'find', 'copy', 'cell') and \
+				not self._keeps_folding(self._query):
 			self._cancel()
 		self._pump()
+
+	def _fold_columns(self, query):
+		if query['text']:
+			return set(range(self._columns))
+		columns = {item[0] for item in query['filters']}
+		if query['sort'] is not None:
+			columns.add(query['sort'][0])
+		return columns
+
+	def _keeps_folding(self, query):
+		"""Canceling drops a partly prepared fold, so let the active query finish folds the next one needs."""
+		if self._active['type'] != 'query':
+			return False
+		pending = self._fold_columns(self._active) - self._folded
+		return bool(pending) and pending <= self._fold_columns(query)
 
 	def request_page(self, generation, revision, start):
 		if generation != self._generation or revision != self._revision or self._disposed:
@@ -228,6 +249,7 @@ class CsvController(QObject):
 		"""Drop the current table; the helper stays available for the next Table View file."""
 		had_table = self._generation is not None
 		self._generation = None
+		self._columns, self._folded = 0, set()
 		self._open = self._query = self._action = None
 		self._pages = []
 		if had_table and self.process is not None and not self._retiring:
@@ -253,6 +275,19 @@ class CsvController(QObject):
 		self.retire()
 		if self.process is None:
 			self.deleteLater()
+
+	def _quit(self):
+		"""Qt destroys running children after aboutToQuit, so end the helper and remove its cache now."""
+		self._quitting = True
+		self.shutdown()
+		process = self.process
+		if process is None:
+			return
+		if not process.waitForFinished(QUIT_TIMEOUT):
+			self._kill()
+			process.waitForFinished(QUIT_TIMEOUT)
+		if self.process is process:
+			self._finished()
 
 	# -- process -------------------------------------------------------------------------
 
@@ -330,6 +365,9 @@ class CsvController(QObject):
 			self._send('release', CANCEL_TIMEOUT)
 		elif self._open is not None:
 			values, self._open = self._open, None
+			# Owned before the helper creates it, so a kill at any point still allows cleanup.
+			values['directory'] = os.path.join(values['cache'], 's-%d-%s' % (self.process.processId(), uuid.uuid4().hex[:12]))
+			self._owned.add(values['directory'])
 			self._send('open', **values)
 		elif self._generation is None:
 			return
@@ -375,15 +413,15 @@ class CsvController(QObject):
 		if active is None or any(type(header.get(key)) is not int or header[key] != active[key]
 				for key in ('epoch', 'generation', 'operation', 'revision')):
 			raise ValueError('Unexpected Table View helper response')
-		data = json.loads(payload.decode('utf-8')) if payload else {}
+		if kind == 'copy':
+			data = {'text': payload.decode('utf-8')}
+		else:
+			data = json.loads(payload.decode('utf-8')) if payload else {}
 		generation, revision, operation = active['generation'], active['revision'], active['type']
 		current = generation == self._generation and not self._retiring
 		if kind == 'preview' and operation == 'open':
-			directory = header.get('directory')
-			if isinstance(directory, str) and os.path.dirname(os.path.normcase(directory)) == os.path.normcase(active['cache']) \
-					and os.path.basename(directory).startswith('s-'):
-				self._owned.add(directory)
 			if current:
+				self._columns = len(header.get('labels', ()))
 				self.preview.emit(generation, header, data.get('rows', []))
 			return
 		self._active = None
@@ -398,8 +436,10 @@ class CsvController(QObject):
 					self.failed.emit(generation, stage, str(header.get('kind', '')), str(header.get('message', ''))[:1024])
 		elif kind == 'imported' and current:
 			self.imported.emit(generation, int(header['count']))
-		elif kind == 'projection' and current and revision == self._revision:
-			self.projected.emit(generation, revision, int(header['count']))
+		elif kind == 'projection' and current:
+			self._folded = {column for column in header.get('folded', ()) if type(column) is int}
+			if revision == self._revision:
+				self.projected.emit(generation, revision, int(header['count']))
 		elif kind == 'page' and current and revision == self._revision:
 			self.page_ready.emit(generation, revision, int(header['start']), data.get('rows', []))
 		elif kind in ('copy', 'cell', 'found') and current and revision == self._revision:
@@ -461,14 +501,19 @@ class CsvController(QObject):
 		self.process.deleteLater()
 		self.process = None
 		self._active = None
+		self._folded = set()
 		self._ready = self._retiring = self._canceling = False
 		self._decoder = self._decoder_type()
 		if self._owned:
-			# A killed helper cannot remove its own cache; clean it off the Qt thread.
+			# A killed helper cannot remove its own cache; clean it off the Qt thread unless quitting.
 			from shutil import rmtree
 			from threading import Thread
 			owned, self._owned = tuple(self._owned), set()
-			Thread(target=lambda: [rmtree(path, ignore_errors=True) for path in owned], daemon=True).start()
+			remove = lambda: [rmtree(path, ignore_errors=True) for path in owned]
+			if self._quitting:
+				remove()
+			else:
+				Thread(target=remove, daemon=True).start()
 		if self._disposed:
 			self.deleteLater()
 		elif self._open is not None:

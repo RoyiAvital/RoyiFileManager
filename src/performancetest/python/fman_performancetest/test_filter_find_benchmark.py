@@ -551,7 +551,7 @@ class PerformanceReportTest(TestCase):
 			self.assertFalse((Path(directory) / 'versions.json').exists())
 
 	def test_release_identification_requires_matching_tag_and_clean_tree(self):
-		version = json.loads(suite.ROOT.joinpath('src/build/settings/base.json').read_text())['version']
+		version = json.loads(suite.ROOT.joinpath('src/build/settings/AppMeta.json').read_text())['version']
 		for dirty, tag, expected in ((b'', 'v' + version, version), (b'', version, version),
 			(b'M file', 'v' + version, 'Unreleased'), (b'', '', 'Unreleased')):
 			with self.subTest(dirty=dirty, tag=tag), \

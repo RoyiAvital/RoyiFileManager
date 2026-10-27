@@ -72,7 +72,7 @@ The bundled defaults are stored in `Favorites.json`:
 ```
 
 Create
-`UserSettings/Plugins/User/Settings/Favorites (Windows).json` to override the
+`UserSettings/Plugins/User/Settings/Favorites.json` to override the
 defaults. `max_favorites` limits the saved list; adding beyond the limit asks
 before replacing the oldest favorite.
 

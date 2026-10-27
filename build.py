@@ -17,7 +17,7 @@ from src.main.python.fbs_runtime.build_settings import load_build_settings as _l
 
 ROOT = Path(__file__).resolve().parent
 TARGET_DIR = ROOT / 'target'
-SETTINGS_PATH = ROOT / 'src' / 'build' / 'settings' / 'base.json'
+SETTINGS_PATH = ROOT / 'src' / 'build' / 'settings' / 'AppMeta.json'
 BUILD_SETTINGS = _load_build_settings(SETTINGS_PATH)
 APP_NAME = BUILD_SETTINGS['app_name']
 DIST_DIR = TARGET_DIR / APP_NAME

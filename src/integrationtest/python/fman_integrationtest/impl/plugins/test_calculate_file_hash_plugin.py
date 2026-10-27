@@ -1,4 +1,4 @@
-from fman import PLATFORM, Window
+from fman import Window
 from fman.impl.plugins.command_registry import ApplicationCommandRegistry, PaneCommandRegistry
 from fman.impl.plugins.config import Config
 from fman.impl.plugins.context_menu import ContextMenuProvider
@@ -27,7 +27,7 @@ class CalculateFileHashPluginTest(TestCase):
 		for name in modules:
 			del sys.modules[name]
 		path = Path(__file__).resolve().parents[5] / 'main' / 'resources' / 'base' / 'Plugins' / 'CalculateFileHash'
-		config = Config(PLATFORM)
+		config = Config()
 		errors = StubErrorHandler()
 		callback = StubCommandCallback()
 		pane_registry = PaneCommandRegistry(errors, callback)

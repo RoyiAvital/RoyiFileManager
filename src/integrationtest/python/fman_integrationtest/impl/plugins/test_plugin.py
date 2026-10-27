@@ -1,4 +1,4 @@
-from fman import PLATFORM, ApplicationCommand, DirectoryPaneCommand, \
+from fman import ApplicationCommand, DirectoryPaneCommand, \
 	DirectoryPane, DirectoryPaneListener, Window
 from fman.impl.plugins import ExternalPlugin
 from fman.impl.plugins.command_registry import PaneCommandRegistry, \
@@ -156,7 +156,7 @@ class ExternalPluginTest(TestCase):
 		super().setUp()
 		self._sys_path_before = list(sys.path)
 		self._plugin_dir = get_resource('Simple Plugin')
-		self._config = Config(PLATFORM)
+		self._config = Config()
 		self._theme = StubTheme()
 		self._font_database = StubFontDatabase()
 		self._error_handler = StubErrorHandler()

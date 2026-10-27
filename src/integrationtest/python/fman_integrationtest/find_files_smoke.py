@@ -108,7 +108,7 @@ def exercise(context, root, output):
 		gui(lambda: host.controls['case_mode'][1].set_value('sensitive'))
 		gui(lambda: host.controls['hidden'][1].click())
 		wait_for(lambda: not session.saving, 'Preferences did not settle')
-		settings = root / 'UserSettings/Plugins/User/Settings/FindFiles (Windows).yaml'
+		settings = root / 'UserSettings/Plugins/User/Settings/FindFiles.yaml'
 		saved = yaml.safe_load(settings.read_text(encoding='utf-8'))
 		assert saved['case_mode'] == 'sensitive' and saved['hidden']
 		assert not {'pattern', 'max_results', 'start_date', 'min_size'} & saved.keys()

@@ -82,7 +82,7 @@ are not signed or authenticated.
 ## Preferences
 
 Override [ChecksumFiles.yaml](ChecksumFiles.yaml) in
-`UserSettings/Plugins/User/Settings/ChecksumFiles (Windows).yaml`:
+`UserSettings/Plugins/User/Settings/ChecksumFiles.yaml`:
 
 ```yaml
 default_algorithm: sha256

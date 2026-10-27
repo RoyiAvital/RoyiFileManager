@@ -116,13 +116,13 @@ def exercise(context, root, output):
 			from PyQt5.QtTest import QTest
 			QTest.keyClick(window.list.query, Qt.Key_F1, Qt.ControlModifier)
 		gui(sort_by_name)
-		ui_saved = root / 'UserSettings' / 'Plugins' / 'User' / 'Settings' / 'Favorites UI (Windows).json'
+		ui_saved = root / 'UserSettings' / 'Plugins' / 'User' / 'Settings' / 'Favorites UI.json'
 		wait_for(lambda: ui_saved.exists() and json.loads(ui_saved.read_text(encoding='utf-8')).get('sort') == 'Name',
 			'Sort was not saved')
 		captured = _snapshot()[0]
 		mutate(captured, 'Renamed projects', FavoritesController.owner)
 		wait_for(lambda: session.records[0].name == 'Renamed projects', 'Rename not refreshed')
-		saved = root / 'UserSettings' / 'Plugins' / 'User' / 'Settings' / 'Favorites (Windows).json'
+		saved = root / 'UserSettings' / 'Plugins' / 'User' / 'Settings' / 'Favorites.json'
 		assert json.loads(saved.read_text(encoding='utf-8'))['favorites'][0]['name'] == 'Renamed projects'
 		gui(lambda: window.list.query.clear())
 		def check_dock():

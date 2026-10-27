@@ -1,4 +1,3 @@
-from fman import PLATFORM
 from fman.impl.plugins.config import load_json, write_differential_json, Config
 from fman_integrationtest import get_resource
 from os.path import join, exists
@@ -43,7 +42,7 @@ class ConfigTest(TestCase):
 		self._config.save_json(name)
 		with open(self._config.locate(name)[-1], 'r') as file:
 			self.assertEqual({'archive_handlers': {'.crx': 'custom://'}}, json.load(file))
-		restarted = Config(PLATFORM)
+		restarted = Config()
 		for directory in (self._dir_1, self._dir_2, user_dir):
 			restarted.add_dir(directory)
 		self.assertEqual(value, restarted.load_json(name))
@@ -61,7 +60,7 @@ class ConfigTest(TestCase):
 		value.append(3)
 		self._config.add_dir(self._dir_1)
 		self._config.on_quit()
-		config = Config(PLATFORM)
+		config = Config()
 		config.add_dir(self._dir_1)
 		self.assertEqual(value, config.load_json('Nonexistent.json'))
 	def test_preserve_on_reload_leaves_ordinary_settings_unchanged(self):
@@ -97,7 +96,7 @@ class ConfigTest(TestCase):
 			self._config.add_dir(self._dir_1)
 		self.assertIs(history, self._config.load_json('History.json'))
 		self._config.on_quit()
-		restarted = Config(PLATFORM)
+		restarted = Config()
 		restarted.add_dir(self._dir_1)
 		self.assertEqual({'recent': ['copy']}, restarted.load_json('History.json'))
 	def test_retained_value_saves_latest_state_after_directory_reload(self):
@@ -108,7 +107,7 @@ class ConfigTest(TestCase):
 		self._config.remove_dir(self._dir_1)
 		self._config.add_dir(self._dir_1)
 		self._config.on_quit()
-		restarted = Config(PLATFORM)
+		restarted = Config()
 		restarted.add_dir(self._dir_1)
 		self.assertEqual(history, restarted.load_json('History.json'))
 	def test_explicit_save_replaces_retained_value(self):
@@ -141,13 +140,13 @@ class ConfigTest(TestCase):
 				self._config.add_dir(self._dir_2)
 			self.assertIs(history, self._config.load_json('History.json'))
 		self._config.on_quit()
-		restarted = Config(PLATFORM)
+		restarted = Config()
 		restarted.add_dir(self._dir_2)
 		self.assertEqual({'recent': ['paste', 'copy']}, restarted.load_json('History.json'))
 	def test_retention_supports_lists_and_scalars(self):
 		for value in ([1, 2], 'text', 0, False):
 			with self.subTest(value=value):
-				config = Config(PLATFORM)
+				config = Config()
 				config.load_json('History.json', default=value, preserve_on_reload=True)
 				config.add_dir(self._dir_1)
 				config.remove_dir(self._dir_1)
@@ -171,7 +170,7 @@ class ConfigTest(TestCase):
 		copy(get_resource('ConfigTest/1/Test.json'), self._dir_1)
 		self._dir_2 = mkdtemp()
 		copy(get_resource('ConfigTest/2/Test.json'), self._dir_2)
-		self._config = Config(PLATFORM)
+		self._config = Config()
 	def tearDown(self):
 		rmtree(self._dir_1)
 		rmtree(self._dir_2)
@@ -190,7 +189,7 @@ class AppSettingsTest(TestCase):
 	def config(self):
 		from os import makedirs
 		makedirs(self.user, exist_ok=True)
-		config = Config('Windows', self.app_settings)
+		config = Config(self.app_settings, self.user)
 		config.add_dir(self.bundled)
 		config.add_dir(self.user)
 		return config
@@ -210,11 +209,43 @@ class AppSettingsTest(TestCase):
 		self.assertFalse(exists(join(self.user, 'AppSettings.yaml')))
 		self.assertEqual(value, self.config().load_json('AppSettings.yaml'))
 		self.assertEqual(self.app_settings, config.locate('AppSettings.yaml')[-1])
-		self.assertFalse(any('(Windows)' in path for path in config.locate('AppSettings.yaml')))
-		self.assertIn(join(self.bundled, 'Status Bar (Windows).yaml'), config.locate('Status Bar.yaml'))
+		self.assertEqual([join(self.bundled, 'Status Bar.yaml'), join(self.user, 'Status Bar.yaml')],
+			config.locate('Status Bar.yaml'))
 		self.assertNotIn(self.app_settings, config.locate('AppSettings.yaml', self.bundled))
-		self.assertNotIn(self.app_settings, config.locate('Status Bar.yaml'))
-		self.assertNotIn(self.app_settings, Config('Windows').locate('AppSettings.yaml'))
+		self.assertNotIn(self.app_settings, Config().locate('AppSettings.yaml'))
+
+	def test_plugin_defaults_get_commented_user_copies_once(self):
+		import yaml
+		with open(join(self.bundled, 'Status Bar.yaml'), 'w', encoding='utf-8') as file:
+			file.write('# Status bar: shipped header.\n\n# Mode comment.\nmode: disabled\nlimits:\n  max: 5\n')
+		for name in ('Key Bindings.yaml', 'File Context Menu.yaml', 'Folder Context Menu.yaml'):
+			with open(join(self.bundled, name), 'w', encoding='utf-8') as file:
+				file.write('- {keys: [F5], command: copy}\n')
+		config = self.config()
+		config.create_user_settings(self.bundled)
+		app = self.read(self.app_settings)
+		self.assertIn('# archive_handlers:', app)
+		self.assertIsNone(yaml.safe_load(app))
+		status = self.read(join(self.user, 'Status Bar.yaml'))
+		self.assertNotIn('shipped header', status)
+		self.assertIn('# Mode comment.\n# mode: disabled\n# limits:\n#   max: 5\n', status)
+		self.assertIsNone(yaml.safe_load(status))
+		for name in ('Key Bindings.yaml', 'File Context Menu.yaml', 'Folder Context Menu.yaml'):
+			text = self.read(join(self.user, name))
+			self.assertNotIn('copy}', text)
+			self.assertIsNone(yaml.safe_load(text))
+		self.assertEqual({'mode': 'disabled', 'limits': {'max': 5}}, config.load_json('Status Bar.yaml'))
+		with open(join(self.user, 'Status Bar.yaml'), 'w', encoding='utf-8') as file:
+			file.write('mode: single\n')
+		config.create_user_settings(self.bundled)
+		self.assertEqual('mode: single\n', self.read(join(self.user, 'Status Bar.yaml')))
+		config.create_user_settings(self.user)
+		self.assertEqual('mode: single\n', self.read(join(self.user, 'Status Bar.yaml')))
+
+	def test_no_user_folder_creates_nothing(self):
+		config = Config(self.app_settings)
+		config.create_user_settings(self.bundled)
+		self.assertFalse(exists(self.app_settings))
 
 	def test_saves_keep_user_comments(self):
 		with open(self.app_settings, 'w', encoding='utf-8') as file:

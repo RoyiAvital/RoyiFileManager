@@ -1,4 +1,3 @@
-from fman import PLATFORM
 from fman_integrationtest.plugin_tests import PluginTest
 from os.path import join
 
@@ -36,16 +35,6 @@ class LoadSaveJsonTest(PluginTest):
 			['user', 'installed', 'shipped'],
 			self._plugin_support.load_json('Test.json')
 		)
-	def test_load_json_platform_overwrites(self):
-		with open(join(self._shipped_plugin, 'Test.json'), 'w') as f:
-			json.dump({'a': 1, 'b': 2}, f)
-		json_platform = 'Test (%s).json' % PLATFORM
-		with open(join(self._shipped_plugin, json_platform), 'w') as f:
-			json.dump({'b': 'overwritten'}, f)
-		self.assertEqual(
-			{'a': 1, 'b': 'overwritten'},
-			self._plugin_support.load_json('Test.json')
-		)
 	def test_load_json_caches(self):
 		with open(join(self._shipped_plugin, 'Test.json'), 'w') as f:
 			json.dump({'a': 1}, f)
@@ -54,8 +43,8 @@ class LoadSaveJsonTest(PluginTest):
 	def test_save_json(self):
 		d = {'test_save_json': {'title': 'caf\u00e9', 'items': [1, True, None]}}
 		self._plugin_support.save_json('Test.json', d)
-		json_platform = join(self._settings_plugin, 'Test (%s).json' % PLATFORM)
-		with open(json_platform, 'r') as f:
+		saved = join(self._settings_plugin, 'Test.json')
+		with open(saved, 'r') as f:
 			text = f.read()
 			self.assertEqual(d, json.loads(text))
 			self.assertEqual(json.dumps(d, indent=2) + '\n', text)

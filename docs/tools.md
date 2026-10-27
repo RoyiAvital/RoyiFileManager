@@ -129,6 +129,13 @@ the reason. Choose a delimiter, encoding or header option, then press **Retry**.
 Table View reads UTF-8, UTF-16 LE with a byte order mark, and Latin-1. Windows
 "ANSI" files are refused rather than shown with wrong characters.
 
+Table View uses [DuckDB](https://duckdb.org)'s strict CSV rules (as in RFC 4180)
+for both CSV and TSV: `"` starts a quoted field, which may hold delimiters, line
+breaks and doubled quotes (`""`). A field that starts with `"` must be a complete
+quoted field. TSV files are read the same way, with Tab as the delimiter.
+Plain TSV, where `"` is an ordinary character, loads unless a field starts with `"`.
+Files that break these rules are not loaded and the reason is shown.
+
 #### Table Size Presets
 
 Run **Set QuickView table limit** in the Command Center to choose the largest file

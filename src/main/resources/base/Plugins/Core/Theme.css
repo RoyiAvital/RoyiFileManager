@@ -47,3 +47,11 @@ th {
 .quicksearch-item-description {
 	color: #8f908a;
 }
+
+* {
+	font-family: "Roboto Bold";
+}
+
+.locationbar {
+	padding: 1ex;
+}

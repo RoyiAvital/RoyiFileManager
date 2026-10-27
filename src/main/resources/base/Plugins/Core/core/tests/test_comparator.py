@@ -145,7 +145,7 @@ class ComparatorWizardTest(TestCase):
 	def setUp(self):
 		self.directory = TemporaryDirectory()
 		self.addCleanup(self.directory.cleanup)
-		self.config = Config('Windows')
+		self.config = Config()
 		self.config.add_dir(self.directory.name)
 		self.original = {'file_comparator': {'executable': sys.executable, 'arguments': ['--files']},
 			'folder_comparator': {'executable': sys.executable, 'arguments': ['--folders']},
@@ -164,7 +164,7 @@ class ComparatorWizardTest(TestCase):
 		self.mocks['show_prompt'].return_value = ('', True)
 
 	def assert_persisted(self, expected):
-		reloaded = Config('Windows')
+		reloaded = Config()
 		reloaded.add_dir(self.directory.name)
 		self.assertEqual(expected, reloaded.load_json(SETTINGS))
 
@@ -213,7 +213,7 @@ class ComparatorWizardTest(TestCase):
 			self.config.save_json(SETTINGS, deepcopy(self.original))
 			self.mocks['show_quicksearch'].return_value = ('', 'Clear %s comparator' % role)
 			configure(role)
-			reloaded = Config('Windows')
+			reloaded = Config()
 			reloaded.add_dir(self.directory.name)
 			self.assertEqual(self.original, reloaded.load_json(SETTINGS))
 			reloaded.add_dir(str(Path(self.directory.name, 'user')))

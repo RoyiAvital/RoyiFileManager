@@ -1,5 +1,6 @@
+from glob import glob
 from os import makedirs, getpid, unlink, replace
-from os.path import dirname, splitext, join
+from os.path import basename, dirname, exists, join
 from threading import RLock
 
 import json
@@ -10,9 +11,9 @@ APP_SETTINGS = 'AppSettings.yaml'
 SETTINGS_SUFFIX = '.yaml'
 
 class Config:
-	def __init__(self, platform, app_settings_path=None):
-		self._platform = platform
+	def __init__(self, app_settings_path=None, user_settings_dir=None):
 		self._app_settings_path = app_settings_path
+		self._user_settings_dir = user_settings_dir
 		self._plugin_dirs = []
 		self._cache = {}
 		self._save_on_quit = set()
@@ -50,17 +51,27 @@ class Config:
 			self._cache[json_name] = value
 	def locate(self, file_name, in_dir=None):
 		with self._lock:
-			base, ext = splitext(file_name)
-			platform_specific_name = '%s (%s)%s' % (base, self._platform, ext)
-			result = []
 			dirs_to_search = [in_dir] if in_dir else self._plugin_dirs
-			for dir_ in dirs_to_search:
-				result.append(join(dir_, file_name))
-				if file_name != APP_SETTINGS:
-					result.append(join(dir_, platform_specific_name))
+			result = [join(dir_, file_name) for dir_ in dirs_to_search]
 			if in_dir is None and file_name == APP_SETTINGS and self._app_settings_path:
 				result.append(self._app_settings_path)
 			return result
+	def create_user_settings(self, plugin_dir):
+		"""Give each settings file plugin_dir ships a commented user copy, if missing."""
+		if not self._user_settings_dir:
+			return
+		for defaults in sorted(glob(join(plugin_dir, '*' + SETTINGS_SUFFIX))):
+			name = basename(defaults)
+			target = self._app_settings_path if name == APP_SETTINGS else \
+				join(self._user_settings_dir, name)
+			if not target or exists(target):
+				continue
+			makedirs(dirname(target), exist_ok=True)
+			try:
+				with open(target, 'x', encoding='utf-8', newline='\n') as file:
+					file.write(settings_template(defaults))
+			except FileExistsError:
+				pass
 	def on_quit(self):
 		with self._lock:
 			for json_name in self._save_on_quit:
@@ -110,6 +121,53 @@ def read_json_file(path):
 
 def is_settings_file(path):
 	return str(path).lower().endswith(SETTINGS_SUFFIX)
+
+_LIST_TEMPLATES = {
+	'Key Bindings.yaml': (
+		'# Key bindings: your additions and overrides; they take precedence over the bundled ones.\n'
+		'# Each entry: {keys: [Shortcut], command: command_name, args: {name: value}}; args is optional.\n'
+		'# "Show keyboard shortcuts" (F1) lists the active bindings; "Reload plugins" applies changes.\n'
+		'# Examples (remove the leading "# " to use):\n'
+		'# - {keys: [Ctrl+Alt+F], command: find_files}\n'
+		'# - {keys: [Delete], command: none}  # Disables a bundled shortcut.\n'
+	),
+	'File Context Menu.yaml': (
+		'# File context menu: your additions to the bundled menu.\n'
+		'# Each entry: {command: command_name, caption: Text, args: {...}, id: section};\n'
+		'# caption "-" is a separator. "Reload plugins" applies changes.\n'
+		'# Example (remove the leading "# " to use):\n'
+		"# - {caption: '-', id: clipboard}\n"
+		'# - {command: copy_file_path, caption: Copy full path}\n'
+	),
+	'Folder Context Menu.yaml': (
+		'# Folder (empty pane space) context menu: your additions to the bundled menu.\n'
+		'# Each entry: {command: command_name, caption: Text, args: {...}, id: section};\n'
+		'# caption "-" is a separator. "Reload plugins" applies changes.\n'
+		'# Example (remove the leading "# " to use):\n'
+		'# - {command: create_directory, caption: New folder}\n'
+	),
+}
+
+def settings_template(defaults_path):
+	"""User settings text: the defaults file with every option commented out."""
+	name = basename(defaults_path)
+	if name in _LIST_TEMPLATES:
+		return _LIST_TEMPLATES[name]
+	with open(defaults_path, encoding='utf-8-sig') as file:
+		lines = file.read().splitlines()
+	while lines and lines[0].startswith('#'):
+		lines.pop(0)
+	while lines and not lines[0].strip():
+		lines.pop(0)
+	header = [
+		'# %s: your settings; they override the bundled defaults.' % name,
+		'# Lines starting with "# " show the defaults. To change an option, remove "# " from',
+		'# its line and from its indented lines, then edit the value. Restart to apply.',
+		'',
+	]
+	body = [line if not line.strip() or line.lstrip().startswith('#') else '# ' + line
+		for line in lines]
+	return '\n'.join(header + body) + '\n'
 
 def read_settings_file(path):
 	"""Read a YAML settings file or a JSON file; a YAML file with only comments returns None."""

@@ -203,8 +203,8 @@ max_results: 100
 show_metadata: false
 ```
 
-Create
-`UserSettings/Plugins/User/Settings/SearchFileFuzzy (Windows).yaml` to override individual
+Edit
+`UserSettings/Plugins/User/Settings/SearchFileFuzzy.yaml` to override individual
 values without changing the bundled plug-in. Set `mode` to `fuzzy` for
 subsequence matching or `regular` for normalized, case-insensitive substring
 matching. `max_recursive_entries` bounds the number of files and directories

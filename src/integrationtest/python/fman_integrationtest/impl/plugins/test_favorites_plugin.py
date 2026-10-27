@@ -1,4 +1,4 @@
-from fman import PLATFORM, Window
+from fman import Window
 from fman.impl.plugins.command_registry import ApplicationCommandRegistry, \
 	PaneCommandRegistry
 from fman.impl.plugins.config import Config
@@ -36,7 +36,7 @@ class FavoritesPluginTest(TestCase):
 		plugin_path = Path(__file__).resolve().parents[5] / 'main' / \
 			'resources' / 'base' / 'Plugins' / 'Favorites'
 		with TemporaryDirectory() as settings_path:
-			config = Config(PLATFORM)
+			config = Config()
 			error_handler = StubErrorHandler()
 			callback = StubCommandCallback()
 			pane_registry = PaneCommandRegistry(error_handler, callback)
@@ -89,7 +89,7 @@ class FavoritesPluginTest(TestCase):
 			})
 			config.save_json('Favorites.json', settings)
 
-			destination = Path(settings_path) / 'Favorites (Windows).json'
+			destination = Path(settings_path) / 'Favorites.json'
 			self.assertTrue(destination.is_file())
 			plugin.unload()
 			self.assertFalse(owner.active)

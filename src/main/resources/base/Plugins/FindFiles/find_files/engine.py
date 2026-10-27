@@ -263,6 +263,11 @@ class Collector:
 		self.limited = False
 
 	def accept(self, raw):
+		if self.limited or len(self.rows) >= self.options.max_rows:
+			# Discarded rows are never shown or used, so only count them.
+			self.limited = True
+			self.total += 1
+			return
 		relative = raw.decode('utf-8', errors='strict')
 		if relative.startswith('./'):
 			relative = relative[2:]
@@ -275,7 +280,7 @@ class Collector:
 		relative = os.path.relpath(path, root).replace(os.sep, '/')
 		self.total += 1
 		size = len(path.encode('utf-8')) + len(relative.encode('utf-8')) + 256
-		if self.limited or len(self.rows) >= self.options.max_rows or self.text_bytes + size > self.options.max_text_bytes:
+		if self.text_bytes + size > self.options.max_text_bytes:
 			self.limited = True
 			return
 		self.rows.append(Hit(path, relative))

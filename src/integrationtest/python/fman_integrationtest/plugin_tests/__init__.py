@@ -1,4 +1,4 @@
-from fman import PLATFORM, Window, DirectoryPane
+from fman import Window, DirectoryPane
 from fman.impl.plugins import PluginSupport, SETTINGS_PLUGIN_NAME, PluginFactory
 from fman.impl.plugins.command_registry import PaneCommandRegistry, \
 	ApplicationCommandRegistry
@@ -29,7 +29,7 @@ class PluginTest(TestCase):
 			join(self._thirdparty_plugins, 'Simple Plugin')
 		src_dir = get_resource('Simple Plugin')
 		copytree(src_dir, self._thirdparty_plugin)
-		config = Config(PLATFORM)
+		config = Config()
 		self._error_handler = StubErrorHandler()
 		self._command_callback = StubCommandCallback()
 		key_bindings = KeyBindings()

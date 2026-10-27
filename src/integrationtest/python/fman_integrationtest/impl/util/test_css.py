@@ -172,15 +172,13 @@ class ParseCSSTest(TestCase):
 			with self.subTest(filename=filename):
 				self.assertEqual(expected, _fingerprint(parse_css(path.read_bytes())))
 	def test_generated_theme_snapshots(self):
-		for platform, expected in _THEME_SNAPSHOTS.items():
-			with self.subTest(platform=platform):
+		for name, expected in _THEME_SNAPSHOTS.items():
+			with self.subTest(name=name):
 				app = Mock()
 				theme = Theme(app, [])
 				theme.load(str(_CORE / 'Theme.css'))
-				if platform == 'Plugin':
+				if name == 'Plugin':
 					theme.load(str(_PLUGIN_THEME))
-				elif platform != 'Base':
-					theme.load(str(_CORE / ('Theme (%s).css' % platform)))
 				theme.enable_updates()
 				self.assertEqual(expected, _fingerprint({
 					'qss': app.set_style_sheet.call_args.args[0],
@@ -198,14 +196,12 @@ _CORE = Path(__file__).resolve().parents[5] / 'main/resources/base/Plugins/Core'
 _PLUGIN_THEME = Path(__file__).resolve().parents[4] / \
 	'resources/Simple Plugin/Theme.css'
 _RULE_SNAPSHOTS = {
-	'Theme.css': 'c67d0639ccd7db33ab5daab2488ef3e8bc5e3727f37d5eabeb5b7b9794954566',
-	'Theme (Windows).css': '6bae24eaf5a5982ce36fbed375dda00e13738ac0969e68f42da4920de89b5725',
+	'Theme.css': '2a87d3dc0a1c2f6ff8a5be501508113022f8422c2b14b198afb3973325a9e12a',
 	'Simple Plugin': '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945',
 }
 _THEME_SNAPSHOTS = {
-	'Base': '3e9de47c28b61641630c01c227042107c054caec9630b49452b4243e5707c21d',
-	'Windows': '26dea67b39a9aff7a398b509758efe53f52802ebcc7a63ebf3de4814b9716320',
-	'Plugin': '3e9de47c28b61641630c01c227042107c054caec9630b49452b4243e5707c21d',
+	'Base': 'd7501531b488931b763c6e765cf4aae5e1e9327aebe4fd49fc881e94e1b3cc08',
+	'Plugin': 'd7501531b488931b763c6e765cf4aae5e1e9327aebe4fd49fc881e94e1b3cc08',
 }
 
 _TEST_CSS = \

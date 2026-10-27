@@ -55,14 +55,22 @@ class SessionManager:
 		thread_args = (panes, pane_infos, sys.argv[1:])
 		Thread(target=self._init_panes, args=thread_args).start()
 	def _restore_window_geometry(self, main_window):
-		geometry_b64 = self._settings.get('window_geometry', None)
-		if geometry_b64:
-			main_window.restoreGeometry(_decode(geometry_b64))
-		window_state_b64 = self._settings.get('window_state', None)
-		if window_state_b64:
-			main_window.restoreState(
-				_decode(window_state_b64), self._MAIN_WINDOW_VERSION
-			)
+		geometry = self._decoded_setting('window_geometry')
+		if geometry is not None and not main_window.restoreGeometry(geometry):
+			self._settings.pop('window_geometry', None)
+		window_state = self._decoded_setting('window_state')
+		if window_state is not None:
+			main_window.restoreState(window_state, self._MAIN_WINDOW_VERSION)
+	def _decoded_setting(self, key):
+		value = self._settings.get(key, None)
+		if not value:
+			return None
+		try:
+			return _decode(value)
+		except (TypeError, ValueError):
+			_LOG.warning('Ignoring invalid session value %r.', key)
+			self._settings.pop(key, None)
+			return None
 	def _show_startup_messages(self, main_window):
 		previous_version = self._previous_app_version()
 		status_message = 'v%s ready.' % self._app_version

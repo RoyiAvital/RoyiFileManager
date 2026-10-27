@@ -37,18 +37,17 @@ from .goto import *
 
 class About(ApplicationCommand):
 	category = 'Application'
+	aliases = ('About', f'Zen of {APP_NAME}')
 	def __call__(self):
-		from fman.impl.application_context import get_application_context
-		version = get_application_context().build_settings['version']
-		show_alert(
-			f'{escape(APP_NAME)}<br>'
-			'Version: %s<br>API Version: 0.0.0<br>'
-			'Project: <a href="https://github.com/RoyiAvital/RoyiFileManager">'
-			'https://github.com/RoyiAvital/RoyiFileManager</a><br>'
-			'Documentation: <a href="https://royiavital.github.io/RoyiFileManager">'
-			'https://royiavital.github.io/RoyiFileManager</a>'
-			% escape(version)
-		)
+		_show_about()
+
+@run_in_main_thread
+def _show_about():
+	from core.about import AboutWindow
+	from fman.impl.application_context import get_application_context
+	context = get_application_context()
+	AboutWindow(APP_NAME, context.build_settings, context.get_resource('Icon.ico'),
+		context.main_window).show_centered()
 
 class Help(ApplicationCommand):
 	category = 'Application'
@@ -424,12 +423,12 @@ class EditSettings(ApplicationCommand):
 			show_alert('No text editor was set. Use "Set text editor" in Command Center '
 				'to define a text editor.')
 			return
-		from fman.impl.plugins.config import APP_SETTINGS
+		from fman.impl.plugins.config import APP_SETTINGS, settings_template
 		path = os.path.join(DATA_DIRECTORY, APP_SETTINGS)
 		try:
 			os.makedirs(DATA_DIRECTORY, exist_ok=True)
-			with open(path, 'x', encoding='utf-8') as file:
-				file.write(_app_settings_template())
+			with open(path, 'x', encoding='utf-8', newline='\n') as file:
+				file.write(settings_template(PurePath(__file__).parents[2] / APP_SETTINGS))
 		except FileExistsError:
 			pass
 		except OSError as error:
@@ -437,15 +436,6 @@ class EditSettings(ApplicationCommand):
 			return
 		if open_file(as_url(path), 'editor'):
 			show_status_message('Restart %s after saving settings.' % APP_NAME, timeout_secs=5)
-
-def _app_settings_template():
-	from fman.impl.plugins.config import APP_SETTINGS
-	defaults = PurePath(__file__).parents[2] / APP_SETTINGS
-	with open(defaults, encoding='utf-8') as file:
-		lines = file.read().splitlines()
-	header = ['# %s application settings. Values here override the defaults below.' % APP_NAME,
-		'# Uncomment a line and change its value, then restart %s.' % APP_NAME, '#']
-	return '\n'.join(header + [('# ' + line) if line else '#' for line in lines]) + '\n'
 
 class SetFileComparator(DirectoryPaneCommand):
 	category = 'Settings'
@@ -988,6 +978,10 @@ class CreateDirectory(DirectoryPaneCommand):
 				makedirs(dir_url)
 			except FileExistsError:
 				show_alert("A file with this name already exists!")
+			except OSError as error:
+				show_alert('Could not create %s: %s' % (
+					as_human_readable(dir_url), error.strerror or str(error)))
+				return
 			# Use normalize(...) instead of resolve(...) to avoid the following
 			# problem: Say c/ is a symlink to a/b/. We're inside c/ and create
 			# d. Then # resolve(c/d) would give a/b/d and the relative path
@@ -1592,21 +1586,6 @@ class Quit(ApplicationCommand):
 
 	def __call__(self):
 		sys.exit(0)
-
-class ZenOfFman(ApplicationCommand):
-	category = 'Application'
-	aliases = (f'Zen of {APP_NAME}',)
-	def __call__(self):
-		show_alert(
-			f"The Zen of {APP_NAME}\n\n"
-			"Looks matter\n"
-			"Speed counts\n"
-			"Extending must be easy\n"
-			"Customisability is important\n"
-			"But not at the expense of speed\n"
-			"I/O is better asynchronous\n"
-			"Don't reinvent the wheel"
-		)
 
 class OpenDataDirectory(DirectoryPaneCommand):
 	category = 'Application'

@@ -453,7 +453,7 @@ class PackTest(TestCase):
 	def test_same_folder_commands_are_exported_and_in_context_menu(self):
 		from core import DuplicateFile, PackHere
 		from pathlib import Path
-		menu_path = Path(__file__).resolve().parents[3] / 'File Context Menu (Windows).yaml'
+		menu_path = Path(__file__).resolve().parents[3] / 'File Context Menu.yaml'
 		entries = yaml.safe_load(menu_path.read_text(encoding='utf-8'))
 		for command_type, caption in ((DuplicateFile, 'Duplicate...'), (PackHere, 'Pack here...')):
 			with self.subTest(command=command_type.__name__):
@@ -894,7 +894,7 @@ class LiveRefreshSettingTest(TestCase):
 		from time import sleep
 		directory = TemporaryDirectory()
 		self.addCleanup(directory.cleanup)
-		self.config = Config('Windows')
+		self.config = Config()
 		self.config.add_dir(directory.name)
 		self.config.save_json('AppSettings.yaml', {'quickview_table_max_file_mb': 512})
 		def slow_save(name, value=None):
@@ -986,7 +986,7 @@ class EditSettingsTest(TestCase):
 			text = file.read()
 		self.assertIsNone(yaml.safe_load(text), 'The template must only contain comments')
 		self.assertIn('# live_refresh_during_file_operations: true', text)
-		self.assertIn('# # false: panes refresh once', text)
+		self.assertIn('\n# false: panes refresh once', text)
 		self.open_file.assert_called_once_with(as_url(self.path), 'editor')
 		self.show_alert.assert_not_called()
 		self.assertIn('Restart', self.show_status_message.call_args.args[0])
@@ -1019,29 +1019,14 @@ class EditSettingsTest(TestCase):
 
 
 class AboutTest(TestCase):
-	@patch('core.commands.show_alert')
-	def test_shows_product_version_from_build_settings(self, show_alert):
-		from pathlib import Path
-		settings_path = Path(__file__).resolve().parents[9] / 'src/build/settings/base.json'
-		version = json.loads(settings_path.read_text(encoding='utf-8'))['version']
-		context = Mock(build_settings={'version': version})
-		with patch('fman.impl.application_context.get_application_context', return_value=context):
+	def test_includes_the_zen_and_opens_the_about_window(self):
+		self.assertEqual(('About', f'Zen of {APP_NAME}'), About.aliases)
+		self.assertEqual('Application', About.category)
+		with patch('core.commands._show_about') as show:
 			About(Mock())()
-		show_alert.assert_called_once_with(
-			f'{APP_NAME}<br>'
-			'Version: %s<br>API Version: 0.0.0<br>'
-			'Project: <a href="https://github.com/RoyiAvital/RoyiFileManager">'
-			'https://github.com/RoyiAvital/RoyiFileManager</a><br>'
-			'Documentation: <a href="https://royiavital.github.io/RoyiFileManager">'
-			'https://royiavital.github.io/RoyiFileManager</a>'
-			% version
-		)
-	@patch('core.commands.show_alert')
-	def test_escapes_product_version_in_html(self, show_alert):
-		context = Mock(build_settings={'version': '<dev & test>'})
-		with patch('fman.impl.application_context.get_application_context', return_value=context):
-			About(Mock())()
-		self.assertIn('Version: &lt;dev &amp; test&gt;<br>', show_alert.call_args.args[0])
+		show.assert_called_once_with()
+		import core.commands
+		self.assertFalse(hasattr(core.commands, 'ZenOfFman'))
 
 class CommandPaletteHistoryTest(TestCase):
 	def setUp(self):
@@ -1052,9 +1037,9 @@ class CommandPaletteHistoryTest(TestCase):
 		self.temporary = TemporaryDirectory()
 		self.addCleanup(self.temporary.cleanup)
 		self.root = Path(self.temporary.name)
-		self.config = Config('Windows')
+		self.config = Config()
 		self.config.add_dir(str(self.root))
-		self.history_path = self.root / 'Command Palette History (Windows).json'
+		self.history_path = self.root / 'Command Palette History.json'
 		self.resource = Resource()
 		self.load_patch = patch('core.commands.load_json', side_effect=self.config.load_json)
 		self.load_patch.start()
@@ -1075,7 +1060,7 @@ class CommandPaletteHistoryTest(TestCase):
 		_recent_commands(executed=('application', 'quit'))
 		self.assertEqual([], list(self.root.iterdir()))
 		self.config.on_quit()
-		restarted = Config('Windows')
+		restarted = Config()
 		restarted.add_dir(str(self.root))
 		with patch('core.commands.load_json', side_effect=restarted.load_json):
 			self.assertEqual((('application', 'quit'),), _recent_commands())
@@ -1084,7 +1069,7 @@ class CommandPaletteHistoryTest(TestCase):
 		for contents in ('{', 'null', '[]', '42', '"history"'):
 			with self.subTest(contents=contents):
 				self.history_path.write_text(contents, encoding='utf-8')
-				config = Config('Windows')
+				config = Config()
 				config.add_dir(str(self.root))
 				with patch('core.commands.load_json', side_effect=config.load_json):
 					_recent_commands(executed=('pane', 'copy'))
@@ -1604,6 +1589,31 @@ class NewEmptyFileTest(TestCase):
 		pane.get_path.return_value = 'file:///folder'
 		return pane
 
+class CreateDirectoryTest(TestCase):
+	def test_os_errors_alert_with_reason(self):
+		from core.commands import CreateDirectory
+		pane = Mock()
+		pane.get_file_under_cursor.return_value = None
+		pane.get_path.return_value = 'file://C:/folder'
+		error = OSError(22, 'The filename, directory name, or volume label syntax is incorrect')
+		with patch('core.commands.show_prompt', return_value=('bad<name', True)), \
+				patch('core.commands.makedirs', side_effect=error), \
+				patch('core.commands.show_alert') as alert:
+			CreateDirectory(pane)()
+		alert.assert_called_once_with('Could not create C:\\folder\\bad<name: '
+			'The filename, directory name, or volume label syntax is incorrect')
+		pane.place_cursor_at.assert_not_called()
+	def test_existing_folder_alert_is_unchanged(self):
+		from core.commands import CreateDirectory
+		pane = Mock()
+		pane.get_file_under_cursor.return_value = None
+		pane.get_path.return_value = 'file://C:/folder'
+		with patch('core.commands.show_prompt', return_value=('existing', True)), \
+				patch('core.commands.makedirs', side_effect=FileExistsError()), \
+				patch('core.commands.show_alert') as alert:
+			CreateDirectory(pane)()
+		alert.assert_called_once_with('A file with this name already exists!')
+		pane.place_cursor_at.assert_called_once_with('file://C:/folder/existing')
 class TextEditorCommandsTest(TestCase):
 	def test_command_center_identifiers_and_aliases(self):
 		from core.commands import EditSettings

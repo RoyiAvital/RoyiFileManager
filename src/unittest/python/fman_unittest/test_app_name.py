@@ -18,7 +18,7 @@ class BuildSettingsTest(TestCase):
 	def test_valid_names_and_other_settings_are_preserved(self):
 		for name in ('RfmRenameProbe', 'build', 'App_2-x', 'A' * 64):
 			with self.subTest(name=name), TemporaryDirectory() as temporary:
-				path = Path(temporary) / 'base.json'
+				path = Path(temporary) / 'AppMeta.json'
 				settings = {'app_name': name, 'version': '9.8.7'}
 				path.write_text(json.dumps(settings), encoding='utf-8')
 				self.assertEqual(settings, load_build_settings(path))
@@ -30,7 +30,7 @@ class BuildSettingsTest(TestCase):
 			'CON', 'con', 'PRN', 'AUX', 'NUL', 'NUL.txt', 'COM1', 'COM9',
 			'LPT1', 'LPT9', '1App', '\u00e9App')
 		with TemporaryDirectory() as temporary:
-			path = Path(temporary) / 'base.json'
+			path = Path(temporary) / 'AppMeta.json'
 			for name in invalid:
 				with self.subTest(name=name):
 					path.write_text(json.dumps({'app_name': name}), encoding='utf-8')
@@ -41,7 +41,7 @@ class BuildSettingsTest(TestCase):
 
 	def test_missing_name_and_non_object_document_are_rejected(self):
 		with TemporaryDirectory() as temporary:
-			path = Path(temporary) / 'base.json'
+			path = Path(temporary) / 'AppMeta.json'
 			for settings in ({'version': '9.8.7'}, [], None):
 				with self.subTest(settings=settings):
 					path.write_text(json.dumps(settings), encoding='utf-8')
@@ -50,7 +50,7 @@ class BuildSettingsTest(TestCase):
 
 	def test_unreadable_or_malformed_settings_report_path(self):
 		with TemporaryDirectory() as temporary:
-			path = Path(temporary) / 'base.json'
+			path = Path(temporary) / 'AppMeta.json'
 			for contents in (None, '{'):
 				if contents is not None:
 					path.write_text(contents, encoding='utf-8')
@@ -61,13 +61,13 @@ class BuildSettingsTest(TestCase):
 	def test_development_path_is_canonical(self):
 		with patch.object(sys, 'frozen', False, create=True):
 			self.assertEqual(Path(__file__).resolve().parents[4] /
-				'src/build/settings/base.json', settings_path())
+				'src/build/settings/AppMeta.json', settings_path())
 
 	def test_frozen_settings_are_one_cached_snapshot(self):
 		from fbs_runtime.application_context.PyQt5 import ApplicationContext
 		get_build_settings.cache_clear()
 		with TemporaryDirectory() as temporary:
-			path = Path(temporary) / 'resources/build-settings/base.json'
+			path = Path(temporary) / 'resources/build-settings/AppMeta.json'
 			path.parent.mkdir(parents=True)
 			path.write_text(json.dumps({'app_name': 'RfmRenameProbe'}), encoding='utf-8')
 			with patch.object(sys, 'frozen', True, create=True), \
@@ -84,7 +84,7 @@ class BuildNamingTest(TestCase):
 	ROOT = Path(__file__).resolve().parents[4]
 
 	def _fixture(self, root, name):
-		settings_path = root / 'src/build/settings/base.json'
+		settings_path = root / 'src/build/settings/AppMeta.json'
 		settings_path.parent.mkdir(parents=True)
 		settings_path.write_text(json.dumps({
 			'app_name': name, 'version': '9.8.7'
@@ -158,7 +158,7 @@ class BuildNamingTest(TestCase):
 			self.assertEqual('RfmRenameProbe', executable.call_args.kwargs['name'])
 			self.assertTrue(executable.call_args.kwargs['console'])
 			self.assertEqual('RfmRenameProbe', collection.call_args.kwargs['name'])
-			self.assertIn(('src/build/settings/base.json', 'resources/build-settings'), spec['datas'])
+			self.assertIn(('src/build/settings/AppMeta.json', 'resources/build-settings'), spec['datas'])
 
 
 class NativeParserPackagingTest(TestCase):
@@ -432,7 +432,7 @@ class DocumentationNamingTest(TestCase):
 		hook = runpy.run_path(str(root / 'src/misc/docs_hooks.py'))
 		with TemporaryDirectory() as temporary:
 			fixture = Path(temporary)
-			path = fixture / 'src/build/settings/base.json'
+			path = fixture / 'src/build/settings/AppMeta.json'
 			path.parent.mkdir(parents=True)
 			path.write_text(json.dumps({'app_name': 'RfmRenameProbe'}), encoding='utf-8')
 			config = SimpleNamespace(config_file_path=str(fixture / 'mkdocs.yml'), extra={})
@@ -445,7 +445,7 @@ class DocumentationNamingTest(TestCase):
 			path.unlink()
 			self.assertEqual('# RfmRenameProbe\n```powershell\n.\\RfmRenameProbe.exe\n```\n' + unchanged,
 				hook['on_page_markdown'](markdown + unchanged, config=config))
-			with self.assertRaisesRegex(ValueError, 'base.json'):
+			with self.assertRaisesRegex(ValueError, 'AppMeta.json'):
 				hook['on_config'](config)
 			path.write_text(json.dumps({'app_name': 'CON'}), encoding='utf-8')
 			with self.assertRaisesRegex(ValueError, 'app_name'):

@@ -45,9 +45,9 @@ class ListingTest(TestCase):
 						_visible=visible, _scanning=True,
 						_listing=Listing.create(location, ('pending',)))
 					entries = ListingModel.get_status_entries(model, {selected_url})
-					self.assertIsInstance(entries, tuple)
+					self.assertEqual(len(visible), len(entries))
 					self.assertEqual(tuple(StatusEntry(join(location, listing.names[index]),
-						listing.is_dir[index], True, index == 1) for index in visible), entries)
+						listing.is_dir[index], True, index == 1) for index in visible), tuple(entries))
 
 	def test_provider_columns_are_detached_and_missing_metadata_is_explicit(self):
 		labels, pids = ['Example'], [123]
@@ -605,15 +605,17 @@ class SnapshotJobsTest(TestCase):
 			self.assertFalse(icons._pending)
 			ListingIcons.icon(icons, listing, 0)
 			self.assertEqual(2, thread.return_value.start.call_count)
-	def test_status_entries_join_each_visible_url_once(self):
+	def test_status_entries_capture_without_joining_and_join_each_url_once_when_iterated(self):
 		from types import SimpleNamespace
 		from unittest.mock import patch
 		from fman.impl.model.listing import ListingModel
 		from fman.url import join
 		model = SimpleNamespace(_location='file://C:/root', _visible=(0, 1),
 			_displayed=SimpleNamespace(names=('one', 'two'), is_dir=(False, True)))
-		with patch('fman.impl.model.listing.join', wraps=join) as joined:
+		with patch('fman.impl.status_bar.join', wraps=join) as joined:
 			entries = ListingModel.get_status_entries(model, {'file://C:/root/one'})
+			self.assertEqual(0, joined.call_count)
+			entries = tuple(entries)
 			self.assertEqual(2, joined.call_count)
 		self.assertTrue(entries[0].is_selected)
 		self.assertFalse(entries[1].is_selected)

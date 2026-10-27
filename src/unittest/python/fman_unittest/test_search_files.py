@@ -69,9 +69,9 @@ class SearchEngineTest(TestCase):
 		import search_files
 		plugin_root = Path(search_files.__file__).parents[1]
 		with TemporaryDirectory() as root:
-			user_file = Path(root, 'SearchFiles (Windows).yaml')
+			user_file = Path(root, 'SearchFiles.yaml')
 			user_file.write_text('# My search defaults\nmax_rows: 37  # enough\nother: 7\n', encoding='utf-8')
-			config = Config('Windows')
+			config = Config()
 			config.add_dir(str(plugin_root))
 			config.add_dir(root)
 			with patch('search_files.load_settings', side_effect=config.load_json), \
@@ -85,7 +85,7 @@ class SearchEngineTest(TestCase):
 				session.owner = SimpleNamespace(active=True)
 				session.panel = SimpleNamespace(cancelled=Event())
 				session.save_preferences()
-			reloaded = Config('Windows')
+			reloaded = Config()
 			reloaded.add_dir(str(plugin_root))
 			reloaded.add_dir(root)
 			self.assertEqual(dict(settings, name_mode='literal', other=7), reloaded.load_json(SETTINGS_NAME))

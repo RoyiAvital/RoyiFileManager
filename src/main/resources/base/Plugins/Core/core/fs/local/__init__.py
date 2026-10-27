@@ -21,6 +21,7 @@ from core.fs.local.windows.drives import DrivesFileSystem, DriveName
 from core.fs.local.windows.network import NetworkFileSystem
 
 _COPY_BUFFER_SIZE = 1024 * 1024
+_MIN_COPY_BUFFER_SIZE = 64 * 1024
 _REPARSE_NAME_SURROGATE = 0x20000000
 
 class LocalFileSystem(FileSystem):
@@ -375,6 +376,7 @@ class CopyFile(Task):
 		self._fs = fs
 		self._src_url = src_url
 		self._dst_url = dst_url
+		self.source_metadata = None
 	def __call__(self):
 		dst_urlpath = splitscheme(self._dst_url)[1]
 		src = as_human_readable(self._src_url)
@@ -390,7 +392,7 @@ class CopyFile(Task):
 			copystat(src, dst, follow_symlinks=False)
 		else:
 			with open(src, 'rb') as fsrc:
-				source = os.fstat(fsrc.fileno())
+				source = self.source_metadata = os.fstat(fsrc.fileno())
 				if destination is not None:
 					if not S_ISREG(destination.st_mode):
 						raise UnsupportedOperation('Cannot safely overwrite a linked or non-regular destination')
@@ -422,6 +424,7 @@ class CopyFile(Task):
 						os.chmod(temporary, copied_mode | S_IWRITE)
 					self.check_canceled()
 					self._publish(temporary, dst, destination)
+					temporary = None
 					if restore_mode:
 						try:
 							os.chmod(dst, copied_mode)
@@ -431,7 +434,8 @@ class CopyFile(Task):
 							raise
 				finally:
 					try:
-						os.unlink(temporary)
+						if temporary is not None:
+							os.unlink(temporary)
 					except PermissionError:
 						try:
 							os.chmod(temporary, S_IWRITE)
@@ -452,13 +456,15 @@ class CopyFile(Task):
 			directory = '\\\\?\\UNC\\' + directory[2:] if directory.startswith('\\\\') else '\\\\?\\' + directory
 		return directory
 	def _copy_bytes(self, fsrc, fdst):
+		size = self.source_metadata.st_size if self.source_metadata else _COPY_BUFFER_SIZE
+		buffer = memoryview(bytearray(min(max(size, _MIN_COPY_BUFFER_SIZE), _COPY_BUFFER_SIZE)))
 		num_written = 0
 		while True:
 			self.check_canceled()
-			buffer = fsrc.read(_COPY_BUFFER_SIZE)
-			if not buffer:
+			count = fsrc.readinto(buffer)
+			if not count:
 				break
-			num_written += fdst.write(buffer)
+			num_written += fdst.write(buffer[:count])
 			self.set_progress(num_written)
 	def _publish(self, temporary, destination_path, destination):
 		if destination is None:
@@ -504,7 +510,19 @@ class MoveByCopying(Task):
 		self._src_url = src_url
 		self._dst_url = dst_url
 	def __call__(self, *args, **kwargs):
-		self._fs.copy(self._src_url, self._dst_url)
+		copy = CopyFile(self._fs, self._src_url, self._dst_url, self.get_size())
+		self.run(copy)
+		self.check_canceled()
+		source = as_human_readable(self._src_url)
+		try:
+			current = os.lstat(source)
+		except FileNotFoundError:
+			current = None
+		copied = copy.source_metadata
+		if current is None or copied is None or any(getattr(current, name) != getattr(copied, name)
+				for name in ('st_ino', 'st_dev', 'st_size', 'st_mtime_ns')):
+			raise OSError(errno.EBUSY, 'Source changed while it was copied; the source was kept and '
+				'the destination may not match it', source)
 		self._fs.delete(splitscheme(self._src_url)[1])
 
 class DeleteIfEmpty(Task):

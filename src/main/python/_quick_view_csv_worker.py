@@ -40,6 +40,8 @@ FETCH_BYTES = 4 * MiB
 FOLD_BUCKETS = ((-1, 4096), (4096, 65536), (65536, MiB), (MiB, 4 * FIELD_CHARS))
 # Casefolding can triple a field's code points and CSV quoting doubles quotes.
 FOLD_LINE_BYTES = 2 * FIELD_CHARS * 4 * 3 + 64
+PARSE_HINT = (' Table View follows DuckDB\'s strict CSV rules; for example, a field that starts with " '
+	'must be a complete quoted field.')
 
 
 class CsvError(ValueError):
@@ -206,6 +208,8 @@ def describe(error):
 			break
 		if len(message) < 300:
 			message += ' ' + line
+	# The sniffer's list of tried options does not help the user.
+	message = message.split(' The search space used was', 1)[0]
 	return message[:512]
 
 
@@ -214,6 +218,9 @@ def classify(error):
 	lowered = text.lower()
 	if 'out of memory' in lowered or ('disk' in lowered and 'space' in lowered):
 		return 'resource'
+	# The sniffer lists its encoding among the options it tried.
+	if 'parsing dialect' in lowered:
+		return 'parse'
 	if 'not latin-1 encoded' in lowered or 'unicode' in lowered or 'encoding' in lowered:
 		return 'encoding'
 	if 'maximum line size' in lowered or 'max_line_size' in lowered:
@@ -289,7 +296,8 @@ class Engine:
 	def _failure(self, error, kind=None):
 		if self._interrupted.is_set() or type(error).__name__ == 'InterruptException':
 			return Canceled()
-		return CsvError(describe(error), kind or classify(error))
+		kind = kind or classify(error)
+		return CsvError(describe(error) + (PARSE_HINT if kind == 'parse' else ''), kind)
 
 	def _space_problem(self):
 		if self.directory is None:
@@ -349,14 +357,14 @@ class Engine:
 
 	# -- open/import ---------------------------------------------------------------------
 
-	def open(self, path, limit, memory_mib, options, emit):
+	def open(self, path, limit, memory_mib, options, emit, directory=None):
 		try:
-			return self._open(path, limit, memory_mib, options, emit)
+			return self._open(path, limit, memory_mib, options, emit, directory)
 		except BaseException:
 			self.release()
 			raise
 
-	def _open(self, path, limit, memory_mib, options, emit):
+	def _open(self, path, limit, memory_mib, options, emit, directory):
 		import duckdb
 		self.release()
 		if not isinstance(path, str) or not os.path.isabs(path):
@@ -379,7 +387,12 @@ class Engine:
 		if free < self.quota + FREE_RESERVE:
 			raise CsvError('Not enough free space for the Table View cache: %s required, %s available.' % (
 				_bytes(self.quota + FREE_RESERVE), _bytes(free)), 'resource')
-		self.directory = os.path.join(self.root, 's-%d-%s' % (os.getpid(), uuid.uuid4().hex[:12]))
+		if directory is None:
+			directory = os.path.join(self.root, 's-%d-%s' % (os.getpid(), uuid.uuid4().hex[:12]))
+		elif (not isinstance(directory, str) or os.path.normcase(os.path.dirname(directory)) != os.path.normcase(self.root)
+				or not os.path.basename(directory).startswith('s-') or os.path.lexists(directory)):
+			raise CsvError('Invalid cache folder', 'access')
+		self.directory = directory
 		os.makedirs(os.path.join(self.directory, 'tmp'))
 		encoding = detect_encoding(path, options.get('encoding', 'auto'))
 		connection = duckdb.connect(os.path.join(self.directory, 'table.duckdb'), config={
@@ -604,7 +617,7 @@ class Engine:
 			parameters.extend([text.casefold()] * len(self.columns))
 		if not conditions and sort is None:
 			self.projection = None
-			return {'count': self.count}
+			return {'count': self.count, 'folded': sorted(self.folded)}
 		order = 'rid' if sort is None else 'f%d %s, rid' % (sort[0], 'DESC' if sort[1] else 'ASC')
 		where = (' WHERE ' + ' AND '.join(conditions)) if conditions else ''
 		connection = self.connection
@@ -624,7 +637,7 @@ class Engine:
 		except Exception as error:
 			raise CsvError(describe(error), 'resource' if classify(error) == 'resource' else 'query') from None
 		self.projection = count
-		return {'count': count}
+		return {'count': count, 'folded': sorted(self.folded)}
 
 	def _check_filter(self, item):
 		if (not isinstance(item, list) or len(item) != 3 or type(item[0]) is not int or
@@ -824,7 +837,7 @@ def main(root=None):
 						raise CsvError('Invalid cache folder', 'access')
 					options = command.get('options') if isinstance(command.get('options'), dict) else {}
 					result = engine.open(command.get('path'), command.get('limit'), command.get('memory'), options,
-						lambda name, header, payload: send(dict(identity, type=name, **header), payload))
+						lambda name, header, payload: send(dict(identity, type=name, **header), payload), command.get('directory'))
 					send(dict(identity, type='imported', **result))
 				elif kind == 'query':
 					send(dict(identity, type='projection', **engine.query(command.get('filters'), command.get('text', ''), command.get('sort'))))
@@ -833,7 +846,8 @@ def main(root=None):
 					send(dict(identity, type='page', **header), payload)
 				elif kind == 'copy':
 					header, payload = engine.copy(command.get('rows'), command.get('columns'), command.get('headers') is True, command.get('labels'))
-					send(dict(identity, type='copy', **header), payload)
+					# Raw UTF-8: JSON would expand control characters up to six times past the frame limit.
+					send(dict(identity, type='copy', **header), payload['text'].encode('utf-8'))
 				elif kind == 'cell':
 					header, payload = engine.cell(command.get('position'), command.get('column'))
 					send(dict(identity, type='cell', **header), payload)

@@ -53,6 +53,18 @@ QuickList QLineEdit {
 	border: 1px solid palette(mid);
 }
 
+#about {
+	border: 1px solid palette(mid);
+}
+
+#about-version, #about-hint {
+	color: palette(button-text);
+}
+
+#about-separator {
+	color: palette(light);
+}
+
 #output-text-box {
 	background-color: palette(base);
 	border: 1px solid palette(mid);

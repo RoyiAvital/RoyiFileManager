@@ -35,7 +35,7 @@ def source_hash(*paths):
 
 
 def provenance():
-	settings = json.loads((ROOT / 'src/build/settings/base.json').read_text(encoding='utf-8'))
+	settings = json.loads((ROOT / 'src/build/settings/AppMeta.json').read_text(encoding='utf-8'))
 	version = settings['version']
 	if not re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', version):
 		raise ValueError('Application version must be X.Y.Z')

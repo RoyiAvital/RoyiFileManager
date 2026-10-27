@@ -7,8 +7,8 @@ import sys
 
 def settings_path():
 	if getattr(sys, 'frozen', False):
-		return Path(sys._MEIPASS) / 'resources/build-settings/base.json'
-	return Path(__file__).resolve().parents[4] / 'src/build/settings/base.json'
+		return Path(sys._MEIPASS) / 'resources/build-settings/AppMeta.json'
+	return Path(__file__).resolve().parents[4] / 'src/build/settings/AppMeta.json'
 
 
 def load_build_settings(path):

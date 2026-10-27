@@ -1,0 +1,5 @@
+# QuickView: bundled defaults.
+# Override any value in UserSettings\Plugins\User\Settings\QuickView.yaml.
+
+# Image display mode: fit (fit the preview) or actual_size (100%).
+image_mode: fit

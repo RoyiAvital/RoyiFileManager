@@ -41,6 +41,10 @@ class RecordingReader(BytesIO):
 		self.read_sizes.append(size)
 		return super().read(size if self.limit is None else min(size, self.limit))
 
+	def readinto(self, buffer):
+		self.read_sizes.append(len(buffer))
+		return super().readinto(buffer if self.limit is None else memoryview(buffer)[:self.limit])
+
 
 def payload(size):
 	return (bytes(range(256)) * ((size + 255) // 256))[:size]
@@ -55,6 +59,7 @@ class SmallCopyBufferTest(TestCase):
 				content = payload(length)
 				source, destination = RecordingReader(content), BytesIO()
 				task = Task('Copy buffer probe', size=hint)
+				task.source_metadata = None
 				with patch(__name__ + '._original_copy_bytes', wraps=_original_copy_bytes) as original:
 					small_copy_bytes(task, source, destination)
 					if 0 < hint <= SMALL_BUFFER_SIZE:

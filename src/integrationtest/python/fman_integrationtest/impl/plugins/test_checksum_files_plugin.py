@@ -101,7 +101,7 @@ class ChecksumFilesPluginTest(TestCase):
 
 
 def native_smoke(path):
-    from fman import PLATFORM, Window
+    from fman import Window
     from fman.impl.plugins.command_registry import ApplicationCommandRegistry, PaneCommandRegistry
     from fman.impl.plugins.config import Config
     from fman.impl.plugins.context_menu import ContextMenuProvider
@@ -113,7 +113,7 @@ def native_smoke(path):
     from threading import Event, Thread
     from unittest.mock import Mock
 
-    config = Config(PLATFORM)
+    config = Config()
     errors = StubErrorHandler()
     callback = StubCommandCallback()
     pane_registry = PaneCommandRegistry(errors, callback)

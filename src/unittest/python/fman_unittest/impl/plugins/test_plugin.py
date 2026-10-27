@@ -57,6 +57,25 @@ class PluginServiceTest(TestCase):
 		disposed.assert_called_once_with()
 		self.assertEqual([], plugin._services)
 
+class ReportExceptionsTest(TestCase):
+	def test_system_exit_quits_without_error_report(self):
+		from fman.impl.plugins.plugin import ReportExceptions
+		for code, expected in ((None, 0), (0, 0), (3, 3)):
+			with self.subTest(code=code):
+				handler = Mock()
+				with ReportExceptions(handler, 'Command Quit raised error.'):
+					raise SystemExit(code)
+				handler.handle_system_exit.assert_called_once_with(expected)
+				handler.report.assert_not_called()
+
+	def test_other_errors_are_still_reported(self):
+		from fman.impl.plugins.plugin import ReportExceptions
+		handler, error = Mock(), ValueError('broken')
+		with ReportExceptions(handler, 'Command X raised error.') as context:
+			raise error
+		handler.report.assert_called_once_with('Command X raised error.', error)
+		self.assertIs(error, context.exception)
+
 class GetCommandNameTest(TestCase):
 	def test_single_letter(self):
 		self.assertEqual('c', _get_command_name('C'))

@@ -74,7 +74,7 @@ class TextEditorWizardTest(TestCase):
 	def setUp(self):
 		self.directory = TemporaryDirectory()
 		self.addCleanup(self.directory.cleanup)
-		self.config = Config('Windows')
+		self.config = Config()
 		self.config.add_dir(self.directory.name)
 		self.original = {'editor': {'executable': sys.executable, 'arguments': []},
 			'viewer': {'executable': sys.executable, 'arguments': ['--viewer']},
@@ -96,7 +96,7 @@ class TextEditorWizardTest(TestCase):
 		Path(self.target).touch()
 
 	def assert_persisted(self, expected):
-		reloaded = Config('Windows')
+		reloaded = Config()
 		reloaded.add_dir(self.directory.name)
 		self.assertEqual(expected, reloaded.load_json(SETTINGS))
 
@@ -153,7 +153,7 @@ class TextEditorWizardTest(TestCase):
 	def test_clear_masks_inherited_settings_after_reload(self):
 		base = str(Path(self.directory.name, 'base'))
 		user = str(Path(self.directory.name, 'user'))
-		config = Config('Windows')
+		config = Config()
 		config.add_dir(base)
 		config.save_json(SETTINGS, deepcopy(self.original))
 		config.add_dir(user)
@@ -164,7 +164,7 @@ class TextEditorWizardTest(TestCase):
 				config.save_json(SETTINGS, deepcopy(self.original))
 				self.mocks['show_quicksearch'].return_value = ('', 'Clear %s' % role)
 				configure(role)
-				reloaded = Config('Windows')
+				reloaded = Config()
 				reloaded.add_dir(base)
 				self.assertEqual(self.original, reloaded.load_json(SETTINGS))
 				reloaded.add_dir(user)

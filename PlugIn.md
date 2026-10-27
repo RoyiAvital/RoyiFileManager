@@ -87,8 +87,7 @@ not discovered automatically. Use unique package names to avoid module collision
 Avoid importing other plug-ins' concrete extension classes into that namespace.
 
 Loading also registers YAML configuration, root-level `.ttf` fonts, `Theme.css`,
-key bindings, and context menus. Platform variants such as
-`Key Bindings (Windows).yaml` and `Theme (Windows).css` are supported. On unload,
+key bindings, and context menus. File names have no platform variants. On unload,
 UI owners are invalidated before registrations and package modules are removed.
 There is no general documented `plugin_loaded()`/`plugin_unloaded()` hook; do not
 assume arbitrary import-time threads will be cleaned up by the loader.
@@ -303,24 +302,26 @@ Do not manipulate Qt widgets from notification threads.
 | `load_json(name, default=None, save_on_quit=False, *, preserve_on_reload=False)` | Load merged internal state from `<Name>.json` files. Same layering and caching as `load_settings`. |
 | `save_json(name, value=None)` | Persist internal state; omitted/`None` value uses the cached value. Save completes before replacing the cache. |
 
-Use `load_settings`/`save_settings` for options a user may edit; ship commented
-defaults as `<Name>.yaml` in the plug-in folder. Use `load_json`/`save_json` for
+Use `load_settings`/`save_settings` for options a user may edit. Every plug-in
+with settings must ship its defaults, with comments, as `<Name>.yaml` in the
+plug-in folder. When the plug-in loads and
+`UserSettings/Plugins/User/Settings/<Name>.yaml` is missing, a copy is created
+with every value commented out. Use `load_json`/`save_json` for
 state the plug-in manages itself. YAML files are read with the YAML 1.1 safe
 loader; a file with only comments counts as no value. Invalid files raise
 `ValueError`.
 
 Names are shared across loaded plug-ins, not automatically package-namespaced.
-Use distinctive filenames. Layers include generic and platform-specific files;
-dictionaries merge recursively, with later values winning unless both values are
+Use distinctive filenames. Dictionaries merge recursively, with later values winning unless both values are
 dictionaries. Nested lists replace earlier lists; top-level lists are prepended
 to earlier lists. Mismatched top-level types raise `ValueError`; nested
 values can change type. An empty dictionary does not clear an inherited
 dictionary: override individual entries instead.
 
-User overrides are normally written to
-`UserSettings/Plugins/User/Settings/<Name> (Windows).yaml` (or `.json`). The
+User overrides are written to
+`UserSettings/Plugins/User/Settings/<Name>.yaml` (or `.json`). The
 application file `AppSettings.yaml` is the exception: its user layer is
-`UserSettings/AppSettings.yaml`, without a platform variant. Saves use a temporary
+`UserSettings/AppSettings.yaml`. Saves use a temporary
 file followed by atomic replacement. Only changed keys are written, recursively
 omitting values equal to defaults. Removing inherited dictionary keys at any
 depth raises `ValueError`; keys present only in the user override can be removed.
@@ -346,7 +347,7 @@ Leave this option off for ordinary settings that should refresh on plug-in reloa
 
 | Name | Meaning |
 | --- | --- |
-| `PLATFORM` | Always `'Windows'`; generic and `(Windows)` configuration layers are loaded. |
+| `PLATFORM` | Always `'Windows'`. Configuration files have no platform variants. |
 | `APP_VERSION` | RoyiFileManager product version from the bundled build settings. |
 | `DATA_DIRECTORY` | Native path to portable `UserSettings`; `ROYIFILEMANAGER_USER_SETTINGS` overrides it when set before importing fman. |
 | `OK`, `CANCEL`, `YES`, `NO`, `YES_TO_ALL`, `NO_TO_ALL`, `ABORT` | Dialog result/button constants. Combine choices with bitwise OR. |
@@ -1300,7 +1301,7 @@ generic API does not impose that consumer policy.
 
 ### Theme Integration
 
-Supply `Theme.css` in the plug-in root, optionally with a platform variant.
+Supply `Theme.css` in the plug-in root.
 Supported selector mappings include `*`, `th`, `.locationbar`, `.statusbar`,
 `.statusbar-pane`, `.quicksearch-query`,
 `.quicksearch-item`, `.panel`, `.plugin-panel-dock`, and `.plugin-tool-window`.

@@ -1,8 +1,8 @@
 # Code Review 008: Edge Cases, Safety and Responsiveness
 
-Status: Open, 2026-10-26. Findings F01-F12, F14 and F15 recorded; follow-up
-comments R05-R06 recorded 2026-10-27. Review only; no application changes are
-authorized.
+Status: Completed 2026-10-27. Findings F01-F12, F14 and F15 recorded 2026-10-26;
+follow-up comments R05-R06 recorded 2026-10-27. The user approved implementation
+of F01-F12 and F14 on 2026-10-27 (see Decisions); F15 is not implemented.
 
 Split from [CodeReview007](../Done/CodeReview007.md) on 2026-10-27 by user request.
 F13 (pane rescans during Copy/Move/Delete) and its review comments R01-R04 and
@@ -39,7 +39,7 @@ Each finding distinguishes the observed failure/cost, reproduction, limitations
 and proposed next decision. A repeated guard is not automatically redundant;
 establish which contract it protects before recommending removal.
 
-Existing backlog ownership remains in [CodeReview099](CodeReview099.md): F02
+Existing backlog ownership remains in [CodeReview099](../Plan/CodeReview099.md): F02
 reconfirms C06, F03 refines C11, and F06 adds evidence for FO02. These are not
 three newly discovered issues or new implementation approvals. Retain that
 backlog's dispositions and release gates.
@@ -70,11 +70,9 @@ Runtime effects of proposed remedies remain unapproved and unmeasured.
 
 ## Tests
 
-Tests are prohibited throughout this review phase, including focused targets.
-Do not rerun tests or established probes merely for reassurance. A contributor
-may generate a bounded isolated check for a new speculation and must record its
-procedure, observed result and limitations. Do not relax this constraint
-implicitly when proposing implementation.
+Tests were prohibited during the review phase. The user's implementation approval
+on 2026-10-27 replaced that rule with focused regression tests per finding
+(see Validation Results); the full suite was not run.
 
 Document validation is limited to required sections, real relative links, unique
 IDs, Pending index placement and whitespace. Full UI interactions, real
@@ -112,7 +110,7 @@ checks are not waived or represented as passed.
   cancellation during blocked OS I/O.
 - Next decision: preserve context through existing task composition and define
   cancellation after publication. Reconfirms C06 in
-  [CodeReview099](CodeReview099.md), without changing its approval status.
+  [CodeReview099](../Plan/CodeReview099.md), without changing its approval status.
 
 ### F03 - P2: Malformed Persisted Geometry Aborts Session Restoration
 
@@ -125,7 +123,7 @@ checks are not waived or represented as passed.
 - Limit: malformed geometry only, not every session field or a full launch.
 - Next decision: recover to defaults for specifically invalid restoration fields,
   not arbitrary startup exceptions. Refines C11 in
-  [CodeReview099](CodeReview099.md).
+  [CodeReview099](../Plan/CodeReview099.md).
 
 ### F04 - P2: Favorites Merge Distinct Unicode Windows Paths
 
@@ -167,7 +165,7 @@ checks are not waived or represented as passed.
 - Next decision: separately review compact immutable listing/selection capture
   and expansion on the existing worker. Preserve counts, freshness, limits,
   cancellation and the disabled no-op path. FO02 in
-  [CodeReview099](CodeReview099.md) retains canonical proposal ownership.
+  [CodeReview099](../Plan/CodeReview099.md) retains canonical proposal ownership.
 
 ### F07 - P3: FindFiles Revalidates Rows Already Destined for Discard
 
@@ -352,6 +350,37 @@ evidence remain unchanged. R01-R04 and Q01 concerned F13 and were resolved in
 - Per-chunk progress updates: `ProgressDialog` stores values and repaints on a
   100 ms timer.
 
+## Decisions (2026-10-27)
+
+User selection after the review:
+
+- Implement F01-F06, F08, F11, F12 and F14 as proposed below; not F15.
+- F01/F02: run the copy as a subtask of the move (parent progress and Cancel).
+  Before deleting, compare the source's `st_ino`, `st_dev`, `st_size` and
+  `st_mtime_ns` with the copy-time `fstat`; on a difference keep the source and
+  raise `OSError` (reported as a per-file move error). Cancel after the copy keeps
+  the source. A change between this check and deletion remains possible.
+- F03: ignore undecodable or Qt-rejected `window_geometry`/`window_state` and use
+  defaults; other startup errors are unchanged.
+- F04: compare `file://` favorites with `ntpath.normcase` (simple per-character
+  lowercase), close to but not guaranteed identical to NTFS name comparison.
+- F05: return after `handle_system_exit`.
+- F06: capture listing tuples and the selection; build entries on the worker.
+- F07: option B, count-only after the table fills. Framing and record limits are
+  unchanged; malformed discarded records are counted, not reported.
+- F08: on `aboutToQuit`, wait up to 2 s for the helper, kill it otherwise, and
+  delete owned cache folders synchronously.
+- F09: option (a), copy text as a raw UTF-8 frame payload.
+- F10: keep DuckDB's strict quoted rules for CSV and TSV, without fallback.
+  Classify sniffer failures as `parse`, add a strict-rules hint, keep the
+  in-panel message (no modal alert), and document the policy in
+  [tools.md](../docs/tools.md).
+- F11: alert with the OS reason, as New file does.
+- F12: keep an active query that is still preparing folds the next query needs;
+  the helper reports prepared folds with each projection.
+- F14: `readinto` one buffer of the source size, between 64 KiB and 1 MiB, and
+  skip the staging unlink after publication.
+
 ## Implementation Steps
 
 1. Record initial findings and add this task to Pending in [Plan.md](../Plan.md).
@@ -362,6 +391,7 @@ evidence remain unchanged. R01-R04 and Q01 concerned F13 and were resolved in
    retaining historical evidence and dispositions.
 4. Ask the user to select follow-up scope. Any eventual implementation needs
    explicit compatibility and validation decisions; this review authorizes none.
+5. Implement the selected findings (see Decisions) with focused regression tests.
 
 ## Acceptance Criteria
 
@@ -373,6 +403,89 @@ evidence remain unchanged. R01-R04 and Q01 concerned F13 and were resolved in
   check specific new speculations with bounded disposable probes.
 - Remain Pending while awaiting other contributors and the user's next decision.
   Document creation is not implementation completion or release approval.
+
+## Implementation Review (2026-10-27)
+
+The selected F01-F12 and F14 changes were reviewed against Decisions and nearby
+regression coverage. F15 remains explicitly excluded. IR01 and IR02 are open
+implementation follow-ups, not changes to the earlier findings or approvals.
+No application code was changed by this review.
+
+### IR01 - P2: F08 Quit Cleanup Misses a Cache Created Before Preview
+
+- Owner: [CsvController._quit](../src/main/python/fman/impl/quick_view_csv.py#L278),
+  [preview ownership registration](../src/main/python/fman/impl/quick_view_csv.py#L422)
+  and [Engine._open](../src/main/python/_quick_view_csv_worker.py#L390).
+- Failure: the helper creates its cache before dialect detection and preview
+  parsing. The controller adds that directory to `_owned` only on receipt of
+  the later `preview` frame. Quitting with an active open kills the helper;
+  when no preview has arrived, `_finished` has no directory to remove.
+- Probe: generated a two-record CSV and isolated settings/cache directories;
+  ran the real helper and controller on the native Windows Qt platform. An
+  inline helper patch paused `_dialect` with a bounded event wait after cache
+  creation, before preview. A stderr marker triggered `app.quit()`, exercising
+  the real `aboutToQuit` connection. The helper stopped, but `_owned` had been
+  empty and one 12,288-byte cache folder remained after the event loop exited.
+  The disposable probe directory was removed afterward.
+- Coverage gap: the existing
+  [quit regression](../src/integrationtest/python/fman_integrationtest/test_qt.py#L960)
+  waits for a ready table and a populated `_owned` set, so it cannot cover this
+  startup boundary.
+- Follow-up: establish recoverable ownership before killable open work starts,
+  then clean this helper's cache after confirming termination. Do not remove
+  another process's cache or bypass its age rule. Add a pre-preview quit
+  regression alongside the existing imported-table case.
+- Limit: controlled pause at a real helper boundary, not a naturally slow disk
+  reproduction, packaged host or full application window-close test.
+
+### IR02 - P3: F07 Still Validates the First Record Beyond the Row Cap
+
+- Owner: [Collector.accept](../src/main/resources/base/Plugins/FindFiles/find_files/engine.py#L265).
+- Failure: `limited` is set only after decoding and validating an extra record.
+  With exactly `max_rows` retained rows it is still false, so a malformed next
+  record fails the search even though that record cannot be retained. Decisions
+  explicitly select count-only handling for malformed discarded records.
+- Probe: compiled the actual `Collector` class from source with minimal options
+  and a plain replacement for the `Hit` record, using a temporary root. With
+  `max_rows=1`, accepting `kept.txt` produced one stored row, total 1 and
+  `limited=False`; accepting `b'\xff'` next raised `UnicodeDecodeError`, leaving
+  total at 1 instead of counting the discarded record.
+- Coverage gap: the existing
+  [capacity test](../src/unittest/python/fman_unittest/test_find_files.py#L211)
+  feeds malformed records only after a valid record has already set `limited`.
+- Follow-up: check row-count exhaustion before decoding the next record; mark
+  `limited` when discarding that record, not merely when storing the last
+  allowed row. Preserve framing/record-size limits and retained-row validation.
+  Add malformed-record cases immediately after the row cap is reached.
+- Limit: collector-level check, not an actual fd transport or end-to-end search.
+
+### Review Validation
+
+- Both bounded inline probes ran under the selected Python 3.14.7 interpreter
+  as `python -X faulthandler -u -`, launched through `build._environment()` with
+  a 25-second parent timeout. No existing unit, integration, smoke, performance,
+  build or freeze target was run for this review.
+- Editor diagnostics reported no errors in the local copy/move provider,
+  session restoration, status model/service, CSV controller/worker or Find Files
+  engine. This is not a replacement for runtime regression coverage.
+- Other inspected changes did not produce additional confirmed findings. The
+  implementer's earlier test counts and measurements remain historical and
+  were not independently rerun. No release certification is implied.
+
+### Resolution (2026-10-27)
+
+- IR01 accepted and fixed. The controller now names the session cache folder
+  (`s-<helper pid>-<random>` under the cache root) and adds it to `_owned` before
+  sending `open`; the helper creates exactly that folder and rejects one outside
+  the root, without the `s-` prefix, or already present. Ownership no longer
+  depends on the `preview` frame, so a kill at any point leaves a known folder
+  for the synchronous quit cleanup. Other processes' folders and the 60 s age
+  rule are unchanged. Regressions: a real helper paused after creating its
+  cache, then `_quit`; and engine validation of requested folders.
+- IR02 accepted and fixed. `Collector.accept` checks the row cap before decoding,
+  so the first record past the cap is counted without validation. The byte cap
+  still validates the record that exceeds it. Regression: each malformed record
+  immediately after `max_rows` is reached.
 
 ## Reviewers
 
@@ -468,3 +581,90 @@ evidence remain unchanged. R01-R04 and Q01 concerned F13 and were resolved in
 - Outcome: Split from CodeReview007 by user request. F13 and R01-R04/Q01 moved
   to CodeReview007 for implementation; the remaining findings, R05-R06 and all
   earlier reviewer records are kept here unchanged. No application code changed.
+
+### 2026_10_27 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Not exposed by host
+- Effort: High
+- Context Window: Not exposed by host
+- Outcome: Reviewed the selected implementation and nearby regression coverage.
+  Recorded IR01 (F08 pre-preview cache cleanup) and IR02 (F07 first discarded
+  record validation) with bounded disposable-probe evidence. Both remain open
+  follow-ups. No application code changed or existing test targets rerun;
+  historical findings, decisions and implementation/validation records preserved.
+
+## Implementer
+
+### 2026_10_27 - GitHub Copilot
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: Claude Opus 5.5
+- Effort: High
+- Context Window: 872K
+- Outcome: Implemented F01-F12 and F14 per Decisions; F15 not implemented.
+  Changes in `core/fs/local`, `session.py`, `favorites/store.py`, `plugin.py`,
+  `status_bar.py`, `model/listing.py`, `find_files/engine.py`,
+  `quick_view_csv.py`, `_quick_view_csv_worker.py` and `core/commands`.
+  Focused regression tests added per finding; all focused runs pass.
+
+### 2026_10_27 - GitHub Copilot
+
+- Role: Implementer
+- Activity: Implementation
+- Agent: GitHub Copilot
+- Model: Claude Opus 5.5
+- Effort: High
+- Context Window: 872K
+- Outcome: Fixed IR01 (controller-owned cache folder before `open`) and IR02
+  (row cap checked before decoding) with the regressions listed in Resolution;
+  focused runs pass.
+
+## Validation Results
+
+Commands (conda environment, `build._environment()`):
+
+- `python -m unittest core.tests.test_fileoperations core.tests.fs.test_local
+  core.tests.commands.test___init__ fman_unittest.impl.test_session
+  fman_unittest.impl.plugins.test_plugin fman_unittest.test_favorites
+  fman_unittest.test_find_files fman_unittest.test_listing
+  fman_unittest.impl.test_status_bar fman_unittest.impl.test_quick_view_csv
+  fman_integrationtest.test_find_files_engine
+  fman_integrationtest.impl.plugins.test_favorites_plugin`
+  (offscreen): 508 tests OK, 7 skipped (symbolic-link privilege and similar).
+- `python -m unittest fman_integrationtest.test_qt.SnapshotFilterBarIT
+  fman_integrationtest.test_qt.RoadmapCommandsIT
+  fman_integrationtest.test_qt.QuickViewCsvIT
+  fman_integrationtest.test_qt.FavoritesManagerIT` (windows platform): 76 OK,
+  1 skipped. Includes the new quit test against the real Table View helper.
+- `python -B src/performancetest/run.py copy-buffer`: 10 OK.
+
+New regression tests: move-by-copying progress, changed source (during and after
+publication), parent cancellation, buffer reuse, no staging unlink; invalid
+session geometry/state; Favorites `Straße`/`strasse`; `SystemExit` without
+report; New folder `OSError`; count-only Find Files collector; raw copy payload;
+strict TSV errors; fold-keeping query decisions; lazy status entries.
+
+Measurements (local, not certified):
+
+- F14: 2,000 x 4 KiB provider copies, five runs each: median 8.70 s with the
+  old `read` loop, 8.35 s with the reused buffer (about 4%; run-to-run spread is
+  similar). The staging-unlink saving is not separately measured.
+- F06: 200,000-row status capture on the Qt thread: about 113 ms before
+  (expansion now on the worker), about 1 µs after.
+
+Not run: the full suite, real second-volume moves, packaged-application smoke and
+real application quit with an open table (the controller quit path is tested).
+
+IR01/IR02 follow-up (2026-10-27):
+
+- `python -m unittest fman_unittest.test_find_files
+  fman_unittest.impl.test_quick_view_csv fman_integrationtest.test_find_files_engine`
+  (offscreen): 49 OK, 1 skipped.
+- `python -m unittest fman_integrationtest.test_qt.QuickViewCsvIT` (windows
+  platform): 7 OK, including the new pre-preview quit regression with a real
+  helper.

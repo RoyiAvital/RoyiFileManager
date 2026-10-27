@@ -227,17 +227,17 @@ def _seed_settings(settings, capture):
 			('Wallpapers', windows / 'Web' / 'Wallpaper', '2026-09-07T20:45:00', None, 0),
 			('Drive C', root, '2026-08-31T08:00:00', '2026-10-05T08:10:00', 27),
 		)
-		documents = {'Favorites (Windows).json': {'favorites': [
+		documents = {'Favorites.json': {'favorites': [
 			dict({'name': name, 'url': _file_url(path), 'added': added, 'count': count},
 				**({'opened': opened} if opened else {}))
 			for name, path, added, opened, count in favorites
 		]}}
 	elif capture == 'directory-size':
-		documents = {'DirectorySize (Windows).yaml': {'enabled': True}}
+		documents = {'DirectorySize.yaml': {'enabled': True}}
 	elif capture == 'free-space':
-		documents = {'Status Bar (Windows).yaml': {'mode': 'single'}}
+		documents = {'Status Bar.yaml': {'mode': 'single'}}
 	elif capture in ('everything-search', 'everything-folders'):
-		documents = {'Everything (Windows).json': {
+		documents = {'Everything.json': {
 			'folders': [str(windows / 'Web'), str(windows / 'Fonts')],
 			'instance': f'RoyiFileManagerDocs_{os.getpid()}',
 		}}

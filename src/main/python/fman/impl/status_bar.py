@@ -1,7 +1,7 @@
 from collections import namedtuple
 from concurrent.futures import ThreadPoolExecutor
 from fman.impl.location_info import native_local_scope
-from fman.url import as_human_readable
+from fman.url import as_human_readable, join
 import shutil
 from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot, QTimer
 from PyQt5.QtWidgets import QWidget, QHBoxLayout, QLabel
@@ -20,6 +20,23 @@ _size_divisor = 1024
 StatusEntry = namedtuple(
 	'StatusEntry', ('url', 'is_dir', 'is_loaded', 'is_selected')
 )
+
+
+class StatusEntries:
+	"""Displayed rows captured from immutable listing tuples; entries are built on iteration."""
+
+	__slots__ = ('_location', '_names', '_is_dir', '_visible', '_selected')
+
+	def __init__(self, location, names, is_dir, visible, selected_urls):
+		self._location, self._names, self._is_dir = location, names, is_dir
+		self._visible, self._selected = visible, selected_urls
+	def __len__(self):
+		return len(self._visible)
+	def __iter__(self):
+		location, names, is_dir, selected = self._location, self._names, self._is_dir, self._selected
+		for index in self._visible:
+			url = join(location, names[index])
+			yield StatusEntry(url, is_dir[index], True, url in selected)
 StatusSummary = namedtuple(
 	'StatusSummary', (
 		'directory_count', 'file_count', 'size_bytes', 'size_complete',

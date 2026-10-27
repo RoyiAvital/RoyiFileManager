@@ -957,6 +957,48 @@ class QuickViewCsvIT(QtIT):
 				self.finish(session)
 		self.run_in_app(check)
 
+	def test_quit_ends_helper_and_removes_its_cache_before_teardown(self):
+		from pathlib import Path
+		data = 'a,b\n' + ''.join('%d,value %d\n' % (index, index) for index in range(20000))
+		def check():
+			session = self.start('quit.csv', data)
+			try:
+				self.until(lambda: self.ready(session))
+				controller = session._csv_controller
+				owned = {Path(path) for path in controller._owned}
+				self.assertTrue(owned and all(path.is_dir() for path in owned))
+				controller._quit()
+				self.assertIsNone(controller.process)
+				self.assertFalse(any(path.exists() for path in owned))
+			finally:
+				self.window._quick_view_csv_controller = None
+				session.shutdown()
+		self.run_in_app(check)
+
+	def test_quit_before_preview_removes_the_helper_cache(self):
+		import sys
+		from unittest.mock import patch
+		from fman.impl.quick_view_csv import CsvController, DEFAULT_OPTIONS
+		# The helper pauses after creating its cache, before any frame reports it.
+		script = ('import sys, time\nimport _quick_view_csv_worker as worker\n'
+			'def paused(*args):\n    sys.stderr.write("paused\\n"); sys.stderr.flush(); time.sleep(60)\n'
+			'worker.Engine._dialect = paused\nsys.exit(worker.main())\n')
+		path = self.root / 'paused.csv'
+		path.write_text('a,b\n1,2\n', encoding='utf-8')
+		cache = self.root.parent / (self.root.name + '-cache')
+		def check():
+			with patch('fman.impl.quick_view_csv.cache_root', return_value=str(cache)):
+				controller = CsvController(command=[sys.executable, '-c', script])
+				controller.open(1, str(path), 10 ** 9, 192, DEFAULT_OPTIONS)
+			self.until(lambda: b'paused' in controller.stderr)
+			created = [entry for entry in cache.iterdir() if entry.name.startswith('s-')]
+			self.assertEqual(1, len(created))
+			self.assertEqual({str(created[0])}, controller._owned)
+			controller._quit()
+			self.assertIsNone(controller.process)
+			self.assertFalse(created[0].exists())
+		self.run_in_app(check)
+
 	def test_large_fault_stays_table_only_and_cap_refuses_without_helper(self):
 		from unittest.mock import patch
 		rows = ''.join('%07d,value\n' % index for index in range(200000))
@@ -2067,9 +2109,8 @@ class FilterBarIT(QtIT):
 		pane.reload()
 		self.drain(pane)
 		bindings = KeyBindings()
-		path = Path(__file__).parents[3] / 'main/resources/base/Plugins/Core/Key Bindings (Windows).yaml'
-		configuration = yaml.safe_load(path.read_text(encoding='utf-8')) + \
-			yaml.safe_load((path.parent / 'Key Bindings.yaml').read_text(encoding='utf-8'))
+		path = Path(__file__).parents[3] / 'main/resources/base/Plugins/Core/Key Bindings.yaml'
+		configuration = yaml.safe_load(path.read_text(encoding='utf-8'))
 		commands = {binding['command'] for binding in configuration}
 		for command in commands:
 			bindings.register_command(command)
@@ -2892,7 +2933,7 @@ class PatternSelectionIT(QtIT):
 		from fman.impl.util.qt.key_event import QtKeyEvent
 		from pathlib import Path
 		import json
-		bindings = yaml.safe_load((Path(__file__).parents[3] / 'main/resources/base/Plugins/Core/Key Bindings (Windows).yaml').read_text(encoding='utf-8'))
+		bindings = yaml.safe_load((Path(__file__).parents[3] / 'main/resources/base/Plugins/Core/Key Bindings.yaml').read_text(encoding='utf-8'))
 		for key, spelling, command in ((Qt.Key_Plus, 'Num++', 'select_by_pattern'),
 			(Qt.Key_Minus, 'Num+-', 'deselect_by_pattern'), (Qt.Key_Asterisk, 'Num+*', 'invert_selection')):
 			self.assertIn({'keys': [spelling], 'command': command}, bindings)
@@ -3921,7 +3962,7 @@ class DirectorySizeIT(QtIT):
 		(self.root / 'plain.txt').write_bytes(b'abc')
 		settings_dir = self.root / 'UserSettings/Plugins/User/Settings'
 		settings_dir.mkdir(parents=True)
-		(settings_dir / 'DirectorySize (Windows).yaml').write_text(
+		(settings_dir / 'DirectorySize.yaml').write_text(
 			'# Disabled for this test\nenabled: false\nmax_entries: 200000\n', encoding='utf-8')
 		script = r'''
 import sys, traceback
@@ -4094,7 +4135,7 @@ sys.exit(context.run())
 		plugin_path = self.root / 'Core'
 		plugin_path.mkdir()
 		core_path = bundled_plugins / 'Core'
-		config = Config('Windows')
+		config = Config()
 		bindings = KeyBindings()
 		finished = Event()
 		callbacks = Mock()
@@ -4108,7 +4149,7 @@ sys.exit(context.run())
 				palette()
 		applications.register_command('command_palette', Palette)
 		bindings.register_command('command_palette')
-		with (core_path / 'Key Bindings (Windows).yaml').open(encoding='utf-8') as stream:
+		with (core_path / 'Key Bindings.yaml').open(encoding='utf-8') as stream:
 			core_bindings = yaml.safe_load(stream)
 		palette_binding = [binding for binding in core_bindings if binding['keys'] == ['Ctrl+Shift+P']]
 		feature_bindings = [binding for binding in core_bindings if binding['command'] in
@@ -4272,7 +4313,7 @@ sys.exit(context.run())
 		from fman.impl.ui import UiOwner
 		from unittest.mock import Mock, patch
 		self.owner.invalidate()
-		config = Config('Windows')
+		config = Config()
 		config.add_dir(str(self.root / 'Core'))
 		self.owner = UiOwner()
 		self.service = DirectorySizeService(Mock(), self.owner)
@@ -4548,7 +4589,7 @@ class ProcessPaneIT(QtIT):
 			binding = [entry for entry in yaml.safe_load(stream) if entry['keys'] == ['F8']]
 		self.assertEqual(1, len(binding))
 		self.assertEqual([], bindings.load(binding))
-		config = Config('Windows')
+		config = Config()
 		context = Mock()
 		plugin = ExternalPlugin(str(plugins / 'ProcessPane'), config, Mock(), Mock(), context,
 			self.errors, applications, commands, bindings, self.filesystem, Mock())
@@ -5113,7 +5154,7 @@ class EverythingIT(QtIT):
 					self.assertEqual(int(operation in ('remove', 'replace_parent')), alert.call_count)
 
 	def test_plugin_loader_commands_binding_and_unused_lifecycle(self):
-		from fman import PLATFORM, Window
+		from fman import Window
 		from fman.impl.plugins.command_registry import ApplicationCommandRegistry, PaneCommandRegistry
 		from fman.impl.plugins.config import Config
 		from fman.impl.plugins.context_menu import ContextMenuProvider
@@ -5132,7 +5173,7 @@ class EverythingIT(QtIT):
 			application_registry = ApplicationCommandRegistry(window, errors, callback)
 			bindings = KeyBindings()
 			path = Path(__file__).parents[3] / 'main/resources/base/Plugins/Everything'
-			plugin = ExternalPlugin(str(path), Config(PLATFORM), StubTheme(), StubFontDatabase(),
+			plugin = ExternalPlugin(str(path), Config(), StubTheme(), StubFontDatabase(),
 				ContextMenuProvider(pane_registry, application_registry, bindings), errors,
 				application_registry, pane_registry, bindings, MotherFileSystem(None), window)
 			self.assertTrue(plugin.load(), errors.error_messages)
@@ -5222,7 +5263,7 @@ class EverythingFoldersIT(QtIT):
 		with (plugins / 'Core/Key Bindings.yaml').open(encoding='utf-8') as stream:
 			self.assertEqual([], bindings.load([entry for entry in yaml.safe_load(stream)
 				if entry['command'] in commands.get_commands()]))
-		config, context = Config('Windows'), Mock()
+		config, context = Config(), Mock()
 		plugin = ExternalPlugin(str(plugins / 'Everything'), config, Mock(), Mock(), context,
 			self.errors, applications, commands, bindings, self.filesystem, Mock())
 		self.support = PluginSupport(lambda path: plugin, applications, bindings, context, config)
@@ -5795,8 +5836,8 @@ class ClipboardCommandsIT(QtIT):
 			def url(self, index):
 				return index.data(Qt.UserRole)
 		root = Path(__file__).parents[3] / 'main/resources/base/Plugins/Core'
-		self.menu_config = yaml.safe_load((root / 'File Context Menu (Windows).yaml').read_text(encoding='utf-8'))
-		self.background_config = yaml.safe_load((root / 'Folder Context Menu (Windows).yaml').read_text(encoding='utf-8'))
+		self.menu_config = yaml.safe_load((root / 'File Context Menu.yaml').read_text(encoding='utf-8'))
+		self.background_config = yaml.safe_load((root / 'Folder Context Menu.yaml').read_text(encoding='utf-8'))
 		self.bindings_config = yaml.safe_load((root / 'Key Bindings.yaml').read_text(encoding='utf-8'))
 		self.completed = Event()
 		self.errors = Mock()
@@ -6301,7 +6342,7 @@ class TextEditorIT(QtIT):
 		import sys
 		self.directory = TemporaryDirectory()
 		self.addCleanup(self.directory.cleanup)
-		self.config = Config('Windows')
+		self.config = Config()
 		self.config.add_dir(self.directory.name)
 		self.config.save_json('AppSettings.yaml', {
 			'editor': {'executable': sys.executable, 'arguments': []},
@@ -6439,7 +6480,7 @@ class TextEditorIT(QtIT):
 				command(Mock())()
 				self.assertEqual([], self.errors)
 				self.assertEqual(['preset', 'executable'], self.dialogs)
-				reloaded = Config('Windows')
+				reloaded = Config()
 				reloaded.add_dir(self.directory.name)
 				self.assertEqual(arguments, reloaded.load_json('AppSettings.yaml')[role]['arguments'])
 
@@ -6454,7 +6495,7 @@ class TextEditorIT(QtIT):
 				self.selection = 'Clear %s' % role
 				command(Mock())()
 				expected[role] = None
-				reloaded = Config('Windows')
+				reloaded = Config()
 				reloaded.add_dir(self.directory.name)
 				self.assertEqual(expected, reloaded.load_json('AppSettings.yaml'))
 				self.assertEqual('Text %s cleared.' % role,
@@ -6503,7 +6544,7 @@ class ComparatorIT(QtIT):
 			(root / 'a.txt').write_text('first')
 			(root / 'b.txt').write_text('second')
 			(root / 'child').mkdir()
-		self.config = Config('Windows')
+		self.config = Config()
 		self.config.add_dir(str(self.root / 'settings'))
 		self.config.save_json('AppSettings.yaml', {
 			'file_comparator': {'executable': sys.executable, 'arguments': []},
@@ -6708,7 +6749,7 @@ class ComparatorIT(QtIT):
 			for command, role in ((SetFileComparator, 'file'), (SetFolderComparator, 'folder')):
 				for selection in [preset[0] for preset in PRESETS] + ['Manual configuration']:
 					command(self.left)()
-					reloaded = Config('Windows')
+					reloaded = Config()
 					reloaded.add_dir(str(self.root / 'settings'))
 					expected = ['--literal', 'two words'] if selection == 'Manual configuration' else list(next(preset for preset in PRESETS if preset[0] == selection)[2 if role == 'file' else 3])
 					self.assertEqual(expected, reloaded.load_json('AppSettings.yaml')[role + '_comparator']['arguments'])

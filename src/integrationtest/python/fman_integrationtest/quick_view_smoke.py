@@ -42,7 +42,7 @@ def exercise(context, root, restart):
 		assert left.get_command_aliases('toggle_quick_view') == ('Toggle QuickView', 'Preview')
 		assert any(binding['keys'] == ['Ctrl+Q'] and binding['command'] == 'toggle_quick_view' for binding in context.key_bindings.get_sanitized_bindings())
 		if not restart:
-			save_settings('QuickView.yaml', {'untouched': 'preserved'})
+			save_settings('QuickView.yaml', dict(load_settings('QuickView.yaml'), untouched='preserved'))
 		left.place_cursor_at(as_url(root / 'left' / 'image.png'))
 		right_before = right.get_path(), right.get_file_under_cursor(), right.get_selected_files()
 		geometry_before = gui(lambda: (right._widget.layout(), right._widget._model, right._widget.focusProxy(), window.minimumSize(), window._splitter.sizes()))

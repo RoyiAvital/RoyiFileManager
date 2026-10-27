@@ -822,7 +822,7 @@ class ToggleMetadataTest(TestCase):
 			user_settings = Path(root) / 'UserSettings/Plugins/User/Settings'
 			user_settings.mkdir(parents=True)
 			bundled = Path(__file__).parents[3] / 'main/resources/base/Plugins/SearchFileFuzzy'
-			config = Config('Windows')
+			config = Config()
 			config.add_dir(str(bundled))
 			config.add_dir(str(user_settings))
 			original = dict(config.load_json('SearchFileFuzzy.yaml'))
@@ -832,13 +832,13 @@ class ToggleMetadataTest(TestCase):
 				patch('search_file_fuzzy.save_settings', side_effect=config.save_json), \
 				patch('search_file_fuzzy.show_status_message'):
 				ToggleSearchResultMetadata(Mock())()
-			reloaded = Config('Windows')
+			reloaded = Config()
 			reloaded.add_dir(str(bundled))
 			reloaded.add_dir(str(user_settings))
 			self.assertTrue(reloaded.load_json('SearchFileFuzzy.yaml')['show_metadata'])
 			self.assertEqual(17, reloaded.load_json('SearchFileFuzzy.yaml')['max_results'])
 			self.assertFalse(original['show_metadata'])
-			saved = yaml.safe_load((user_settings / 'SearchFileFuzzy (Windows).yaml').read_text())
+			saved = yaml.safe_load((user_settings / 'SearchFileFuzzy.yaml').read_text())
 			self.assertEqual({'max_results': 17, 'show_metadata': True}, saved)
 
 	def test_toggle_copies_settings_and_preserves_keys(self):

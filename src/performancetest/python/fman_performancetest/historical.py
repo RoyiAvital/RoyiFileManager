@@ -136,7 +136,10 @@ def prepare(output, selected, catalog_path, repetitions):
 		commit = revision(label)
 		source = output / 'sources' / label
 		fingerprint = export_source(source, commit)
-		settings = json.loads((source / 'src/build/settings/base.json').read_text(encoding='utf-8'))
+		# Older revisions keep the metadata in base.json.
+		metadata = next(path for path in (source / 'src/build/settings/AppMeta.json',
+			source / 'src/build/settings/base.json') if path.exists())
+		settings = json.loads(metadata.read_text(encoding='utf-8'))
 		applications[label] = dict(version=settings['version'], version_id=label, commit=commit,
 			dirty=False, source_sha256=fingerprint)
 		print('Exported %s: %s' % (label, commit), flush=True)

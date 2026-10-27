@@ -175,6 +175,12 @@ class ExternalPlugin(Plugin):
 	def _load_config(self):
 		self._config.add_dir(self._path)
 		self._add_unload_action(self._config.remove_dir, self._path)
+		try:
+			self._config.create_user_settings(self._path)
+		except OSError as error:
+			self._error_handler.report(
+				'Could not create user settings for %s: %s' % (self.name, error), exc=False
+			)
 	def _load_font(self, font):
 		try:
 			self._font_database.load(font)
@@ -327,6 +333,7 @@ class ReportExceptions:
 		if isinstance(exc_val, SystemExit):
 			exc_code = 0 if exc_val.code is None else exc_val.code
 			self._error_handler.handle_system_exit(exc_code)
+			return True
 		for exclude_class in self._exclude:
 			if isinstance(exc_val, exclude_class):
 				break

@@ -673,6 +673,87 @@ class LocalFileSystemTest(TestCase):
 					task()
 			self.assertEqual(b'competing creator', destination.read_bytes())
 			self.assertEqual({'source', 'destination'}, {path.name for path in Path(directory).iterdir()})
+	def _move_by_copying(self, directory, content):
+		from core.fs.local import MoveByCopying
+		from fman import Task
+		source, destination = Path(directory, 'source'), Path(directory, 'destination')
+		source.write_bytes(content)
+		parent = Task('Moving', size=len(content))
+		return parent, MoveByCopying(self._fs, as_url(source), as_url(destination), len(content)), source, destination
+	def test_move_by_copying_reports_progress_and_deletes_unchanged_source(self):
+		with TemporaryDirectory() as directory:
+			parent, task, source, destination = self._move_by_copying(directory, b'A' * 140_000)
+			progress = []
+			with patch.object(parent._dialog, 'set_progress', side_effect=progress.append):
+				parent.run(task)
+			self.assertFalse(source.exists())
+			self.assertEqual(b'A' * 140_000, destination.read_bytes())
+			self.assertIn(140_000, progress)
+	def test_move_by_copying_keeps_source_changed_during_or_after_copy(self):
+		from core.fs.local import CopyFile
+		copy_bytes, publish = CopyFile._copy_bytes, CopyFile._publish
+		for when in ('during', 'after'):
+			with self.subTest(when=when), TemporaryDirectory() as directory:
+				parent, task, source, destination = self._move_by_copying(directory, b'A' * 2 * 1024 * 1024)
+				def rewrite():
+					with open(source, 'r+b') as stream:
+						stream.write(b'B' * 1024 * 1024)
+				def rewrite_during(copy, input_file, output_file):
+					output_file.write(input_file.read(1024 * 1024))
+					rewrite()
+					output_file.write(input_file.read())
+				def publish_then_rewrite(copy, *args):
+					publish(copy, *args)
+					rewrite()
+				with patch.object(CopyFile, '_copy_bytes', rewrite_during if when == 'during' else copy_bytes), \
+						patch.object(CopyFile, '_publish', publish if when == 'during' else publish_then_rewrite):
+					with self.assertRaisesRegex(OSError, 'Source changed'):
+						parent.run(task)
+				self.assertEqual(b'B' * 1024 * 1024 + b'A' * 1024 * 1024, source.read_bytes())
+				self.assertTrue(destination.exists())
+	def test_move_by_copying_honors_parent_cancellation(self):
+		for when in ('before', 'after'):
+			with self.subTest(when=when), TemporaryDirectory() as directory:
+				parent, task, source, destination = self._move_by_copying(directory, b'keep')
+				if when == 'before':
+					parent._dialog._was_canceled = True
+				with patch.object(self._fs, 'notify_file_added', side_effect=lambda path:
+						setattr(parent._dialog, '_was_canceled', True)):
+					with self.assertRaises(type(parent).Canceled):
+						parent.run(task)
+				self.assertEqual(b'keep', source.read_bytes())
+				self.assertEqual(when == 'after', destination.exists())
+				self.assertEqual({'source'} | ({'destination'} if when == 'after' else set()),
+					{path.name for path in Path(directory).iterdir()})
+	def test_copy_reuses_one_buffer_sized_to_the_source(self):
+		from core.fs.local import CopyFile
+		from io import BytesIO
+		class Reader(BytesIO):
+			def __init__(self, content):
+				super().__init__(content)
+				self.buffers = []
+			def readinto(self, buffer):
+				self.buffers.append(buffer)
+				return super().readinto(buffer)
+		for size, content, expected in ((10, b'x' * 10, 64 * 1024), (100_000, b'y' * 100_000, 100_000),
+				(5 * 1024 * 1024, b'z' * 3, 1024 * 1024), (10, b'w' * 200_000, 64 * 1024)):
+			with self.subTest(size=size, length=len(content)):
+				task = CopyFile(self._fs, 'file://C:/source', 'file://C:/destination', size)
+				task.source_metadata = SimpleNamespace(st_size=size)
+				reader, writer = Reader(content), BytesIO()
+				task._copy_bytes(reader, writer)
+				self.assertEqual(content, writer.getvalue())
+				self.assertEqual({expected}, {len(buffer) for buffer in reader.buffers})
+				self.assertEqual(1, len({id(buffer.obj) for buffer in reader.buffers}))
+	def test_published_copy_does_not_unlink_staging_file(self):
+		with TemporaryDirectory() as directory:
+			source, destination = Path(directory, 'source'), Path(directory, 'destination')
+			source.write_bytes(b'new')
+			with patch('core.fs.local.os.unlink', wraps=os.unlink) as unlink:
+				self._fs.copy(as_url(source), as_url(destination))
+			unlink.assert_not_called()
+			self.assertEqual(b'new', destination.read_bytes())
+			self.assertEqual({'source', 'destination'}, {path.name for path in Path(directory).iterdir()})
 	def test_overwrite_preserves_destination_security_and_named_stream(self):
 		from core.fs.local import CopyFile
 		from win32security import GetFileSecurity, SetNamedSecurityInfo, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION, SE_DACL_PROTECTED
