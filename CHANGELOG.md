@@ -10,7 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.19.2] - 2026-10-27 
 
 This version extends the _QuickView_ capabilities by adding support for animated images.  
-The supported formats are: Animated PNG (`png` / `apng`),  GIF (`gif`), WebP (`webp`).
+The supported formats are: Animated PNG (`png` / `apng`),  GIF (`gif`), WebP (`webp`).  
+The _Darg and Drop_ behavior is now aligned with Windows' File Explorer.
 
 ### Added
 
