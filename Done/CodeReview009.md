@@ -988,3 +988,17 @@ cleanup implementations require a subsequent request.
 | `fman_unittest.impl.test_quick_view_csv fman_unittest.impl.plugins.test_plugin fman_integrationtest.impl.plugins.test_plugin fman_integrationtest.impl.plugins.test_error fman_unittest.test_everything fman_unittest.test_application_context core.tests.fs.test_fsparser core.tests.fs.test_columns core.tests.fs.test_local fman_unittest.test_listing fman_integrationtest.impl.model.test___init__ fman_unittest.test_search_file_fuzzy fman_unittest.test_ui_elements` | 425 OK, 6 skipped |
 | `python -m fman_integrationtest.qt_runner fman_integrationtest.test_qt` | 312 OK, 2 skipped |
 | `quick_view_smoke`, `recent_commands_smoke` (`QT_QPA_PLATFORM=windows`) | PASS |
+
+### Pages Failure After F10 (2026-10-29)
+
+- Pages `test-docs` failed: the selection, duplicate-file and batch-renamer
+  captures timed out ("did not settle").
+- Cause: unlike the release job, Pages keeps the runner's default `TEMP`, an
+  8.3 alias (`C:\Users\RUNNER~1\...`). The tests built expected pane paths
+  from that alias; panes show the resolved long path, so they never matched.
+  Reproduced locally with an 8.3 `TEMP` (same three failures, 96 s).
+- Fix: both screenshot test modules use `resolved_temporary_directory()`,
+  following the `RUNNER~1` rule in DEVELOPMENT.md. `build.py test-docs` (6) and
+  `fman_unittest.test_generate_docs_screenshots` (28) pass with an 8.3 and a
+  normal `TEMP`.
+

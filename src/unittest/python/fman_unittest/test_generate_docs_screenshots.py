@@ -1,4 +1,5 @@
 import importlib.util
+from contextlib import contextmanager
 from contextlib import redirect_stdout
 from io import StringIO
 import json
@@ -23,6 +24,13 @@ SCRIPT = ROOT / 'src' / 'misc' / 'generate_docs_screenshots.py'
 SPEC = importlib.util.spec_from_file_location('generate_docs_screenshots', SCRIPT)
 screenshots = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(screenshots)
+
+
+@contextmanager
+def resolved_temporary_directory():
+	# CI temp can be an 8.3 alias (RUNNER~1); the app shows resolved long paths.
+	with TemporaryDirectory() as directory:
+		yield str(Path(directory).resolve(strict=True))
 
 
 class GenerateDocsScreenshotsTest(TestCase):
@@ -66,7 +74,7 @@ finally:
     win32security.SetTokenInformation(token, win32security.TokenDefaultDacl, original)
     token.Close()
 '''
-		with TemporaryDirectory() as temporary_directory:
+		with resolved_temporary_directory() as temporary_directory:
 			result = subprocess.run([sys.executable, '-X', 'faulthandler', '-c',
 				dedent(script.expandtabs(4)), temporary_directory], cwd=ROOT,
 				capture_output=True, text=True, timeout=25)
@@ -123,7 +131,7 @@ finally:
     original.SetThreadDesktop()
     desktop.CloseDesktop()
 '''
-		with TemporaryDirectory() as temporary_directory:
+		with resolved_temporary_directory() as temporary_directory:
 			result = subprocess.run([sys.executable, '-X', 'faulthandler', '-c',
 				dedent(script), temporary_directory], cwd=ROOT,
 				capture_output=True, text=True, timeout=30)
@@ -145,7 +153,7 @@ print(os.environ['CAPTURE_TEST_VALUE'])
 print(sys.argv[2], file=sys.stderr)
 raise SystemExit(int(sys.argv[1]))
 '''
-		with TemporaryDirectory() as temporary_directory:
+		with resolved_temporary_directory() as temporary_directory:
 			log = Path(temporary_directory) / 'capture.log'
 			value = 'value with spaces and "quotes"'
 			environment = {**os.environ, 'CAPTURE_TEST_VALUE': value}
@@ -173,7 +181,7 @@ child = subprocess.Popen([sys.executable, '-c', 'from threading import Event; Ev
 print(child.pid, flush=True)
 Event().wait()
 '''
-		with TemporaryDirectory() as temporary_directory, redirect_stdout(StringIO()) as output:
+		with resolved_temporary_directory() as temporary_directory, redirect_stdout(StringIO()) as output:
 			log = Path(temporary_directory) / 'capture.log'
 			command = [sys.executable, '-u', '-c', dedent(script)]
 			with self.assertRaises(subprocess.TimeoutExpired):
@@ -198,7 +206,7 @@ Event().wait()
 		settings = Path('isolated/UserSettings')
 		for error in (None, OSError('Restricted launch failed')):
 			with self.subTest(error=error), \
-					TemporaryDirectory() as temporary_directory, \
+					resolved_temporary_directory() as temporary_directory, \
 					patch.object(screenshots, 'SOURCE_LOG_DIR', Path(temporary_directory)), \
 					patch.object(screenshots, 'SOURCE_CAPTURES', ('fuzzy-find',)), \
 					patch.object(screenshots, '_prepare_settings', return_value=settings), \
@@ -286,7 +294,7 @@ with patch.object(context.session_manager._settings, 'flush',
 assert closed == [True], 'Capture bypassed or repeated main-window cleanup'
 assert not context.main_window.isVisible()
 '''
-		with TemporaryDirectory() as temporary_directory, \
+		with resolved_temporary_directory() as temporary_directory, \
 				patch.object(screenshots, 'WORK_DIR', Path(temporary_directory)):
 			for capture in ('overview', 'context-menu'):
 				with self.subTest(capture=capture):
@@ -329,7 +337,7 @@ else:
 assert closed == [True], 'Capture bypassed main-window cleanup'
 assert not context.main_window.isVisible(), 'Capture left its main window open'
 '''
-		with TemporaryDirectory() as temporary_directory, \
+		with resolved_temporary_directory() as temporary_directory, \
 				patch.object(screenshots, 'WORK_DIR', Path(temporary_directory)):
 			sample = Path(temporary_directory) / 'sample'
 			(sample / 'nested').mkdir(parents=True)
@@ -357,7 +365,7 @@ assert not context.main_window.isVisible(), 'Capture left its main window open'
 				screenshots._public_paths()
 
 	def test_selects_public_windows_image(self):
-		with TemporaryDirectory() as temporary_directory, \
+		with resolved_temporary_directory() as temporary_directory, \
 				patch.object(screenshots, '_public_paths') as public_paths:
 			windows = Path(temporary_directory) / 'Windows'
 			image = windows / 'Web' / 'Wallpaper' / 'image.jpg'
@@ -415,7 +423,7 @@ assert not context.main_window.isVisible(), 'Capture left its main window open'
 
 	def test_checksum_capture_generates_a_verifiable_sample(self):
 		from checksum_files import engine
-		with TemporaryDirectory() as temporary_directory, \
+		with resolved_temporary_directory() as temporary_directory, \
 				patch.object(screenshots, 'WORK_DIR', Path(temporary_directory)), \
 				patch.object(screenshots, '_public_paths', return_value=(
 					Path('C:\\'), Path('C:\\Windows')
@@ -452,7 +460,7 @@ assert not context.main_window.isVisible(), 'Capture left its main window open'
 				location_bar.setText.assert_called_with('Private working path')
 
 	def test_seeds_public_favorites(self):
-		with TemporaryDirectory() as temporary_directory, \
+		with resolved_temporary_directory() as temporary_directory, \
 				patch.dict(os.environ, {'WINDIR': 'C:\\Windows'}):
 			settings = Path(temporary_directory)
 			screenshots._seed_settings(settings, 'favorites')
@@ -466,7 +474,7 @@ assert not context.main_window.isVisible(), 'Capture left its main window open'
 		))
 
 	def test_seeds_enabled_directory_sizes(self):
-		with TemporaryDirectory() as temporary_directory, \
+		with resolved_temporary_directory() as temporary_directory, \
 				patch.dict(os.environ, {'WINDIR': 'C:\\Windows'}):
 			settings = Path(temporary_directory)
 			screenshots._seed_settings(settings, 'directory-size')
@@ -476,7 +484,7 @@ assert not context.main_window.isVisible(), 'Capture left its main window open'
 		self.assertEqual({'enabled': True}, document)
 
 	def test_everything_capture_uses_only_public_roots_and_a_private_instance(self):
-		with TemporaryDirectory() as temporary_directory, \
+		with resolved_temporary_directory() as temporary_directory, \
 				patch.object(screenshots, '_public_paths', return_value=(
 					Path('C:\\'), Path('C:\\Windows')
 				)), patch.object(screenshots.os, 'getpid', return_value=12345):
@@ -516,7 +524,7 @@ assert not context.main_window.isVisible(), 'Capture left its main window open'
 	def test_everything_example_validation_rejects_empty_and_wrong_results(self):
 		from fman import QuicksearchItem
 		from fman.url import as_url
-		with TemporaryDirectory() as temporary_directory, \
+		with resolved_temporary_directory() as temporary_directory, \
 				patch.object(screenshots, '_public_paths', return_value=(Path('C:\\'), Path(temporary_directory))):
 			windows = Path(temporary_directory)
 			image = windows / 'Web' / 'img19.jpg'
@@ -537,7 +545,7 @@ assert not context.main_window.isVisible(), 'Capture left its main window open'
 					QuicksearchItem(as_url(bold), title=str(bold), description='1 MB', highlight=[(0, 5)])], 1)
 
 	def test_other_captures_use_default_settings(self):
-		with TemporaryDirectory() as temporary_directory, \
+		with resolved_temporary_directory() as temporary_directory, \
 				patch.dict(os.environ, {'WINDIR': 'C:\\Windows'}):
 			settings = Path(temporary_directory)
 			screenshots._seed_settings(settings, 'file-hash')
@@ -550,7 +558,7 @@ assert not context.main_window.isVisible(), 'Capture left its main window open'
 		self.assertIn(right, (left, left / 'Wallpaper'))
 
 	def test_prepares_non_first_run_session(self):
-		with TemporaryDirectory() as temporary_directory, \
+		with resolved_temporary_directory() as temporary_directory, \
 				patch.object(screenshots, 'WORK_DIR', Path(temporary_directory)), \
 				patch.object(screenshots, '_application_version', return_value='1.2.3'):
 			settings = screenshots._prepare_settings('source')

@@ -1,5 +1,6 @@
 """Documentation gallery captures. Run by `python build.py test-docs` (Pages workflow), not by `build.py test`."""
 import importlib.util
+from contextlib import contextmanager
 from pathlib import Path
 import subprocess
 import sys
@@ -14,6 +15,13 @@ SCRIPT = ROOT / 'src' / 'misc' / 'generate_docs_screenshots.py'
 SPEC = importlib.util.spec_from_file_location('generate_docs_screenshots', SCRIPT)
 screenshots = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(screenshots)
+
+
+@contextmanager
+def resolved_temporary_directory():
+	# CI temp can be an 8.3 alias (RUNNER~1); the app shows resolved long paths.
+	with TemporaryDirectory() as directory:
+		yield str(Path(directory).resolve(strict=True))
 
 
 class DocsGalleryTest(TestCase):
@@ -61,7 +69,7 @@ for name in screenshots.SELECTION_NAMES:
 for output in screenshots._source_outputs(args.output_dir, 'selection'):
 	screenshots._validate_image(output)
 '''
-		with TemporaryDirectory() as directory, patch.object(screenshots, 'WORK_DIR', Path(directory)):
+		with resolved_temporary_directory() as directory, patch.object(screenshots, 'WORK_DIR', Path(directory)):
 			settings = screenshots._prepare_settings('source-selection', initialize=False)
 			environment = screenshots._source_environment(settings)
 			environment['QT_QPA_PLATFORM'] = 'windows'
@@ -118,7 +126,7 @@ if capture == 'duplicate-file':
 screenshots._validate_image(screenshots._source_outputs(args.output_dir, args._capture)[0])
 '''
 		for capture in ('duplicate-file', 'free-space'):
-			with self.subTest(capture=capture), TemporaryDirectory() as directory, \
+			with self.subTest(capture=capture), resolved_temporary_directory() as directory, \
 					patch.object(screenshots, 'WORK_DIR', Path(directory)):
 				settings = screenshots._prepare_settings('source-' + capture, initialize=False)
 				environment = screenshots._source_environment(settings)
@@ -160,7 +168,7 @@ with patch.object(Quicksearch, 'grab', grab), patch.object(QScreen, 'grabWindow'
 assert captured == [True], 'Destination picker was not captured'
 screenshots._validate_image(screenshots._source_outputs(args.output_dir, 'robocopy')[0])
 '''
-		with TemporaryDirectory() as directory, patch.object(screenshots, 'WORK_DIR', Path(directory)):
+		with resolved_temporary_directory() as directory, patch.object(screenshots, 'WORK_DIR', Path(directory)):
 			settings = screenshots._prepare_settings('robocopy')
 			environment = screenshots._source_environment(settings)
 			environment['QT_QPA_PLATFORM'] = 'windows'
@@ -209,7 +217,7 @@ with patch.object(QuickBoardWindow, 'grab', grab), patch.object(QScreen, 'grabWi
 assert captured == [True] and closed == [True], 'Capture or normal cleanup was skipped'
 screenshots._validate_image(screenshots._source_outputs(args.output_dir, 'quick-board')[0])
 '''
-		with TemporaryDirectory() as directory, patch.object(screenshots, 'WORK_DIR', Path(directory)):
+		with resolved_temporary_directory() as directory, patch.object(screenshots, 'WORK_DIR', Path(directory)):
 			settings = screenshots._prepare_settings('quick-board')
 			environment = screenshots._source_environment(settings)
 			environment['QT_QPA_PLATFORM'] = 'windows'
@@ -263,7 +271,7 @@ for path in sample.iterdir():
 	assert path.read_text(encoding='utf-8') == 'Documentation sample: ' + path.name + '\\n'
 screenshots._validate_image(screenshots._source_outputs(args.output_dir, 'batch-renamer')[0])
 '''
-		with TemporaryDirectory() as directory, patch.object(screenshots, 'WORK_DIR', Path(directory)):
+		with resolved_temporary_directory() as directory, patch.object(screenshots, 'WORK_DIR', Path(directory)):
 			settings = screenshots._prepare_settings('source-batch-renamer', initialize=False)
 			environment = screenshots._source_environment(settings)
 			environment['QT_QPA_PLATFORM'] = 'windows'
@@ -273,7 +281,7 @@ screenshots._validate_image(screenshots._source_outputs(args.output_dir, 'batch-
 			self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
 	def test_text_capture_generates_its_own_python_sample(self):
-		with TemporaryDirectory() as temporary_directory, \
+		with resolved_temporary_directory() as temporary_directory, \
 				patch.object(screenshots, 'WORK_DIR', Path(temporary_directory)), \
 				patch.object(screenshots, '_public_paths', return_value=(
 					Path('C:\\'), Path('C:\\Windows')
