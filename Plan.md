@@ -29,6 +29,7 @@
 - [Code Review 006: Bugs and Unneeded Edge Cases](Done/CodeReview006.md)
 - [Code Review 007: Live Refresh During File Operations](Done/CodeReview007.md)
 - [Code Review 008: Edge Cases, Safety and Responsiveness](Done/CodeReview008.md)
+- [Code Review 009: Dead Code, fman Luggage and Test Cost](Done/CodeReview009.md)
 - [Command Palette 001: Categories](Done/CommandPalette001.md)
 - [Concise README Features](Done/ConciseReadmeFeatures.md)
 - [Context Window Capitalization](Done/ContextWindowCapitalization.md)

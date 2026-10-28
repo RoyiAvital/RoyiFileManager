@@ -19,7 +19,8 @@ from fman_performancetest.records import CATALOG, ROOT, digest, load_catalog, ne
 
 
 VERSIONS = ('0.9.0', '0.9.1', '0.9.2', '0.9.3', '0.10.0', '0.10.1', '0.10.2', 'Unreleased')
-SOURCE_PATHS = ('src/main', 'src/build', 'environment.yml', 'conda-lock.yml')
+METADATA_PATHS = ('src/AppMeta.json', 'src/build/settings/AppMeta.json', 'src/build/settings/base.json')
+SOURCE_PATHS = ('src/main', *METADATA_PATHS, 'environment.yml', 'conda-lock.yml')
 
 
 def revision(label):
@@ -29,7 +30,11 @@ def revision(label):
 
 
 def export_source(destination, commit):
-	archive = subprocess.check_output(['git', 'archive', commit, *SOURCE_PATHS], cwd=ROOT)
+	paths = subprocess.check_output(['git', 'ls-tree', '--name-only', commit, '--', *SOURCE_PATHS],
+		cwd=ROOT).decode('utf-8').splitlines()
+	if not any(path in METADATA_PATHS for path in paths):
+		raise ValueError('Application metadata is missing from revision ' + commit)
+	archive = subprocess.check_output(['git', 'archive', commit, *paths], cwd=ROOT)
 	destination.mkdir(parents=True, exist_ok=False)
 	with tarfile.open(fileobj=io.BytesIO(archive)) as source:
 		source.extractall(destination, filter='data')
@@ -136,9 +141,7 @@ def prepare(output, selected, catalog_path, repetitions):
 		commit = revision(label)
 		source = output / 'sources' / label
 		fingerprint = export_source(source, commit)
-		# Older revisions keep the metadata in base.json.
-		metadata = next(path for path in (source / 'src/build/settings/AppMeta.json',
-			source / 'src/build/settings/base.json') if path.exists())
+		metadata = next(source / path for path in METADATA_PATHS if (source / path).exists())
 		settings = json.loads(metadata.read_text(encoding='utf-8'))
 		applications[label] = dict(version=settings['version'], version_id=label, commit=commit,
 			dirty=False, source_sha256=fingerprint)

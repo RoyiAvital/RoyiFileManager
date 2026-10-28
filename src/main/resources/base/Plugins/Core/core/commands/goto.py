@@ -6,7 +6,7 @@ from fman import DirectoryPaneCommand, show_quicksearch, load_json, \
 from fman.fs import exists, resolve
 from fman.url import as_url, splitscheme, as_human_readable
 from itertools import islice, chain
-from os.path import expanduser, islink, isabs, normpath
+from os.path import expanduser, isabs, normpath
 from pathlib import Path, PurePath
 
 import os
@@ -59,18 +59,16 @@ class GoTo(DirectoryPaneCommand):
 				path: 0 for path in self._get_default_paths()
 			})
 		return result
-	def _get_default_paths(self, exclude={'/proc', '/run', '/sys'}):
+	def _get_default_paths(self):
 		home_dir = expanduser('~')
 		result = set(self._get_nonhidden_subdirs(home_dir))
-		# Add directories in C:\ on Windows, or / on Unix:
+		# Add nonempty folders in the system drive root:
 		try:
 			children = Path(PurePath(sys.executable).anchor).iterdir()
 		except OSError:
 			pass
 		else:
 			for child in children:
-				if str(child) in exclude:
-					continue
 				try:
 					if child.is_dir():
 						try:
@@ -87,37 +85,7 @@ class GoTo(DirectoryPaneCommand):
 			file_path = os.path.join(dir_path, file_name)
 			if os.path.isdir(file_path) and not is_hidden(file_path):
 				yield os.path.join(dir_path, file_name)
-	def _traverse_by_mtime(self, dir_path, exclude=None):
-		if exclude is None:
-			exclude = set()
-		to_visit = [(os.stat(dir_path), dir_path)]
-		already_yielded = set()
-		while to_visit:
-			stat, parent = to_visit.pop()
-			if parent in exclude:
-				continue
-			yield parent
-			try:
-				parent_contents = os.listdir(parent)
-			except OSError:
-				continue
-			for file_name in parent_contents:
-				if file_name.startswith('.'):
-					continue
-				file_path = os.path.join(parent, file_name)
-				try:
-					if not os.path.isdir(file_path) or islink(file_path):
-						continue
-				except OSError:
-					continue
-				try:
-					stat = os.stat(file_path)
-				except OSError:
-					pass
-				else:
-					already_yielded.add(stat.st_ino)
-					to_visit.append((stat, file_path))
-			to_visit.sort(key=lambda tpl: tpl[0].st_mtime)
+
 
 class GoToListener(DirectoryPaneListener):
 	def __init__(self, *args, **kwargs):

@@ -48,7 +48,7 @@ class NoReplaceRenameTest(TestCase):
 			source, target = root / 'source.txt', root / 'target.txt'
 			source.write_bytes(b'source')
 			target.write_bytes(b'keep')
-			mother = MotherFileSystem(None)
+			mother = MotherFileSystem()
 			provider = LocalFileSystem()
 			mother.add_child('file://', provider)
 			seen = []
@@ -79,7 +79,7 @@ class NoReplaceRenameTest(TestCase):
 			with self.subTest(formatting_error=type(formatting_error).__name__), TemporaryDirectory() as directory:
 				source, target = Path(directory, 'source.txt'), Path(directory, 'target.txt')
 				source.write_bytes(b'keep')
-				mother, provider = MotherFileSystem(None), LocalFileSystem()
+				mother, provider = MotherFileSystem(), LocalFileSystem()
 				mother.add_child('file://', provider)
 				later = [Mock() for index in range(4)]
 				mother.file_removed.add_callback(Mock(side_effect=NotificationError()))
@@ -109,7 +109,7 @@ class NoReplaceRenameTest(TestCase):
 			source, target = root / 'source.txt', root / 'alias.txt'
 			source.write_bytes(b'keep both names')
 			target.hardlink_to(source)
-			mother = MotherFileSystem(None)
+			mother = MotherFileSystem()
 			mother.add_child('file://', LocalFileSystem())
 			changed = Mock()
 			mother.file_added.add_callback(changed)
@@ -154,7 +154,7 @@ class NoReplaceRenameTest(TestCase):
 			self.assertEqual(0, result.returncode, result.stderr)
 			with self.assertRaisesRegex(UnsupportedOperation, 'Select actual files, not links or junctions'):
 				LocalFileSystem().rename_no_replace(as_url(link), as_url(destination))
-			mother, pane = MotherFileSystem(None), Mock()
+			mother, pane = MotherFileSystem(), Mock()
 			mother.add_child('file://', LocalFileSystem())
 			with patch('fman.fs._get_mother_fs', return_value=mother), \
 					patch('core.commands.submit_task', side_effect=lambda task: task()), \
@@ -178,7 +178,7 @@ class NoReplaceRenameTest(TestCase):
 			(root / 'source.txt').write_bytes(b'root source')
 			(nested / 'source.txt').write_bytes(b'nested source')
 			(root / 'folder').mkdir()
-			mother, provider = MotherFileSystem(None), LocalFileSystem()
+			mother, provider = MotherFileSystem(), LocalFileSystem()
 			mother.add_child('file://', provider)
 			changed = Mock()
 			mother.file_added.add_callback(changed)
@@ -215,7 +215,7 @@ class NoReplaceRenameTest(TestCase):
 			alias = Path(GetShortPathName(str(source))).name
 			if alias.casefold() == source.name.casefold():
 				self.skipTest('8.3 short names are disabled on this volume')
-			mother, provider = MotherFileSystem(None), LocalFileSystem()
+			mother, provider = MotherFileSystem(), LocalFileSystem()
 			mother.add_child('file://', provider)
 			changed, pane = Mock(), Mock()
 			mother.file_removed.add_callback(changed)
@@ -695,6 +695,10 @@ class LocalFileSystemTest(TestCase):
 		for when in ('during', 'after'):
 			with self.subTest(when=when), TemporaryDirectory() as directory:
 				parent, task, source, destination = self._move_by_copying(directory, b'A' * 2 * 1024 * 1024)
+				# A same-size rewrite within one NTFS timestamp tick keeps st_mtime_ns.
+				# Age the source, as a real pre-existing file is, so the rewrite is visible.
+				aged = source.stat().st_mtime_ns - 10 ** 10
+				os.utime(source, ns=(aged, aged))
 				def rewrite():
 					with open(source, 'r+b') as stream:
 						stream.write(b'B' * 1024 * 1024)

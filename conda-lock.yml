@@ -1998,23 +1998,6 @@ package:
     sha256: 36a483fe6cfc39af48bd70f7048b54a3ddb9025143fb9953c97138e7dc823e9c
   category: main
   optional: false
-- name: pywinpty
-  version: 3.1.0
-  manager: conda
-  platform: win-64
-  dependencies:
-    python: '>=3.14,<3.15.0a0'
-    python_abi: 3.14.*
-    ucrt: '>=10.0.20348.0'
-    vc: '>=14.2,<15'
-    vc14_runtime: '>=14.29.30139'
-    winpty: ''
-  url: https://conda.anaconda.org/conda-forge/win-64/pywinpty-3.1.0-py314h51f0985_0.conda
-  hash:
-    md5: ed9a11934a3123b670a669bc9f7bd06b
-    sha256: c277d5d591af3c3e5edac51e20f17cffabc07d4c0002295058d8d68cc4d3933f
-  category: main
-  optional: false
 - name: pyyaml
   version: 6.0.3
   manager: conda
@@ -2478,17 +2461,6 @@ package:
   hash:
     md5: 46e441ba871f524e2b067929da3051c2
     sha256: 93807369ab91f230cf9e6e2a237eaa812492fe00face5b38068735858fba954f
-  category: main
-  optional: false
-- name: winpty
-  version: 0.4.3
-  manager: conda
-  platform: win-64
-  dependencies: {}
-  url: https://conda.anaconda.org/conda-forge/win-64/winpty-0.4.3-h57928b3_5.conda
-  hash:
-    md5: 9e3022d1238c0f46dfb7e7b4b7999891
-    sha256: e3f7a6759d154445b320e7a4d87445e783946fa39f7f3740033d36b2011e7d52
   category: main
   optional: false
 - name: yaml

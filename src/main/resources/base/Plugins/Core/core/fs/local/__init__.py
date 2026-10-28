@@ -63,8 +63,15 @@ class LocalFileSystem(FileSystem):
 				modified.append(metadata.st_mtime_ns)
 				attributes.append(getattr(own, 'st_file_attributes', 2 if entry.name.startswith('.') else 0))
 		check_canceled()
-		return Listing.create(self.scheme + path, names, is_dir=directories,
-			sizes=sizes, mtimes_ns=modified, attributes=attributes)
+		location = self.scheme + path
+		if len(set(names)) != len(names):
+			# Not expected from one OS enumeration; let validation report it.
+			return Listing.create(location, names, is_dir=directories,
+				sizes=sizes, mtimes_ns=modified, attributes=attributes)
+		count = len(names)
+		# scandir names and Core-built columns already satisfy Listing's checks.
+		return Listing._trusted(location, tuple(names), tuple(directories), tuple(sizes),
+			tuple(modified), tuple(attributes), (0,) * count, bytes(16 * count), (0, bytes(16)))
 	def exists(self, path):
 		os_path = self._url_to_os_path(path)
 		return self._isabs(os_path) and Path(os_path).exists()
@@ -108,8 +115,6 @@ class LocalFileSystem(FileSystem):
 			os_path.mkdir()
 		except FileNotFoundError:
 			raise
-		except IsADirectoryError: # macOS
-			raise FileExistsError(path)
 		except OSError as e:
 			if e.errno == ENOENT:
 				raise filenotfounderror(path) from e
@@ -136,8 +141,8 @@ class LocalFileSystem(FileSystem):
 		source, destination = self._check_transfer_precnds(source_url, destination_url)
 		if '\\' in source or '\\' in destination:
 			raise UnsupportedOperation('Rename requires canonical file URLs with forward slashes.')
-		if os.name != 'nt' or dirname(source_url) != dirname(destination_url):
-			raise UnsupportedOperation('No-replace rename requires a Windows local parent folder.')
+		if dirname(source_url) != dirname(destination_url):
+			raise UnsupportedOperation('No-replace rename requires the same parent folder.')
 		source_path, destination_path = self._url_to_os_path(source), self._url_to_os_path(destination)
 		metadata = os.lstat(source_path)
 		if (S_ISLNK(metadata.st_mode) or getattr(metadata, 'st_reparse_tag', 0) & _REPARSE_NAME_SURROGATE or

@@ -13,35 +13,6 @@ import os
 IndexResult = namedtuple('IndexResult', 'entries truncated')
 
 
-class ListingSearch:
-	def __init__(self, mode='fuzzy', max_results=100, max_entries=50_000, include_hidden=True):
-		self.mode, self.max_results = mode, max_results
-		self.max_entries, self.include_hidden = max_entries, include_hidden
-		self._listing = None
-		self._matcher = None
-
-	def __call__(self, listing, query, check):
-		from search_file_fuzzy.matcher import Matcher
-		if listing is not self._listing:
-			entries = []
-			for index, name in enumerate(listing.names[:self.max_entries]):
-				check()
-				if listing.is_dir[index] or listing.attributes[index] & FILE_ATTRIBUTE_REPARSE_POINT:
-					continue
-				if not self.include_hidden and (name.startswith('.') or listing.attributes[index] & FILE_ATTRIBUTE_HIDDEN):
-					continue
-				label = listing.display_names[index]
-				entries.append(SearchEntry(index, label, label))
-			matcher = Matcher(entries, self.mode, self.max_results, check_canceled=check)
-			check()
-			self._listing, self._matcher = listing, matcher
-		check()
-		matches = self._matcher.matches(query, check_canceled=check)
-		check()
-		return tuple(entry.url for entry, _ in matches), {
-			entry.url: tuple(highlights) for entry, highlights in matches}
-
-
 def index_listing(listing, max_entries=50_000, include_hidden=True,
 	collect_metadata=False, check_canceled=None):
 	entries = []

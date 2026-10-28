@@ -1,15 +1,13 @@
-from collections import Counter
-from concurrent.futures import ThreadPoolExecutor
 from fman.fs import FileSystem, cached
-from fman.impl.plugins.mother_fs import MotherFileSystem, CachedIterator
+from fman.impl.plugins.mother_fs import MotherFileSystem
 from fman_unittest.impl.model import StubFileSystem
-from threading import Thread, Lock, Event
+from threading import Thread, Lock
 from time import sleep
 from unittest import TestCase
 
 class MotherFileSystemTest(TestCase):
 	def test_optional_columns_skip_unknown_and_duplicates(self):
-		mother = MotherFileSystem(None)
+		mother = MotherFileSystem()
 		column = object()
 		mother.register_column('size.Column', column)
 		with self.assertLogs('fman.impl.plugins.mother_fs', level='WARNING'):
@@ -23,7 +21,7 @@ class MotherFileSystemTest(TestCase):
 		self.assertFalse(mother_fs.exists('stub://b'))
 		mother_fs.touch('stub://b')
 		self.assertTrue(mother_fs.exists('stub://b'))
-	def test_delete_removes_from_pardir_cache(self):
+	def test_delete_removes_from_parent_listing(self):
 		fs = StubFileSystem({
 			'a': {
 				'is_dir': True, 'files': ['b']
@@ -62,53 +60,15 @@ class MotherFileSystemTest(TestCase):
 		mother_fs = self._create_mother_fs(fs)
 		with self.assertRaises(NotImplementedError):
 			mother_fs.prepare_trash('stub://a')
-	def test_move_updates_pardir(self):
-		fs = StubFileSystem({
-			'a': { 'is_dir': True , 'files': ['b']},
-			'a/b': {},
-			'c': { 'is_dir': True }
-		})
-		mother_fs = self._create_mother_fs(fs)
-		self.assertEqual(['b'], list(mother_fs.iterdir('stub://a')))
-		self.assertEqual([], list(mother_fs.iterdir('stub://c')))
-		mother_fs.move('stub://a/b', 'stub://c/b')
-		self.assertEqual([], list(mother_fs.iterdir('stub://a')))
-		self.assertEqual(['b'], list(mother_fs.iterdir('stub://c')))
-	def test_touch(self):
-		fs = StubFileSystem({
-			'a': { 'is_dir': True }
-		})
-		mother_fs = self._create_mother_fs(fs)
-		self.assertEqual([], list(mother_fs.iterdir('stub://a')))
-		mother_fs.touch('stub://a/b')
-		self.assertEqual(['b'], list(mother_fs.iterdir('stub://a')))
-	def test_overwrite_move_does_not_duplicate_pardir_cache(self):
-		fs = StubFileSystem({
-			'a': {'is_dir': True, 'files': ['b', 'c']},
-			'a/b': {},
-			'a/c': {}
-		})
-		mother_fs = self._create_mother_fs(fs)
-		self.assertEqual(['b', 'c'], list(mother_fs.iterdir('stub://a')))
-		mother_fs.move('stub://a/b', 'stub://a/c')
-		self.assertEqual(['c'], list(mother_fs.iterdir('stub://a')))
-	def test_add_existing_file_does_not_drain_lazy_pardir_cache(self):
+	def test_iterdir_is_lazy_and_uncached(self):
 		fs = LazyFileSystem({'a': ['b', 'c']})
 		mother_fs = self._create_mother_fs(fs)
-		self.assertIsInstance(mother_fs.iterdir('lazy://a'), CachedIterator)
+		names = mother_fs.iterdir('lazy://a')
 		mother_fs.notify_file_added('lazy://a/b')
 		self.assertEqual(0, fs.num_yielded)
-		self.assertEqual(
-			Counter(['b', 'c']), Counter(mother_fs.iterdir('lazy://a'))
-		)
-	def test_mkdir(self):
-		fs = StubFileSystem({
-			'a': { 'is_dir': True }
-		})
-		mother_fs = self._create_mother_fs(fs)
-		self.assertEqual([], list(mother_fs.iterdir('stub://a')))
-		mother_fs.mkdir('stub://a/b')
-		self.assertEqual(['b'], list(mother_fs.iterdir('stub://a')))
+		self.assertEqual(['b', 'c'], list(names))
+		fs._dirs['a'].append('d')
+		self.assertEqual(['b', 'c', 'd'], list(mother_fs.iterdir('lazy://a')))
 	def test_no_concurrent_is_dir_queries(self):
 		fs = FileSystemCountingIsdirCalls()
 		mother_fs = self._create_mother_fs(fs)
@@ -181,7 +141,7 @@ class MotherFileSystemTest(TestCase):
 		mother_fs.move('stub://a/b', 'stub://a/../b')
 		self.assertTrue(mother_fs.exists('stub://b'))
 	def _create_mother_fs(self, fs):
-		result = MotherFileSystem(None)
+		result = MotherFileSystem()
 		result.add_child(fs.scheme, fs)
 		return result
 
@@ -235,114 +195,3 @@ class TrashOnlyFileSystem(FileSystem):
 		self.trashed.append(path)
 	def delete(self, path):
 		self.deleted.append(path)
-
-class CachedIteratorTest(TestCase):
-	def test_simple(self):
-		# For the sake of illustration, see what happens normally:
-		iterable = self._generate(1, 2, 3)
-		self.assertEqual([1, 2, 3], list(iterable))
-		self.assertEqual([], list(iterable))
-		# Now compare the above to what happens with CachedIterable:
-		iterable = CachedIterator(self._generate(1, 2, 3))
-		self.assertEqual([1, 2, 3], list(iterable))
-		self.assertEqual([1, 2, 3], list(iterable))
-	def test_remove_after_cached(self):
-		iterable = CachedIterator(self._generate(1, 2, 3))
-		iterator = iter(iterable)
-		self.assertEqual(1, next(iterator))
-		iterable.remove(1)
-		self.assertEqual(2, next(iterator))
-		self.assertEqual(3, next(iterator))
-		self.assertEqual([2, 3], list(iterable))
-	def test_remove_before_cached(self):
-		iterable = CachedIterator(self._generate(1, 2, 3))
-		iterator = iter(iterable)
-		self.assertEqual(1, next(iterator))
-		iterable.remove(2)
-		self.assertEqual(3, next(iterator))
-		with self.assertRaises(StopIteration):
-			next(iterator)
-		self.assertEqual([1, 3], list(iterable))
-	def test_add_before_exhausted(self):
-		iterable = CachedIterator(self._generate(1, 2))
-		iterator = iter(iterable)
-		self.assertEqual(1, next(iterator))
-		iterable.append(3)
-		# We don't care if the order is [2, 3] or [3, 2] - but there should only
-		# be one each:
-		self.assertEqual(Counter([2, 3]), Counter(iterator))
-		# We don't care about the exact order of [1, 2, 3] but each elt. should
-		# only be returned once:
-		self.assertEqual(Counter([1, 2, 3]), Counter(iterable))
-		self.assertEqual(Counter([1, 2, 3]), Counter(iterable))
-	def test_add_after_exhausted(self):
-		iterable = CachedIterator(self._generate(1, 2))
-		self.assertEqual([1, 2], list(iterable))
-		iterable.append(3)
-		self.assertEqual([1, 2, 3], list(iterable))
-		self.assertEqual([1, 2, 3], list(iterable))
-	def test_add_duplicate(self):
-		iterable = CachedIterator(self._generate(1, 2))
-		iterable.append(2)
-		# We don't care about the exact order of [1, 2] but each elt. should
-		# only be returned once:
-		self.assertEqual(Counter([1, 2]), Counter(iterable))
-		self.assertEqual(Counter([1, 2]), Counter(iterable))
-	def test_remove_duplicate_added_before_source_is_consumed(self):
-		iterable = CachedIterator(self._generate(1, 2))
-		iterable.append(2)
-		self.assertEqual(Counter([1, 2]), Counter(iterable))
-
-		iterable.remove(2)
-
-		self.assertEqual([1], list(iterable))
-	def test_add_duplicate_after_exhausted(self):
-		iterable = CachedIterator(self._generate(1, 2))
-		self.assertEqual([1, 2], list(iterable))
-		iterable.append(2)
-		self.assertEqual([1, 2], list(iterable))
-	def test_concurrent_read(self):
-		items = [1, 2]
-		iterable = CachedIterator(self._generate_slowly(*items))
-		thread_started = Event()
-		executor = ThreadPoolExecutor()
-		try:
-			future = \
-				executor.submit(self._consume, thread_started, iterable)
-			try:
-				thread_started.wait()
-				self.assertEqual(items, list(iterable))
-			finally:
-				# Wait for the thread to complete and re-raise any exceptions:
-				self.assertEqual(items, future.result())
-		finally:
-			executor.shutdown()
-	def test_add_remove(self):
-		"""
-		Suppose each next(...) call below is in one thread and .remove(...) and
-		.append(...) are in another. This test ensures that the next(...) thread
-		never receives duplicate values.
-		"""
-		iterable = CachedIterator(self._generate(1))
-		iterator = iter(iterable)
-		self.assertEqual(1, next(iterator))
-		iterable.remove(1)
-		iterable.append(1)
-		with self.assertRaises(StopIteration, msg='Should not return 1 again.'):
-			next(iterator)
-	def test_add_remove_out_of_order(self):
-		iterable = CachedIterator(self._generate(1, 2))
-		iterator = iter(iterable)
-		iterable.remove(2)
-		iterable.remove(1)
-		with self.assertRaises(StopIteration):
-			next(iterator)
-	def _generate(self, *args):
-		yield from args
-	def _generate_slowly(self, *args):
-		for arg in args:
-			sleep(.1)
-			yield arg
-	def _consume(self, started, iterable):
-		started.set()
-		return list(iterable)

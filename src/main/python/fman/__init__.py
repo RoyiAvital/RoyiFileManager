@@ -188,8 +188,6 @@ class DirectoryPane:
 		return self._widget.get_listing()
 	def get_location_info(self) -> LocationInfo | None:
 		return self._widget.get_location_info()
-	def find_in_listing(self, search, query='', metadata=False, accepted=None):
-		return self._widget.find_in_listing(search, query, metadata, accepted)
 	# TODO: Rename to set_location(...)
 	def set_path(self, dir_url, callback=None, onerror=_set_path_onerror):
 		from fman.impl.navigation import current_request
@@ -234,8 +232,6 @@ class DirectoryPane:
 		self._widget.set_sort_column(column, ascending)
 	def get_sort_column(self):
 		return self._widget.get_sort_column()
-	def _has_focus(self):
-		return self._widget.hasFocus()
 	@contextmanager
 	def _override_file_under_cursor(self, value):
 		previous = getattr(self._command_context, 'cursor', ())

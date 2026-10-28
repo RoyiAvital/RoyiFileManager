@@ -1,5 +1,4 @@
 from fbs_runtime.application_context import is_frozen
-from fbs_runtime.excepthook import ExceptionHandler
 from fman.impl.theme import ThemeError
 from fman.impl.util import is_below_dir
 from os.path import dirname, basename
@@ -9,7 +8,7 @@ from traceback import StackSummary, extract_tb, TracebackException, \
 import fman
 import sys
 
-class PluginErrorHandler(ExceptionHandler):
+class PluginErrorHandler:
 	def __init__(self, app):
 		self._app = app
 		self._main_window = None
@@ -22,7 +21,8 @@ class PluginErrorHandler(ExceptionHandler):
 	def handle(self, exc_type, exc_value, enriched_tb):
 		causing_plugin = self._get_plugin_causing_error(enriched_tb)
 		if causing_plugin and basename(causing_plugin) != 'Core':
-			self.report('Plugin %r raised an error.' % basename(causing_plugin))
+			# Called from sys.excepthook, where sys.exc_info() is empty.
+			self.report('Plugin %r raised an error.' % basename(causing_plugin), exc_value)
 			return True
 	def _get_plugin_causing_error(self, traceback):
 		for frame in extract_tb(traceback):

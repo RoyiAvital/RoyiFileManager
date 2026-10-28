@@ -13,7 +13,7 @@ class AboutWindowTest(TestCase):
 
 	def setUp(self):
 		self.app = QApplication.instance() or QApplication([])
-		self.metadata = json.loads((self.ROOT / 'src/build/settings/AppMeta.json').read_text(encoding='utf-8'))
+		self.metadata = json.loads((self.ROOT / 'src/AppMeta.json').read_text(encoding='utf-8'))
 		self.window = AboutWindow('RoyiFileManager', self.metadata, str(self.ROOT / 'src/main/icons/Icon.ico'))
 		self.addCleanup(self.window.deleteLater)
 

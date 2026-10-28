@@ -83,7 +83,7 @@ class SessionManagerWindowTest(TestCase):
 			path.write_text('{}')
 			os.link(path, alias)
 			errors = Mock()
-			manager = SessionManager(Settings(path), Mock(), errors, 'test', True)
+			manager = SessionManager(Settings(path), Mock(), errors, 'test')
 			window = Mock()
 			window.saveGeometry.return_value = b'geometry'
 			window.saveState.return_value = b'state'
@@ -100,7 +100,7 @@ class SessionManagerWindowTest(TestCase):
 			self.assertEqual({path, alias}, set(Path(directory).iterdir()))
 
 	def test_named_widths_and_legacy_widths_are_forwarded(self):
-		manager = SessionManager({}, Mock(), Mock(), 'test', True)
+		manager = SessionManager({}, Mock(), Mock(), 'test')
 		for named in (None, {'core.Name': 181, 'core.Size': 91}):
 			with self.subTest(named=named):
 				pane = Mock()
@@ -120,7 +120,7 @@ class SessionManagerWindowTest(TestCase):
 				settings = _Settings({})
 				if key is not None:
 					settings[key] = previous_version
-				manager = SessionManager(settings, None, None, version, True)
+				manager = SessionManager(settings, None, None, version)
 				window = Mock()
 				window.saveGeometry.return_value = b'geometry'
 				window.saveState.return_value = b'state'
@@ -134,12 +134,12 @@ class SessionManagerWindowTest(TestCase):
 				window.show_status_message.assert_called_once_with(
 					expected, timeout_secs=5
 				)
-				self.assertEqual(expected, manager._get_startup_message())
 				manager.on_close(window)
 				self.assertEqual(version, settings['app_version'])
 				self.assertNotIn('fman_version', settings)
+				self.assertNotIn('is_licensed', settings)
 				self.assertEqual(1, settings.flush_calls)
-				restored = SessionManager(settings, None, None, version, True)
+				restored = SessionManager(settings, None, None, version)
 				window.show_status_message.reset_mock()
 				restored._show_startup_messages(window)
 				window.show_status_message.assert_called_once_with(
@@ -151,7 +151,7 @@ class SessionManagerWindowTest(TestCase):
 			'app_version': '0.3.0',
 			'fman_version': '1.7.5'
 		})
-		manager = SessionManager(settings, None, None, '0.3.0', True)
+		manager = SessionManager(settings, None, None, '0.3.0')
 		window = Mock()
 
 		manager._show_startup_messages(window)
@@ -162,7 +162,7 @@ class SessionManagerWindowTest(TestCase):
 
 	def test_first_run_starts_windowed_at_default_size(self):
 		window = _Window()
-		manager = SessionManager({}, None, None, '1.7.5', True)
+		manager = SessionManager({}, None, None, '1.7.5')
 
 		with patch('fman.impl.session.Thread'):
 			manager.show_main_window(window)
@@ -180,7 +180,7 @@ class SessionManagerWindowTest(TestCase):
 			'panes': [{}, {}]
 		}
 		window = _Window()
-		manager = SessionManager(settings, None, None, '1.7.5', True)
+		manager = SessionManager(settings, None, None, '1.7.5')
 
 		with patch('fman.impl.session.Thread'):
 			manager.show_main_window(window)
@@ -198,7 +198,7 @@ class SessionManagerWindowTest(TestCase):
 			'panes': [{}, {}]
 		})
 		window = _Window()
-		manager = SessionManager(settings, None, None, '1.7.5', True)
+		manager = SessionManager(settings, None, None, '1.7.5')
 
 		manager.reset_window_geometry(window)
 
@@ -214,7 +214,7 @@ class SessionManagerWindowTest(TestCase):
 			'window_state': _encode(b'previous state'),
 			'panes': [{}, {}]
 		})
-		manager = SessionManager(settings, None, None, 'test', True)
+		manager = SessionManager(settings, None, None, 'test')
 		window = Mock()
 		window._widget.saveGeometry.return_value = b'previous position'
 		window._widget.saveState.return_value = b'previous state'
@@ -229,14 +229,14 @@ class SessionManagerWindowTest(TestCase):
 		self.assertEqual(2, settings.flush_calls)
 		restarted = _Window()
 		with patch('fman.impl.session.Thread'):
-			SessionManager(settings, None, None, 'test', True).show_main_window(restarted)
+			SessionManager(settings, None, None, 'test').show_main_window(restarted)
 		self.assertEqual([], restarted._widget.restored_geometries)
 		self.assertEqual([], restarted._widget.restored_states)
 		self.assertEqual([(1280, 800)], restarted._widget.resize_calls)
 
 	def test_existing_session_without_geometry_uses_default_size(self):
 		window = _Window()
-		manager = SessionManager({'panes': [{}, {}]}, None, None, 'test', True)
+		manager = SessionManager({'panes': [{}, {}]}, None, None, 'test')
 
 		with patch('fman.impl.session.Thread'):
 			manager.show_main_window(window)
@@ -251,7 +251,7 @@ class SessionManagerWindowTest(TestCase):
 				settings = {'window_geometry': geometry, 'window_state': state, 'panes': [{}, {}]}
 				window = _Window()
 				with patch('fman.impl.session.Thread'):
-					SessionManager(settings, None, None, 'test', True).show_main_window(window)
+					SessionManager(settings, None, None, 'test').show_main_window(window)
 				self.assertEqual([(1280, 800)], window._widget.resize_calls)
 				self.assertEqual(1, window._widget.show_calls)
 				self.assertNotIn('window_geometry', settings)

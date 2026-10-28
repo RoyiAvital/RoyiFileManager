@@ -155,9 +155,6 @@ class DirectoryPaneWidget(QWidget):
 	@run_in_main_thread
 	def cancel_pattern_selection(self):
 		self._filter_bar.finish_selection()
-	@run_in_main_thread
-	def find_in_listing(self, search, query='', metadata=False, accepted=None):
-		return self._filter_bar.begin_search(search, query, metadata, accepted)
 	def set_location(
 		self, url, sort_column='', ascending=True, callback=None, onerror=None
 	):
@@ -223,9 +220,6 @@ class DirectoryPaneWidget(QWidget):
 	def set_hidden_files_shown(self, value):
 		self._hidden_files_shown = value
 		self.status_changed.emit()
-	@property
-	def hidden_files_shown(self):
-		return self._hidden_files_shown
 	def get_status_snapshot(self):
 		from fman.impl.status_bar import free_space_path
 		selected_urls = set(self.get_selected_files())
@@ -278,17 +272,6 @@ class DirectoryPaneWidget(QWidget):
 	def get_column_widths(self):
 		return [self._file_view.columnWidth(index) for index in range(self._model.columnCount() - 1)]
 	@run_in_main_thread
-	def set_column_widths(self, column_widths):
-		num_columns = self._model.columnCount()
-		if len(column_widths) not in (num_columns - 1, num_columns):
-			raise ValueError(
-				'Wrong number of columns: len(%r) != %d'
-				% (column_widths, num_columns)
-			)
-		for i, width in enumerate(column_widths):
-			self._file_view.setColumnWidth(i, width)
-		self.get_column_widths_by_name()
-	@run_in_main_thread
 	def get_column_widths_by_name(self):
 		self._column_widths_by_name.update(zip(self.get_columns(), self.get_column_widths()))
 		return dict(self._column_widths_by_name)
@@ -338,17 +321,11 @@ class DirectoryPaneWidget(QWidget):
 		self._model.refresh_files(tuple(url for url in urls if dirname(url) == location))
 	def _on_doubleclicked(self, index):
 		self.cancel_pattern_selection()
-		if self._filter_bar._search_session is not None:
-			self._filter_bar.finish_search(True)
-			return
 		self._controller.on_doubleclicked(self, self._model.url(index))
 	def _on_key_pressed(self, event):
 		if self._filter_bar._selection_session is not None:
 			if self._filter_bar.selection_keypress(event):
 				return True
-		if self._filter_bar._search_session is not None and event.key() in (Qt.Key_Return, Qt.Key_Enter, Key_Escape):
-			self._filter_bar.finish_search(event.key() != Key_Escape)
-			return True
 		keypad_text = bool(event.modifiers() & Qt.KeypadModifier and event.text() and event.text().isprintable() and
 			not event.modifiers() & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))
 		if self._filter_bar.isVisible() and (event.key() == Key_Backspace or keypad_text):
@@ -368,7 +345,6 @@ class DirectoryPaneWidget(QWidget):
 		self._controller.on_files_dropped(self, *args)
 	def _on_location_changed(self, url):
 		self._filter_bar.finish_selection()
-		self._filter_bar.finish_search(restore=False)
 		self._filter_bar.close()
 		self._location_bar.setText(as_human_readable(url))
 		self.status_changed.emit()
@@ -402,14 +378,11 @@ class FilterBar(QFrame):
 		self._input.setFocusPolicy(NoFocus)
 		self._matcher = compile_filter('')
 		self._active = False
-		self._search_session = None
-		self._accepted_search = None
 		self._selection_session = None
 		self._selection_jobs = None
 		self._selection_label = None
 		self._model.add_filter(self.snapshot_filter)
 		self._model.files_changed.connect(self.publish_count)
-		self._model.snapshot_committed.connect(self._search_committed)
 		file_view.verticalScrollBar().rangeChanged.connect(
 			self._on_scroll_range_changed
 		)
@@ -418,7 +391,6 @@ class FilterBar(QFrame):
 	def begin_selection(self, selecting):
 		from fman.impl.model.listing import LatestJobs
 		self.finish_selection()
-		self.finish_search()
 		source = self._model.sourceModel()
 		listing = getattr(source, '_displayed', None)
 		if listing is None:
@@ -547,52 +519,6 @@ class FilterBar(QFrame):
 			return True
 		self.finish_selection()
 		return False
-	def begin_search(self, search, query, metadata, accepted):
-		self.finish_selection()
-		source = self._model.sourceModel()
-		if getattr(source, '_displayed', None) is None:
-			return False
-		view = self._file_view
-		if self._search_session is not None and self._search_session[0] is source:
-			previous_query, state, hidden = self._search_session[2:5]
-		else:
-			previous_query, state = self._input.text(), view.snapshot_state()
-			hidden = tuple(view.isColumnHidden(index) for index in range(self._model.columnCount()))
-		self._search_session = source, search, previous_query, state, hidden, accepted
-		for index in range(1, len(hidden)):
-			view.setColumnHidden(index, not metadata)
-		self._input.setPlaceholderText('Find files')
-		self._input.setText(query)
-		self._on_text_changed(query)
-		self.show()
-		view.setFocus()
-		return True
-	def finish_search(self, accept=False, restore=True):
-		if self._search_session is None:
-			return
-		source, search, query, state, hidden, accepted = self._search_session
-		self._search_session = None
-		view = self._file_view
-		url = view.get_file_under_cursor() if accept else None
-		self._accepted_search = None
-		source._search = None
-		for index, was_hidden in enumerate(hidden):
-			if index < self._model.columnCount():
-				view.setColumnHidden(index, was_hidden)
-		self._input.setPlaceholderText('')
-		if restore and source is self._model.sourceModel():
-			source._restore_from = state[0]
-			view._pending_snapshot_restore = state
-			self._input.setText(query)
-			self._on_text_changed(query)
-			if url is not None and accepted is not None:
-				self._accepted_search = source, url, accepted
-	def _search_committed(self, result):
-		if self._accepted_search is not None:
-			source, url, accepted = self._accepted_search
-			self._accepted_search = None
-			if source is self._model.sourceModel():
-				accepted(url)
 	def handle_keypress(self, event):
 		if event.key() == Key_Escape:
 			self.close()
@@ -603,13 +529,10 @@ class FilterBar(QFrame):
 		result = query != query_before
 		# Prevent Arrow-Left/-Right from changing the cursor position:
 		self._input.setCursorPosition(len(query))
-		self.setVisible(bool(query) or self._search_session is not None)
+		self.setVisible(bool(query))
 		return result
 	def close(self):
 		self.finish_selection()
-		if self._search_session is not None:
-			self.finish_search()
-			return
 		self.hide()
 		self._input.setText('')
 	def reposition(self, scroll_bar_visible=None):
@@ -629,10 +552,7 @@ class FilterBar(QFrame):
 			return
 		was_active = self._active
 		self._matcher = compile_filter(text)
-		self._active = bool(text) or self._search_session is not None
-		if self._search_session is not None:
-			source, search = self._search_session[:2]
-			source._search = search, text
+		self._active = bool(text)
 		self.setVisible(self._active)
 		self._model.sourceModel().update()
 		if self._active:
@@ -772,9 +692,13 @@ class MainWindow(QMainWindow):
 		self.before_dialog.emit(dialog)
 		dialog.moveToThread(self._app.thread())
 		dialog.setParent(self)
-		result = dialog.exec()
-		self._dialog = None
-		return result
+		try:
+			return dialog.exec()
+		finally:
+			self._dialog = None
+			# Destroy now: a closed dialog kept alive (e.g. by a Python reference
+			# cycle) can leave the window inactive until garbage collection.
+			dialog.deleteLater()
 	@run_in_main_thread
 	def show_status_message(self, text, timeout_secs=None):
 		self._status_bar_text.setTextFormat(Qt.AutoText)
@@ -848,12 +772,7 @@ class MainWindow(QMainWindow):
 			self.clear_status_message()
 	def _on_filter_changed(self, text, matched, total):
 		if self.sender() is self._active_pane:
-			mode = 'Find' if self._active_pane._filter_bar._search_session is not None else 'Filter'
-			message = '%s "%s": %d of %d items' % (mode, text, matched, total)
-			session = self._active_pane._filter_bar._search_session
-			if session is not None and getattr(session[1], 'max_entries', total) < total:
-				message += '; first %d entries searched' % session[1].max_entries
-			self.show_status_message(message)
+			self.show_status_message('Filter "%s": %d of %d items' % (text, matched, total))
 			self._status_bar_text.setTextFormat(Qt.PlainText)
 			self._status_bar_text.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
 			self._status_bar_text.setWordWrap(True)

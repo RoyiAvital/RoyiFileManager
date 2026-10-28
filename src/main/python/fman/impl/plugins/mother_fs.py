@@ -1,11 +1,10 @@
 from fman.impl.util import Event, filenotfounderror
-from fman.url import splitscheme, basename, dirname
+from fman.url import splitscheme, dirname
 from io import UnsupportedOperation
-from threading import Lock
 import logging
 
 class MotherFileSystem:
-	def __init__(self, icon_provider):
+	def __init__(self):
 		super().__init__()
 		self.file_added = Event()
 		self.file_removed = Event()
@@ -13,7 +12,6 @@ class MotherFileSystem:
 		# Keep track of children being deleted so file_removed listeners can
 		# call remove_file_changed_callback(...):
 		self._children_being_deleted = {}
-		self._icon_provider = icon_provider
 		self._columns = {}
 	def add_child(self, scheme, child):
 		child._file_added.add_callback(self._on_file_added)
@@ -58,12 +56,7 @@ class MotherFileSystem:
 		return child.exists(path)
 	def iterdir(self, url):
 		child, path = self._split(url)
-		def compute_value():
-			iterator = getattr(child, 'iterdir')(path)
-			if hasattr(iterator, '__next__'):
-				iterator = CachedIterator(iterator)
-			return iterator
-		return child.cache.query(path, 'iterdir', compute_value)
+		return child.iterdir(path)
 	def get_snapshot_scanner(self, url, columns):
 		if not all(
 			callable(getattr(column, 'text', None)) and callable(getattr(column, 'keys', None))
@@ -82,10 +75,6 @@ class MotherFileSystem:
 		return getattr(child, fs_method_name)(path)
 	def is_dir(self, existing_url):
 		return self.query(existing_url, 'is_dir')
-	def icon(self, url):
-		child, path = self._split(url)
-		compute_icon = lambda: self._icon_provider.get_icon(url)
-		return child.cache.query(path, 'icon', compute_icon)
 	def touch(self, url):
 		child, path = self._split(url)
 		child.touch(path)
@@ -149,7 +138,6 @@ class MotherFileSystem:
 					warnings.append(message)
 		attempt(self._remove, source_url)
 		attempt(destination_fs.cache.clear, destination_path)
-		attempt(self._add_to_parent, destination_url)
 		for event, url in ((self.file_removed, source_url), (self.file_added, destination_url)):
 			for callback in tuple(event._callbacks):
 				attempt(callback, url)
@@ -234,7 +222,6 @@ class MotherFileSystem:
 		child, path = self._split(url)
 		child.notify_file_removed(path)
 	def _on_file_added(self, url):
-		self._add_to_parent(url)
 		self.file_added.trigger(url)
 	def _on_file_removed(self, url):
 		self._remove(url)
@@ -249,73 +236,3 @@ class MotherFileSystem:
 	def _remove(self, url):
 		child, path = self._split(url)
 		child.cache.clear(path)
-		parent_path = splitscheme(dirname(url))[1]
-		try:
-			parent_files = child.cache.get(parent_path, 'iterdir')
-		except KeyError:
-			pass
-		else:
-			try:
-				parent_files.remove(basename(url))
-			except ValueError:
-				pass
-	def _add_to_parent(self, url):
-		parent = dirname(url)
-		child, parent_path = self._split(parent)
-		try:
-			parent_files = child.cache.get(parent_path, 'iterdir')
-		except KeyError:
-			pass
-		else:
-			name = basename(url)
-			# CachedIterator is set-like; `in` would drain its source iterator.
-			if isinstance(parent_files, CachedIterator) \
-				or name not in parent_files:
-				parent_files.append(name)
-
-class CachedIterator:
-	def __init__(self, source):
-		self._source = source
-		self._lock = Lock()
-		self._items = []
-		self._item_counts = {}
-	def remove(self, item):
-		with self._lock:
-			self._record(item, delta=-1)
-	def append(self, item):
-		# N.B.: Behaves like set#add(...), not like list#append(...)!
-		with self._lock:
-			self._record(item)
-	def __iter__(self):
-		return _CachedIterator(self)
-	def get_next(self, pointer):
-		with self._lock:
-			for pointer in range(pointer, len(self._items)):
-				item = self._items[pointer]
-				if self._item_counts[item] > 0:
-					return pointer + 1, item
-			while True:
-				value = next(self._source) # Eventually raises StopIteration
-				if self._record(value):
-					return len(self._items), value
-	def _record(self, value, delta=1):
-		try:
-			count = self._item_counts[value]
-		except KeyError:
-			self._items.append(value)
-			self._item_counts[value] = delta
-			return True
-		if delta > 0 and count > 0:
-			return False
-		self._item_counts[value] = count + delta
-		return False
-
-class _CachedIterator:
-	def __init__(self, parent):
-		self._parent = parent
-		self._pointer = 0
-	def __iter__(self):
-		return self
-	def __next__(self):
-		self._pointer, result = self._parent.get_next(self._pointer)
-		return result

@@ -138,7 +138,7 @@ class ExternalPluginTest(TestCase):
 		self.assertEqual(1, len(loaded_columns))
 		col_name, col_instance = next(iter(loaded_columns.items()))
 		self.assertEqual('simple_plugin.TestColumn', col_name)
-		self.assertIsInstance(col_instance.unwrap(), TestColumn)
+		self.assertIs(TestColumn, type(col_instance))
 	def test_unload(self):
 		self.test_load()
 		self._plugin.unload()
@@ -171,7 +171,7 @@ class ExternalPluginTest(TestCase):
 		cm_provider = ContextMenuProvider(
 			self._panecmd_registry, self._appcmd_registry, self._key_bindings
 		)
-		self._mother_fs = MotherFileSystem(None)
+		self._mother_fs = MotherFileSystem()
 		window = Window(None, self._panecmd_registry)
 		self._plugin = ExternalPlugin(
 			self._plugin_dir, self._config, self._theme, self._font_database,
@@ -251,7 +251,7 @@ class BatchFileRenamerPluginIT(qt_tests.QuickBoardFixture):
 				pane.on_path_changed.side_effect = subscribe
 				pane.on_closed.return_value = lambda: None
 				pane.reload.side_effect = lambda on_done=None: on_done() if on_done is not None else None
-				mother = MotherFileSystem(None)
+				mother = MotherFileSystem()
 				mother.add_child('file://', LocalFileSystem())
 				with patch('fman.fs._get_mother_fs', return_value=mother), patch('fman.APP_VERSION', '0.14.0'), \
 						patch('fman.submit_task', side_effect=lambda task: task()):

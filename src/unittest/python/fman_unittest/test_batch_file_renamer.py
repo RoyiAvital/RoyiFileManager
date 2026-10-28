@@ -288,7 +288,7 @@ class BatchFileRenamerTest(TestCase):
 		class NotificationError(Exception):
 			def __str__(self):
 				raise RuntimeError('Notification error formatting failed')
-		mother = MotherFileSystem(None)
+		mother = MotherFileSystem()
 		mother.add_child('file://', LocalFileSystem())
 		removed, added = Mock(), Mock()
 		mother.file_removed.add_callback(Mock(side_effect=NotificationError()))

@@ -9,7 +9,7 @@ from fman import PLATFORM, load_settings, Task
 from fman.fs import FileSystem
 from fman.url import as_url, splitscheme, as_human_readable, basename
 from hashlib import sha256
-from io import UnsupportedOperation, FileIO, BufferedReader, TextIOWrapper
+from io import UnsupportedOperation, TextIOWrapper
 from os.path import join, dirname
 from pathlib import PurePosixPath, Path
 from queue import Queue, Empty, Full
@@ -21,7 +21,6 @@ import fman.fs
 import os
 import os.path
 import re
-import signal
 import sys
 
 # Prevent 'Rename' below from accidentally overwriting core.Rename:
@@ -305,7 +304,7 @@ class _7ZipFileSystem(FileSystem):
 
 class _7zipTaskWithProgress(Task):
 	def run_7zip_with_progress(
-		self, args, pty=True, allow_warning=True, cancellable=True,
+		self, args, allow_warning=True, cancellable=True,
 		progress_limit=100, check_before=True, **kwargs
 	):
 		if check_before:
@@ -315,8 +314,8 @@ class _7zipTaskWithProgress(Task):
 				self.check_canceled()
 			elif self._dialog.was_canceled():
 				self.set_text('Canceling after archive update finishes...')
-		with _7zip(args, pty=pty, allow_warning=allow_warning, **kwargs) as process:
-			lines = process.stdout_lines if pty else process.progress_records(check)
+		with _7zip(args, allow_warning=allow_warning, **kwargs) as process:
+			lines = process.progress_records(check)
 			try:
 				for line in lines:
 					try:
@@ -366,7 +365,7 @@ class AddToArchive(_7zipTaskWithProgress):
 				try:
 					self.run_7zip_with_progress(
 						args + ['-bsp1', '-bse1', '-spd'], cwd=tmp_dir,
-						pty=False, allow_warning=False, cancellable=False,
+						allow_warning=False, cancellable=False,
 						progress_limit=99
 					)
 				except _7zipError as error:
@@ -381,7 +380,7 @@ class AddToArchive(_7zipTaskWithProgress):
 					)
 					self.run(verification)
 			else:
-				self.run_7zip_with_progress(args, cwd=tmp_dir)
+				self.run_7zip_with_progress(args + ['-bsp1', '-bse1'], cwd=tmp_dir, cancellable=False)
 			dest_path = self._zip_path + '/' + self._path_in_zip
 			self._zip_fs.notify_file_added(dest_path)
 
@@ -419,7 +418,7 @@ class Extract(_7zipTaskWithProgress):
 				args.append('-i!' + self._path_in_zip)
 			try:
 				self.run_7zip_with_progress(
-					args, pty=False, allow_warning=False, progress_limit=99
+					args, allow_warning=False, progress_limit=99
 				)
 			except _7zipError as error:
 				raise OSError(EIO, str(error)) from error
@@ -465,7 +464,7 @@ class Extract(_7zipTaskWithProgress):
 			self.set_text('Extracting ' + os.path.basename(self._zip_path))
 			self.run_7zip_with_progress(
 				['x', '-bsp1', '-bse1', '-y', '-spd', self._zip_path, '-o' + str(output)],
-				pty=False, allow_warning=False, progress_limit=99
+				allow_warning=False, progress_limit=99
 			)
 			after = os.stat(self._zip_path)
 			if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
@@ -600,7 +599,7 @@ class UpdateArchive(_7zipTaskWithProgress):
 				restore=lambda parent: self._restore_parent(zip_path, parent)):
 				self.run_7zip_with_progress(
 					['d', '-bsp1', '-bse1', '-spd', zip_path, '-i!' + path_in_zip],
-					pty=False, allow_warning=False, cancellable=False, progress_limit=99
+					allow_warning=False, cancellable=False, progress_limit=99
 				)
 			self._fs.notify_file_removed(splitscheme(self._source_url)[1])
 		except (OSError, CalledProcessError) as error:
@@ -613,7 +612,7 @@ class UpdateArchive(_7zipTaskWithProgress):
 			Path(directory, parent).mkdir(parents=True)
 			self.run_7zip_with_progress(
 				['a', '-bsp1', '-bse1', '-spd', zip_path, '-i!' + parent],
-				cwd=directory, pty=False, allow_warning=False, cancellable=False,
+				cwd=directory, allow_warning=False, cancellable=False,
 				progress_limit=99, check_before=False
 			)
 		self._fs.notify_file_added(zip_path + '/' + parent)
@@ -672,7 +671,8 @@ class Rename(_7zipTaskWithProgress):
 	def __call__(self, *args, **kwargs):
 		with self._fs._preserve_empty_parent(self._zip_path, self._src_in_zip):
 			self.run_7zip_with_progress(
-				['rn', self._zip_path, self._src_in_zip, self._dst_in_zip]
+				['rn', '-bsp1', '-bse1', self._zip_path, self._src_in_zip, self._dst_in_zip],
+				cancellable=False
 			)
 		self._fs.notify_file_removed(self._zip_path + '/' + self._src_in_zip)
 		self._fs.notify_file_added(self._zip_path + '/' + self._dst_in_zip)
@@ -707,8 +707,8 @@ def _basename(zip_path, path_in_zip):
 	sep = ('/' if path_in_zip else '')
 	return (zip_path + sep + path_in_zip).rsplit('/', 1)[-1]
 
-def _run_7zip(args, cwd=None, pty=False):
-	with _7zip(args, cwd=cwd, pty=pty):
+def _run_7zip(args, cwd=None):
+	with _7zip(args, cwd=cwd):
 		pass
 
 def _create_temp_dir_next_to(path):
@@ -720,18 +720,16 @@ class _7zip:
 
 	_7ZIP_WARNING = 1
 
-	def __init__(self, args, cwd=None, pty=False, kill=False, allow_warning=True):
+	def __init__(self, args, cwd=None, kill=False, allow_warning=True):
 		self._args = args
 		self._cwd = cwd
-		self._pty = pty
 		self._kill = kill
 		self._killed = False
 		self._allow_warning = allow_warning
 		self._process = None
 		self._stdout_lines = deque(maxlen=100)
 	def __enter__(self):
-		cls = Run7ZipViaWinpty if self._pty else Popen7ZipWindows
-		self._process = cls(self._args, self._cwd)
+		self._process = Popen7ZipWindows(self._args, self._cwd)
 		return self
 	@property
 	def stdout_lines(self):
@@ -871,131 +869,6 @@ class Popen7ZipWindows(Popen7Zip):
 
 def _get_7zip_args_windows(args):
 	return ['-sccUTF-8'] + args
-
-class Popen7ZipUnix(Popen7Zip):
-	def __init__(self, args, cwd):
-		env, encoding = _get_7zip_env_encoding_unix()
-		super().__init__(args, cwd, env, encoding=encoding)
-
-def _get_7zip_env_encoding_unix():
-	# According to the README in its source code distribution, p7zip can
-	# only handle unicode file names properly if the environment is UTF-8:
-	env = {'LANG': 'en_US.UTF-8'}
-	# Force encoding because TextIOWrapper uses ASCII if
-	# locale.getpreferredencoding(False) happens to be None:
-	encoding = 'utf-8'
-	return env, encoding
-
-class Run7ZipViaPty:
-	"""
-	When run from a terminal, 7-Zip displays progress information for some
-	operations. This works as follows: It prints a line, say
-		 41% + Picture.jpg
-	Then, it outputs ASCII control characters that *delete* the line again. In
-	the above example on Linux, this would be 18 * '\b', the Backspace
-	character. Next, it "overwrites" the existing characters with 18 * ' '.
-	Finally, it outputs the new line:
-		 59% + Picture.jpg
-
-	Unlike Popen, this class lets us read the progress information as it is
-	written by 7-Zip. This is achieved by 1) faking a pseudo-terminal (hence the
-	name "Pty") and 2) by faithfully interpreting '\b' in the subprocess's
-	output.
-	"""
-
-	class Stdout:
-		def __init__(self, fd, encoding):
-			self._fd = fd
-			self._encoding = encoding
-			self._source = BufferedReader(FileIO(self._fd))
-		def __iter__(self):
-			buffer = b''
-			prev_len_delta = 0
-			curr_line = lambda: buffer.decode(self._encoding)
-			while True:
-				try:
-					b = self._source.read(1)
-				except OSError:
-					yield curr_line()
-					break
-				if b == b'':
-					yield curr_line()
-					break
-				elif b == b'\b':
-					if prev_len_delta == 1:
-						l = curr_line()
-						if l.strip():
-							yield l
-					buffer = buffer[:-1]
-					prev_len_delta = -1
-				else:
-					buffer += b
-					if b == b'\n':
-						yield curr_line()
-						buffer = b''
-						prev_len_delta = 0
-					else:
-						prev_len_delta = 1
-		def close(self):
-			self._source.close()
-
-	def __init__(self, args, cwd):
-		env, encoding = _get_7zip_env_encoding_unix()
-		self._pid, fd = self._spawn([_7ZIP_BINARY] + args, cwd, env)
-		self.stdout = self.Stdout(fd, encoding=encoding)
-	def kill(self):
-		os.kill(self._pid, signal.SIGTERM)
-	def wait(self):
-		return os.waitpid(self._pid, 0)[1]
-	def _spawn(self, argv, cwd=None, env=None):
-		# Copied and adapted from pty.spawn(...).
-		import pty # <- import late because pty is not available on Windows.
-		pid, master_fd = pty.fork()
-		if pid == pty.CHILD:
-			# In some magical way, this code is executed in the forked child
-			# process.
-			if cwd is not None:
-				os.chdir(cwd)
-			if env is not None:
-				os.environ = env
-			os.execlp(argv[0], *argv)
-		return pid, master_fd
-
-class Run7ZipViaWinpty:
-
-	class Stdout:
-		def __init__(self, process):
-			self._process = process
-			self._escape_ansi = re.compile(r'(\x9B|\x1B\[)[0-?]*[ -/]*[@-~]')
-		def __iter__(self):
-			while True:
-				try:
-					line = self._process.read()
-				except EOFError:
-					break
-				line = self._escape_ansi.sub('', line)
-				if line:
-					yield line
-		def close(self):
-			try:
-				self._process.close()
-			finally:
-				# pywinpty marks the process closed in wait(), causing close()
-				# to leave these sockets open.
-				self._process.fileobj.close()
-				self._process._server.close()
-
-	def __init__(self, args, cwd):
-		args = _get_7zip_args_windows(args)
-		self._process = self._spawn([_7ZIP_BINARY] + args, cwd)
-		self.stdout = self.Stdout(self._process)
-	def kill(self):
-		self._process.sendcontrol('c')
-	def wait(self):
-		return self._process.wait()
-	def _spawn(self, argv, cwd=None, env=None):
-		from winpty import PtyProcess
-		return PtyProcess.spawn(argv, cwd, env)
 
 class ZipFileSystem(_7ZipFileSystem):
 	scheme = 'zip://'

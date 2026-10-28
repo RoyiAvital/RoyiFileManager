@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.3] - 2026-10-28
+
+This release focuses on removing legacy code inherited from `fman`.  
+It means some operations are smoother, less bugs and edge cases.  
+The code now is cleaner and shorter as well as the tests.
+
+### Changed
+
+- Application metadata now lives in `src/AppMeta.json`; the empty `src/build`
+  directory is removed. The packaged metadata location is unchanged.
+- Archive writes and renames are about 5 seconds faster each. 7-Zip now reports
+  progress through pipes instead of a pseudo-terminal, and the `pywinpty`
+  dependency is removed. Canceling an archive update lets the current 7-Zip
+  write finish first, so no partial archive is left behind.
+- Folder listings without the native parser (for example some network shares)
+  are built faster.
+- `fman.fs.iterdir` no longer caches names. Each call returns the folder's
+  current contents.
+- Plug-in columns are registered as the plug-in's own instance, without a host
+  wrapper.
+
+### Removed
+
+- Unused plug-in APIs with no bundled caller:
+  - `DirectoryPane.find_in_listing` and its in-pane Find mode. Use
+    `show_quicksearch` over `pane.get_listing()`, as Search Files does.
+  - `PaneToolWindow.set_panel` and `bottom_panel`. Use `show_panel`.
+  - `ToolWindow.rename_prompt`. Use `show_prompt`.
+- fman leftovers: the old icon provider and its icon cache, the licensing flag in
+  session settings, the unused Open Sans font, and the Mac/Linux entries in the
+  third-party license file.
+
+### Fixed
+
+- An error in a UI callback no longer closes the application. It is reported
+  like other plug-in errors.
+- Closing the Command Palette, Go To or another Quicksearch dialog could leave
+  the window without keyboard focus when another application was in front.
+  Closed dialogs are now destroyed at once, so focus returns to the pane.
+
+### Documentation
+
+- `PlugIn.md` drops the removed APIs and the `iterdir` caching note.
+- `DEVELOPMENT.md` documents `python build.py test-docs`, which runs the
+  documentation gallery capture tests. The Pages workflow runs it; `test` no
+  longer does.
+
 ## [0.19.2] - 2026-10-27 
 
 This version extends the _QuickView_ capabilities by adding support for animated images.  

@@ -39,7 +39,7 @@ class ApplicationContextTest(TestCase):
 
 	def test_startup_uses_product_version(self):
 		settings_path = Path(__file__).resolve().parents[4] / \
-			'src/build/settings/AppMeta.json'
+			'src/AppMeta.json'
 		version = json.loads(settings_path.read_text(encoding='utf-8'))['version']
 		context = fman_application_context.DevelopmentApplicationContext()
 		context.mother_fs = Mock()
@@ -80,21 +80,82 @@ class ApplicationContextTest(TestCase):
 					context.build_settings)
 				self.assertEqual('9.8.7', context.app_version)
 
-	@patch.object(fman_application_context, 'makedirs')
-	@patch.object(fman_application_context, 'IconProvider')
-	@patch.object(fman_application_context, 'QFileIconProvider')
-	def test_windows_icon_provider_uses_portable_cache(
-		self, windows_provider, icon_provider, makedirs
-	):
-		context = Mock()
-		context._get_local_data_file.return_value = 'icons'
-		filesystem = Mock()
-		fman_application_context.DevelopmentApplicationContext.\
-			_get_icon_provider(context, filesystem)
-		context._get_local_data_file.assert_called_once_with('Cache', 'Icons')
-		makedirs.assert_called_once_with('icons', exist_ok=True)
-		windows_provider.assert_called_once_with()
-		icon_provider.assert_called_once_with(windows_provider.return_value, filesystem, 'icons')
+	def test_excepthook_reports_plugin_errors_and_prints_others(self):
+		error = ValueError('broken')
+		for handled in (True, None):
+			with self.subTest(handled=handled):
+				context = Mock()
+				context.plugin_error_handler.handle.return_value = handled
+				with patch.object(fman_application_context, 'print_exception') as printed:
+					fman_application_context.DevelopmentApplicationContext._excepthook(
+						context, ValueError, error, None)
+				context.plugin_error_handler.handle.assert_called_once_with(ValueError, error, None)
+				self.assertEqual(not handled, printed.called)
+
+	def test_excepthook_keeps_qt_slot_exceptions_from_aborting(self):
+		import os
+		import subprocess
+		script = '''
+import sys
+from unittest.mock import Mock
+from fman.impl.application_context import DevelopmentApplicationContext
+from PyQt5.QtCore import QCoreApplication, QTimer
+context = Mock()
+context.plugin_error_handler.handle.return_value = None
+sys.excepthook = lambda *args: DevelopmentApplicationContext._excepthook(context, *args)
+app = QCoreApplication([])
+QTimer.singleShot(0, lambda: 1 / 0)
+QTimer.singleShot(100, app.quit)
+app.exec_()
+print('SURVIVED')
+'''
+		result = subprocess.run([sys.executable, '-c', script], capture_output=True,
+			text=True, timeout=60, env=os.environ.copy())
+		self.assertEqual(0, result.returncode, result.stderr)
+		self.assertIn('SURVIVED', result.stdout)
+		self.assertIn('ZeroDivisionError', result.stderr)
+
+	def test_excepthook_reports_plugin_qt_callback_error_details(self):
+		import json
+		import os
+		import subprocess
+		from tempfile import TemporaryDirectory
+		script = '''
+import json, sys
+from pathlib import Path
+from unittest.mock import Mock
+from fman.impl.application_context import DevelopmentApplicationContext
+from fman.impl.plugins.error import PluginErrorHandler
+from PyQt5.QtCore import QCoreApplication, QTimer
+plugin_dir = Path(sys.argv[1])
+sys.path.insert(0, str(plugin_dir))
+from diagnostic_plugin import callback
+app = QCoreApplication([])
+handler = PluginErrorHandler(app)
+handler.add_dir(str(plugin_dir))
+alerts = []
+handler.on_main_window_shown(Mock(show_alert=alerts.append))
+context = Mock(plugin_error_handler=handler)
+sys.excepthook = lambda *args: DevelopmentApplicationContext._excepthook(context, *args)
+QTimer.singleShot(0, callback)
+QTimer.singleShot(100, app.quit)
+app.exec_()
+print(json.dumps(alerts))
+'''
+		with TemporaryDirectory() as directory:
+			package = os.path.join(directory, 'DiagnosticPlugin', 'diagnostic_plugin')
+			os.makedirs(package)
+			with open(os.path.join(package, '__init__.py'), 'w', encoding='utf-8') as file:
+				file.write("def callback():\n\traise ValueError('plug-in detail')\n")
+			result = subprocess.run([sys.executable, '-B', '-c', script, os.path.dirname(package)],
+				capture_output=True, text=True, timeout=60, env=os.environ.copy())
+		self.assertEqual(0, result.returncode, result.stderr)
+		alerts = json.loads(result.stdout.splitlines()[-1])
+		self.assertEqual(1, len(alerts), alerts)
+		self.assertTrue(alerts[0].startswith("Plugin 'DiagnosticPlugin' raised an error."), alerts[0])
+		self.assertIn("raise ValueError('plug-in detail')", alerts[0])
+		self.assertIn('ValueError: plug-in detail', alerts[0])
+		self.assertIn('ValueError: plug-in detail', result.stderr)
 
 
 class NativeWindowsCleanupTest(TestCase):

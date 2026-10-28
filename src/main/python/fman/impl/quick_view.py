@@ -553,7 +553,6 @@ class QuickViewSession(QObject):
 		self._connect(self.overlay.visibility_changed, self._animation_visibility)
 		self._connect(source._file_view.selectionModel().currentChanged, self.cursor_changed)
 		self._connect(source._model.modelAboutToBeReset, self._model_resetting)
-		self._connect(source._model.modelReset, self._model_reset_done)
 		self._connect(source._model.snapshot_committed, self._snapshot_committed)
 		self._connect(source._model.location_changed, self._location_changed)
 		self._connect(source._model.location_loaded, self._location_loaded)
@@ -574,12 +573,8 @@ class QuickViewSession(QObject):
 		self._url = ''
 		self._clear('Loading folder')
 	def _model_resetting(self):
-		self._snapshot_reset = hasattr(self.source._model.sourceModel(), '_displayed')
-		if not self._snapshot_reset:
-			self._reset()
-	def _model_reset_done(self):
-		if not self._snapshot_reset:
-			self.cursor_changed()
+		# Hold previews until the snapshot commit restores the selection.
+		self._snapshot_reset = True
 	def _snapshot_committed(self, *_):
 		self._snapshot_reset = False
 		self.cursor_changed()

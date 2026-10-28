@@ -63,8 +63,6 @@ class FindData(ctypes.Structure):
 
 @cache
 def api():
-	if os.name != 'nt':
-		raise OSError('Robocopy requires Windows.')
 	library = ctypes.WinDLL('kernel32', use_last_error=True)
 	handle, pointer, dword = wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD
 	for name, arguments, result in (

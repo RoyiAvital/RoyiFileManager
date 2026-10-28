@@ -51,7 +51,7 @@ def _load_native_parser():
 		'Run `git lfs pull`; see src/main/c/README.md.' % ', '.join(map(str, candidates)))
 
 
-_fsparser = _load_native_parser() if os.name == 'nt' else None
+_fsparser = _load_native_parser()
 
 
 def records(data):

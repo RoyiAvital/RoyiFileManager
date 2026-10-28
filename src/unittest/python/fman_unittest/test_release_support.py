@@ -123,6 +123,8 @@ class ReleaseProductNameTest(TestCase):
 		build = workflow['jobs']['build']
 		resolve = next(step for step in build['steps'] if step.get('id') == 'version')['run']
 		self.assertIn('$appName = python src/main/python/fbs_runtime/build_settings.py', resolve)
+		self.assertIn('$settings = Get-Content src/AppMeta.json -Raw | ConvertFrom-Json', resolve)
+		self.assertNotIn('src/build/settings', resolve)
 		self.assertIn('if ($LASTEXITCODE -ne 0)', resolve)
 		self.assertIn('"app-name=$appName" >> $env:GITHUB_OUTPUT', resolve)
 		self.assertIn('"artifact-name=$appName-$version" >> $env:GITHUB_OUTPUT', resolve)

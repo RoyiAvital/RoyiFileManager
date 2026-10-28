@@ -2,7 +2,7 @@ from contextlib import contextmanager
 from fman.impl.model import SortedFileSystemModel
 from fman.impl.plugins.builtin import NullFileSystem, NullColumn
 from fman.impl.plugins.mother_fs import MotherFileSystem
-from fman.impl.util import filenotfounderror
+
 from fman.impl.util.qt import connect_once, DisplayRole, DecorationRole
 from fman.impl.util.qt.thread import run_in_main_thread
 from fman.url import splitscheme
@@ -246,8 +246,7 @@ class SortedFileSystemModelAT: # Instantiated in fman_integrationtest.test_qt
 			def names(model):
 				return self.run_in_app(lambda: [model.data(model.index(row, 0))
 					for row in range(model.rowCount())])
-			with patch('core.commands.query', side_effect=self._fs.query), \
-				patch.object(self._fs._icon_provider, 'get_icon', return_value=None):
+			with patch('core.commands.query', side_effect=self._fs.query):
 				try:
 					self.run_in_app(create_views)
 					for model in models:
@@ -595,7 +594,7 @@ class SortedFileSystemModelAT: # Instantiated in fman_integrationtest.test_qt
 		self._folder_icon = folder_icon
 		self._file_icon = file_icon
 		files = CaseInsensitiveDict(self._files)
-		self._fs = MotherFileSystem(StubIconProvider(files))
+		self._fs = MotherFileSystem()
 		self._fs.add_child('null://', NullFileSystem())
 		self._null_column = NullColumn()
 		self._register_column(self._null_column)
@@ -642,16 +641,6 @@ class SortedFileSystemModelAT: # Instantiated in fman_integrationtest.test_qt
 
 def _is_debugger_attached():
 	return bool(sys.gettrace())
-
-class StubIconProvider:
-	def __init__(self, files):
-		self._files = files
-	def get_icon(self, url):
-		path = splitscheme(url)[1]
-		try:
-			return self._files[path].get('icon', None)
-		except KeyError:
-			raise filenotfounderror(url)
 
 class CaseInsensitiveDict:
 	def __init__(self, items):

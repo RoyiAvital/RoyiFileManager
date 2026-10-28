@@ -57,8 +57,11 @@ def install_baseline(destination, revision):
 	root = Path(__file__).resolve().parents[4]
 	commit = subprocess.check_output(['git', 'rev-parse', '--verify', revision + '^{commit}'],
 		cwd=root, text=True).strip()
-	archive = subprocess.check_output(['git', 'archive', commit,
-		'src/main', 'src/build/settings'], cwd=root)
+	metadata = subprocess.check_output(['git', 'ls-tree', '--name-only', commit, '--',
+		'src/AppMeta.json', 'src/build/settings'], cwd=root).decode('utf-8').splitlines()
+	if not metadata:
+		raise ValueError('Application metadata is missing from revision ' + commit)
+	archive = subprocess.check_output(['git', 'archive', commit, 'src/main', *metadata], cwd=root)
 	destination.mkdir()
 	with tarfile.open(fileobj=io.BytesIO(archive)) as source:
 		source.extractall(destination, filter='data')
@@ -498,7 +501,6 @@ def child(directory, label, mode, show_hidden, rows_output=None, interactions=Fa
 					if state['errors']:
 						raise RuntimeError('refresh exceptions: ' + repr(state['errors']))
 				if interactions:
-					from search_file_fuzzy.indexer import ListingSearch
 					pane = context.window.get_panes()[0]._widget
 					state['interactions'] = {}
 					def measure(name, action):
@@ -530,9 +532,6 @@ def child(directory, label, mode, show_hidden, rows_output=None, interactions=Fa
 							'arrow_to_paint_ms': distribution(state.pop(name + '_paints_ms'))}
 					measure('filter', lambda: pane._filter_bar._input.setText('!zzzzzzzzzzzz'))
 					measure('clear_filter', lambda: pane._filter_bar._input.setText(''))
-					query = '1' if state['entries'] > 100000 else ''
-					measure('fuzzy', lambda: pane.find_in_listing(ListingSearch(max_entries=1000000), query))
-					measure('exit_fuzzy', lambda: pane._filter_bar.finish_search())
 					measure('sort', lambda: pane.set_sort_column('core.Modified', False))
 					measure('refresh', pane.reload)
 					profile = None

@@ -55,10 +55,10 @@ def exercise(context, root, restart):
 		assert load_settings('QuickView.yaml')['untouched'] == 'preserved'
 		gui(lambda: QTest.keyClick(left._widget._file_view, Qt.Key_Tab))
 		wait_for(canvas.hasFocus, 'Tab did not focus canvas')
-		assert gui(context.plugin_support.get_active_pane) is None
+		assert not any(gui(pane._widget.hasFocus) for pane in (left, right))
 		assert gui(lambda: window._active_pane is left._widget)
 		gui(lambda: QTest.keyClick(canvas, Qt.Key_Escape))
-		assert left._has_focus()
+		assert left._widget.hasFocus()
 		left.run_command('quick_view_actual_size')
 		assert gui(lambda: canvas.scale) == 1
 		assert load_settings('QuickView.yaml')['image_mode'] == 'actual_size'
@@ -67,7 +67,7 @@ def exercise(context, root, restart):
 		left.run_command('quick_view_pan', {'direction': 'right', 'large': True})
 		gui(session.overlay.focus_canvas)
 		gui(lambda: QTest.keyClick(canvas, Qt.Key_Z))
-		assert left._has_focus() and not left._widget.is_filtering()
+		assert left._widget.hasFocus() and not left._widget.is_filtering()
 		dialog_closed = Event()
 		dialog_errors = []
 		def reject_dialog(dialog):
@@ -82,7 +82,7 @@ def exercise(context, root, restart):
 		gui(lambda: QTest.keyClick(canvas, Qt.Key_P, Qt.ControlModifier | Qt.ShiftModifier))
 		assert dialog_closed.wait(10), 'Command Center did not open'
 		assert not dialog_errors, dialog_errors
-		wait_for(left._has_focus, 'Command Center did not return source focus')
+		wait_for(left._widget.hasFocus, 'Command Center did not return source focus')
 		gui(lambda: window.before_dialog.disconnect(reject_dialog))
 		left.run_command('quick_view_fit')
 		for width, height in ((960, 600), (1280, 800)):
@@ -104,7 +104,7 @@ def exercise(context, root, restart):
 		assert right_before == (right.get_path(), right.get_file_under_cursor(), right.get_selected_files())
 		assert geometry_before[:4] == gui(lambda: (right._widget.layout(), right._widget._model, right._widget.focusProxy(), window.minimumSize()))
 		left.run_command('switch_panes')
-		assert right._has_focus()
+		assert right._widget.hasFocus()
 		right.run_command('toggle_quick_view')
 		wait_for(lambda: getattr(window, '_quick_view_session', None) is not None, 'Right source could not enable')
 		gui(window._quick_view_owner.invalidate)

@@ -215,7 +215,7 @@ class ChecksumEngineTest(TestCase):
 
     def test_row_accounting_escapes_once_and_stops_when_not_retaining(self):
         row = engine.ResultRow(1, 'bad\x00\ud800', 'Mismatch', details='details\x00', target='C:\\checks\\file')
-        expected_size, expected_payload = row.display_bytes, row.payload_bytes
+        expected_size, expected_payload = row.display_bytes, row.display_bytes + row.raw_bytes
         results = engine.Results(row_limit=1)
         with patch.object(engine, 'display_text', wraps=engine.display_text) as display:
             results.add(row)

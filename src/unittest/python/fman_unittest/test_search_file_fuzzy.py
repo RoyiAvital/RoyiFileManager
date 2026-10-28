@@ -773,7 +773,7 @@ class MetadataIndexTest(TestCase):
 			archive = Path(root) / 'test.zip'
 			with ZipFile(archive, 'w') as writer:
 				writer.writestr(ZipInfo('empty.txt', (2026, 9, 18, 12, 34, 0)), b'')
-			filesystem = MotherFileSystem(Mock())
+			filesystem = MotherFileSystem()
 			filesystem.add_child('zip://', ZipFileSystem(suffixes={'.zip'}))
 			with patch('fman.fs._get_mother_fs', return_value=filesystem):
 				entry, = build_index(as_url(archive, 'zip://'), collect_metadata=True).entries
@@ -910,7 +910,6 @@ class MetadataCommandTest(TestCase):
 		self.plugin.show_quicksearch.assert_called_once()
 		self.plugin.build_index.assert_not_called()
 		self.plugin.submit_task.assert_not_called()
-		self.pane.find_in_listing.assert_not_called()
 		self.pane.run_command.assert_called_once_with('open_directory', {'url': 'test://root/report.txt'})
 
 	def test_both_commands_collect_and_reserve_description_without_query_io(self):

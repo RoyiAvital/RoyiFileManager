@@ -71,6 +71,7 @@
 - [x] CHANGE: Convert the settings file into YAML / TOML (Which is faster to parse). Add comments to hint the options and valid values.
 - [x] CHANGE: Group the _Command Palette_ items into groups: "Application: About", "Application: Edit settings", "File System: Edit".
 - [x] CHANGE: Merge the _Zen_ into the _About_ window.
+- [ ] BUG: After a computer crash the application did not start. After many tries it started with "clean" default setting (Offering the tutorial).
 
 ## Performance
 

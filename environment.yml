@@ -7,7 +7,6 @@ dependencies:
   - pyinstaller>=6,<7
   - pyyaml
   - pywin32
-  - pywinpty
   - send2trash
   - tinycss2>=1.5,<2
   - requests

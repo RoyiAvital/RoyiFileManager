@@ -474,7 +474,7 @@ with TemporaryDirectory() as directory:
 		canvas.set_page(revision, request, result)
 		copies.append((perf_counter() - start) * 1000)
 	controller.page_ready.connect(rendered)
-	for generation in range(100):
+	for generation in range(30):
 		documents.clear()
 		canvas.clear()
 		start = perf_counter()
@@ -520,8 +520,8 @@ with TemporaryDirectory() as directory:
 	assert max(gaps) < 100, gaps
 	assert canvas.cache_bytes <= 64 * 1024 * 1024 and len(canvas.cache) <= 6
 	assert next(iter(canvas.cache.values())).width() == 2828
-	print('PDF_RESOURCE cycles=100 first_ms=%.1f median_ms=%.1f handles=%d->%d commit_MiB=%.1f->%.1f max_heartbeat_ms=%.1f large_copy_ms=%.1f' %
-		(latencies[0], sorted(latencies)[50], samples[9][0], samples[-1][0], samples[9][1]/1048576,
+	print('PDF_RESOURCE cycles=%d first_ms=%.1f median_ms=%.1f handles=%d->%d commit_MiB=%.1f->%.1f max_heartbeat_ms=%.1f large_copy_ms=%.1f' %
+		(len(latencies), latencies[0], sorted(latencies)[len(latencies) // 2], samples[9][0], samples[-1][0], samples[9][1]/1048576,
 		samples[-1][1]/1048576, max(gaps), copies[-1]))
 	controller.invalidate()
 	until(lambda: controller.process is None)

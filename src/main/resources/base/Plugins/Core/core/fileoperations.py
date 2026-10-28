@@ -41,15 +41,12 @@ class FileTreeOperation(Task):
 		self._tasks = []
 		self._destination_task = None
 		self._num_files = 0
-		self._cannot_move_to_self_shown = False
 		self._override_all = None
 		self._ignore_exceptions = False
 		self._skipped_errors = 0
 		self._suppressed_errors = 0
 		self._skipped_examples = []
 		self._ancestor_identities = {}
-	def _transfer(self, src, dest):
-		raise NotImplementedError()
 	def _prepare_transfer(self, src, dest):
 		raise NotImplementedError()
 	def _can_transfer_samefile(self):
@@ -149,7 +146,7 @@ class FileTreeOperation(Task):
 	def _contains_destination(self, source, destination, is_dir, destination_exists):
 		if source == destination:
 			return True
-		if os.name == 'nt' and splitscheme(source)[0] == splitscheme(destination)[0] == 'file://':
+		if splitscheme(source)[0] == splitscheme(destination)[0] == 'file://':
 			try:
 				source_path, destination_path = as_human_readable(source), as_human_readable(destination)
 				metadata = os.stat(source_path) if is_dir else os.lstat(source_path)
@@ -345,8 +342,6 @@ class FileTreeOperation(Task):
 class CopyFiles(FileTreeOperation):
 	def __init__(self, *super_args, **super_kwargs):
 		super().__init__('copy', *super_args, **super_kwargs)
-	def _transfer(self, src, dest):
-		self._fs.copy(src, dest)
 	def _can_transfer_samefile(self):
 		# Can never copy to the same file.
 		return False
@@ -362,8 +357,6 @@ class MoveFiles(FileTreeOperation):
 		):
 			raise OSError('Moving local files into archives is disabled for safety. Copy and verify them before deleting the originals.')
 		return super()._gather_files()
-	def _transfer(self, src, dest):
-		self._fs.move(src, dest)
 	def _can_transfer_samefile(self):
 		# May be able to move to the same file on case insensitive file systems.
 		# Consider a/ and A/: They are the "same" file yet it does make sense to

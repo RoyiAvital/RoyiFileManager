@@ -9,9 +9,8 @@ root = Path(SPECPATH)
 load_build_settings = run_path(
 	str(root / 'src/main/python/fbs_runtime/build_settings.py')
 )['load_build_settings']
-app_name = load_build_settings(root / 'src/build/settings/AppMeta.json')['app_name']
+app_name = load_build_settings(root / 'src/AppMeta.json')['app_name']
 
-winpty_datas, winpty_binaries, winpty_imports = collect_all('winpty')
 send2trash_datas, send2trash_binaries, send2trash_imports = \
 	collect_all('send2trash')
 pdfium_datas, pdfium_binaries, pdfium_imports = collect_all(
@@ -28,16 +27,16 @@ checksum_native_destination = 'resources/Plugins/ChecksumFiles/checksum_files/_v
 datas = [
 	('src/main/resources/base', 'resources'),
 	('plugins/BatchFileRenamer', 'resources/Plugins/BatchFileRenamer'),
-	('src/build/settings/AppMeta.json', 'resources/build-settings'),
+	('src/AppMeta.json', 'resources/build-settings'),
 	('src/main/resources/windows', 'resources'),
 	('src/main/icons/Icon.ico', 'resources'),
 	('src/main/resources/base/Plugins/Everything/bin/Everything.exe', 'resources/Plugins/Everything/bin'),
 	('src/main/resources/base/Plugins/Everything/licenses/Everything.txt', 'resources/Plugins/Everything/licenses')
-] + winpty_datas + send2trash_datas + pdfium_datas + pdfium_raw_datas + duckdb_datas + copy_metadata('pypdfium2') + copy_metadata('Pygments') + [
+] + send2trash_datas + pdfium_datas + pdfium_raw_datas + duckdb_datas + copy_metadata('pypdfium2') + copy_metadata('Pygments') + [
 	(str(path), checksum_native_destination) for path in checksum_native_files
 	if path.suffix != '.pyd'
 ]
-binaries = winpty_binaries + send2trash_binaries + pdfium_binaries + pdfium_raw_binaries + duckdb_binaries + [
+binaries = send2trash_binaries + pdfium_binaries + pdfium_raw_binaries + duckdb_binaries + [
 	(str(Path(sys.prefix) / 'bin' / 'rg.exe'), 'resources/Plugins/SearchFiles/bin'),
 	(str(Path(sys.prefix) / 'bin' / 'fd.exe'), 'resources/Plugins/FindFiles/bin'),
 	# Native directory parser (Done/FSParser.md): verified by build.py against
@@ -58,7 +57,7 @@ hidden_imports = [
 	'fman.impl.quick_view_pdf', 'fman.impl.quick_view_pdf_view', '_quick_view_pdf_worker',
 	'fman.impl.quick_view_csv', '_quick_view_csv_worker',
 	'PyQt5.QtSvg'
-] + winpty_imports + send2trash_imports + pdfium_imports + pdfium_raw_imports + duckdb_imports
+] + send2trash_imports + pdfium_imports + pdfium_raw_imports + duckdb_imports
 
 a = Analysis(
 	['src/main/python/fman/main.py'],

@@ -1,7 +1,7 @@
 from errno import ENOENT
 from core.fs.zip import ZipFileSystem, _7zip, _get_7zip_args_windows, \
 	_7zipError, _7zipTaskWithProgress, Extract, _cleanup_extraction, \
-	_tree_digest, UpdateArchive, Run7ZipViaWinpty, Run7ZipViaPty, \
+	_tree_digest, UpdateArchive, \
 	SevenZipFileSystem, TarFileSystem, Popen7Zip, _transfer_temp_directory
 from core.fs.zip import _unpack_manifest
 from core.fs.zip import Popen7ZipWindows, _run_7zip
@@ -379,7 +379,7 @@ class ArchiveProcessTest(TestCase):
 		process = CancelOutput(['10% item\r', '100% item\n'])
 		with patch('core.fs.zip.Popen7ZipWindows', return_value=process), \
 			patch.object(task, 'set_text') as set_text:
-			task.run_7zip_with_progress(['d'], pty=False, cancellable=False)
+			task.run_7zip_with_progress(['d'], cancellable=False)
 			self.assertTrue(any('Canceling after' in call.args[0] for call in set_text.call_args_list))
 		self.assertFalse(process.killed)
 		self.assertEqual(100, task.get_progress())
@@ -388,16 +388,8 @@ class ArchiveProcessTest(TestCase):
 		process = FakePipeProcess(['0%\r50% item\r20% item\r100% item\n'])
 		with patch('core.fs.zip.Popen7ZipWindows', return_value=process), \
 			patch.object(task, 'set_progress', wraps=task.set_progress) as set_progress:
-			task.run_7zip_with_progress(['x'], pty=False, progress_limit=99)
+			task.run_7zip_with_progress(['x'], progress_limit=99)
 			self.assertEqual([50, 99], [call.args[0] for call in set_progress.call_args_list])
-	def test_existing_pty_readers(self):
-		process = Mock()
-		process.read.side_effect = ['\x1b[0m 10% file\r', EOFError()]
-		self.assertEqual([' 10% file\r'], list(Run7ZipViaWinpty.Stdout(process)))
-		reader = object.__new__(Run7ZipViaPty.Stdout)
-		reader._encoding = 'utf-8'
-		reader._source = BytesIO(b' 10% file\b\b\b\b\b\b\b\b\b 20% file\n')
-		self.assertIn(' 10% file', list(reader))
 	def test_verification_failure_does_not_publish(self):
 		with TemporaryDirectory() as directory:
 			filesystem = Mock()
@@ -610,7 +602,7 @@ class SevenZipExecutableTest(TestCase):
 			archive = Path(temporary_directory, 'smoke-test.zip')
 			with _7zip(
 				['a', str(archive), source.name],
-				cwd=temporary_directory, pty=True
+				cwd=temporary_directory
 			) as process:
 				list(process.stdout_lines)
 			with ZipFile(archive) as zip_file:

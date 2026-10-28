@@ -434,6 +434,31 @@ class WindowsCleanupIT(QtIT):
 				window.deleteLater()
 		self.run_in_app(check)
 
+	def test_closed_dialogs_are_destroyed(self):
+		# A closed Quicksearch kept alive by its reference cycle left the main
+		# window inactive when the app was not the foreground process.
+		def check():
+			from fman.impl.widgets import MainWindow
+			from PyQt5 import sip
+			from PyQt5.QtCore import QCoreApplication, QEvent, QTimer
+			from unittest.mock import Mock
+			window = MainWindow(QApplication.instance(), Mock(), Mock(), Mock(), 'null://')
+			window._theme.get_quicksearch_item_css.return_value = {}
+			dialogs = []
+			def reject(dialog):
+				dialogs.append(dialog)
+				QTimer.singleShot(0, dialog.reject)
+			window.before_dialog.connect(reject)
+			try:
+				self.assertIsNone(window.show_quicksearch(lambda query: []))
+				self.assertEqual(('', False), window.show_prompt('Name', 'sample'))
+				QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+				self.assertEqual([True, True], [sip.isdeleted(dialog) for dialog in dialogs])
+			finally:
+				window.close()
+				window.deleteLater()
+		self.run_in_app(check)
+
 
 class MainWindowIT(QtIT):
 	def test_forced_minimum_size(self):
@@ -480,7 +505,7 @@ class MainWindowIT(QtIT):
 						QApplication.processEvents()
 						settings['window_geometry'] = _encode(bytes(window.saveGeometry()))
 						settings['window_state'] = _encode(bytes(window.saveState(1)))
-						manager = SessionManager(settings, None, Mock(), 'test', True)
+						manager = SessionManager(settings, None, Mock(), 'test')
 						window.closed.connect(lambda: manager.on_close(window))
 						public_window = Mock()
 						public_window.reset_geometry.side_effect = window.reset_geometry
@@ -495,7 +520,7 @@ class MainWindowIT(QtIT):
 						self.assertIsNone(reloaded.get('window_state', None))
 						self.assertEqual('file://C:/Work', reloaded.get('panes', [])[0]['location'])
 
-						fresh_manager = SessionManager(reloaded, None, Mock(), 'test', True)
+						fresh_manager = SessionManager(reloaded, None, Mock(), 'test')
 						public_window._widget = restarted
 						with patch('fman.impl.session.Thread'), \
 								patch.object(restarted, 'restoreGeometry', wraps=restarted.restoreGeometry) as restore:
@@ -1911,6 +1936,7 @@ class QuickViewImagesIT(QtIT):
 
 
 class FilterBarIT(QtIT):
+	"""Shared pane fixture; its scenarios run once, in SnapshotFilterBarIT."""
 	def setUp(self):
 		from core import Name, Size, Modified
 		from core.fs.local import LocalFileSystem
@@ -1928,7 +1954,7 @@ class FilterBarIT(QtIT):
 		for name in ('report.txt', 'Annual Report.pdf', 'script.py', 'script.pyc', 'tmp.log'):
 			(self.root / name).write_bytes(b'')
 		self.errors = Mock()
-		self.filesystem = MotherFileSystem(Mock(get_icon=Mock(return_value=QIcon())))
+		self.filesystem = MotherFileSystem()
 		for backend in (LocalFileSystem(), NullFileSystem()):
 			self.filesystem.add_child(backend.scheme, FileSystemWrapper(backend, self.filesystem, self.errors))
 		for column in (Name(), Size(), Modified(), NullColumn()):
@@ -1988,459 +2014,6 @@ class FilterBarIT(QtIT):
 		self.drain(pane)
 		return result
 
-	def test_syntax_counts_and_clear_transitions(self):
-		for query, count in [('rep', 2), ('^rep*$', 1), ('.py$', 1), ('!tmp', 4), ('[rt]*.???$', 4), ('missing', 0)]:
-			with self.subTest(query=query):
-				self.set_query(query)
-				self.assertEqual('Filter "%s": %d of 5 items' % (query, count), self.status())
-				self.assertFalse(self.run_in_app(self.window._timer.isActive))
-		self.key(Qt.Key_Escape)
-		self.assertEqual('Ready.', self.status())
-		self.key(Qt.Key_R, 'r')
-		self.key(Qt.Key_Backspace)
-		self.assertEqual('Ready.', self.status())
-		self.assertFalse(self.run_in_app(self.panes[0]._filter_bar.isVisible))
-		self.window.show_status_message('Another command')
-		self.key(Qt.Key_Escape)
-		self.assertEqual('Another command', self.status())
-
-	def test_committed_content_and_reload_counts(self):
-		from fman.url import as_url
-		pane = self.panes[0]
-		model = self.run_in_app(pane._model.sourceModel)
-		self.set_query('.py$')
-		new_file = self.root / 'unmatched.txt'
-		new_file.write_bytes(b'')
-		model.notify_file_added(as_url(new_file))
-		self.assertEqual('Filter ".py$": 1 of 6 items', self.status())
-		new_file.unlink()
-		model.notify_file_removed(as_url(new_file))
-		self.assertEqual('Filter ".py$": 1 of 5 items', self.status())
-		(self.root / 'other.py').write_bytes(b'')
-		pane.reload()
-		self.drain(pane)
-		self.assertEqual('Filter ".py$": 2 of 6 items', self.status())
-
-	def test_deferred_refresh_survives_leaving_and_reentering_destination(self):
-		from fman.impl.model.file_watcher import deferred_refresh
-		from fman.url import as_url
-		pane = self.panes[0]
-		other = self.root / 'other'
-		other.mkdir()
-		before = len(list(self.root.iterdir()))
-		with deferred_refresh():
-			copied = self.root / 'copied.txt'
-			copied.write_bytes(b'')
-			self.filesystem.notify_file_added(as_url(copied))
-			self.navigate(pane, other)
-			self.navigate(pane, self.root)
-			self.assertEqual(before + 1, self.run_in_app(pane._model.rowCount))
-			late = self.root / 'late.txt'
-			late.write_bytes(b'')
-			self.filesystem.notify_file_added(as_url(late))
-		self.drain(pane)
-		self.assertEqual(before + 2, self.run_in_app(pane._model.rowCount))
-
-	def test_two_panes_and_unfiltered_noop(self):
-		from unittest.mock import patch
-		self.set_query('rep')
-		self.set_query('tmp', self.panes[1])
-		self.assertEqual('Filter "rep": 2 of 5 items', self.status())
-		self.panes[1].focus()
-		self.assertEqual('Filter "tmp": 1 of 5 items', self.status())
-		self.window.show_status_message('Another command')
-		self.run_in_app(lambda: self.panes[0]._model.sourceModel().files_changed.emit())
-		self.assertEqual('Another command', self.status())
-		self.set_query('', self.panes[0])
-		self.panes[0].focus()
-		self.assertEqual('Ready.', self.status())
-		self.set_query('', self.panes[1])
-		with patch.object(self.window, 'show_status_message') as status:
-			self.run_in_app(lambda: self.panes[0]._model.sourceModel().files_changed.emit())
-			self.key(Qt.Key_Escape)
-			self.panes[1].focus()
-			status.assert_not_called()
-
-	def test_pane_filter_accessors(self):
-		from unittest.mock import patch
-		pane = self.panes[0]
-		self.assertFalse(pane.is_filtering())
-		self.window.show_status_message('Another command')
-		pane.publish_filter_count()
-		self.assertEqual('Another command', self.status())
-		self.set_query('rep')
-		self.assertTrue(pane.is_filtering())
-		self.run_in_app(pane._filter_bar.hide)
-		self.assertTrue(pane.is_filtering(), 'Filter state must not depend on widget visibility')
-		self.window.show_status_message('Another command')
-		model = self.run_in_app(pane._model.sourceModel)
-		with patch.object(model, 'update', side_effect=AssertionError('Publishing counts must not refilter rows')):
-			pane.publish_filter_count()
-		self.assertEqual('Filter "rep": 2 of 5 items', self.status())
-		self.set_query('missing')
-		self.assertTrue(pane.is_filtering(), 'A zero-match query is still an active filter')
-		self.key(Qt.Key_Escape)
-		self.assertFalse(pane.is_filtering())
-		self.window.show_status_message('Copied')
-		pane.publish_filter_count()
-		self.assertEqual('Copied', self.status())
-
-	def test_loading_navigation_and_retired_source(self):
-		from core.fs.local import LocalFileSystem
-		from fman.url import as_url
-		from PyQt5.QtCore import QThread
-		from threading import Thread
-		from unittest.mock import patch
-		pane = self.panes[0]
-		old_model = self.run_in_app(pane._model.sourceModel)
-		nested = self.root / 'nested'
-		nested.mkdir()
-		for name in ('report.new', 'other.txt'):
-			(nested / name).write_bytes(b'')
-		entered, release, loaded = Event(), Event(), Event()
-		original = LocalFileSystem.scan
-		def delayed(provider, path, check):
-			entered.set()
-			if not release.wait(5):
-				raise AssertionError('Initial population was not released')
-			return original(provider, path, check)
-		self.set_query('tmp')
-		threads = []
-		def replace():
-			emitter = Thread(target=old_model.files_changed.emit)
-			emitter.start()
-			emitter.join(2)
-			self.assertFalse(emitter.is_alive())
-			pane.set_location(as_url(nested), callback=loaded.set)
-			pane._filter_bar._input.setText('rep')
-			self.window.show_status_message('Loading command')
-			pane._model.files_changed.connect(lambda: threads.append(QThread.currentThread()))
-		with patch.object(LocalFileSystem, 'scan', delayed):
-			try:
-				self.run_in_app(replace)
-				self.assertTrue(entered.wait(5))
-				self.set_query('re')
-				self.assertEqual('Filter "re": 2 of 5 items', self.status())
-			finally:
-				release.set()
-			self.assertTrue(loaded.wait(5))
-			self.drain(pane)
-		self.set_query('re')
-		self.assertEqual('Filter "re": 1 of 2 items', self.status())
-		self.assertTrue(threads)
-		self.assertTrue(all(thread == QApplication.instance().thread() for thread in threads))
-		self.assertEqual(as_url(nested / 'report.new'), pane.get_file_under_cursor())
-		new_file = nested / 'nonmatching.txt'
-		new_file.write_bytes(b'')
-		model = self.run_in_app(pane._model.sourceModel)
-		model.notify_file_added(as_url(new_file))
-		self.drain(pane)
-		self.assertEqual('Filter "re": 1 of 3 items', self.status())
-		self.window.show_status_message('Another command')
-		self.run_in_app(old_model.files_changed.emit)
-		self.assertEqual('Another command', self.status())
-		self.key(Qt.Key_Escape)
-		self.window.show_status_message('Copied')
-		self.navigate(pane, self.root)
-		self.assertEqual('Copied', self.status())
-
-	def test_keyboard_prefix_space_and_plain_status(self):
-		from fman.impl.controller import Controller
-		from fman.impl.plugins.key_bindings import KeyBindings
-		from fman.url import as_url
-		from pathlib import Path
-		from unittest.mock import Mock
-		import json
-		pane = self.panes[0]
-		pane.place_cursor_at(as_url(self.root / 'Annual Report.pdf'))
-		self.key(Qt.Key_R, 'r')
-		self.assertEqual(as_url(self.root / 'report.txt'), pane.get_file_under_cursor())
-		self.assertEqual('Filter "r": 4 of 5 items', self.status())
-		self.window.show_status_message('Copied', 5)
-		self.key(Qt.Key_E, 'e')
-		self.assertEqual('Filter "re": 2 of 5 items', self.status())
-		self.assertFalse(self.run_in_app(self.window._timer.isActive))
-		bindings = KeyBindings()
-		bindings.register_command('toggle_selection')
-		path = Path(__file__).parents[3] / 'main/resources/base/Plugins/Core/Key Bindings.yaml'
-		with path.open(encoding='utf-8') as stream:
-			space_binding = [binding for binding in yaml.safe_load(stream) if binding['keys'] == ['Space']]
-		self.assertEqual([], bindings.load(space_binding))
-		public_pane = Mock(get_commands=Mock(return_value=['toggle_selection']))
-		public_pane.run_command.side_effect = lambda name, args: pane.toggle_selection(pane.get_file_under_cursor())
-		support = Mock(get_sanitized_key_bindings=bindings.get_sanitized_bindings)
-		controller = Controller(support, Mock(), Mock(), Mock())
-		self.run_in_app(controller.register_pane, pane, public_pane)
-		self.controller.handle_shortcut.side_effect = controller.handle_shortcut
-		for query in ('re', ''):
-			self.set_query(query)
-			pane.clear_selection()
-			selected = pane.get_file_under_cursor()
-			self.assertTrue(self.key(Qt.Key_Space, ' '))
-			self.assertEqual([selected], pane.get_selected_files())
-			self.assertEqual(query, self.run_in_app(pane._filter_bar._input.text))
-		self.set_query('<b>')
-		self.assertEqual('Filter "<b>": 0 of 5 items', self.status())
-		self.assertEqual(Qt.PlainText, self.run_in_app(self.window._status_bar_text.textFormat))
-		self.window.show_status_message('<b>Copied</b>')
-		self.assertEqual(Qt.AutoText, self.run_in_app(self.window._status_bar_text.textFormat))
-		self.set_query('a' * 300)
-		self.assertEqual(255, len(self.run_in_app(pane._filter_bar._input.text)))
-
-	def test_open_filter_owns_keypad_text_before_core_shortcuts(self):
-		from fman.impl.controller import Controller
-		from fman.impl.plugins.key_bindings import KeyBindings
-		from fman.url import as_url
-		from pathlib import Path
-		from PyQt5.QtCore import QEvent
-		from PyQt5.QtGui import QKeyEvent
-		from unittest.mock import Mock
-		import json
-		pane = self.panes[0]
-		selected = as_url(self.root / 're-test re+.txt')
-		(self.root / 're-test re+.txt').write_bytes(b'')
-		pane.reload()
-		self.drain(pane)
-		bindings = KeyBindings()
-		path = Path(__file__).parents[3] / 'main/resources/base/Plugins/Core/Key Bindings.yaml'
-		configuration = yaml.safe_load(path.read_text(encoding='utf-8'))
-		commands = {binding['command'] for binding in configuration}
-		for command in commands:
-			bindings.register_command(command)
-		self.assertEqual([], bindings.load(configuration))
-		public = Mock(get_commands=Mock(return_value=commands))
-		controller = Controller(Mock(get_sanitized_key_bindings=bindings.get_sanitized_bindings), Mock(), Mock(), Mock())
-		self.run_in_app(controller.register_pane, pane, public)
-		self.controller.handle_shortcut.side_effect = controller.handle_shortcut
-		for key, text, command in ((Qt.Key_Asterisk, '*', 'invert_selection'),
-			(Qt.Key_Minus, '-', 'deselect_by_pattern'), (Qt.Key_Plus, '+', 'select_by_pattern')):
-			with self.subTest(text=text):
-				self.set_query('re')
-				pane.select([selected])
-				before = pane.get_selected_files()
-				public.run_command.reset_mock()
-				self.assertTrue(self.run_in_app(pane._on_key_pressed,
-					QKeyEvent(QEvent.KeyPress, key, Qt.KeypadModifier, text)))
-				public.run_command.assert_not_called()
-				self.assertEqual(before, pane.get_selected_files())
-				self.assertIsNone(pane._filter_bar._selection_session)
-				self.drain(pane)
-				self.assertEqual('re' + text, self.run_in_app(pane._filter_bar._input.text))
-				self.set_query('')
-				self.assertTrue(self.run_in_app(pane._on_key_pressed,
-					QKeyEvent(QEvent.KeyPress, key, Qt.KeypadModifier, text)))
-				public.run_command.assert_called_once_with(command, {})
-				self.assertEqual('', self.run_in_app(pane._filter_bar._input.text))
-				public.run_command.reset_mock()
-				self.assertTrue(self.run_in_app(pane._on_key_pressed,
-					QKeyEvent(QEvent.KeyPress, key, Qt.NoModifier, text)))
-				public.run_command.assert_not_called()
-				self.drain(pane)
-				self.assertEqual(text, self.run_in_app(pane._filter_bar._input.text))
-		public.run_command.side_effect = lambda command, arguments: getattr(pane, command)(**arguments)
-		for query in ('', 're'):
-			self.set_query(query)
-			for key, command, arguments in ((Qt.Key_Down, 'move_cursor_down', {}),
-				(Qt.Key_Up, 'move_cursor_up', {}), (Qt.Key_PageDown, 'move_cursor_page_down', {}),
-				(Qt.Key_PageUp, 'move_cursor_page_up', {}), (Qt.Key_Home, 'move_cursor_home', {}),
-				(Qt.Key_End, 'move_cursor_end', {}), (Qt.Key_Insert, 'move_cursor_down', {'toggle_selection': True})):
-				with self.subTest(query=query, key=key):
-					pane.clear_selection()
-					pane.move_cursor_home()
-					before = pane.get_file_under_cursor()
-					public.run_command.reset_mock()
-					self.assertTrue(self.run_in_app(pane._on_key_pressed,
-						QKeyEvent(QEvent.KeyPress, key, Qt.KeypadModifier, '')))
-					public.run_command.assert_called_once_with(command, arguments)
-					self.assertEqual(query, self.run_in_app(pane._filter_bar._input.text))
-					if key in (Qt.Key_Down, Qt.Key_Insert):
-						self.assertNotEqual(before, pane.get_file_under_cursor())
-					self.assertEqual([before] if key == Qt.Key_Insert else [], pane.get_selected_files())
-
-	def test_file_creation_shortcuts_keep_editor_launch_separate(self):
-		from core.commands import CreateAndEditFile, NewEmptyFile, OpenWithEditor
-		from fman.impl.controller import Controller
-		from fman.impl.plugins.command_registry import PaneCommandRegistry
-		from fman.impl.plugins.key_bindings import KeyBindings
-		from fman.url import as_url
-		from pathlib import Path
-		from PyQt5.QtCore import QTimer
-		from PyQt5.QtTest import QTest
-		from unittest.mock import Mock, patch
-		import json
-		pane = self.panes[0]
-		completed = Event()
-		errors = Mock()
-		errors.report.side_effect = lambda *args: completed.set()
-		callback = Mock()
-		callback.after_command.side_effect = lambda *args: completed.set()
-		registry = self.run_in_app(PaneCommandRegistry, errors, callback)
-		bindings = KeyBindings()
-		for name, command in (
-			('new_empty_file', NewEmptyFile), ('create_and_edit_file', CreateAndEditFile),
-			('open_with_editor', OpenWithEditor), ('open', Mock())
-		):
-			registry.register_command(name, command)
-			bindings.register_command(name)
-		path = Path(__file__).parents[3] / 'main/resources/base/Plugins/Core/Key Bindings.yaml'
-		with path.open(encoding='utf-8') as stream:
-			self.assertEqual([], bindings.load([
-				binding for binding in yaml.safe_load(stream)
-				if binding['command'] in registry.get_commands()
-			]))
-		public_pane = Mock(get_commands=registry.get_commands,
-			get_path=pane.get_location, get_file_under_cursor=pane.get_file_under_cursor,
-			place_cursor_at=pane.place_cursor_at)
-		public_pane.run_command.side_effect = lambda name, args: registry.execute_command(name, args, public_pane)
-		support = Mock(get_sanitized_key_bindings=bindings.get_sanitized_bindings)
-		controller = Controller(support, Mock(), Mock(), Mock())
-		self.run_in_app(controller.register_pane, pane, public_pane)
-		self.controller.handle_shortcut.side_effect = controller.handle_shortcut
-		def answer(dialog):
-			def accept():
-				dialog.setTextValue(filename)
-				QTest.keyClick(dialog, Qt.Key_Return)
-			QTimer.singleShot(0, accept)
-		self.run_in_app(self.window.before_dialog.connect, answer)
-		with patch('fman._get_ui', return_value=self.window), \
-			patch('core.commands.exists', side_effect=self.filesystem.exists), \
-			patch('core.commands.is_dir', side_effect=self.filesystem.is_dir), \
-			patch('core.commands.touch', side_effect=self.filesystem.touch), \
-			patch('core.text_editor.open_file') as open_file:
-			for filename, key, modifiers, command, existing in (
-				('new.txt', Qt.Key_N, Qt.ControlModifier, 'new_empty_file', False),
-				('existing.txt', Qt.Key_N, Qt.ControlModifier, 'new_empty_file', True),
-				('edit.txt', Qt.Key_F4, Qt.ShiftModifier, 'create_and_edit_file', False),
-			):
-				with self.subTest(shortcut=command, existing=existing):
-					target = self.root / filename
-					if existing:
-						target.write_bytes(b'Keep this content')
-					completed.clear()
-					public_pane.run_command.reset_mock()
-					open_file.reset_mock()
-					self.run_in_app(QTest.keyClick, pane._file_view, key, modifiers)
-					self.assertTrue(completed.wait(5), 'Creation command did not finish')
-					self.drain(pane)
-					errors.report.assert_not_called()
-					public_pane.run_command.assert_called_once_with(command, {})
-					self.assertEqual(b'Keep this content' if existing else b'', target.read_bytes())
-					if not existing:
-						self.assertEqual(as_url(target), pane.get_file_under_cursor())
-					if command == 'new_empty_file':
-						open_file.assert_not_called()
-					else:
-						open_file.assert_called_once_with(as_url(target), 'editor')
-
-	def test_compare_directories_counts_real_filtered_selections(self):
-		from core.commands import CompareDirectories
-		from fman import DirectoryPane
-		from fman.url import as_url
-		from unittest.mock import Mock, patch
-		left_path, right_path = self.root / 'left', self.root / 'right'
-		for path, names in ((left_path, ('common.txt', 'left.txt', 'hidden.log')),
-			(right_path, ('common.txt', 'right.txt'))):
-			path.mkdir()
-			for name in names:
-				(path / name).write_bytes(b'')
-		for pane, path in zip(self.panes, (left_path, right_path)):
-			self.navigate(pane, path)
-		public_window = Mock()
-		panes = [DirectoryPane(public_window, pane, Mock()) for pane in self.panes]
-		public_window.get_panes.return_value = panes
-		self.set_query('.txt$', self.panes[0])
-		self.set_query('right.txt', self.panes[1])
-		panes[0].select([as_url(left_path / 'common.txt')])
-		with patch('core.commands.iterdir', side_effect=self.filesystem.iterdir), \
-			patch('core.commands.show_alert') as alert:
-			CompareDirectories(panes[1])()
-			self.assertEqual([as_url(left_path / 'left.txt')], panes[0].get_selected_files())
-			self.assertEqual([as_url(right_path / 'right.txt')], panes[1].get_selected_files())
-			alert.assert_called_once_with(
-				'Selected 1 visible file in the left pane not present on the right.<br/>'
-				'Selected 1 visible file in the right pane not present on the left.<br/>'
-				'The remaining differences are hidden, filtered, or otherwise not selectable.'
-			)
-			self.set_query('common.txt', self.panes[0])
-			self.set_query('common.txt', self.panes[1])
-			CompareDirectories(panes[0])()
-			self.assertEqual([], panes[0].get_selected_files())
-			self.assertEqual([], panes[1].get_selected_files())
-			self.assertIn('none of the differences can currently be selected', alert.call_args.args[0])
-			self.navigate(self.panes[1], left_path)
-			self.set_query('left.txt', self.panes[1])
-			CompareDirectories(panes[0])()
-			self.assertIn('same file <em>names</em>', alert.call_args.args[0])
-			self.assertEqual([], panes[0].get_selected_files())
-			self.assertEqual([], panes[1].get_selected_files())
-
-	def test_delete_continuation_suppresses_progress_popup(self):
-		from core.commands import _Delete
-		from fman import Task, submit_task, YES, NO
-		from PyQt5.QtCore import QThread, QTimer
-		from unittest.mock import patch
-		attempted, dialogs, observed = [], [], []
-		def fail():
-			attempted.append('first')
-			raise PermissionError(13, 'denied')
-		children = {
-			'file://C:/first': Task('Deleting first', size=1, fn=fail),
-			'file://C:/second': Task('Deleting second', size=1, fn=lambda: attempted.append('second')),
-		}
-		task = _Delete(list(children), lambda url: [children[url]])
-		self.run_in_app(lambda: setattr(self.window, '_progress_bar_palette', QApplication.instance().palette()))
-		original = self.window.create_progress_dialog
-		def create_dialog(*args):
-			dialog = original(*args)
-			dialogs.append(dialog)
-			return dialog
-		def answer(message_box):
-			dialog = dialogs[-1]
-			observed.append((
-				dialog.minimumDuration() == dialog._MAX_C_INT,
-				message_box.defaultButton() == message_box.button(YES),
-				QThread.currentThread() == QApplication.instance().thread(),
-			))
-			QTimer.singleShot(0, message_box.button(NO).click)
-		self.run_in_app(self.window.before_dialog.connect, answer)
-		try:
-			with patch('fman._get_ui', return_value=self.window), \
-				patch.object(self.window, 'create_progress_dialog', side_effect=create_dialog), \
-				patch('core.commands.show_alert', side_effect=AssertionError('Bypassed task alert')):
-				submit_task(task)
-			self.assertEqual(['first'], attempted)
-			self.assertEqual([(True, True, True)], observed)
-			self.assertEqual(dialogs[0]._MINIMUM_DURATION_MS, self.run_in_app(dialogs[0].minimumDuration))
-		finally:
-			self.run_in_app(self.window.before_dialog.disconnect, answer)
-			for dialog in dialogs:
-				self.run_in_app(dialog.cancel)
-				self.run_in_app(dialog.deleteLater)
-
-	def test_special_filenames_and_status_mode_changes(self):
-		from fman.impl.status_bar import DEFAULT_SETTINGS, DISABLED, ACTIVE_PANE
-		from fman.url import as_url
-		pane = self.panes[0]
-		for name in ('$RECYCLE.BIN', '[draft] notes.txt', '!important', '^caret'):
-			(self.root / name).write_bytes(b'')
-		pane.reload()
-		self.drain(pane)
-		for query, name in [(r'\$RECYCLE.BIN', '$RECYCLE.BIN'), (r'\[draft]', '[draft] notes.txt'),
-			(r'\!important', '!important'), (r'\^caret', '^caret'), ('[$]*.???$', '$RECYCLE.BIN')]:
-			self.set_query(query)
-			self.assertEqual('Filter "%s": 1 of 9 items' % query, self.status())
-			self.assertEqual(as_url(self.root / name), pane.get_file_under_cursor())
-		for mode in (ACTIVE_PANE, DISABLED):
-			self.window.set_extended_status_bar(dict(DEFAULT_SETTINGS, mode=mode))
-			self.panes[1].focus()
-			self.assertEqual('Ready.', self.status())
-			pane.focus()
-			self.assertEqual('Filter "[$]*.???$": 1 of 9 items', self.status())
-		self.assertIsNone(self.window._status_service)
-		original_width = self.run_in_app(self.window.width)
-		self.set_query('a' * 255)
-		self.run_in_app(QApplication.processEvents)
-		self.assertEqual(original_width, self.run_in_app(self.window.width), 'Long count text resized the window')
 
 class RoadmapCommandsIT(QtIT):
 	setUp = FilterBarIT.setUp
@@ -3623,40 +3196,6 @@ class SnapshotFilterBarIT(FilterBarIT):
 			self.run_in_app(icons.close)
 			self.run_in_app(icons.deleteLater)
 
-	def test_fuzzy_find_mode_restores_filter_marks_cursor_and_metadata_columns(self):
-		from search_file_fuzzy.indexer import ListingSearch
-		from fman.url import as_url
-		from unittest.mock import Mock
-		pane = self.panes[0]
-		self.set_query('rep')
-		original = as_url(self.root / 'report.txt')
-		pane.place_cursor_at(original)
-		pane.select([original])
-		accepted = Mock()
-		self.assertTrue(pane.find_in_listing(ListingSearch(max_results=1), 'script', False, accepted))
-		self.drain(pane)
-		self.assertEqual(1, self.run_in_app(pane._model.rowCount))
-		self.assertEqual(as_url(self.root / 'script.py'), pane.get_file_under_cursor())
-		self.assertIn('Find "script": 1', self.status())
-		self.assertEqual(tuple(range(6)), self.run_in_app(lambda: pane._model.index(0, 0).data(Qt.UserRole + 1)))
-		self.assertFalse(self.run_in_app(pane._file_view.grab).isNull())
-		self.assertTrue(self.run_in_app(pane._file_view.isColumnHidden, 1))
-		self.set_query('Annual')
-		self.assertEqual(as_url(self.root / 'Annual Report.pdf'), pane.get_file_under_cursor())
-		pane.find_in_listing(ListingSearch(max_results=1), 'report', False, accepted)
-		self.drain(pane)
-		self.key(Qt.Key_Escape)
-		self.assertEqual('rep', self.run_in_app(pane._filter_bar._input.text))
-		self.assertEqual(original, pane.get_file_under_cursor())
-		self.assertEqual([original], pane.get_selected_files())
-		self.assertFalse(self.run_in_app(pane._file_view.isColumnHidden, 1))
-		accepted.assert_not_called()
-		pane.find_in_listing(ListingSearch(mode='regular'), 'Annual', True, accepted)
-		self.drain(pane)
-		self.key(Qt.Key_Return)
-		accepted.assert_called_once_with(as_url(self.root / 'Annual Report.pdf'))
-		self.assertEqual('rep', self.run_in_app(pane._filter_bar._input.text))
-
 	def test_initial_handoff_rescans_only_when_mutated(self):
 		from core.fs.local import LocalFileSystem
 		from fman.url import as_url
@@ -3894,7 +3433,7 @@ class SnapshotFilterBarIT(FilterBarIT):
 			self.drain(pane)
 		return super().status()
 
-	def test_loading_navigation_and_retired_source(self):
+	def test_loading_navigation_keeps_old_location_and_retires_source(self):
 		from core.fs.local import LocalFileSystem
 		from fman.url import as_url
 		from unittest.mock import patch
@@ -3970,6 +3509,461 @@ class SnapshotFilterBarIT(FilterBarIT):
 			finally:
 				view.selectionModel().selectionChanged.disconnect(changed)
 		self.run_in_app(select_public_batch)
+
+	def test_syntax_counts_and_clear_transitions(self):
+		for query, count in [('rep', 2), ('^rep*$', 1), ('.py$', 1), ('!tmp', 4), ('[rt]*.???$', 4), ('missing', 0)]:
+			with self.subTest(query=query):
+				self.set_query(query)
+				self.assertEqual('Filter "%s": %d of 5 items' % (query, count), self.status())
+				self.assertFalse(self.run_in_app(self.window._timer.isActive))
+		self.key(Qt.Key_Escape)
+		self.assertEqual('Ready.', self.status())
+		self.key(Qt.Key_R, 'r')
+		self.key(Qt.Key_Backspace)
+		self.assertEqual('Ready.', self.status())
+		self.assertFalse(self.run_in_app(self.panes[0]._filter_bar.isVisible))
+		self.window.show_status_message('Another command')
+		self.key(Qt.Key_Escape)
+		self.assertEqual('Another command', self.status())
+
+	def test_committed_content_and_reload_counts(self):
+		from fman.url import as_url
+		pane = self.panes[0]
+		model = self.run_in_app(pane._model.sourceModel)
+		self.set_query('.py$')
+		new_file = self.root / 'unmatched.txt'
+		new_file.write_bytes(b'')
+		model.notify_file_added(as_url(new_file))
+		self.assertEqual('Filter ".py$": 1 of 6 items', self.status())
+		new_file.unlink()
+		model.notify_file_removed(as_url(new_file))
+		self.assertEqual('Filter ".py$": 1 of 5 items', self.status())
+		(self.root / 'other.py').write_bytes(b'')
+		pane.reload()
+		self.drain(pane)
+		self.assertEqual('Filter ".py$": 2 of 6 items', self.status())
+
+	def test_deferred_refresh_survives_leaving_and_reentering_destination(self):
+		from fman.impl.model.file_watcher import deferred_refresh
+		from fman.url import as_url
+		pane = self.panes[0]
+		other = self.root / 'other'
+		other.mkdir()
+		before = len(list(self.root.iterdir()))
+		with deferred_refresh():
+			copied = self.root / 'copied.txt'
+			copied.write_bytes(b'')
+			self.filesystem.notify_file_added(as_url(copied))
+			self.navigate(pane, other)
+			self.navigate(pane, self.root)
+			self.assertEqual(before + 1, self.run_in_app(pane._model.rowCount))
+			late = self.root / 'late.txt'
+			late.write_bytes(b'')
+			self.filesystem.notify_file_added(as_url(late))
+		self.drain(pane)
+		self.assertEqual(before + 2, self.run_in_app(pane._model.rowCount))
+
+	def test_two_panes_and_unfiltered_noop(self):
+		from unittest.mock import patch
+		self.set_query('rep')
+		self.set_query('tmp', self.panes[1])
+		self.assertEqual('Filter "rep": 2 of 5 items', self.status())
+		self.panes[1].focus()
+		self.assertEqual('Filter "tmp": 1 of 5 items', self.status())
+		self.window.show_status_message('Another command')
+		self.run_in_app(lambda: self.panes[0]._model.sourceModel().files_changed.emit())
+		self.assertEqual('Another command', self.status())
+		self.set_query('', self.panes[0])
+		self.panes[0].focus()
+		self.assertEqual('Ready.', self.status())
+		self.set_query('', self.panes[1])
+		with patch.object(self.window, 'show_status_message') as status:
+			self.run_in_app(lambda: self.panes[0]._model.sourceModel().files_changed.emit())
+			self.key(Qt.Key_Escape)
+			self.panes[1].focus()
+			status.assert_not_called()
+
+	def test_pane_filter_accessors(self):
+		from unittest.mock import patch
+		pane = self.panes[0]
+		self.assertFalse(pane.is_filtering())
+		self.window.show_status_message('Another command')
+		pane.publish_filter_count()
+		self.assertEqual('Another command', self.status())
+		self.set_query('rep')
+		self.assertTrue(pane.is_filtering())
+		self.run_in_app(pane._filter_bar.hide)
+		self.assertTrue(pane.is_filtering(), 'Filter state must not depend on widget visibility')
+		self.window.show_status_message('Another command')
+		model = self.run_in_app(pane._model.sourceModel)
+		with patch.object(model, 'update', side_effect=AssertionError('Publishing counts must not refilter rows')):
+			pane.publish_filter_count()
+		self.assertEqual('Filter "rep": 2 of 5 items', self.status())
+		self.set_query('missing')
+		self.assertTrue(pane.is_filtering(), 'A zero-match query is still an active filter')
+		self.key(Qt.Key_Escape)
+		self.assertFalse(pane.is_filtering())
+		self.window.show_status_message('Copied')
+		pane.publish_filter_count()
+		self.assertEqual('Copied', self.status())
+
+	def test_filter_during_loading_navigation_and_retired_source_signals(self):
+		from core.fs.local import LocalFileSystem
+		from fman.url import as_url
+		from PyQt5.QtCore import QThread
+		from threading import Thread
+		from unittest.mock import patch
+		pane = self.panes[0]
+		old_model = self.run_in_app(pane._model.sourceModel)
+		nested = self.root / 'nested'
+		nested.mkdir()
+		for name in ('report.new', 'other.txt'):
+			(nested / name).write_bytes(b'')
+		entered, release, loaded = Event(), Event(), Event()
+		original = LocalFileSystem.scan
+		def delayed(provider, path, check):
+			entered.set()
+			if not release.wait(5):
+				raise AssertionError('Initial population was not released')
+			return original(provider, path, check)
+		self.set_query('tmp')
+		threads = []
+		def replace():
+			emitter = Thread(target=old_model.files_changed.emit)
+			emitter.start()
+			emitter.join(2)
+			self.assertFalse(emitter.is_alive())
+			pane.set_location(as_url(nested), callback=loaded.set)
+			pane._filter_bar._input.setText('rep')
+			self.window.show_status_message('Loading command')
+			pane._model.files_changed.connect(lambda: threads.append(QThread.currentThread()))
+		with patch.object(LocalFileSystem, 'scan', delayed):
+			try:
+				self.run_in_app(replace)
+				self.assertTrue(entered.wait(5))
+				self.set_query('re')
+				self.assertEqual('Filter "re": 2 of 5 items', self.status())
+			finally:
+				release.set()
+			self.assertTrue(loaded.wait(5))
+			self.drain(pane)
+		self.set_query('re')
+		self.assertEqual('Filter "re": 1 of 2 items', self.status())
+		self.assertTrue(threads)
+		self.assertTrue(all(thread == QApplication.instance().thread() for thread in threads))
+		self.assertEqual(as_url(nested / 'report.new'), pane.get_file_under_cursor())
+		new_file = nested / 'nonmatching.txt'
+		new_file.write_bytes(b'')
+		model = self.run_in_app(pane._model.sourceModel)
+		model.notify_file_added(as_url(new_file))
+		self.drain(pane)
+		self.assertEqual('Filter "re": 1 of 3 items', self.status())
+		self.window.show_status_message('Another command')
+		self.run_in_app(old_model.files_changed.emit)
+		self.assertEqual('Another command', self.status())
+		self.key(Qt.Key_Escape)
+		self.window.show_status_message('Copied')
+		self.navigate(pane, self.root)
+		self.assertEqual('Copied', self.status())
+
+	def test_keyboard_prefix_space_and_plain_status(self):
+		from fman.impl.controller import Controller
+		from fman.impl.plugins.key_bindings import KeyBindings
+		from fman.url import as_url
+		from pathlib import Path
+		from unittest.mock import Mock
+		import json
+		pane = self.panes[0]
+		pane.place_cursor_at(as_url(self.root / 'Annual Report.pdf'))
+		self.key(Qt.Key_R, 'r')
+		self.assertEqual(as_url(self.root / 'report.txt'), pane.get_file_under_cursor())
+		self.assertEqual('Filter "r": 4 of 5 items', self.status())
+		self.window.show_status_message('Copied', 5)
+		self.key(Qt.Key_E, 'e')
+		self.assertEqual('Filter "re": 2 of 5 items', self.status())
+		self.assertFalse(self.run_in_app(self.window._timer.isActive))
+		bindings = KeyBindings()
+		bindings.register_command('toggle_selection')
+		path = Path(__file__).parents[3] / 'main/resources/base/Plugins/Core/Key Bindings.yaml'
+		with path.open(encoding='utf-8') as stream:
+			space_binding = [binding for binding in yaml.safe_load(stream) if binding['keys'] == ['Space']]
+		self.assertEqual([], bindings.load(space_binding))
+		public_pane = Mock(get_commands=Mock(return_value=['toggle_selection']))
+		public_pane.run_command.side_effect = lambda name, args: pane.toggle_selection(pane.get_file_under_cursor())
+		support = Mock(get_sanitized_key_bindings=bindings.get_sanitized_bindings)
+		controller = Controller(support, Mock(), Mock(), Mock())
+		self.run_in_app(controller.register_pane, pane, public_pane)
+		self.controller.handle_shortcut.side_effect = controller.handle_shortcut
+		for query in ('re', ''):
+			self.set_query(query)
+			pane.clear_selection()
+			selected = pane.get_file_under_cursor()
+			self.assertTrue(self.key(Qt.Key_Space, ' '))
+			self.assertEqual([selected], pane.get_selected_files())
+			self.assertEqual(query, self.run_in_app(pane._filter_bar._input.text))
+		self.set_query('<b>')
+		self.assertEqual('Filter "<b>": 0 of 5 items', self.status())
+		self.assertEqual(Qt.PlainText, self.run_in_app(self.window._status_bar_text.textFormat))
+		self.window.show_status_message('<b>Copied</b>')
+		self.assertEqual(Qt.AutoText, self.run_in_app(self.window._status_bar_text.textFormat))
+		self.set_query('a' * 300)
+		self.assertEqual(255, len(self.run_in_app(pane._filter_bar._input.text)))
+
+	def test_open_filter_owns_keypad_text_before_core_shortcuts(self):
+		from fman.impl.controller import Controller
+		from fman.impl.plugins.key_bindings import KeyBindings
+		from fman.url import as_url
+		from pathlib import Path
+		from PyQt5.QtCore import QEvent
+		from PyQt5.QtGui import QKeyEvent
+		from unittest.mock import Mock
+		import json
+		pane = self.panes[0]
+		selected = as_url(self.root / 're-test re+.txt')
+		(self.root / 're-test re+.txt').write_bytes(b'')
+		pane.reload()
+		self.drain(pane)
+		bindings = KeyBindings()
+		path = Path(__file__).parents[3] / 'main/resources/base/Plugins/Core/Key Bindings.yaml'
+		configuration = yaml.safe_load(path.read_text(encoding='utf-8'))
+		commands = {binding['command'] for binding in configuration}
+		for command in commands:
+			bindings.register_command(command)
+		self.assertEqual([], bindings.load(configuration))
+		public = Mock(get_commands=Mock(return_value=commands))
+		controller = Controller(Mock(get_sanitized_key_bindings=bindings.get_sanitized_bindings), Mock(), Mock(), Mock())
+		self.run_in_app(controller.register_pane, pane, public)
+		self.controller.handle_shortcut.side_effect = controller.handle_shortcut
+		for key, text, command in ((Qt.Key_Asterisk, '*', 'invert_selection'),
+			(Qt.Key_Minus, '-', 'deselect_by_pattern'), (Qt.Key_Plus, '+', 'select_by_pattern')):
+			with self.subTest(text=text):
+				self.set_query('re')
+				pane.select([selected])
+				before = pane.get_selected_files()
+				public.run_command.reset_mock()
+				self.assertTrue(self.run_in_app(pane._on_key_pressed,
+					QKeyEvent(QEvent.KeyPress, key, Qt.KeypadModifier, text)))
+				public.run_command.assert_not_called()
+				self.assertEqual(before, pane.get_selected_files())
+				self.assertIsNone(pane._filter_bar._selection_session)
+				self.drain(pane)
+				self.assertEqual('re' + text, self.run_in_app(pane._filter_bar._input.text))
+				self.set_query('')
+				self.assertTrue(self.run_in_app(pane._on_key_pressed,
+					QKeyEvent(QEvent.KeyPress, key, Qt.KeypadModifier, text)))
+				public.run_command.assert_called_once_with(command, {})
+				self.assertEqual('', self.run_in_app(pane._filter_bar._input.text))
+				public.run_command.reset_mock()
+				self.assertTrue(self.run_in_app(pane._on_key_pressed,
+					QKeyEvent(QEvent.KeyPress, key, Qt.NoModifier, text)))
+				public.run_command.assert_not_called()
+				self.drain(pane)
+				self.assertEqual(text, self.run_in_app(pane._filter_bar._input.text))
+		public.run_command.side_effect = lambda command, arguments: getattr(pane, command)(**arguments)
+		for query in ('', 're'):
+			self.set_query(query)
+			for key, command, arguments in ((Qt.Key_Down, 'move_cursor_down', {}),
+				(Qt.Key_Up, 'move_cursor_up', {}), (Qt.Key_PageDown, 'move_cursor_page_down', {}),
+				(Qt.Key_PageUp, 'move_cursor_page_up', {}), (Qt.Key_Home, 'move_cursor_home', {}),
+				(Qt.Key_End, 'move_cursor_end', {}), (Qt.Key_Insert, 'move_cursor_down', {'toggle_selection': True})):
+				with self.subTest(query=query, key=key):
+					pane.clear_selection()
+					pane.move_cursor_home()
+					before = pane.get_file_under_cursor()
+					public.run_command.reset_mock()
+					self.assertTrue(self.run_in_app(pane._on_key_pressed,
+						QKeyEvent(QEvent.KeyPress, key, Qt.KeypadModifier, '')))
+					public.run_command.assert_called_once_with(command, arguments)
+					self.assertEqual(query, self.run_in_app(pane._filter_bar._input.text))
+					if key in (Qt.Key_Down, Qt.Key_Insert):
+						self.assertNotEqual(before, pane.get_file_under_cursor())
+					self.assertEqual([before] if key == Qt.Key_Insert else [], pane.get_selected_files())
+
+	def test_file_creation_shortcuts_keep_editor_launch_separate(self):
+		from core.commands import CreateAndEditFile, NewEmptyFile, OpenWithEditor
+		from fman.impl.controller import Controller
+		from fman.impl.plugins.command_registry import PaneCommandRegistry
+		from fman.impl.plugins.key_bindings import KeyBindings
+		from fman.url import as_url
+		from pathlib import Path
+		from PyQt5.QtCore import QTimer
+		from PyQt5.QtTest import QTest
+		from unittest.mock import Mock, patch
+		import json
+		pane = self.panes[0]
+		completed = Event()
+		errors = Mock()
+		errors.report.side_effect = lambda *args: completed.set()
+		callback = Mock()
+		callback.after_command.side_effect = lambda *args: completed.set()
+		registry = self.run_in_app(PaneCommandRegistry, errors, callback)
+		bindings = KeyBindings()
+		for name, command in (
+			('new_empty_file', NewEmptyFile), ('create_and_edit_file', CreateAndEditFile),
+			('open_with_editor', OpenWithEditor), ('open', Mock())
+		):
+			registry.register_command(name, command)
+			bindings.register_command(name)
+		path = Path(__file__).parents[3] / 'main/resources/base/Plugins/Core/Key Bindings.yaml'
+		with path.open(encoding='utf-8') as stream:
+			self.assertEqual([], bindings.load([
+				binding for binding in yaml.safe_load(stream)
+				if binding['command'] in registry.get_commands()
+			]))
+		public_pane = Mock(get_commands=registry.get_commands,
+			get_path=pane.get_location, get_file_under_cursor=pane.get_file_under_cursor,
+			place_cursor_at=pane.place_cursor_at)
+		public_pane.run_command.side_effect = lambda name, args: registry.execute_command(name, args, public_pane)
+		support = Mock(get_sanitized_key_bindings=bindings.get_sanitized_bindings)
+		controller = Controller(support, Mock(), Mock(), Mock())
+		self.run_in_app(controller.register_pane, pane, public_pane)
+		self.controller.handle_shortcut.side_effect = controller.handle_shortcut
+		def answer(dialog):
+			def accept():
+				dialog.setTextValue(filename)
+				QTest.keyClick(dialog, Qt.Key_Return)
+			QTimer.singleShot(0, accept)
+		self.run_in_app(self.window.before_dialog.connect, answer)
+		with patch('fman._get_ui', return_value=self.window), \
+			patch('core.commands.exists', side_effect=self.filesystem.exists), \
+			patch('core.commands.is_dir', side_effect=self.filesystem.is_dir), \
+			patch('core.commands.touch', side_effect=self.filesystem.touch), \
+			patch('core.text_editor.open_file') as open_file:
+			for filename, key, modifiers, command, existing in (
+				('new.txt', Qt.Key_N, Qt.ControlModifier, 'new_empty_file', False),
+				('existing.txt', Qt.Key_N, Qt.ControlModifier, 'new_empty_file', True),
+				('edit.txt', Qt.Key_F4, Qt.ShiftModifier, 'create_and_edit_file', False),
+			):
+				with self.subTest(shortcut=command, existing=existing):
+					target = self.root / filename
+					if existing:
+						target.write_bytes(b'Keep this content')
+					completed.clear()
+					public_pane.run_command.reset_mock()
+					open_file.reset_mock()
+					self.run_in_app(QTest.keyClick, pane._file_view, key, modifiers)
+					self.assertTrue(completed.wait(5), 'Creation command did not finish')
+					self.drain(pane)
+					errors.report.assert_not_called()
+					public_pane.run_command.assert_called_once_with(command, {})
+					self.assertEqual(b'Keep this content' if existing else b'', target.read_bytes())
+					if not existing:
+						self.assertEqual(as_url(target), pane.get_file_under_cursor())
+					if command == 'new_empty_file':
+						open_file.assert_not_called()
+					else:
+						open_file.assert_called_once_with(as_url(target), 'editor')
+
+	def test_compare_directories_counts_real_filtered_selections(self):
+		from core.commands import CompareDirectories
+		from fman import DirectoryPane
+		from fman.url import as_url
+		from unittest.mock import Mock, patch
+		left_path, right_path = self.root / 'left', self.root / 'right'
+		for path, names in ((left_path, ('common.txt', 'left.txt', 'hidden.log')),
+			(right_path, ('common.txt', 'right.txt'))):
+			path.mkdir()
+			for name in names:
+				(path / name).write_bytes(b'')
+		for pane, path in zip(self.panes, (left_path, right_path)):
+			self.navigate(pane, path)
+		public_window = Mock()
+		panes = [DirectoryPane(public_window, pane, Mock()) for pane in self.panes]
+		public_window.get_panes.return_value = panes
+		self.set_query('.txt$', self.panes[0])
+		self.set_query('right.txt', self.panes[1])
+		panes[0].select([as_url(left_path / 'common.txt')])
+		with patch('core.commands.iterdir', side_effect=self.filesystem.iterdir), \
+			patch('core.commands.show_alert') as alert:
+			CompareDirectories(panes[1])()
+			self.assertEqual([as_url(left_path / 'left.txt')], panes[0].get_selected_files())
+			self.assertEqual([as_url(right_path / 'right.txt')], panes[1].get_selected_files())
+			alert.assert_called_once_with(
+				'Selected 1 visible file in the left pane not present on the right.<br/>'
+				'Selected 1 visible file in the right pane not present on the left.<br/>'
+				'The remaining differences are hidden, filtered, or otherwise not selectable.'
+			)
+			self.set_query('common.txt', self.panes[0])
+			self.set_query('common.txt', self.panes[1])
+			CompareDirectories(panes[0])()
+			self.assertEqual([], panes[0].get_selected_files())
+			self.assertEqual([], panes[1].get_selected_files())
+			self.assertIn('none of the differences can currently be selected', alert.call_args.args[0])
+			self.navigate(self.panes[1], left_path)
+			self.set_query('left.txt', self.panes[1])
+			CompareDirectories(panes[0])()
+			self.assertIn('same file <em>names</em>', alert.call_args.args[0])
+			self.assertEqual([], panes[0].get_selected_files())
+			self.assertEqual([], panes[1].get_selected_files())
+
+	def test_delete_continuation_suppresses_progress_popup(self):
+		from core.commands import _Delete
+		from fman import Task, submit_task, YES, NO
+		from PyQt5.QtCore import QThread, QTimer
+		from unittest.mock import patch
+		attempted, dialogs, observed = [], [], []
+		def fail():
+			attempted.append('first')
+			raise PermissionError(13, 'denied')
+		children = {
+			'file://C:/first': Task('Deleting first', size=1, fn=fail),
+			'file://C:/second': Task('Deleting second', size=1, fn=lambda: attempted.append('second')),
+		}
+		task = _Delete(list(children), lambda url: [children[url]])
+		self.run_in_app(lambda: setattr(self.window, '_progress_bar_palette', QApplication.instance().palette()))
+		original = self.window.create_progress_dialog
+		def create_dialog(*args):
+			dialog = original(*args)
+			dialogs.append(dialog)
+			return dialog
+		def answer(message_box):
+			dialog = dialogs[-1]
+			observed.append((
+				dialog.minimumDuration() == dialog._MAX_C_INT,
+				message_box.defaultButton() == message_box.button(YES),
+				QThread.currentThread() == QApplication.instance().thread(),
+			))
+			QTimer.singleShot(0, message_box.button(NO).click)
+		self.run_in_app(self.window.before_dialog.connect, answer)
+		try:
+			with patch('fman._get_ui', return_value=self.window), \
+				patch.object(self.window, 'create_progress_dialog', side_effect=create_dialog), \
+				patch('core.commands.show_alert', side_effect=AssertionError('Bypassed task alert')):
+				submit_task(task)
+			self.assertEqual(['first'], attempted)
+			self.assertEqual([(True, True, True)], observed)
+			self.assertEqual(dialogs[0]._MINIMUM_DURATION_MS, self.run_in_app(dialogs[0].minimumDuration))
+		finally:
+			self.run_in_app(self.window.before_dialog.disconnect, answer)
+			for dialog in dialogs:
+				self.run_in_app(dialog.cancel)
+				self.run_in_app(dialog.deleteLater)
+
+	def test_special_filenames_and_status_mode_changes(self):
+		from fman.impl.status_bar import DEFAULT_SETTINGS, DISABLED, ACTIVE_PANE
+		from fman.url import as_url
+		pane = self.panes[0]
+		for name in ('$RECYCLE.BIN', '[draft] notes.txt', '!important', '^caret'):
+			(self.root / name).write_bytes(b'')
+		pane.reload()
+		self.drain(pane)
+		for query, name in [(r'\$RECYCLE.BIN', '$RECYCLE.BIN'), (r'\[draft]', '[draft] notes.txt'),
+			(r'\!important', '!important'), (r'\^caret', '^caret'), ('[$]*.???$', '$RECYCLE.BIN')]:
+			self.set_query(query)
+			self.assertEqual('Filter "%s": 1 of 9 items' % query, self.status())
+			self.assertEqual(as_url(self.root / name), pane.get_file_under_cursor())
+		for mode in (ACTIVE_PANE, DISABLED):
+			self.window.set_extended_status_bar(dict(DEFAULT_SETTINGS, mode=mode))
+			self.panes[1].focus()
+			self.assertEqual('Ready.', self.status())
+			pane.focus()
+			self.assertEqual('Filter "[$]*.???$": 1 of 9 items', self.status())
+		self.assertIsNone(self.window._status_service)
+		original_width = self.run_in_app(self.window.width)
+		self.set_query('a' * 255)
+		self.run_in_app(QApplication.processEvents)
+		self.assertEqual(original_width, self.run_in_app(self.window.width), 'Long count text resized the window')
+
 
 class DirectorySizeIT(QtIT):
 	def test_no_standalone_directory_size_plugin(self):
@@ -4299,8 +4293,8 @@ sys.exit(context.run())
 				shortcut(Qt.Key_F4, Qt.ControlModifier)
 				self.drain_models()
 				self.assertEqual((module.COLUMN, True), self.panes[0].get_sort_column())
-				self.widgets[0].set_column_widths([191, 93])
-				manager = SessionManager({}, self.filesystem, self.errors, 'test', True)
+				_set_column_widths(self.widgets[0], [191, 93])
+				manager = SessionManager({}, self.filesystem, self.errors, 'test')
 				saved = manager._read_pane_settings(self.widgets[0])
 				support.unload_plugin(str(plugin_path))
 				self.assertEqual(self.columns, tuple(self.panes[0].get_columns()))
@@ -4373,7 +4367,7 @@ sys.exit(context.run())
 		(self.child / 'file.txt').write_bytes(b'payload')
 		self.url = as_url(self.child)
 		self.errors = Mock()
-		self.filesystem = MotherFileSystem(Mock(get_icon=Mock(return_value=QIcon())))
+		self.filesystem = MotherFileSystem()
 		for backend in (LocalFileSystem(), NullFileSystem()):
 			self.filesystem.add_child(backend.scheme, FileSystemWrapper(backend, self.filesystem, self.errors))
 		for column in (Name(), Size(), Modified(), NullColumn()):
@@ -4452,7 +4446,7 @@ sys.exit(context.run())
 		pane.select([self.url])
 		pane.set_sort_column('core.Size', False)
 		self.run_in_app(widget._filter_bar._input.setText, 'folder')
-		widget.set_column_widths([171, 83])
+		_set_column_widths(widget, [171, 83])
 		self.drain_models()
 		model = self.run_in_app(widget._model.sourceModel)
 		with patch('core.directory_size.scan_parents') as scan, \
@@ -4475,7 +4469,7 @@ sys.exit(context.run())
 			SortByDirectorySize(pane)()
 			self.drain_models()
 			self.assertEqual((COLUMN, False), pane.get_sort_column())
-			saved = SessionManager({}, None, None, 'test', True)._read_pane_settings(widget)
+			saved = SessionManager({}, None, None, 'test')._read_pane_settings(widget)
 			self.assertEqual([171, 83], saved['col_widths'])
 			self.assertEqual(83, saved['column_widths_by_name'][COLUMN])
 			self.assertNotIn('core.Modified', saved['column_widths_by_name'])
@@ -4666,7 +4660,7 @@ class ProcessPaneIT(QtIT):
 		self.finished = Event()
 		callbacks = Mock()
 		callbacks.after_command.side_effect = lambda *args: self.finished.set()
-		self.filesystem = MotherFileSystem(Mock(get_icon=Mock(return_value=QIcon())))
+		self.filesystem = MotherFileSystem()
 		for backend in (LocalFileSystem(), NullFileSystem()):
 			self.filesystem.add_child(backend.scheme, FileSystemWrapper(backend, self.filesystem, self.errors))
 		for column in (Name(), Size(), Modified(), NullColumn()):
@@ -4803,7 +4797,7 @@ class ProcessPaneIT(QtIT):
 	def test_stale_session_restores_root_and_two_panes_reject_old_row(self):
 		from fman.impl.session import SessionManager
 		from process_pane.processes import ProcessRecord
-		manager = SessionManager({}, self.filesystem, self.errors, 'test', True)
+		manager = SessionManager({}, self.filesystem, self.errors, 'test')
 		manager._init_pane(self.public_panes[0], None, {'location': 'process://gone~123~99'})
 		self.drain(self.panes[0])
 		self.assertEqual('process://', self.public_panes[0].get_path())
@@ -4866,7 +4860,7 @@ class ArchiveTransferIT(QtIT):
 		try:
 			with patch('core.fs.zip.Popen7ZipWindows', return_value=process):
 				with self.assertRaises(Task.Canceled):
-					task.run_7zip_with_progress(['x'], pty=False)
+					task.run_7zip_with_progress(['x'])
 			self.assertTrue(process.killed)
 			self.assertTrue(process.waited)
 			self.assertEqual([(False, True, None, QApplication.instance().thread())], observed)
@@ -4909,7 +4903,7 @@ class UnpackArchiveIT(QtIT):
 			finished = Event()
 			callbacks = Mock()
 			callbacks.after_command.side_effect = lambda *args: finished.set()
-			filesystem = MotherFileSystem(Mock(get_icon=Mock(return_value=QIcon())))
+			filesystem = MotherFileSystem()
 			for backend in (LocalFileSystem(), NullFileSystem(), ZipFileSystem(filesystem, {'.zip'})):
 				filesystem.add_child(backend.scheme, FileSystemWrapper(backend, filesystem, errors))
 			for column in (Name(), Size(), Modified(), NullColumn()):
@@ -5268,7 +5262,7 @@ class EverythingIT(QtIT):
 			path = Path(__file__).parents[3] / 'main/resources/base/Plugins/Everything'
 			plugin = ExternalPlugin(str(path), Config(), StubTheme(), StubFontDatabase(),
 				ContextMenuProvider(pane_registry, application_registry, bindings), errors,
-				application_registry, pane_registry, bindings, MotherFileSystem(None), window)
+				application_registry, pane_registry, bindings, MotherFileSystem(), window)
 			self.assertTrue(plugin.load(), errors.error_messages)
 			import everything_search
 			service = everything_search._service
@@ -5339,7 +5333,7 @@ class EverythingFoldersIT(QtIT):
 		self.finished = Event()
 		callbacks = Mock()
 		callbacks.after_command.side_effect = lambda *args: self.finished.set()
-		self.filesystem = MotherFileSystem(Mock(get_icon=Mock(return_value=QIcon())))
+		self.filesystem = MotherFileSystem()
 		for backend in (LocalFileSystem(), NullFileSystem()):
 			self.filesystem.add_child(backend.scheme, FileSystemWrapper(backend, self.filesystem, self.errors))
 		for column in (Name(), Size(), Modified(), NullColumn()):
@@ -5885,6 +5879,7 @@ class CommandPaletteRecentIT(QtIT):
 		from fman.impl.quicksearch import QuicksearchItemRenderer
 		from fman.impl.theme import Theme
 		from PyQt5.QtCore import QRect
+		from PyQt5.QtGui import QFontMetricsF
 		from PyQt5.QtWidgets import QListView, QStyleOptionViewItem
 		from pathlib import Path
 		from unittest.mock import Mock
@@ -5899,8 +5894,14 @@ class CommandPaletteRecentIT(QtIT):
 				item = QuicksearchItem('value', 'Navigation: Move cursor down',
 					hint='Down, Num+Down, Shift+Down, Num+Insert, Ins \u00b7 Recent')
 				option.rect = QRect(0, 0, 2000, 1)
-				self.assertEqual(item.hint, QuicksearchItemRenderer(item, option, css).fitted_hint())
-				option.rect = QRect(0, 0, 400, 1)
+				wide = QuicksearchItemRenderer(item, option, css)
+				self.assertEqual(item.hint, wide.fitted_hint())
+				# Offscreen Qt falls back to an installed font (e.g. a narrow one),
+				# so size the row from measured widths: half the hint fits.
+				hint_width = QFontMetricsF(wide._hint_font()).horizontalAdvance(item.hint)
+				chrome = 2000 - wide._get_title_rect().width()
+				width = int(chrome + wide._layout_title()[1] + wide.HINT_GAP + hint_width / 2)
+				option.rect = QRect(0, 0, width, 1)
 				fitted = QuicksearchItemRenderer(item, option, css).fitted_hint()
 				self.assertNotEqual(item.hint, fitted)
 				self.assertTrue(fitted.startswith('Down'))
@@ -6643,7 +6644,7 @@ class ComparatorIT(QtIT):
 			'file_comparator': {'executable': sys.executable, 'arguments': []},
 			'folder_comparator': {'executable': sys.executable, 'arguments': []}})
 		self.errors = Mock()
-		self.filesystem = MotherFileSystem(Mock(get_icon=Mock(return_value=QIcon())))
+		self.filesystem = MotherFileSystem()
 		for backend in (LocalFileSystem(), NullFileSystem()):
 			self.filesystem.add_child(backend.scheme, FileSystemWrapper(backend, self.filesystem, self.errors))
 		for column in (Name(), Size(), Modified(), NullColumn()):
@@ -6905,7 +6906,7 @@ class FindFilesIT(QtIT):
 		(self.root / 'other.txt').write_bytes(b'')
 		(self.root / 'folder').mkdir()
 		self.errors = Mock()
-		self.filesystem = MotherFileSystem(Mock(get_icon=Mock(return_value=QIcon())))
+		self.filesystem = MotherFileSystem()
 		for backend in (LocalFileSystem(), NullFileSystem()):
 			self.filesystem.add_child(backend.scheme, FileSystemWrapper(backend, self.filesystem, self.errors))
 		for column in (Name(), Size(), Modified(), NullColumn()):
@@ -7320,7 +7321,7 @@ class SearchFilesIT(QtIT):
 			target.write_bytes(b'\x00binary')
 			other.write_bytes(b'')
 			errors = Mock()
-			filesystem = MotherFileSystem(Mock(get_icon=Mock(return_value=QIcon())))
+			filesystem = MotherFileSystem()
 			for backend in (LocalFileSystem(), NullFileSystem()):
 				filesystem.add_child(backend.scheme, FileSystemWrapper(backend, filesystem, errors))
 			for column in (Name(), Size(), Modified(), NullColumn()):
@@ -9669,7 +9670,6 @@ class HashResultIT(QtIT):
 		def check(algorithm, digest):
 			QApplication.processEvents()
 			self.assert_centered_within_screen(window)
-			self.assertIsNone(window.bottom_panel)
 			self.assertIsNone(self.main._panel_dock)
 			self.assertEqual(2, window.layout().count())
 			self.assertTrue(window.path_label.isVisible())
@@ -9734,7 +9734,6 @@ class HashResultIT(QtIT):
 				self.assertEqual(before_title, self.run_in_app(window.output.title))
 				self.assertEqual(before_path, self.run_in_app(window.windowTitle))
 				self.assertEqual('sha256', self.run_in_app(lambda: window.session.last[1]))
-				self.assertIsNone(self.run_in_app(lambda: window.bottom_panel))
 				self.assertFalse(self.run_in_app(lambda: window.busy))
 
 	def test_hash_commands_preserve_unrelated_dock(self):
@@ -9752,7 +9751,6 @@ class HashResultIT(QtIT):
 					patch('calculate_file_hash.show_quicksearch', return_value=('', 'sha256')):
 				command(self.pane)()
 				window = self.controller.show(self.pane)
-				self.assertIsNone(self.run_in_app(lambda: window.bottom_panel))
 				self.assertIs(panel, self.run_in_app(lambda: self.main._panel_dock.panel))
 				self.run_in_app(window.close)
 				self.assertIs(panel, self.run_in_app(lambda: self.main._panel_dock.panel))
@@ -9876,11 +9874,10 @@ class PublicUiIT(QtIT):
 			pane.on_closed(None)
 
 	def test_widget_constructors_reject_command_thread(self):
-		from fman.impl.ui.panel import Panel, TextButton, IconButton, DropDown, JsonSettings
+		from fman.impl.ui.panel import Panel, TextButton, IconButton, DropDown
 		from fman.impl.ui.quicklist import QuickList
 		constructors = (QuickList, Panel, lambda: TextButton('Run'),
-			lambda: IconButton(None, 'Mode'), lambda: DropDown((('One', 1),), 'Choice'),
-			lambda: JsonSettings('Test.json', None))
+			lambda: IconButton(None, 'Mode'), lambda: DropDown((('One', 1),), 'Choice'))
 		for construct in constructors:
 			with self.assertRaisesRegex(RuntimeError, 'UiController.build'):
 				construct()
@@ -9959,10 +9956,9 @@ class PublicUiIT(QtIT):
 		self.assertTrue(window.busy)
 
 class DockedPanelIT(QtIT):
-	def test_public_controller_dock_unload_and_late_result(self):
+	def test_public_controller_unload_drops_late_result(self):
 		from fman import DirectoryPane, Window
 		from fman.ui import UiController, UiOwner
-		from fman.impl.ui.panel import Panel, TextButton
 		from fman.impl.ui.quicklist import QuickList
 		from fman.impl.widgets import MainWindow
 		from PyQt5.QtWidgets import QWidget, QVBoxLayout
@@ -9973,9 +9969,6 @@ class DockedPanelIT(QtIT):
 				view = QuickList(window, fuzzy=True)
 				window.focus_widget = view
 				QVBoxLayout(window).addWidget(view)
-				panel = Panel()
-				panel.add(TextButton('Run'))
-				window.set_panel(panel)
 		Demo.owner = UiOwner()
 		def prepare():
 			theme = Mock()
@@ -9990,19 +9983,6 @@ class DockedPanelIT(QtIT):
 		try:
 			window = Demo.show(pane)
 			self.assertIs(window, Demo.show(pane))
-			self.assertIs(window.bottom_panel, self.run_in_app(lambda: main._panel_dock.panel))
-			def detach_and_restore():
-				window.set_panel(None)
-				self.assertIsNone(main._panel_dock)
-				self.assertIsNone(window.bottom_panel)
-				self.assertTrue(window.alive.is_set())
-				self.assertTrue(window.isVisible())
-				window.set_panel(None)
-				panel = Panel()
-				panel.add(TextButton('Run'))
-				window.set_panel(panel)
-				self.assertIs(panel, main._panel_dock.panel)
-			self.run_in_app(detach_and_restore)
 			self.run_in_app(lambda: window.disposed.connect(disposed.set))
 			def operation():
 				started.set()
@@ -10014,7 +9994,6 @@ class DockedPanelIT(QtIT):
 			self.assertTrue(started.wait(2))
 			Demo.owner.invalidate()
 			self.assertTrue(disposed.wait(2))
-			self.assertIsNone(self.run_in_app(lambda: main._panel_dock))
 			release.set()
 			self.assertTrue(exited.wait(2))
 			self.run_in_app(lambda: None)
@@ -10162,10 +10141,10 @@ class QuickListIT(QtIT):
 				self.assertFalse(widget.isWindow())
 				point = widget.view.visualRect(widget.model.index(1, 0)).center()
 				QTest.mouseClick(widget.view.viewport(), Qt.LeftButton, pos=point)
-				self.assertEqual('b', widget.current_item.id)
-				self.assertEqual((), widget.selected_items)
+				self.assertEqual('b', widget.current_id)
+				self.assertEqual(set(), widget.selected_ids)
 				QTest.mouseClick(widget.view.viewport(), Qt.LeftButton, Qt.ControlModifier, point)
-				self.assertEqual(('b',), tuple(item.id for item in widget.selected_items))
+				self.assertEqual({'b'}, widget.selected_ids)
 				point = widget.view.visualRect(widget.model.index(2, 0)).center()
 				QTest.mouseClick(widget.view.viewport(), Qt.LeftButton, Qt.ControlModifier, point)
 				self.assertEqual({'b', 'c'}, widget.selected_ids)
@@ -10750,7 +10729,6 @@ class PanelIT(QtIT):
 			from PyQt5.QtWidgets import QStyle, QStyleOptionButton
 			panel = Panel()
 			panel.add(DropDown((('Recent', 'recent'),), 'Sort'))
-			panel.add_stretch()
 			buttons = [panel.add(TextButton(label)) for label in ('Delete', 'Rename', 'Go To')]
 			try:
 				panel.show()
@@ -10777,131 +10755,6 @@ class PanelIT(QtIT):
 			finally:
 				panel.deleteLater()
 		self.run_in_app(check)
-
-	def test_two_bindings_save_failure_and_disposal(self):
-		from copy import deepcopy
-		from unittest.mock import patch
-		from fman.ui import UiOwner
-		from fman.impl.ui.panel import Panel, DropDown, TextButton, JsonSettings
-		from fman.impl.ui import resource
-		from fman.impl.util.qt.thread import is_in_main_thread
-		data = {'mode': 'first', 'enabled': False, 'other': 42}
-		ready = [Event(), Event()]
-		failed, refreshed = Event(), Event()
-		owner = UiOwner()
-		def create(index):
-			panel = Panel()
-			choice = panel.add(DropDown((('First', 'first'), ('Second', 'second')), 'Mode'))
-			toggle = panel.add(TextButton('Enabled', checkable=True))
-			settings = JsonSettings('PanelSharedTest.json', panel, owner)
-			settings.bind('mode', choice, 'first')
-			settings.bind('enabled', toggle, False)
-			settings.busy_changed.connect(lambda busy: ready[index].set() if not busy else None)
-			settings.failed.connect(lambda message: failed.set())
-			settings.load()
-			return panel, choice, toggle, settings
-		def save(filename, values):
-			self.assertFalse(is_in_main_thread())
-			data.update(deepcopy(values))
-		with patch('fman.impl.ui.panel.load_json', side_effect=lambda *args, **kwargs: deepcopy(data)), \
-				patch('fman.impl.ui.panel.save_json', side_effect=save) as save_mock:
-			first = self.run_in_app(create, 0)
-			second = self.run_in_app(create, 1)
-			try:
-				self.assertTrue(all(event.wait(2) for event in ready))
-				self.run_in_app(lambda: second[3].changed.connect(lambda values: refreshed.set()))
-				ready[0].clear()
-				self.run_in_app(first[1].set_value, 'second')
-				self.assertTrue(ready[0].wait(2))
-				self.assertTrue(refreshed.wait(2))
-				self.assertEqual('second', self.run_in_app(second[1].value))
-				self.assertEqual(42, data['other'])
-				save_mock.side_effect = PermissionError('Cannot save settings')
-				self.run_in_app(first[2].click)
-				self.assertTrue(failed.wait(2))
-				self.assertFalse(self.run_in_app(first[2].isChecked))
-				self.assertFalse(data['enabled'])
-				save_mock.reset_mock()
-				with resource('PanelSharedTest.json').lock:
-					self.run_in_app(first[1].set_value, 'first')
-					owner.invalidate()
-				self.run_in_app(first[3].dispose)
-			finally:
-				for panel, choice, toggle, settings in (first, second):
-					self.run_in_app(settings.dispose)
-					self.run_in_app(panel.deleteLater)
-			save_mock.assert_not_called()
-
-	def test_invalid_stored_values_default_without_writing(self):
-		from unittest.mock import patch
-		from fman.impl.ui.panel import Panel, DropDown, TextButton, JsonSettings
-		ready = Event()
-		def create():
-			panel = Panel()
-			choice = panel.add(DropDown((('A', 'a'), ('B', 'b')), 'Mode'))
-			settings = JsonSettings('PanelInvalidTest.json', panel)
-			settings.bind('mode', choice, 'a')
-			with self.assertRaises(ValueError):
-				settings.bind('action', TextButton('Run', panel), False)
-			settings.busy_changed.connect(lambda busy: ready.set() if not busy else None)
-			settings.load()
-			return panel, choice, settings
-		with patch('fman.impl.ui.panel.load_json', return_value={'mode': ['invalid']}), \
-				patch('fman.impl.ui.panel.save_json') as save:
-			panel, choice, settings = self.run_in_app(create)
-			try:
-				self.assertTrue(ready.wait(2))
-				self.assertEqual('a', self.run_in_app(choice.value))
-				save.assert_not_called()
-			finally:
-				self.run_in_app(settings.dispose)
-				self.run_in_app(panel.deleteLater)
-
-	def test_public_controls_and_json_roundtrip(self):
-		from copy import deepcopy
-		from unittest.mock import patch
-		from fman.impl.ui.panel import Panel, IconButton, TextButton, DropDown, JsonSettings
-		from fman.impl.util.qt.thread import is_in_main_thread
-		from PyQt5.QtWidgets import QStyle
-		data = {'case_sensitive': True, 'scope': 'all', 'unrelated': {'keep': 1}}
-		loaded, saved = Event(), Event()
-		def load(*args, **kwargs):
-			self.assertFalse(is_in_main_thread())
-			return deepcopy(data)
-		def save(filename, values):
-			self.assertFalse(is_in_main_thread())
-			data.update(deepcopy(values))
-			saved.set()
-		def create():
-			panel = Panel()
-			icon = panel.style().standardIcon(QStyle.SP_FileDialogDetailedView)
-			button = panel.add(IconButton(icon, 'Match case'))
-			choice = panel.add(DropDown((('Current', 'current'), ('All', 'all')), 'Scope'))
-			action = panel.add(TextButton('Find'))
-			settings = JsonSettings('PanelTest.json', panel)
-			settings.bind('case_sensitive', button, False)
-			settings.bind('scope', choice, 'current')
-			settings.busy_changed.connect(lambda busy: loaded.set() if not busy else None)
-			settings.load()
-			return panel, button, choice, action, settings
-		with patch('fman.impl.ui.panel.load_json', side_effect=load), \
-				patch('fman.impl.ui.panel.save_json', side_effect=save):
-			panel, button, choice, action, settings = self.run_in_app(create)
-			try:
-				self.assertTrue(loaded.wait(2))
-				self.assertTrue(self.run_in_app(button.isChecked))
-				self.assertEqual('all', self.run_in_app(choice.value))
-				self.run_in_app(action.click)
-				self.assertFalse(saved.is_set())
-				loaded.clear()
-				self.run_in_app(button.click)
-				self.assertTrue(saved.wait(2))
-				self.assertTrue(loaded.wait(2))
-				self.assertFalse(data['case_sensitive'])
-				self.assertEqual({'keep': 1}, data['unrelated'])
-			finally:
-				self.run_in_app(settings.dispose)
-				self.run_in_app(panel.deleteLater)
 
 
 class FavoritesManagerIT(QtIT):
@@ -11258,6 +11111,14 @@ def setUpModule():
 
 def tearDownModule():
 	_QtApp.shutdown()
+
+def _set_column_widths(widget, widths):
+	def apply():
+		for index, width in enumerate(widths):
+			widget._file_view.setColumnWidth(index, width)
+		widget.get_column_widths_by_name()
+	_QtApp.run(apply)
+
 
 class _QtApp:
 	@classmethod

@@ -162,12 +162,9 @@ class ListingTest(TestCase):
 				reconcile(previous, current, check)
 			self.assertEqual(checkpoints, check.call_count)
 
-	def test_find_uses_provider_labels_but_keeps_entry_keys(self):
-		from search_file_fuzzy.indexer import ListingSearch, index_listing
+	def test_index_uses_provider_labels_but_keeps_entry_keys(self):
+		from search_file_fuzzy.indexer import index_listing
 		listing = Listing.create('process://', ['internal~123~99'], labels=['Example.exe'])
-		visible, highlights = ListingSearch()(listing, 'Example', lambda: None)
-		self.assertEqual((0,), visible)
-		self.assertTrue(highlights[0])
 		entry = index_listing(listing).entries[0]
 		self.assertEqual('process://internal~123~99', entry.url)
 		self.assertEqual('Example.exe', entry.name)
@@ -356,6 +353,34 @@ class NativeListingTest(TestCase):
 			self.assertEqual({'entry.txt', 'directory'}, set(listing.names))
 			self.assertEqual(7, listing.sizes[listing.names.index('entry.txt')])
 			self.assertTrue(listing.is_dir[listing.names.index('directory')])
+
+	def test_fallback_scan_matches_validated_listing(self):
+		from core.fs.local import LocalFileSystem
+		from fman.listing import Listing
+		from fman.url import as_url
+		from unittest.mock import Mock, patch
+		from dataclasses import fields
+		with TemporaryDirectory() as temporary:
+			folder = Path(temporary).resolve()
+			(folder / 'entry.txt').write_bytes(b'payload')
+			(folder / '.hidden').write_bytes(b'')
+			(folder / 'directory').mkdir()
+			location = as_url(folder)
+			with patch('core.fs.local.windows.listing.scan', return_value=None):
+				trusted = LocalFileSystem().scan(location[7:], Mock())
+			validated = Listing(*(getattr(trusted, field.name) for field in fields(Listing)))
+			self.assertEqual(validated, trusted)
+			for name in ('names', 'is_dir', 'sizes', 'mtimes_ns', 'attributes', 'created_ns'):
+				self.assertIs(tuple, type(getattr(trusted, name)), name)
+			entry = Mock(path=str(folder / 'same'))
+			entry.name = 'same'
+			entry.is_symlink.return_value = False
+			entry.stat.return_value = Mock(st_mode=0o100666, st_size=1, st_mtime_ns=2,
+				st_file_attributes=32, st_reparse_tag=0)
+			with patch('core.fs.local.os.scandir') as scandir:
+				scandir.return_value.__enter__.return_value = [entry, entry]
+				with self.assertRaisesRegex(ValueError, 'Duplicate'):
+					LocalFileSystem()._scan_entries(location[7:], str(folder), Mock())
 
 	def test_process_and_archive_scans_capture_provider_data(self):
 		from core.fs.zip import ZipFileSystem
@@ -855,18 +880,6 @@ class SnapshotJobsTest(TestCase):
 			for query in ('candidate', '!absent', ''):
 				with self.assertRaises(Canceled):
 					matcher.matches(query, check_canceled=canceled)
-
-	def test_fuzzy_projection_reuses_full_candidates_not_top_results(self):
-		from core import Name
-		from fman.impl.model.listing import project
-		from search_file_fuzzy.indexer import ListingSearch
-		listing = ListingTest().listing(('alpha', 'beta'), (1, 2))
-		engine = ListingSearch(max_results=1)
-		for query, expected in (('alpha', (0,)), ('beta', (1,)), ('!alpha', (1,)), ('', (0,))):
-			result = project(listing, None, Name(), 0, True,
-				(lambda snapshot, index: False,), lambda: None, search=(engine, query))
-			self.assertEqual(expected, result.visible)
-			self.assertEqual(set(expected), set(result.highlights))
 
 	def test_pending_and_failed_cancellations_are_acknowledged_once(self):
 		from fman.impl.model.listing import LatestJobs

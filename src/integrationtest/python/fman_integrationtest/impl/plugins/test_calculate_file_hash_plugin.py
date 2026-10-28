@@ -36,7 +36,7 @@ class CalculateFileHashPluginTest(TestCase):
 		bindings = KeyBindings()
 		context = ContextMenuProvider(pane_registry, application_registry, bindings)
 		plugin = ExternalPlugin(str(path), config, StubTheme(), StubFontDatabase(), context,
-			errors, application_registry, pane_registry, bindings, MotherFileSystem(None), window)
+			errors, application_registry, pane_registry, bindings, MotherFileSystem(), window)
 		self.assertTrue(plugin.load())
 		try:
 			self.assertEqual({'calculate_file_hash', 'calculate_file_hash_by'}, set(pane_registry.get_commands()))

@@ -20,18 +20,14 @@ class SessionManager:
 	DEFAULT_WINDOW_SIZE = 1280, 800
 	_MAIN_WINDOW_VERSION = 1
 
-	def __init__(self, settings, fs, error_handler, app_version, is_licensed):
+	def __init__(self, settings, fs, error_handler, app_version):
 		self.is_first_run = not settings
 		self._settings = settings
 		self._fs = fs
 		self._error_handler = error_handler
 		self._app_version = app_version
-		self._is_licensed = is_licensed
 		self._save_failure_reported = False
 		self._window_geometry_reset = False
-	@property
-	def was_licensed_on_last_run(self):
-		return self._settings.get('is_licensed', False)
 	def show_main_window(self, window):
 		main_window = window._widget
 		self._restore_window_geometry(main_window)
@@ -77,11 +73,6 @@ class SessionManager:
 		if previous_version and previous_version != self._app_version:
 			status_message = 'Updated to v%s.' % self._app_version
 		main_window.show_status_message(status_message, timeout_secs=5)
-	def _get_startup_message(self):
-		previous_version = self._previous_app_version()
-		if not previous_version or previous_version == self._app_version:
-			return 'v%s ready.' % self._app_version
-		return 'Updated to v%s.' % self._app_version
 	def _previous_app_version(self):
 		return self._settings.get(
 			'app_version', self._settings.get('fman_version', None)
@@ -178,7 +169,7 @@ class SessionManager:
 			list(map(self._read_pane_settings, main_window.get_panes()))
 		self._settings['app_version'] = self._app_version
 		self._settings.pop('fman_version', None)
-		self._settings['is_licensed'] = self._is_licensed
+		self._settings.pop('is_licensed', None)
 		self._flush_settings()
 	def _flush_settings(self):
 		try:

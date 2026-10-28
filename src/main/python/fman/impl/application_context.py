@@ -1,12 +1,10 @@
 from fbs_runtime import application_context as fbs_appctxt
 from fbs_runtime.application_context import cached_property
 from fbs_runtime.application_context.PyQt5 import ApplicationContext
-from fbs_runtime.excepthook import StderrExceptionHandler
 from fman import DATA_DIRECTORY, Window
 from fman.impl.controller import Controller
 from fman.impl.font_database import FontDatabase
 from fman.impl.tour_state import TourState
-from fman.impl.model.icon_provider import IconProvider
 from fman.impl.nonexistent_shortcut_handler import NonexistentShortcutHandler
 from fman.impl.plugins import PluginSupport, CommandCallback, PluginFactory, \
 	SETTINGS_PLUGIN_NAME
@@ -36,7 +34,8 @@ from os import makedirs
 from os.path import join
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QColor, QIcon, QPalette
-from PyQt5.QtWidgets import QStyleFactory, QFileIconProvider
+from PyQt5.QtWidgets import QStyleFactory
+from traceback import print_exception
 
 import fman
 import logging
@@ -64,9 +63,18 @@ class DevelopmentApplicationContext(ApplicationContext):
 		self._main_window = None
 	def run(self):
 		self.init_logging()
+		sys.excepthook = self._excepthook
 		self._load_plugins()
 		self.session_manager.show_main_window(self.window)
 		return self.app.exec_()
+	def _excepthook(self, exc_type, exc_value, traceback):
+		# Without a custom hook, PyQt aborts the process on an exception in a Qt slot.
+		try:
+			if self.plugin_error_handler.handle(exc_type, exc_value, traceback):
+				return
+		except Exception:
+			pass
+		print_exception(exc_type, exc_value, traceback)
 	def init_logging(self):
 		logging.basicConfig()
 	def _load_plugins(self):
@@ -112,9 +120,6 @@ class DevelopmentApplicationContext(ApplicationContext):
 	@cached_property
 	def command_callback(self):
 		return CommandCallback(self.tour_state)
-	@cached_property
-	def exception_handlers(self):
-		return [self.plugin_error_handler, StderrExceptionHandler()]
 	@property
 	def main_window(self):
 		if self._main_window is None:
@@ -174,15 +179,7 @@ class DevelopmentApplicationContext(ApplicationContext):
 		)
 	@cached_property
 	def mother_fs(self):
-		# Resolve the cyclic dependency MotherFileSystem <-> IconProvider:
-		result = MotherFileSystem(None)
-		result._icon_provider = self._get_icon_provider(result)
-		return result
-	def _get_icon_provider(self, fs):
-		qt_icon_provider = QFileIconProvider()
-		icons_dir = self._get_local_data_file('Cache', 'Icons')
-		makedirs(icons_dir, exist_ok=True)
-		return IconProvider(qt_icon_provider, fs, icons_dir)
+		return MotherFileSystem()
 	@cached_property
 	def config(self):
 		return Config(join(DATA_DIRECTORY, APP_SETTINGS),
@@ -303,7 +300,7 @@ class DevelopmentApplicationContext(ApplicationContext):
 		settings = Settings(self._get_local_data_file('Session.json'))
 		return SessionManager(
 			settings, self.mother_fs, self.plugin_error_handler,
-			self.app_version, True
+			self.app_version
 		)
 	@cached_property
 	def theme(self):

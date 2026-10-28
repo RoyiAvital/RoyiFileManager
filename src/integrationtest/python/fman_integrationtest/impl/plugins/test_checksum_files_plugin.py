@@ -122,7 +122,7 @@ def native_smoke(path):
     bindings = KeyBindings()
     context = ContextMenuProvider(pane_registry, application_registry, bindings)
     plugin = ExternalPlugin(path, config, StubTheme(), StubFontDatabase(), context,
-        errors, application_registry, pane_registry, bindings, MotherFileSystem(None), window)
+        errors, application_registry, pane_registry, bindings, MotherFileSystem(), window)
     assert plugin.load(), errors.error_messages
     try:
         assert set(pane_registry.get_commands()) == {'generate_checksum_file', 'verify_checksum'}

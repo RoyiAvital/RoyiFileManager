@@ -1,7 +1,6 @@
 from fman.impl.ui import require_ui_thread, submit_work
 from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtWidgets import QApplication, QDialog, QDialogButtonBox, QInputDialog, QLabel, \
-	QScrollArea, QVBoxLayout, QWidget
+from PyQt5.QtWidgets import QDialog, QDialogButtonBox, QLabel, QScrollArea, QVBoxLayout
 from threading import Event
 
 
@@ -127,13 +126,6 @@ class ToolWindow(QDialog):
 		dialog = MessageDialog(title, text, True, self)
 		self._open_prompt(dialog, lambda result: accepted() if result == QDialogButtonBox.Yes else None)
 
-	def rename_prompt(self, label, name, accepted):
-		dialog = QInputDialog(self)
-		dialog.setWindowTitle(self.windowTitle())
-		dialog.setLabelText(label)
-		dialog.setTextValue(name)
-		self._open_prompt(dialog, lambda result: accepted(dialog.textValue()) if result else None)
-
 	def _open_prompt(self, dialog, finished):
 		self.prompt = dialog
 		self.set_busy(True)
@@ -177,51 +169,6 @@ class PaneToolWindow(ToolWindow):
 		self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint)
 		self.setMinimumSize(480, 260)
 		self.resize(680, 430)
-		self.bottom_panel = None
-		self.disposed.connect(self._remove_bottom_panel)
-
-	def set_panel(self, panel):
-		require_ui_thread()
-		if not self.alive.is_set() or not self.owner.active:
-			raise RuntimeError('Cannot dock a panel for a closed session.')
-		if self.bottom_panel is panel:
-			return
-		self._remove_bottom_panel()
-		self.bottom_panel = panel
-		if panel is not None:
-			self.pane.window._widget.set_bottom_panel(panel, self.close, self._focus_from_panel)
-
-	def _focus_from_panel(self, backwards=False):
-		self.raise_()
-		self.activateWindow()
-		from fman.impl.ui.quicklist import QuickList
-		if backwards and isinstance(self.focus_widget, QuickList):
-			self.focus_widget.view.setFocus(Qt.BacktabFocusReason)
-		elif self.focus_widget is not None:
-			self.focus_widget.setFocus(Qt.TabFocusReason)
-
-	def focusNextPrevChild(self, next):
-		if self.bottom_panel is not None:
-			current = QApplication.focusWidget()
-			if current is not None and self.isAncestorOf(current):
-				candidate = current.nextInFocusChain() if next else current.previousInFocusChain()
-				while candidate is not self and candidate is not current:
-					if candidate.isVisible() and candidate.isEnabled() and candidate.focusPolicy() & Qt.TabFocus:
-						return super().focusNextPrevChild(next)
-					candidate = candidate.nextInFocusChain() if next else candidate.previousInFocusChain()
-				controls = [widget for widget in self.bottom_panel.findChildren(QWidget)
-					if widget.isVisible() and widget.isEnabled() and widget.focusPolicy() & Qt.TabFocus]
-				if controls:
-					self.bottom_panel.window().activateWindow()
-					controls[0 if next else -1].setFocus(Qt.TabFocusReason if next else Qt.BacktabFocusReason)
-					return True
-		return super().focusNextPrevChild(next)
-
-	def _remove_bottom_panel(self):
-		if self.bottom_panel is not None:
-			panel = self.bottom_panel
-			self.bottom_panel = None
-			self.pane.window._widget.remove_bottom_panel(panel)
 
 
 class NavigationHandle:

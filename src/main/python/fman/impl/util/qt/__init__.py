@@ -1,25 +1,12 @@
 from fman.url import splitscheme, as_human_readable, as_url
 from pathlib import PureWindowsPath
-from PyQt5.QtCore import Qt, QObject, QUrl
+from PyQt5.QtCore import Qt, QUrl
 
 def connect_once(signal, slot):
 	def _connect_once(*args, **kwargs):
 		signal.disconnect(_connect_once)
 		slot(*args, **kwargs)
 	signal.connect(_connect_once)
-
-
-class FilterEventOnce(QObject):
-	def __init__(self, parent, event_type, callback):
-		super().__init__(parent)
-		self._event_type = event_type
-		self._callback = callback
-		parent.installEventFilter(self)
-	def eventFilter(self, target, event):
-		if event.type() == self._event_type:
-			self.parent().removeEventFilter(self)
-			self._callback(target, event)
-		return False
 
 def as_qurl(url):
 	# fman URLs are very non-standard, in particular because they are free to
@@ -55,21 +42,18 @@ def from_qurl(qurl):
 	return ':'.join([scheme, path])
 
 AscendingOrder = Qt.AscendingOrder
-TextAlignmentRole = Qt.TextAlignmentRole
 AlignRight = Qt.AlignRight
 AlignTop = Qt.AlignTop
 AlignVCenter = Qt.AlignVCenter
 FramelessWindowHint = Qt.FramelessWindowHint
 ClickFocus = Qt.ClickFocus
 NoFocus = Qt.NoFocus
-KeyboardModifier = Qt.KeyboardModifier
 NoModifier = Qt.NoModifier
 ControlModifier = Qt.ControlModifier
 ShiftModifier = Qt.ShiftModifier
 AltModifier = Qt.AltModifier
 MetaModifier = Qt.MetaModifier
 KeypadModifier = Qt.KeypadModifier
-GroupSwitchModifier = Qt.GroupSwitchModifier
 Key_Down = Qt.Key_Down
 Key_Up = Qt.Key_Up
 Key_Left = Qt.Key_Left
@@ -80,16 +64,13 @@ Key_PageUp = Qt.Key_PageUp
 Key_PageDown = Qt.Key_PageDown
 Key_Space = Qt.Key_Space
 Key_Insert = Qt.Key_Insert
-Key_Help = Qt.Key_Help
 Key_Backspace = Qt.Key_Backspace
 Key_Enter = Qt.Key_Enter
 Key_Return = Qt.Key_Return
 Key_Escape = Qt.Key_Escape
-Key_F2 = Qt.Key_F2
 Key_F4 = Qt.Key_F4
 Key_F5 = Qt.Key_F5
 Key_F6 = Qt.Key_F6
-Key_F7 = Qt.Key_F7
 Key_F8 = Qt.Key_F8
 Key_F9 = Qt.Key_F9
 Key_F10 = Qt.Key_F10
@@ -112,7 +93,6 @@ DisplayRole = Qt.DisplayRole
 ToolTipRole = Qt.ToolTipRole
 AccessibleTextRole = Qt.AccessibleTextRole
 UserRole = Qt.UserRole
-SizeHintRole = Qt.SizeHintRole
 DecorationRole = Qt.DecorationRole
 ItemIsDragEnabled = Qt.ItemIsDragEnabled
 ItemIsDropEnabled = Qt.ItemIsDropEnabled

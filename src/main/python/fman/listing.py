@@ -42,21 +42,23 @@ class Listing:
 
 	@classmethod
 	def _trusted(cls, location, names, is_dir, sizes, mtimes_ns, attributes, created_ns, identities, scope):
-		"""Safe path: a Listing from columns the native NTFS scanner already guarantees.
+		"""Safe path: a Listing from columns Core's local scanners already guarantee.
 
 		Equivalent to ``Listing(location, names, is_dir, ...)`` minus ``__post_init__``:
 		no tuple() copies and none of the validation below. Reserved for
 		``core.fs.local.windows.listing.scan`` with the ``_fsparser`` extension
-		(Done/FSParser.md, "Integration"); every other producer - plug-ins, zip://,
-		network://, drives://, Everything, ProcessPane - is the regular path and
-		must use ``Listing(...)`` or ``Listing.create(...)`` so its columns are checked.
+		(Done/FSParser.md, "Integration") and Core's ``os.scandir`` fallback in
+		``LocalFileSystem._scan_entries`` (Done/CodeReview009.md, F13); every other
+		producer - plug-ins, zip://, network://, drives://, Everything, ProcessPane -
+		is the regular path and must use ``Listing(...)`` or ``Listing.create(...)``
+		so its columns are checked.
 
 		Why each skipped check holds: names come from the kernel (non-empty, no
-		'/', '\\\\' or NUL; '.' and '..' dropped in C; one directory has no exact
-		duplicates); is_dir/int values are created in C or checked by
-		``Columns.patch``; sizes are >= 0 by the record validation; identities are
-		16 bytes per entry by construction; scope comes from ``NativeDirectory.scope``.
-		The columns must already be tuples (``Columns.finish(frozen=True)``).
+		'/', '\\\\' or NUL; '.' and '..' dropped in C or by scandir; the fallback
+		checks for exact duplicates); is_dir/int values are created in C, by
+		``Columns.patch`` or from ``os.stat`` results; sizes are >= 0; identities are
+		16 bytes per entry by construction; scope comes from ``NativeDirectory.scope``
+		or is unknown. The columns must already be tuples.
 		"""
 		listing = object.__new__(cls)
 		values = (location, names, is_dir, sizes, mtimes_ns, attributes, created_ns, identities, scope, None, ())

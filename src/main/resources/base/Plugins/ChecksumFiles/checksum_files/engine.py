@@ -115,7 +115,7 @@ def relative_path(value):
 
 def native_path(path):
     value = os.path.abspath(os.fspath(path))
-    if os.name != 'nt' or value.startswith('\\\\?\\'):
+    if value.startswith('\\\\?\\'):
         return value
     return '\\\\?\\UNC\\' + value[2:] if value.startswith('\\\\') else '\\\\?\\' + value
 
@@ -334,8 +334,6 @@ def _logical(path):
 
 
 def _existing_destination_path(path):
-    if os.name != 'nt':
-        return path
     import ctypes
     from ctypes import wintypes
     kernel = ctypes.WinDLL('kernel32', use_last_error=True)
@@ -471,10 +469,6 @@ class ResultRow:
     @property
     def display_bytes(self):
         return len(str(self.line)) + sum(len(value.encode('utf-8')) for value in self.cells)
-
-    @property
-    def payload_bytes(self):
-        return self.display_bytes + self.raw_bytes
 
     @property
     def raw_bytes(self):

@@ -12,7 +12,7 @@ import threading
 import uuid
 
 from _quick_view_pdf_worker import (
-	FrameDecoder, MAX_HEADER, PdfError, binary_stream, decode_header, encode_frame, read_exact
+	MAX_HEADER, PdfError, binary_stream, decode_header, encode_frame, read_exact
 )
 
 

@@ -6,12 +6,11 @@ from fman.impl.view.move_without_updating_selection import \
 	MoveWithoutUpdatingSelection
 from fman.impl.view.resize_cols_to_contents import ResizeColumnsToContents
 from fman.impl.view.single_row_mode import SingleRowMode
-from PyQt5.QtCore import QEvent, QItemSelection, QItemSelectionModel as QISM, QPointF, QRect, Qt, \
+from PyQt5.QtCore import QEvent, QItemSelection, QItemSelectionModel as QISM, QRect, Qt, \
 	pyqtSignal
-from PyQt5.QtGui import QPen, QContextMenuEvent, QKeySequence, \
-	QTextLayout, QTextCharFormat, QPalette, QDrag
+from PyQt5.QtGui import QPen, QContextMenuEvent, QKeySequence, QDrag
 from PyQt5.QtWidgets import QTableView, QLineEdit, QVBoxLayout, QStyle, \
-	QStyledItemDelegate, QStyleOptionViewItem, QProxyStyle, QHeaderView, QToolTip, QMenu, QAction
+	QStyledItemDelegate, QProxyStyle, QHeaderView, QToolTip, QMenu, QAction
 
 class FileListView(
 	SingleRowMode, MoveWithoutUpdatingSelection, DragAndDrop,
@@ -38,7 +37,6 @@ class FileListView(
 		self._snapshot_state = None
 		self._restored_projection = None
 		self._view_generation = 0
-		self._pending_snapshot_restore = None
 		self._pending_cursor = None
 		self._delegate.preview_rows = None
 	def set_selection_preview(self, rows):
@@ -212,7 +210,7 @@ class FileListView(
 		if hasattr(model, 'snapshot_about_to_commit'):
 			model.snapshot_about_to_commit.connect(self._capture_snapshot_state)
 			model.snapshot_committed.connect(self._restore_snapshot_state)
-			model.snapshot_state_provider = self._snapshot_request_state
+			model.snapshot_state_provider = self.snapshot_state
 	def _disconnect_signals(self, model):
 		model.sort_order_changed.disconnect(self._on_sort_order_changed)
 		model.transaction_ended.disconnect(self._on_transaction_ended)
@@ -220,18 +218,11 @@ class FileListView(
 			model.snapshot_about_to_commit.disconnect(self._capture_snapshot_state)
 			model.snapshot_committed.disconnect(self._restore_snapshot_state)
 			model.snapshot_state_provider = None
-	def _snapshot_request_state(self):
-		# Called by the model when it requests a projection: the entries this
-		# state names are the ones _restore_snapshot_state will look up.
-		if self._pending_snapshot_restore is not None:
-			return self._pending_snapshot_restore
-		return self.snapshot_state()
 	def _capture_snapshot_state(self):
-		if self._pending_snapshot_restore is not None:
-			self._snapshot_state, self._pending_snapshot_restore = self._pending_snapshot_restore, None
-			return
 		self._snapshot_state = self.snapshot_state()
 	def snapshot_state(self):
+		# Also the model's state provider: the entries this state names are
+		# the ones _restore_snapshot_state will look up after the commit.
 		source = self.model().sourceModel()
 		current = self.currentIndex().row()
 		entry = source._visible[current] if 0 <= current < len(source._visible) else None
@@ -358,42 +349,6 @@ class FileListItemDelegate(QStyledItemDelegate):
 
 	editor_shown = pyqtSignal(QLineEdit)
 	preview_rows = None
-
-	def paint_item(self, painter, option, index):
-		highlights = index.data(Qt.UserRole + 1)
-		if not highlights:
-			return False
-		option = QStyleOptionViewItem(option)
-		view = option.widget
-		view.itemDelegate().initStyleOption(option, index)
-		style = view.style()
-		text_rect = style.subElementRect(QStyle.SE_ItemViewItemText, option, view).adjusted(2, 0, -2, 0)
-		text = option.fontMetrics.elidedText(option.text, option.textElideMode, text_rect.width())
-		option.text = ''
-		style.drawControl(QStyle.CE_ItemViewItem, option, painter, view)
-		layout = QTextLayout(text, option.font)
-		formats = []
-		for position in highlights:
-			if formats and formats[-1].start + formats[-1].length == position:
-				formats[-1].length += 1
-			else:
-				segment = QTextLayout.FormatRange()
-				segment.start, segment.length = position, 1
-				segment.format = QTextCharFormat()
-				segment.format.setFontUnderline(True)
-				formats.append(segment)
-		layout.setFormats(formats)
-		layout.beginLayout()
-		line = layout.createLine()
-		line.setLineWidth(max(0, text_rect.width()))
-		layout.endLayout()
-		painter.save()
-		painter.setClipRect(text_rect)
-		role = QPalette.HighlightedText if option.state & QStyle.State_Selected else QPalette.Text
-		painter.setPen(option.palette.color(role))
-		layout.draw(painter, QPointF(text_rect.x(), text_rect.y() + (text_rect.height() - line.height()) / 2))
-		painter.restore()
-		return True
 
 	def eventFilter(self, editor, event):
 		if not editor:

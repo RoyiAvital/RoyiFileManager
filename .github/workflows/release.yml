@@ -58,15 +58,15 @@ jobs:
         run: |
           $appName = python src/main/python/fbs_runtime/build_settings.py
           if ($LASTEXITCODE -ne 0) {
-            throw 'Invalid application settings in src/build/settings/AppMeta.json.'
+            throw 'Invalid application settings in src/AppMeta.json.'
           }
-          $settings = Get-Content src/build/settings/AppMeta.json -Raw | ConvertFrom-Json
+          $settings = Get-Content src/AppMeta.json -Raw | ConvertFrom-Json
           $version = $settings.version
           $identifier = '(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)'
           $semverBody = "(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-$identifier(?:\.$identifier)*)?"
           $semver = "^$semverBody`$"
           if ($version -notmatch $semver) {
-            throw "Version '$version' in src/build/settings/AppMeta.json is not valid SemVer."
+            throw "Version '$version' in src/AppMeta.json is not valid SemVer."
           }
           if ($env:GITHUB_REF_TYPE -eq 'tag') {
             $tag = $env:GITHUB_REF_NAME

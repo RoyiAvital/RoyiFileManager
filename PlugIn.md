@@ -203,7 +203,6 @@ construct them with internal widgets yourself.
 | `get_path()`                                                       | Current directory URL, not a native path.                                                                                                                                                                                                                                         |
 | `get_listing()`                                                    | Current immutable `fman.listing.Listing`, or `None` before commit. Retaining it retains that snapshot's memory.                                                                                                                                                                   |
 | `get_location_info()` | Return immutable `fman.listing.LocationInfo(location, access_hint)`, or `None` without a matching committed listing. Captured together on Qt; no I/O. |
-| `find_in_listing(search, query='', metadata=False, accepted=None)` | Start in-pane Find; return false if no snapshot is ready. `search(listing, query, check_canceled)` runs on a worker and returns `(entry_indices, highlights_by_entry)` with UTF-16 highlight offsets. `accepted(url)` runs on Qt after accepting and restoring normal projection. |
 | `set_path(dir_url, callback=None, onerror=host_default)`           | Request a directory change, honoring location rewrite listeners. `callback()` signals initialization; do not treat it as a complete navigation outcome.                                                                                                                           |
 | `reload(on_done=None)`                                             | Reload the pane; an optional no-argument callback runs on Qt after a fresh successful scan and projection settle. Failed scans leave it pending for a successful retry; navigation/closure cancels it.                                                                            |
 | `edit_name(file_url, selection_start=0, selection_end=None)`       | Start inline name editing and select the specified text range.                                                                                                                                                                                                                    |
@@ -492,7 +491,7 @@ confirmation automatically. Unknown schemes can surface as `FileNotFoundError`.
 | `touch(url)` | Ask the provider to create/touch a file. Exact overwrite behavior is provider-specific. |
 | `mkdir(url)` | Create one directory; existing target/missing parent follow provider errors. |
 | `makedirs(url, exist_ok=False)` | Create parents recursively; module-level default rejects an existing destination. |
-| `iterdir(url)` | Iterable of child **names**, not full URLs. Results can be cached/lazy. Join names to the directory URL. |
+| `iterdir(url)` | Iterable of child **names**, not full URLs. Each call queries the provider; iteration may be lazy. Join names to the directory URL. |
 | `query(url, fs_method_name)` | Invoke the named provider metadata method with the scheme-free path; return its result. This is provider extensibility, not an arbitrary method on the public pane. |
 | `resolve(url)` | Resolve a provider URL, including its existence/normalization semantics. |
 | `samefile(url1, url2)` | Resolve both and compare provider identity semantics. |
@@ -1092,11 +1091,9 @@ receive a `PaneToolWindow` in `UiController.build` instead of constructing eithe
 | `prompt` | Current prompt object or `None`; Qt-specific, not a portable dialog handle. Prefer public prompt methods. |
 | `pane` | Invoking public pane, on PaneToolWindow. |
 | `item_css` | Host theme data for list items, on PaneToolWindow. Treat it as host-owned. |
-| `bottom_panel` | Host-mounted panel or `None`, on PaneToolWindow. Read-only for plug-ins. |
 
 | Method/signal | Contract |
 | --- | --- |
-| `set_panel(panel)` | Host use: the panel widget is no longer exported, so plug-ins dock controls with `show_panel` instead. |
 | `close()` | UI-thread session dismissal; closes paired surfaces and prompts and emits disposal. |
 | `invalidate()` | Clear lifetime immediately and queue closure; safe for owner invalidation from workers. |
 | `post(callback, *args)` | Queue a short callback to Qt; discard delivery if session/owner is no longer active. |
@@ -1143,7 +1140,6 @@ Do not stack multiple prompts or call them as worker-thread UI shortcuts.
 | --- | --- |
 | `alert(text)` | Show a message. No result callback. |
 | `confirm(title, records, hidden, footer, accepted)` | `records` is a sized, sliceable sequence of `(name, path)` strings. Show total/hidden counts and at most ten records, truncating displayed names/paths; default No. Call `accepted()` only for Yes. |
-| `rename_prompt(label, name, accepted)` | Prompt with initial text; call `accepted(new_text)` only on acceptance. Blank-name validation belongs to the caller. |
 
 Capture operation targets before prompting; never reread mutable selection in
 the acceptance callback to choose different targets. The bounded preview does

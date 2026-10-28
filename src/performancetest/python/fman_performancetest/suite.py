@@ -35,7 +35,7 @@ def source_hash(*paths):
 
 
 def provenance():
-	settings = json.loads((ROOT / 'src/build/settings/AppMeta.json').read_text(encoding='utf-8'))
+	settings = json.loads((ROOT / 'src/AppMeta.json').read_text(encoding='utf-8'))
 	version = settings['version']
 	if not re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', version):
 		raise ValueError('Application version must be X.Y.Z')
@@ -44,7 +44,7 @@ def provenance():
 	tags = git('tag', '--points-at', 'HEAD').decode().splitlines()
 	identity = version if not dirty and (version in tags or 'v' + version in tags) else 'Unreleased'
 	return dict(version=version, version_id=identity, commit=commit, dirty=dirty,
-		source_sha256=source_hash('src/main', 'src/build', 'environment.yml', 'conda-lock.yml'))
+		source_sha256=source_hash('src/main', 'src/AppMeta.json', 'environment.yml', 'conda-lock.yml'))
 
 
 def environment(directory):
@@ -298,7 +298,7 @@ def main(argv=None, *, record_saved=None):
 		if failed:
 			record['error'] = '\n'.join(result['test_id'] + ': ' + result.get('error', 'Failed') for result in failed)
 		if record['application'].get('source_sha256') is not None and record['application']['source_sha256'] != source_hash(
-			'src/main', 'src/build', 'environment.yml', 'conda-lock.yml'):
+			'src/main', 'src/AppMeta.json', 'environment.yml', 'conda-lock.yml'):
 			raise RuntimeError('Application source changed during measurement; reference is invalid')
 		if record['harness']['source_sha256'] != source_hash('src/performancetest'):
 			raise RuntimeError('Benchmark harness changed during measurement; reference is invalid')

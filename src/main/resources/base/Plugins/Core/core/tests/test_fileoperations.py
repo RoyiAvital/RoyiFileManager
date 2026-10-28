@@ -25,7 +25,7 @@ class PreparationSafetyTest(TestCase):
 					paths = tuple(source / ('file%d.txt' % index) for index in range(3))
 					for path in paths:
 						path.write_bytes(b'keep')
-					filesystem = MotherFileSystem(None)
+					filesystem = MotherFileSystem()
 					filesystem.add_child('file://', LocalFileSystem())
 					operation = operation_class(tuple(as_url(path) for path in paths), as_url(destination), fs=filesystem)
 					operation._ignore_exceptions = ignore_errors
@@ -55,7 +55,7 @@ class PreparationSafetyTest(TestCase):
 				paths = tuple(source / ('file%d.txt' % index) for index in range(3))
 				for path in paths:
 					path.write_bytes(path.name.encode('ascii'))
-				filesystem = MotherFileSystem(None)
+				filesystem = MotherFileSystem()
 				filesystem.add_child('file://', LocalFileSystem())
 				operation = operation_class(tuple(as_url(path) for path in paths), as_url(destination), fs=filesystem)
 				check = operation.check_canceled
@@ -83,7 +83,7 @@ class PreparationSafetyTest(TestCase):
 		if vanish_after_preparation:
 			for path in paths:
 				path.write_bytes(b'keep')
-		filesystem = MotherFileSystem(None)
+		filesystem = MotherFileSystem()
 		filesystem.add_child('file://', LocalFileSystem())
 		operation = operation_class(tuple(as_url(path) for path in paths), as_url(destination), fs=filesystem)
 		prepare = operation._gather_files
@@ -155,7 +155,7 @@ class PreparationSafetyTest(TestCase):
 					(source / 'keep.txt').write_bytes(b'keep')
 					files = [as_url(source / ('missing%d.txt' % index)) for index in range(3)] + [as_url(source / 'keep.txt')]
 					destination = source if exit_kind == 'refusal' else root / 'destination'
-					filesystem = MotherFileSystem(None)
+					filesystem = MotherFileSystem()
 					filesystem.add_child('file://', LocalFileSystem())
 					operation = operation_class(files, as_url(destination), fs=filesystem)
 					check = operation.check_canceled
@@ -221,7 +221,7 @@ class PreparationSafetyTest(TestCase):
 						path.write_bytes(b'keep')
 					destination = root / 'blocker' / 'new' if case == 'path through a file' else \
 						Path(missing_drive, 'rfm-missing', 'new')
-					filesystem = MotherFileSystem(None)
+					filesystem = MotherFileSystem()
 					filesystem.add_child('file://', LocalFileSystem())
 					operation = operation_class(tuple(as_url(path) for path in paths), as_url(destination), fs=filesystem)
 					with patch.object(operation, 'show_alert', return_value=OK) as alert:
@@ -246,7 +246,7 @@ class PreparationSafetyTest(TestCase):
 			(source / 'folder').mkdir(parents=True)
 			(source / 'file.txt').write_bytes(b'file')
 			(source / 'folder' / 'child.txt').write_bytes(b'child')
-			filesystem = MotherFileSystem(None)
+			filesystem = MotherFileSystem()
 			filesystem.add_child('file://', LocalFileSystem())
 			files = [as_url(source / 'file.txt'), as_url(source / 'folder')]
 			ui = Mock()
@@ -275,7 +275,7 @@ class PreparationSafetyTest(TestCase):
 			root = Path(directory)
 			source, destination = root / 'file.txt', root / 'new' / 'nested'
 			source.write_bytes(b'keep')
-			filesystem = MotherFileSystem(None)
+			filesystem = MotherFileSystem()
 			filesystem.add_child('file://', LocalFileSystem())
 			operation = MoveFiles([as_url(source)], as_url(destination), fs=filesystem)
 			original = operation._gather_files
@@ -303,7 +303,7 @@ class PreparationSafetyTest(TestCase):
 					paths = [source / ('file%d.txt' % index) for index in range(count)]
 					for path in paths:
 						path.write_bytes(b'keep')
-					filesystem = MotherFileSystem(None)
+					filesystem = MotherFileSystem()
 					filesystem.add_child('file://', LocalFileSystem())
 					with patch.object(scanner, 'scan', side_effect=AssertionError('No bulk scan for selected files')):
 						operation_class([as_url(path) for path in paths], as_url(destination), fs=filesystem)()
@@ -332,7 +332,7 @@ class PreparationSafetyTest(TestCase):
 					(source / 'child' / 'keep.txt').write_bytes(b'keep')
 					if merge:
 						(destination / source.name / 'child').mkdir(parents=True)
-					filesystem = MotherFileSystem(None)
+					filesystem = MotherFileSystem()
 					filesystem.add_child('file://', LocalFileSystem())
 					with patch.object(scanner, 'scan', side_effect=AssertionError('No bulk scan during traversal')):
 						operation_class([as_url(source)], as_url(destination), fs=filesystem)()

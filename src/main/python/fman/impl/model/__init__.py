@@ -193,7 +193,7 @@ class SortedFileSystemModel(QIdentityProxyModel):
 	@run_in_main_thread
 	def _set_location_main(
 		self, url, columns, sort_col_index, ascending, callback, request=None, generation=None,
-		recreating=False, sort_column='', listing=None, scanner=None, observation=None
+		listing=None, scanner=None, observation=None
 	):
 		if generation is not None and generation != self._location_generation:
 			if request:
@@ -204,9 +204,6 @@ class SortedFileSystemModel(QIdentityProxyModel):
 			return
 		self._default_columns = tuple(columns)
 		columns = self._with_extra_columns(url, columns)
-		if sort_column:
-			names = [column.get_qualified_name() for column in columns]
-			sort_col_index = names.index(sort_column) if sort_column in names else 0
 		old_model = self.sourceModel()
 		if old_model:
 			old_model.shutdown()
@@ -218,7 +215,6 @@ class SortedFileSystemModel(QIdentityProxyModel):
 		new_model = ListingModel(self._fs, url, columns, scanner,
 			self._snapshot_refreshes, self._snapshot_views, sort_col_index,
 			ascending, self._filters, listing, self._snapshot_icons, observation)
-		new_model._columns_recreated = recreating
 		if request:
 			request.started = True
 			new_model._navigation_request = request
@@ -235,8 +231,7 @@ class SortedFileSystemModel(QIdentityProxyModel):
 					request.cancel()
 		self.setSourceModel(new_model)
 		self._connect_signals(new_model)
-		if not recreating:
-			self.location_changed.emit(url)
+		self.location_changed.emit(url)
 		order = Qt.AscendingOrder if ascending else Qt.DescendingOrder
 		self.sort_order_changed.emit(sort_col_index, order)
 		# Start model at the very end to ensure the above signals, in particular
@@ -351,10 +346,9 @@ class SortedFileSystemModel(QIdentityProxyModel):
 		model.files_dropped.connect(self._emit_files_dropped)
 		model.sort_order_changed.connect(self._emit_sort_order_changed)
 		model.transaction_ended.add_callback(self._emit_transaction_ended)
-		if hasattr(model, 'about_to_commit'):
-			model.about_to_commit.connect(self.snapshot_about_to_commit)
-			model.committed.connect(self.snapshot_committed)
-			model.state_provider = self._request_snapshot_state
+		model.about_to_commit.connect(self.snapshot_about_to_commit)
+		model.committed.connect(self.snapshot_committed)
+		model.state_provider = self._request_snapshot_state
 	def _request_snapshot_state(self):
 		provider = self.snapshot_state_provider
 		return provider() if provider is not None else None
@@ -369,13 +363,11 @@ class SortedFileSystemModel(QIdentityProxyModel):
 		model.files_dropped.disconnect(self._emit_files_dropped)
 		model.sort_order_changed.disconnect(self._emit_sort_order_changed)
 		model.transaction_ended.remove_callback(self._emit_transaction_ended)
-		if hasattr(model, 'about_to_commit'):
-			model.about_to_commit.disconnect(self.snapshot_about_to_commit)
-			model.committed.disconnect(self.snapshot_committed)
-			model.state_provider = None
+		model.about_to_commit.disconnect(self.snapshot_about_to_commit)
+		model.committed.disconnect(self.snapshot_committed)
+		model.state_provider = None
 	def _emit_location_loaded(self, location):
-		if not self.sourceModel()._columns_recreated:
-			self.location_loaded.emit(location)
+		self.location_loaded.emit(location)
 	def _emit_all_rows_loaded(self):
 		self.all_rows_loaded.emit()
 	def _emit_files_changed(self):

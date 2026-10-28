@@ -1,6 +1,5 @@
 from fman.fs import FileSystem
-from fman.impl.plugins.plugin import _get_command_name, \
-	get_command_class_name, FileSystemWrapper
+from fman.impl.plugins.plugin import _get_command_name, FileSystemWrapper
 from fman_unittest.impl.plugins import StubErrorHandler
 from unittest import TestCase
 from unittest.mock import Mock, patch
@@ -92,12 +91,6 @@ class GetCommandNameTest(TestCase):
 	def test_two_consecutive_upper_case_chars(self):
 		self.assertEqual('get_url', _get_command_name('GetURL'))
 
-class GetCommandClassNameTest(TestCase):
-	def test_is_inverse_of_get_command_name(self):
-		for test_string in ('C', 'Copy', 'OpenTerminal', 'MoveCursorUp'):
-			result = get_command_class_name(_get_command_name(test_string))
-			self.assertEqual(test_string, result)
-
 class FileSystemWrapperTest(TestCase):
 	def test_tracked_plugin_defects_are_attributed_and_propagated(self):
 		from fman.impl.navigation import NavigationRequest, tracking
@@ -157,6 +150,23 @@ class FileSystemWrapperTest(TestCase):
 		def iterdir(_):
 			raise ValueError()
 		self._test_iterdir_error(iterdir, "FileSystem 'FS' raised error.")
+	def test_iterdir_error_mid_listing_keeps_earlier_names(self):
+		class FS(FileSystem):
+			scheme = 'scheme://'
+			def iterdir(self, path):
+				yield 'a'
+				raise ValueError()
+		self.assertEqual(['a'], list(self._wrap(FS).iterdir('')))
+		self._expect_error("FileSystem 'FS' raised error.")
+	def test_iterdir_closed_early_reports_nothing(self):
+		class FS(FileSystem):
+			scheme = 'scheme://'
+			def iterdir(self, path):
+				yield from ('a', 'b')
+		names = self._wrap(FS).iterdir('')
+		self.assertEqual('a', next(names))
+		names.close()
+		self.assertEqual([], self._error_handler.error_messages)
 	def test_get_default_columns_nonexistent(self):
 		self._test_get_default_columns_error(
 			lambda _: ('Name',),

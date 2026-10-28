@@ -61,7 +61,8 @@ class BuildSettingsTest(TestCase):
 	def test_development_path_is_canonical(self):
 		with patch.object(sys, 'frozen', False, create=True):
 			self.assertEqual(Path(__file__).resolve().parents[4] /
-				'src/build/settings/AppMeta.json', settings_path())
+				'src/AppMeta.json', settings_path())
+			self.assertEqual(load_build_settings(settings_path()), get_build_settings())
 
 	def test_frozen_settings_are_one_cached_snapshot(self):
 		from fbs_runtime.application_context.PyQt5 import ApplicationContext
@@ -84,7 +85,7 @@ class BuildNamingTest(TestCase):
 	ROOT = Path(__file__).resolve().parents[4]
 
 	def _fixture(self, root, name):
-		settings_path = root / 'src/build/settings/AppMeta.json'
+		settings_path = root / 'src/AppMeta.json'
 		settings_path.parent.mkdir(parents=True)
 		settings_path.write_text(json.dumps({
 			'app_name': name, 'version': '9.8.7'
@@ -158,7 +159,7 @@ class BuildNamingTest(TestCase):
 			self.assertEqual('RfmRenameProbe', executable.call_args.kwargs['name'])
 			self.assertTrue(executable.call_args.kwargs['console'])
 			self.assertEqual('RfmRenameProbe', collection.call_args.kwargs['name'])
-			self.assertIn(('src/build/settings/AppMeta.json', 'resources/build-settings'), spec['datas'])
+			self.assertIn(('src/AppMeta.json', 'resources/build-settings'), spec['datas'])
 
 
 class NativeParserPackagingTest(TestCase):
@@ -432,7 +433,7 @@ class DocumentationNamingTest(TestCase):
 		hook = runpy.run_path(str(root / 'src/misc/docs_hooks.py'))
 		with TemporaryDirectory() as temporary:
 			fixture = Path(temporary)
-			path = fixture / 'src/build/settings/AppMeta.json'
+			path = fixture / 'src/AppMeta.json'
 			path.parent.mkdir(parents=True)
 			path.write_text(json.dumps({'app_name': 'RfmRenameProbe'}), encoding='utf-8')
 			config = SimpleNamespace(config_file_path=str(fixture / 'mkdocs.yml'), extra={})

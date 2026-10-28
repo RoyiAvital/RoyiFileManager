@@ -14,7 +14,7 @@ from zipfile import ZipFile
 from everything_search.ipc import CopyData, Hit, IpcClient, ProtocolError, \
 	REQUEST_FLAGS, encode_query, parse_highlight, parse_reply
 from everything_search.instance import Manager, ProcessRuntime, Settings, \
-	State, add_folder, contains, make_ini, normalize_folder, normalize_folders
+	State, contains, make_ini, normalize_folder, normalize_folders
 from everything_search.ipc import NotRunning, Results, QueryTimeout
 import everything_search as commands
 
@@ -163,14 +163,14 @@ class EverythingInstanceTest(TestCase):
 			'C:\\Database', 'Z:/Offline/../Offline/', 'z:\\OFFLINE')
 		with patch('os.path.isdir', side_effect=AssertionError('No filesystem scan')):
 			self.assertEqual(('C:\\Data', 'C:\\Database', 'Z:\\Offline'), normalize_folders(paths))
-		self.assertEqual((('C:\\Data',), ()), add_folder(('C:/Data/', 'c:\\DATA'), 'C:/Data/child'))
+		self.assertEqual(('C:\\Data',), normalize_folders(('C:/Data/', 'c:\\DATA', 'C:/Data/child')))
 
 	def test_component_aware_roots_and_parent_replacement(self):
 		self.assertFalse(contains('C:\\Data', 'C:\\Database'))
 		self.assertTrue(contains('C:\\Data', 'c:\\DATA\\child'))
 		roots = ('C:\\Data\\one', 'C:\\Data\\two', 'D:\\Other')
-		self.assertEqual((('D:\\Other', 'c:\\data'), roots[:2]), add_folder(roots, 'c:\\data'))
-		self.assertEqual((roots, ()), add_folder(roots, 'C:\\Data\\one\\child'))
+		self.assertEqual(('D:\\Other', 'c:\\data'), normalize_folders(roots + ('c:\\data',)))
+		self.assertEqual(roots, normalize_folders(roots + ('C:\\Data\\one\\child',)))
 
 	def test_rejects_nonlocal_relative_and_control_paths(self):
 		for path in ('folder', 'C:folder', '\\folder', '\\\\server\\share',

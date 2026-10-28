@@ -207,7 +207,6 @@ def _initialize_session_settings(settings):
 	(settings / 'Local' / 'Session.json').write_text(
 		json.dumps({
 			'app_version': _application_version(),
-			'is_licensed': True,
 		}, indent=2) + '\n',
 		encoding='utf-8'
 	)

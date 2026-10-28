@@ -2,7 +2,6 @@ from dataclasses import dataclass
 from hashlib import sha256
 import json
 import ntpath
-import os
 from pathlib import Path
 import re
 import subprocess
@@ -37,15 +36,6 @@ def normalize_folders(paths):
 		roots = [root for root in roots if not contains(path, root)]
 		roots.append(path)
 	return tuple(roots)
-
-
-def add_folder(roots, path):
-	roots = normalize_folders(roots)
-	path = normalize_folder(path)
-	if any(contains(root, path) for root in roots):
-		return tuple(roots), ()
-	replaced = tuple(root for root in roots if contains(path, root))
-	return tuple(root for root in roots if root not in replaced) + (path,), replaced
 
 
 @dataclass(frozen=True)

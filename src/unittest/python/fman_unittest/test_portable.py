@@ -54,7 +54,7 @@ class TestRunnerDiagnosticsTest(TestCase):
 	def test_hang_dumps_stack_and_times_out(self):
 		from subprocess import TimeoutExpired
 		with self.assertRaises(TimeoutExpired) as caught:
-			self.run_fixture('from threading import Event; Event().wait()', traceback_after=0.2, timeout=3)
+			self.run_fixture('from threading import Event; Event().wait()', traceback_after=0.2, timeout=1.5)
 		output = caught.exception.stdout
 		if isinstance(output, bytes):
 			output = output.decode('utf-8', errors='replace')

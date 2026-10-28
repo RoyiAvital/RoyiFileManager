@@ -37,12 +37,15 @@ Repository-wide contribution and task-lifecycle requirements are defined in
 ```powershell
 python build.py doc
 python build.py test
+python build.py test-docs
 python build.py freeze
 python build.py smoke-everything
 python build.py package
 ```
 
-`doc` builds the documentation in strict mode. `test` checks application behavior and release/build inputs. Benchmark harnesses,
+`doc` builds the documentation in strict mode. `test` checks application behavior and release/build inputs.
+`test-docs` runs the documentation gallery capture tests in `src/docstest`; the Pages
+workflow runs it before capturing, and `test` does not. Benchmark harnesses,
 synthetic performance fixtures, report generation and standalone PoCs are outside
 normal discovery and CI. Their optional [development-tool checks](src/performancetest/README.md#development-tool-checks)
 run separately; they are not release validation.
@@ -140,7 +143,7 @@ Releases are built by the `Release` GitHub Actions workflow
 (`.github/workflows/release.yml`). It never runs on ordinary pushes; it runs
 only when a version tag is pushed:
 
-1. Set `version` in `src/build/settings/AppMeta.json`.
+1. Set `version` in `src/AppMeta.json`.
 2. In `CHANGELOG.md`, add `## [X.Y.Z]` below the first section,
    `## [Unreleased]`, and move this release's entries into it. A
    ` - YYYY-MM-DD` date suffix is optional. Section bodies are free-form and
@@ -302,10 +305,11 @@ The default `all` mode runs both. Packaged mode requires
 PNG files remain ignored by Git. The Pages workflow generates source captures
 before building the site, so they exist only in its deployment artifact.
 
-Focused regression tests:
+Focused regression tests (launcher and settings, then gallery captures):
 
 ```powershell
 python -m unittest fman_unittest.test_generate_docs_screenshots -v
+python build.py test-docs
 ```
 
 ### Fuzzy Search Benchmark

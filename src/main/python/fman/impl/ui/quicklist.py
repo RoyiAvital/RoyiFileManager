@@ -360,15 +360,6 @@ class QuickList(QWidget):
 	def hidden_selected_count(self):
 		return len(self.selected_ids - {item.id for item in self.model.items})
 
-	@property
-	def selected_items(self):
-		return tuple(item for item in self.items if item.id in self.selected_ids)
-
-	@property
-	def current_item(self):
-		index = self.view.currentIndex()
-		return self.model.items[index.row()] if index.isValid() else None
-
 	def set_items(self, items):
 		self.set_sortable_items(items, (), {})
 

@@ -1,5 +1,4 @@
 from fman.impl.plugins.plugin import ExternalPlugin
-from fman.impl.plugins.key_bindings import sanitize_key_bindings
 
 SETTINGS_PLUGIN_NAME = 'Settings'
 
@@ -57,10 +56,6 @@ class PluginSupport:
 		if args is None:
 			args = {}
 		self._appcmd_registry.execute_command(name, args)
-	def get_active_pane(self):
-		for pane in self._panes:
-			if pane._has_focus():
-				return pane
 	def get_context_menu(self, pane, file_under_mouse=None):
 		return self._context_menu_provider.get_context_menu(
 			pane, file_under_mouse

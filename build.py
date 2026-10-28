@@ -17,7 +17,7 @@ from src.main.python.fbs_runtime.build_settings import load_build_settings as _l
 
 ROOT = Path(__file__).resolve().parent
 TARGET_DIR = ROOT / 'target'
-SETTINGS_PATH = ROOT / 'src' / 'build' / 'settings' / 'AppMeta.json'
+SETTINGS_PATH = ROOT / 'src' / 'AppMeta.json'
 BUILD_SETTINGS = _load_build_settings(SETTINGS_PATH)
 APP_NAME = BUILD_SETTINGS['app_name']
 DIST_DIR = TARGET_DIR / APP_NAME
@@ -372,11 +372,7 @@ def test():
 	_ensure_7za()
 	_ensure_everything()
 	_verify_native_parser()
-	environment = _environment()
-	environment.setdefault('QT_QPA_PLATFORM', 'offscreen')
-	windows_fonts = Path(environment.get('WINDIR', r'C:\Windows')) / 'Fonts'
-	if windows_fonts.is_dir():
-		environment.setdefault('QT_QPA_FONTDIR', str(windows_fonts))
+	environment = _test_environment()
 	test_directories = [
 		ROOT / 'src' / 'unittest' / 'python',
 		ROOT / 'src' / 'integrationtest' / 'python',
@@ -384,6 +380,21 @@ def test():
 	]
 	for test_directory in test_directories:
 		_run_test_directory(test_directory, environment)
+
+
+def test_docs():
+	"""Documentation gallery captures; the Pages workflow runs them before capturing."""
+	_require_windows()
+	_run_test_directory(ROOT / 'src' / 'docstest' / 'python', _test_environment())
+
+
+def _test_environment():
+	environment = _environment()
+	environment.setdefault('QT_QPA_PLATFORM', 'offscreen')
+	windows_fonts = Path(environment.get('WINDIR', r'C:\Windows')) / 'Fonts'
+	if windows_fonts.is_dir():
+		environment.setdefault('QT_QPA_FONTDIR', str(windows_fonts))
+	return environment
 
 
 def measure(full=False):
@@ -670,7 +681,8 @@ COMMANDS = {
 	'release': publish,
 	'run': run,
 	'smoke-everything': smoke_everything,
-	'test': test
+	'test': test,
+	'test-docs': test_docs
 }
 
 

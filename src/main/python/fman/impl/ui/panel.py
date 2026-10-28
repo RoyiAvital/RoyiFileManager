@@ -1,9 +1,5 @@
-from copy import deepcopy
-from threading import Event
-
-from fman import load_json, save_json
-from fman.impl.ui import require_ui_thread, resource, submit_work
-from PyQt5.QtCore import QDate, QEvent, QObject, QPoint, QRect, Qt, QSignalBlocker, QSize, pyqtSignal
+from fman.impl.ui import require_ui_thread
+from PyQt5.QtCore import QDate, QEvent, QPoint, QRect, Qt, QSignalBlocker, QSize, pyqtSignal
 from PyQt5.QtGui import QIcon, QKeySequence, QValidator
 from PyQt5.QtWidgets import QAbstractSpinBox, QApplication, QComboBox, QDateEdit, QFrame, QHBoxLayout, QLabel, QLayout, QPushButton, QToolButton, QShortcut, QSizePolicy, QStyle, QWidget
 
@@ -337,10 +333,6 @@ class Panel(QFrame):
 		self.layout().addWidget(widget, stretch)
 		return widget
 
-	def add_stretch(self):
-		self.layout().addStretch()
-
-
 
 
 class PanelDock(QFrame):
@@ -409,139 +401,3 @@ class PanelDock(QFrame):
 			controls[0 if next else -1].setFocus()
 			return True
 		return False
-
-
-class JsonSettings(QObject):
-	changed = pyqtSignal(object)
-	failed = pyqtSignal(str)
-	busy_changed = pyqtSignal(bool)
-	_delivered = pyqtSignal(object)
-
-	def __init__(self, filename, parent, owner=None):
-		require_ui_thread()
-		super().__init__(parent)
-		if not filename.endswith('.json') or '/' in filename or '\\' in filename:
-			raise ValueError('Use a plug-in-specific JSON filename, not a path.')
-		self.filename = filename
-		self._resource = resource(filename)
-		self._bindings = {}
-		self._values = {}
-		self._revision = -1
-		self.busy = False
-		self._alive = Event()
-		self._alive.set()
-		self._owner = owner
-		self._delivered.connect(self._receive, Qt.QueuedConnection)
-		alive, settings_resource, subscriber = self._alive, self._resource, self._publish
-		def dispose():
-			alive.clear()
-			settings_resource.unsubscribe(subscriber)
-			if owner:
-				owner.detach(dispose)
-		self.dispose = dispose
-		self.destroyed.connect(dispose)
-		if owner and not owner.attach(dispose):
-			dispose()
-
-	def bind(self, key, control, default):
-		if self._revision >= 0 or self.busy:
-			raise RuntimeError('Bind controls before loading settings.')
-		if key in self._bindings or not isinstance(key, str) or not key:
-			raise ValueError('Setting keys must be unique nonempty strings.')
-		if not control.accepts(default):
-			raise ValueError('Default does not match the control.')
-		self._bindings[key] = (control, default)
-		with QSignalBlocker(control):
-			control.set_value(default)
-		control.setEnabled(False)
-		control.value_changed.connect(lambda value: self._save(key, value))
-
-	def load(self):
-		self._start(None)
-
-	@property
-	def loaded(self):
-		return self._revision >= 0
-
-	def _save(self, key, value):
-		if not self._bindings[key][0].accepts(value):
-			self._apply()
-			self.failed.emit('Invalid value for setting: ' + key)
-			return
-		self._start((key, deepcopy(value)))
-
-	def _start(self, change):
-		if not self._alive.is_set():
-			return
-		if self.busy:
-			self._apply()
-			return
-		self._set_busy(True)
-		alive, settings_resource = self._alive, self._resource
-		filename, subscriber = self.filename, self._publish
-		def snapshot():
-			value = deepcopy(load_json(filename, default={}))
-			if not isinstance(value, dict):
-				raise ValueError('Settings must be a JSON object: ' + filename)
-			return value
-		def operation():
-			with settings_resource.lock:
-				if not alive.is_set():
-					return
-				if change is None:
-					return settings_resource.subscribe(subscriber, snapshot)
-				values = snapshot()
-				key, value = change
-				values[key] = value
-				save_json(filename, values)
-				notification = settings_resource.committed(values)
-			settings_resource.publish(notification)
-			return notification[:2]
-		def completed(result, error):
-			if not alive.is_set():
-				settings_resource.unsubscribe(subscriber)
-				return
-			try:
-				self._delivered.emit(('completed', result, error))
-			except RuntimeError:
-				pass
-		if not submit_work(operation, completed):
-			self._set_busy(False)
-			self._apply()
-			self.failed.emit('Other operations are still finishing. Please try again.')
-
-	def _publish(self, revision, values):
-		if self._alive.is_set():
-			try:
-				self._delivered.emit(('snapshot', (revision, deepcopy(values)), None))
-			except RuntimeError:
-				pass
-
-	def _receive(self, message):
-		if not self._alive.is_set():
-			return
-		kind, result, error = message
-		if result is not None:
-			revision, values = result
-			if revision >= self._revision:
-				self._revision, self._values = revision, values
-				self._apply()
-				self.changed.emit(deepcopy(self._values))
-		if kind == 'completed':
-			self._set_busy(False)
-			if error:
-				self._apply()
-				self.changed.emit(deepcopy(self._values))
-				self.failed.emit(error)
-
-	def _apply(self):
-		for key, (control, default) in self._bindings.items():
-			value = self._values.get(key, default)
-			with QSignalBlocker(control):
-				control.set_value(value if control.accepts(value) else default)
-
-	def _set_busy(self, busy):
-		self.busy = busy
-		for control, default in self._bindings.values():
-			control.setEnabled(not busy and self._revision >= 0)
-		self.busy_changed.emit(busy)

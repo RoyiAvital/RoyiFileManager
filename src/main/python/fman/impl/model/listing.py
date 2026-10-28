@@ -182,7 +182,6 @@ class Projection:
 	ascending: bool
 	prefix: str = ''
 	preferred: object = None
-	highlights: object = None
 	order: object = None
 	columns: tuple = ()
 	complete: bool = True  # rows covers every visible entry
@@ -210,33 +209,27 @@ class Projection:
 			object.__setattr__(self, 'complete', True)
 
 
-def project(listing, previous, column, column_index, ascending, filters, check, prefix='', search=None, order=None, wanted=None):
+def project(listing, previous, column, column_index, ascending, filters, check, prefix='', order=None, wanted=None):
 	"""`wanted`: entries of `previous` the view will look up after the commit
 	(cursor and marks), or None for a complete row map."""
 	check()
-	highlights = None
-	if search is not None:
-		engine, query = search
-		visible, highlights = engine(listing, query, check)
-		prefix = ''
-	else:
-		if order is None:
-			keys = column.keys(listing, ascending)
-			check()
-			order = tuple(sorted(range(len(listing.names)), key=keys.__getitem__, reverse=not ascending))
-		visible = order
-		for predicate in filters:
-			select = getattr(predicate, 'filter_indices', None)
-			if select is not None:
-				visible = select(listing, visible, check)
-				continue
-			filtered = []
-			for position, index in enumerate(visible):
-				if position % 256 == 0:
-					check()
-				if predicate(listing, index):
-					filtered.append(index)
-			visible = filtered
+	if order is None:
+		keys = column.keys(listing, ascending)
+		check()
+		order = tuple(sorted(range(len(listing.names)), key=keys.__getitem__, reverse=not ascending))
+	visible = order
+	for predicate in filters:
+		select = getattr(predicate, 'filter_indices', None)
+		if select is not None:
+			visible = select(listing, visible, check)
+			continue
+		filtered = []
+		for position, index in enumerate(visible):
+			if position % 256 == 0:
+				check()
+			if predicate(listing, index):
+				filtered.append(index)
+		visible = filtered
 	check()
 	remap = {} if previous is None or previous is listing else reconcile(previous, listing, check)
 	visible = tuple(visible)
@@ -255,7 +248,7 @@ def project(listing, previous, column, column_index, ascending, filters, check, 
 		if preferred is not None:
 			rows[preferred] = preferred_row
 	return Projection(listing, visible, rows, remap, column_index, ascending, prefix,
-		preferred, highlights, order, complete=complete)
+		preferred, order, complete=complete)
 
 
 class ListingModel(DragAndDrop):
@@ -289,9 +282,6 @@ class ListingModel(DragAndDrop):
 		self._names = None
 		self._text_cache = OrderedDict()
 		self._icon_cells = OrderedDict()
-		self._search = None
-		self._highlights = {}
-		self._restore_from = None
 		self._order_cache = None
 		self._pending_columns = None
 		self._columns_callback = None
@@ -304,7 +294,6 @@ class ListingModel(DragAndDrop):
 		self._dirty = False
 		self._shutdown = False
 		self._navigation_request = None
-		self._columns_recreated = False
 		self._callback = None
 		self._watching = False
 		# Set by the owning view (through the proxy model): returns the view's
@@ -386,7 +375,7 @@ class ListingModel(DragAndDrop):
 			return
 		revision = self._revision
 		listing = self._listing
-		previous = self._restore_from if self._restore_from is not None else self._displayed
+		previous = self._displayed
 		index, ascending = self._sort_column, self._sort_ascending
 		columns = self._pending_columns if self._pending_columns is not None else self._columns
 		column, filters = columns[index], self._capture_filters()
@@ -395,7 +384,6 @@ class ListingModel(DragAndDrop):
 			owner = getattr(predicate, '__self__', None)
 			if owner is not None and hasattr(owner, 'snapshot_prefix'):
 				prefix = owner.snapshot_prefix()
-		search = self._search
 		cache = self._order_cache
 		order = cache[3] if cache is not None and cache[0] is listing and cache[1:3] == (index, ascending) else None
 		wanted = None
@@ -406,7 +394,7 @@ class ListingModel(DragAndDrop):
 				wanted = frozenset(entry for entry in (state[1], *state[3]) if entry is not None)
 		self._projecting = True
 		self._view_jobs.submit(lambda check:
-			replace(project(listing, previous, column, index, ascending, filters, check, prefix, search, order, wanted),
+			replace(project(listing, previous, column, index, ascending, filters, check, prefix, order, wanted),
 				columns=tuple(columns)),
 			lambda result, error: self._deliver('view', revision, result, error))
 
@@ -471,8 +459,6 @@ class ListingModel(DragAndDrop):
 		self._displayed = result.listing
 		self._visible = result.visible
 		self._last_projection = result
-		self._highlights = result.highlights or {}
-		self._restore_from = None
 		if result.order is not None:
 			self._order_cache = result.listing, result.column, result.ascending, result.order
 		self._names = None
@@ -496,7 +482,7 @@ class ListingModel(DragAndDrop):
 	def _refresh_unchanged(self):
 		"""R03 (Done/FSPaneArch002.md): a rescan found the displayed listing
 		unchanged and no projection is pending. Emit what a commit emits so
-		pending cursors, search acceptance and status listeners resolve, but
+		pending cursors and status listeners resolve, but
 		keep the rows, selection and scroll position: no projection, no model
 		reset. Cell texts may still depend on external data (directory sizes),
 		so the text cache is dropped and the rows repaint like refresh_files."""
@@ -520,8 +506,6 @@ class ListingModel(DragAndDrop):
 	def data(self, index, role=Qt.DisplayRole):
 		if not index.isValid() or not 0 <= index.row() < len(self._visible):
 			return None
-		if role == Qt.UserRole + 1 and index.column() == 0:
-			return self._highlights.get(self._visible[index.row()])
 		if role in (Qt.DisplayRole, Qt.EditRole, Qt.ToolTipRole):
 			key = self._visible[index.row()], index.column()
 			if key not in self._text_cache:
@@ -621,8 +605,6 @@ class ListingModel(DragAndDrop):
 		self.reload()
 	def notify_file_changed(self, url):
 		self._fs.clear_cache(url)
-		self.reload()
-	def notify_file_renamed(self, old_url, new_url):
 		self.reload()
 	@run_in_main_thread
 	def refresh_files(self, urls):

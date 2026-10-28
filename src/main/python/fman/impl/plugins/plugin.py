@@ -11,7 +11,6 @@ from os.path import join, isdir, basename, isfile
 from threading import Thread
 
 import inspect
-import json
 import re
 import sys
 
@@ -109,7 +108,7 @@ class Plugin:
 				'Could not instantiate Column %r.' % col_cls.__name__
 			)
 		else:
-			return ColumnWrapper(instance, self._error_handler)
+			return instance
 	def __str__(self):
 		return '<%s %r>' % (self.__class__.__name__, self.name)
 
@@ -292,9 +291,6 @@ class ExternalPlugin(Plugin):
 			if inspect.isclass(cls):
 				yield cls
 
-def get_command_class_name(command_name):
-	return ''.join(part.title() for part in command_name.split('_'))
-
 class Wrapper:
 	def __init__(self, wrapped, type_name, error_handler):
 		self._wrapped = wrapped
@@ -429,32 +425,18 @@ class FileSystemWrapper(Wrapper):
 				)
 			else:
 				showed_error = False
-				while True:
-					try:
-						with self._report_exceptions(
-							exclude={FileNotFoundError, StopIteration}
-						) as cm:
-							item = next(iterable)
-					except StopIteration:
-						break
-					else:
-						if cm.exception:
-							break
+				# One context for the whole loop; GeneratorExit means the
+				# consumer stopped early, not a plug-in error.
+				with self._report_exceptions(exclude={FileNotFoundError, GeneratorExit}):
+					for item in iterable:
 						if isinstance(item, str):
 							yield item
-						else:
-							if not showed_error:
-								self._error_handler.report(
-									"Error: %s.iterdir(...) yielded %r instead "
-									"of a string such as 'file.txt'." %
-									(self._class_name, item), exc=False
-								)
-								showed_error = True
-	def __getattr__(self, item):
-		return getattr(self._wrapped, item)
-
-class ColumnWrapper(Wrapper):
-	def __init__(self, wrapped, error_handler):
-		super().__init__(wrapped, 'Column', error_handler)
+						elif not showed_error:
+							self._error_handler.report(
+								"Error: %s.iterdir(...) yielded %r instead "
+								"of a string such as 'file.txt'." %
+								(self._class_name, item), exc=False
+							)
+							showed_error = True
 	def __getattr__(self, item):
 		return getattr(self._wrapped, item)

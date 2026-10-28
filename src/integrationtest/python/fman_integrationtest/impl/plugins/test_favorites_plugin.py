@@ -45,7 +45,7 @@ class FavoritesPluginTest(TestCase):
 				window, error_handler, callback
 			)
 			key_bindings = KeyBindings()
-			mother_fs = MotherFileSystem(None)
+			mother_fs = MotherFileSystem()
 			context_menu = ContextMenuProvider(
 				pane_registry, application_registry, key_bindings
 			)

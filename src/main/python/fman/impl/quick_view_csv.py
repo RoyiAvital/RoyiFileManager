@@ -4,7 +4,7 @@ from collections import OrderedDict
 from pathlib import Path, PureWindowsPath
 from PyQt5.QtCore import QAbstractTableModel, QEvent, QItemSelection, QItemSelectionModel, QModelIndex, QObject, QPoint, \
 	QProcess, QProcessEnvironment, QTimer, Qt, pyqtSignal
-from PyQt5.QtGui import QIcon, QKeySequence, QPalette
+from PyQt5.QtGui import QIcon, QPalette
 from PyQt5.QtWidgets import QAbstractItemView, QApplication, QCheckBox, QComboBox, QHBoxLayout, QHeaderView, QLabel, \
 	QLineEdit, QMenu, QPlainTextEdit, QSizePolicy, QStackedLayout, QStyle, QTableView, QToolButton, QVBoxLayout, QWidget, \
 	QWidgetAction
@@ -239,11 +239,6 @@ class CsvController(QObject):
 		if self._active is not None and self._active['type'] in ('find', 'copy', 'cell'):
 			self._cancel()
 		self._pump()
-
-	def cancel_action(self):
-		self._action = None
-		if self._active is not None and self._active['type'] in ('find', 'copy', 'cell'):
-			self._cancel()
 
 	def invalidate(self):
 		"""Drop the current table; the helper stays available for the next Table View file."""

@@ -14,45 +14,6 @@ def is_below_dir(file_path, directory):
 	rel = relpath(realpath(dirname(file_path)), realpath(directory))
 	return not (rel == pardir or rel.startswith(pardir + os.sep))
 
-def parse_version(version_str):
-	if version_str.endswith('-SNAPSHOT'):
-		version_str = version_str[:-len('-SNAPSHOT')]
-	return tuple(map(int, version_str.split('.')))
-
-class MixinBase:
-
-	_FIELDS = () # To be set by subclasses
-
-	def _get_field_values(self):
-		return tuple(getattr(self, field) for field in self._FIELDS)
-
-class EqMixin(MixinBase):
-	def __eq__(self, other):
-		try:
-			return self._get_field_values() == other._get_field_values()
-		except AttributeError:
-			return False
-	def __ne__(self, other):
-		return not self.__eq__(other)
-	def __hash__(self):
-		return hash(self._get_field_values())
-
-class ReprMixin(MixinBase):
-	def __repr__(self):
-		return '%s(%s)' % (
-			self.__class__.__name__,
-			', '.join(
-				'%s=%r' % (field, val)
-				for (field, val) in zip(self._FIELDS, self._get_field_values())
-			)
-		)
-
-class ConstructorMixin(MixinBase):
-	def __init__(self, *args):
-		super().__init__()
-		for field, arg in zip(self._FIELDS, args):
-			setattr(self, field, arg)
-
 class Event:
 	def __init__(self):
 		self._callbacks = []

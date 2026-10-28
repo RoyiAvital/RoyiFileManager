@@ -583,7 +583,7 @@ class SameFolderOperationsTest(TestCase):
 		self.pane.get_path.return_value = as_url(self.root)
 		self.pane.get_selected_files.return_value = []
 		self.pane.get_file_under_cursor.return_value = as_url(self.source)
-		filesystem = MotherFileSystem(None)
+		filesystem = MotherFileSystem()
 		filesystem.add_child('file://', LocalFileSystem())
 		filesystem.add_child('zip://', ZipFileSystem(filesystem, {'.zip'}))
 		patcher = patch('fman.fs._get_mother_fs', return_value=filesystem)

@@ -66,7 +66,7 @@ def exercise(context, root, output):
 			window.activateWindow()
 			QApplication.processEvents()
 			assert window.frameGeometry().center() == context.main_window.frameGeometry().center()
-			assert window.bottom_panel is None and context.main_window._panel_dock is None
+			assert context.main_window._panel_dock is None
 			assert window.path_label.isVisible() and window.path_label.toolTip() == str(path)
 			assert window.windowTitle() == str(path)
 			assert window.output.title() == 'Hash Algorithm: SHA-256'
@@ -114,7 +114,7 @@ def exercise(context, root, output):
 		def check_by():
 			QApplication.processEvents()
 			assert window.frameGeometry().center() == context.main_window.frameGeometry().center()
-			assert window.bottom_panel is None and context.main_window._panel_dock is None
+			assert context.main_window._panel_dock is None
 			assert window.windowTitle() == str(path)
 			assert window.path_label.toolTip() == str(path)
 			assert window.output.title() == 'Hash Algorithm: SHA-512'

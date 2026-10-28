@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import sys
+import tarfile
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -31,6 +32,39 @@ SELECTION_SPEC.loader.exec_module(selection_measurement)
 
 
 class PaneRenderingBenchmarkTest(TestCase):
+	def test_baseline_exports_current_and_historical_metadata_layouts(self):
+		from fman_integrationtest import pane_rendering_benchmark as integration
+		for module in (pane_measurement, integration):
+			for metadata in ('src/AppMeta.json', 'src/build/settings'):
+				with self.subTest(module=module.__name__, metadata=metadata), TemporaryDirectory() as temporary:
+					path = metadata if metadata.endswith('.json') else metadata + '/base.json'
+					stream = io.BytesIO()
+					with tarfile.open(fileobj=stream, mode='w') as archive:
+						entry = tarfile.TarInfo(path)
+						entry.size = 2
+						archive.addfile(entry, io.BytesIO(b'{}'))
+					with patch.object(module.subprocess, 'check_output',
+						side_effect=['commit', (metadata + '\n').encode(), stream.getvalue()]) as execute, \
+						patch.object(sys, 'path', []):
+						destination = Path(temporary) / 'baseline'
+						self.assertEqual('commit', module.install_baseline(destination, 'revision'))
+					self.assertEqual(b'{}', (destination / path).read_bytes())
+					self.assertEqual(['git', 'ls-tree', '--name-only', 'commit', '--',
+						'src/AppMeta.json', 'src/build/settings'], execute.call_args_list[1].args[0])
+					self.assertEqual(['git', 'archive', 'commit', 'src/main', metadata],
+						execute.call_args_list[2].args[0])
+
+	def test_baseline_without_metadata_does_not_export(self):
+		from fman_integrationtest import pane_rendering_benchmark as integration
+		for module in (pane_measurement, integration):
+			with self.subTest(module=module.__name__), TemporaryDirectory() as temporary, \
+				patch.object(module.subprocess, 'check_output', side_effect=['commit', b'']) as execute:
+				destination = Path(temporary) / 'baseline'
+				with self.assertRaisesRegex(ValueError, 'metadata is missing'):
+					module.install_baseline(destination, 'revision')
+				self.assertFalse(destination.exists())
+				self.assertEqual(2, execute.call_count)
+
 	def test_native_quickview_measures_supported_text_and_image_restore(self):
 		script = '''
 from pathlib import Path

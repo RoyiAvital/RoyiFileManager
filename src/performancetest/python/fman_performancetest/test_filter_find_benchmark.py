@@ -5,6 +5,7 @@ from contextlib import redirect_stderr, redirect_stdout
 import io
 import json
 import sys
+import tarfile
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
@@ -32,6 +33,38 @@ finally:
 
 
 class HistoricalBenchmarkTest(TestCase):
+	def test_exports_only_paths_present_in_each_metadata_layout(self):
+		from fman_performancetest import historical
+		for metadata in historical.METADATA_PATHS:
+			with self.subTest(metadata=metadata), TemporaryDirectory() as temporary:
+				paths = ('src/main', metadata, 'environment.yml', 'conda-lock.yml')
+				stream = io.BytesIO()
+				with tarfile.open(fileobj=stream, mode='w') as archive:
+					data = b'{"app_name":"TestApp","version":"1.0.0"}'
+					entry = tarfile.TarInfo(metadata)
+					entry.size = len(data)
+					archive.addfile(entry, io.BytesIO(data))
+				with patch.object(historical.subprocess, 'check_output',
+					side_effect=['\n'.join(paths).encode(), stream.getvalue()]) as execute:
+					destination = Path(temporary) / 'source'
+					fingerprint = historical.export_source(destination, 'commit')
+				self.assertEqual(data, (destination / metadata).read_bytes())
+				self.assertEqual(historical.source_digest(destination), fingerprint)
+				self.assertEqual(['git', 'ls-tree', '--name-only', 'commit', '--',
+					*historical.SOURCE_PATHS], execute.call_args_list[0].args[0])
+				self.assertEqual(['git', 'archive', 'commit', *paths], execute.call_args_list[1].args[0])
+				self.assertIn(metadata, historical.SOURCE_PATHS)
+
+	def test_export_refuses_revision_without_metadata(self):
+		from fman_performancetest import historical
+		with TemporaryDirectory() as temporary, \
+			patch.object(historical.subprocess, 'check_output', return_value=b'src/main\n') as execute:
+			destination = Path(temporary) / 'source'
+			with self.assertRaisesRegex(ValueError, 'metadata is missing'):
+				historical.export_source(destination, 'commit')
+			self.assertFalse(destination.exists())
+			execute.assert_called_once()
+
 	def test_version_order_and_text_availability(self):
 		from fman_performancetest.historical import VERSIONS, has_text_preview, version_order
 		self.assertEqual(8, len(VERSIONS))
@@ -551,13 +584,28 @@ class PerformanceReportTest(TestCase):
 			self.assertFalse((Path(directory) / 'versions.json').exists())
 
 	def test_release_identification_requires_matching_tag_and_clean_tree(self):
-		version = json.loads(suite.ROOT.joinpath('src/build/settings/AppMeta.json').read_text())['version']
+		version = json.loads(suite.ROOT.joinpath('src/AppMeta.json').read_text())['version']
 		for dirty, tag, expected in ((b'', 'v' + version, version), (b'', version, version),
 			(b'M file', 'v' + version, 'Unreleased'), (b'', '', 'Unreleased')):
 			with self.subTest(dirty=dirty, tag=tag), \
 				patch.object(suite, 'git', side_effect=[b'abc123', dirty, tag.encode()]), \
-				patch.object(suite, 'source_hash', return_value='source'):
+				patch.object(suite, 'source_hash', return_value='source') as source_hash:
 				self.assertEqual(expected, suite.provenance()['version_id'])
+				source_hash.assert_called_once_with('src/main', 'src/AppMeta.json', 'environment.yml', 'conda-lock.yml')
+
+	def test_source_hash_tracks_metadata_changes(self):
+		with TemporaryDirectory() as temporary:
+			root = Path(temporary)
+			(root / 'src').mkdir()
+			metadata = root / 'src/AppMeta.json'
+			metadata.write_text('{"app_name":"First"}', encoding='utf-8')
+			with patch.object(suite, 'ROOT', root), \
+				patch.object(suite, 'git', return_value=b'src/AppMeta.json\x00') as git:
+				before = suite.source_hash('src/AppMeta.json')
+				metadata.write_text('{"app_name":"Second"}', encoding='utf-8')
+				self.assertNotEqual(before, suite.source_hash('src/AppMeta.json'))
+				git.assert_called_with('ls-files', '-z', '--cached', '--others',
+					'--exclude-standard', '--', 'src/AppMeta.json')
 
 	def test_navigation_aggregates_fixed_cases_with_equal_weight(self):
 		current = self.navigation_record()
