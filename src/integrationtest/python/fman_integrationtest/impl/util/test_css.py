@@ -196,12 +196,12 @@ _CORE = Path(__file__).resolve().parents[5] / 'main/resources/base/Plugins/Core'
 _PLUGIN_THEME = Path(__file__).resolve().parents[4] / \
 	'resources/Simple Plugin/Theme.css'
 _RULE_SNAPSHOTS = {
-	'Theme.css': '2a87d3dc0a1c2f6ff8a5be501508113022f8422c2b14b198afb3973325a9e12a',
+	'Theme.css': '62ebb0c94b8a11507e2ae79c2ccd65c32023a17ff4ebee34cc39f426825f3934',
 	'Simple Plugin': '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945',
 }
 _THEME_SNAPSHOTS = {
-	'Base': 'd7501531b488931b763c6e765cf4aae5e1e9327aebe4fd49fc881e94e1b3cc08',
-	'Plugin': 'd7501531b488931b763c6e765cf4aae5e1e9327aebe4fd49fc881e94e1b3cc08',
+	'Base': '7ab2ba551ef2aceb930bd60a8506d22ea6c972c61d1f8ba775a9d2def1711839',
+	'Plugin': '7ab2ba551ef2aceb930bd60a8506d22ea6c972c61d1f8ba775a9d2def1711839',
 }
 
 _TEST_CSS = \
