@@ -72,6 +72,8 @@
 - [x] CHANGE: Group the _Command Palette_ items into groups: "Application: About", "Application: Edit settings", "File System: Edit".
 - [x] CHANGE: Merge the _Zen_ into the _About_ window.
 - [ ] BUG: After a computer crash the application did not start. After many tries it started with "clean" default setting (Offering the tutorial).
+- [x] FEATURE: Add a _Context Menu_ for a single file / folder to show which process / task blocks it.
+- [ ] FEATURE: Add "Update settings file template" which allows the user to merge his current settings file into new format (If new options were introduced).
 
 ## Performance
 

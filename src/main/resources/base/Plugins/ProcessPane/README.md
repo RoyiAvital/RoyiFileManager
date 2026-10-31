@@ -31,6 +31,31 @@ manually.
 - Filtering uses a name-bearing URL; `/`, `\`, `~` and control characters in
   names are sanitized. The displayed Name retains the original text.
 
+## Find Blocking Processes
+
+Right-click one file or folder in a local pane and choose
+**Find blocking processes**, or run **Find blocking processes** from the
+Command Center. It lists processes that keep the item open.
+These are possible users, not proven blockers: sharing permissions may still
+allow deleting, moving or renaming the item.
+
+- A table shows Process, PID, Item and Program. Ctrl+Enter or a double-click
+  on Item or Program goes to that path. Escape closes it.
+- Detects open files and folders, running programs, loaded DLLs and folders
+  used as a working folder.
+- For a folder, the folder and everything inside it are checked, up to 100,000
+  items. Links and junctions are not followed. Cancel is checked during scanning,
+  name lookup and result preparation; an ongoing Windows call must return first.
+- Results retain at most 10,000 process/item pairs with bounded text. Long-path
+  or larger results are marked truncated; paths in retained rows stay navigable.
+- Runs with regular user rights; it never asks for administrator rights.
+  Windows reports the process IDs for each item, so no process has to be
+  opened to find them. Names of protected processes show as `Unavailable`.
+- Items that cannot be opened (for example, no list permission) are counted
+  as not checked. Network paths depend on the server and may fail.
+- It only reports. Close the item in that program, or end the process from the
+  process pane.
+
 ## Plug-In Installation
 
 ProcessPane uses public `fman` plug-in APIs and owns all process-specific code.
@@ -43,6 +68,7 @@ For another compatible host, place this folder under its user plug-in directory
 and ensure that host supplies `win32process` for its Python version/architecture.
 Copying a plug-in cannot add an incompatible native extension to a frozen host.
 
-The native enumerator loads only when the process pane is used. The unused or
+The native enumerator loads only when the process pane is used, and the lock
+finder only when its command runs. The unused or
 disabled plug-in performs no process scans, polling, background jobs or Registry
 writes. It stores no process metadata on disk.

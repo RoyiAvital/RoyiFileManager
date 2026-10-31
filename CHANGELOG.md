@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.1] - 2026-10-31
+
+This release adds a simple way to find processes keeping a file or folder open.  
+It is called: "Find locking processes" or "find blocking processes". It is available 
+on the _Context Menu_ as well. Works on a single item: Folder / File.
+No administrator privileges are required.
+
+### Added
+
+- **Find blocking processes** (Process Pane plug-in): right-click one local
+  file or folder to list processes keeping it open, not necessarily blocking
+  rename or delete. Folders are checked with their contents, up to 100,000 items,
+  without following links or junctions. Results retain at most 10,000 process/item
+  pairs with bounded text and explicit truncation. Cancel is checked during
+  scanning, name lookup and result preparation. Works with regular user rights;
+  the original command ID remains unchanged. Both menus use the same name without
+  an ellipsis or additional search aliases.
+
 ## [0.20.0] - 2026-10-31
 
 The release adds the **Edit attributes** plug-in for files and folders.  

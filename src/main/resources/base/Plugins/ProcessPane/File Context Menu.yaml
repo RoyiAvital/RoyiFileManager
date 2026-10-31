@@ -1,0 +1,3 @@
+# Adds the entry to the Core "properties" group; it shows for one local file or folder.
+- {caption: '-', id: properties}
+- {command: find_locking_processes, caption: 'Find &blocking processes'}

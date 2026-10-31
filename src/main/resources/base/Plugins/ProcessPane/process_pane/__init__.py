@@ -1,6 +1,10 @@
 from fman import DirectoryPaneCommand, DirectoryPaneListener, Task, YES, NO, show_alert, show_status_message, submit_task
 from fman.fs import FileSystem, Column, query
-from .processes import ProcessError, Snapshot, get_provider
+from fman.ui import QuickTableColumn, QuickTableRow, show_quick_table
+from fman.url import splitscheme
+from .processes import ProcessError, Snapshot, WindowsApi, get_provider
+
+import os
 
 
 ROOT = 'process://'
@@ -161,6 +165,122 @@ class ProcessOperationUnsupported(DirectoryPaneCommand):
 
 	def is_visible(self):
 		return False
+
+
+class FindLockingProcesses(DirectoryPaneCommand):
+	category = 'File'
+	aliases = ('Find blocking processes',)
+
+	def is_visible(self):
+		return self.pane.get_path().startswith('file://') and len(self.get_chosen_files()) == 1
+
+	def __call__(self):
+		chosen = self.get_chosen_files()
+		scheme, path = splitscheme(chosen[0]) if len(chosen) == 1 else ('', '')
+		if scheme != 'file://':
+			show_status_message('Find blocking processes: choose one local file or folder.', timeout_secs=5)
+			return
+		path = os.path.normpath(path)
+		name = os.path.basename(path) or path
+		task = _FindLockingProcesses(path)
+		submit_task(task)
+		if task.error:
+			show_alert('Could not check "%s": %s' % (name, task.error))
+			return
+		usage = task.usage
+		if usage is None:
+			show_status_message('Find blocking processes cancelled.', timeout_secs=5)
+			return
+		if not usage.items:
+			show_alert('No process is using "%s".%s' % (name, ''.join('\n\n' + note for note in _notes(usage))))
+			return
+		show_quick_table(columns=_COLUMNS, rows=task.rows, pane=self.pane,
+			title='Processes using ' + name, summary=_summary(usage), truncated=task.truncated)
+
+
+_COLUMNS = (QuickTableColumn('Process'), QuickTableColumn('PID', 'numeric', format=str),
+	QuickTableColumn('Item', 'entry_path'), QuickTableColumn('Program', 'file_path'))
+_MAX_ROWS = 10_000
+_MAX_RESULT_BYTES = 8 * 1024 * 1024
+
+
+class _FindLockingProcesses(Task):
+	def __init__(self, path):
+		super().__init__('Finding blocking processes')
+		self.path = path
+		self.usage = self.error = None
+		self.processes = {}
+		self.rows = ()
+		self.truncated = False
+
+	def __call__(self):
+		from .locks import describe, find
+		try:
+			self.check_canceled()
+			usage = find(self.path, self.check_canceled, self.set_text)
+			ids = {pid for path, pids in usage.items for pid in pids}
+			self.check_canceled()
+			self.processes = describe(ids, WindowsApi(), self.check_canceled) if ids else {}
+			self.set_text('Preparing process results...')
+			self.rows, self.truncated = _rows(usage, self.processes, self.path, self.check_canceled)
+			self.check_canceled()
+		except (OSError, ProcessError, ValueError) as error:
+			self.error = getattr(error, 'strerror', None) or str(error)
+		else:
+			self.usage = usage
+
+
+def _rows(usage, processes, root, check=lambda: None):
+	parent = os.path.dirname(root)
+	def shown(path):
+		return path if parent == root else os.path.relpath(path, parent)
+	rows = []
+	size = 0
+	truncated = usage.limited
+	for path, pids in usage.items:
+		for pid in pids:
+			check()
+			if len(rows) >= _MAX_ROWS:
+				truncated = True
+				break
+			name, program = processes[pid]
+			item = shown(path)
+			row_bytes = sum(len(value.encode('utf-8')) for value in (name, item, program, path, program)) + 32
+			if size + row_bytes > _MAX_RESULT_BYTES:
+				truncated = True
+				break
+			rows.append(QuickTableRow((name, pid, item, program), targets=(None, None, path, program or None)))
+			size += row_bytes
+		else:
+			continue
+		break
+	rows.sort(key=lambda row: (row.cells[0].casefold(), row.cells[1], row.cells[2].casefold()))
+	check()
+	return rows, truncated
+
+
+def _summary(usage):
+	count = len({pid for path, pids in usage.items for pid in pids})
+	parts = ['%d process%s' % (count, '' if count == 1 else 'es')]
+	if usage.checked > 1:
+		parts.append('{:,} items checked'.format(usage.checked))
+	if usage.failed:
+		parts.append('{:,} could not be checked'.format(usage.failed))
+	if not usage.complete:
+		parts.append('stopped at {:,} items'.format(usage.checked))
+	if usage.limited:
+		parts.append('results limited')
+	parts.append('Users may not block rename or delete')
+	return ' \u00b7 '.join(parts)
+
+
+def _notes(usage):
+	if usage.failed:
+		yield '{:,} items or folders could not be checked.'.format(usage.failed)
+	if not usage.complete:
+		yield 'Stopped after {:,} items; the rest of the folder was not checked.'.format(usage.checked)
+	if usage.limited:
+		yield 'Some open-file users were omitted because the result limit was reached.'
 
 
 def _is_process_url(url):

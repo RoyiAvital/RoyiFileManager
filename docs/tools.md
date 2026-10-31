@@ -603,4 +603,26 @@ The active pane lists running processes by Name and PID.
 - Ending is forced: unsaved data in that process is lost.
 - Only your current permissions are used. System and critical processes are refused.
 
+### Find Blocking Processes
+
+Right-click one file or folder in a local pane and choose
+**Find blocking processes**, or run **Find blocking processes** from the
+Command Center.
+It lists processes keeping the item open, not proven blockers: sharing
+permissions may still allow deleting, moving or renaming it.
+
+- The table shows Process, PID, Item and Program. ++ctrl+enter++ or a
+  double-click on Item or Program goes to that path.
+- Open files and folders, running programs, loaded DLLs and working folders
+  are detected.
+- For a folder, the folder and everything inside it are checked, up to
+  100,000 items. Links and junctions are not followed.
+- Results are limited to 10,000 process/item pairs and bounded text; larger or
+  long-path results are marked truncated. Retained paths remain navigable.
+- Cancel works during scanning, name lookup and result preparation, once an
+  ongoing Windows call returns.
+- Works with regular user rights; administrator rights are never requested.
+- It only reports. Close the item in that program, or end the process in the
+  process pane.
+
 See [Process Pane usage](https://github.com/RoyiAvital/RoyiFileManager/blob/main/src/main/resources/base/Plugins/ProcessPane/README.md).

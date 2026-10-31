@@ -362,3 +362,316 @@ class NativeProcessTest(TestCase):
 			capture_output=True, text=True, timeout=10
 		)
 		self.assertEqual(0, check.returncode, check.stderr)
+
+
+class LockFinderTest(TestCase):
+	def setUp(self):
+		from pathlib import Path
+		from tempfile import TemporaryDirectory
+		import _winapi
+		temporary = TemporaryDirectory()
+		self.addCleanup(temporary.cleanup)
+		self.root = Path(temporary.name).resolve() / 'chosen'
+		for relative in ('a.txt', 'sub/b.txt', 'sub/deep/c.txt', '../outside/o.txt'):
+			path = self.root / relative
+			path.parent.mkdir(parents=True, exist_ok=True)
+			path.write_text(relative)
+		self.junction = self.root / 'link'
+		_winapi.CreateJunction(str(self.root.parent / 'outside'), str(self.junction))
+		self.addCleanup(lambda: self.junction.exists() and os.rmdir(self.junction))
+
+	def test_folder_walk_skips_junction_contents_and_counts_failures(self):
+		from process_pane import locks
+		queried = []
+		def query(path):
+			queried.append(path)
+			if path.endswith('b.txt'):
+				raise PermissionError(5, 'Access is denied')
+			return (7,) if path.endswith(('c.txt', 'chosen')) else ()
+		progress, check = Mock(), Mock()
+		usage = locks.find(str(self.root), check, progress, query)
+		self.assertEqual([(str(self.root), (7,)), (str(self.root / 'sub/deep/c.txt'), (7,))], sorted(usage.items))
+		self.assertEqual((7, 1, True), (usage.checked, usage.failed, usage.complete))
+		self.assertIn(str(self.junction), queried)
+		self.assertFalse(any('outside' in path or path.startswith(str(self.junction) + os.sep) for path in queried))
+		self.assertEqual(9, check.call_count)
+
+	def test_item_limit_root_errors_and_cancellation(self):
+		from process_pane import locks
+		with patch.object(locks, 'MAX_ITEMS', 3):
+			usage = locks.find(str(self.root), query=lambda path: ())
+		self.assertEqual((3, False), (usage.checked, usage.complete))
+		file_usage = locks.find(str(self.root / 'a.txt'), query=lambda path: (9,))
+		self.assertEqual([(str(self.root / 'a.txt'), (9,))], file_usage.items)
+		with self.assertRaises(FileNotFoundError):
+			locks.find(str(self.root / 'missing.txt'), query=locks.process_ids)
+		with self.assertRaises(KeyboardInterrupt):
+			locks.find(str(self.root), Mock(side_effect=KeyboardInterrupt), query=lambda path: ())
+
+	def test_retained_matches_are_bounded_while_the_scan_continues(self):
+		from process_pane import locks
+		for limits in ({'MAX_RESULT_ROWS': 2}, {'MAX_RESULT_BYTES': 1}):
+			with self.subTest(limits=limits), patch.multiple(locks, **limits):
+				usage = locks.find(str(self.root), query=lambda path: (11, 12))
+			self.assertTrue(usage.complete)
+			self.assertTrue(usage.limited)
+			self.assertEqual(7, usage.checked)
+			retained = sum(len(ids) for path, ids in usage.items)
+			self.assertEqual(2 if 'MAX_RESULT_ROWS' in limits else 0, retained)
+
+	def test_single_file_cancellation_prevents_or_discards_the_query(self):
+		from fman import Task
+		from process_pane import locks
+		query = Mock(return_value=(9,))
+		with self.assertRaises(Task.Canceled):
+			locks.find(str(self.root / 'a.txt'), Mock(side_effect=Task.Canceled), query=query)
+		query.assert_not_called()
+		with self.assertRaises(Task.Canceled):
+			locks.find(str(self.root / 'a.txt'), Mock(side_effect=[None, Task.Canceled()]), query=query)
+		query.assert_called_once()
+
+	def test_cancellation_during_describe_stops_remaining_processes(self):
+		from fman import Task
+		from process_pane import locks
+		opened = []
+		api = Mock()
+		@contextmanager
+		def open_process(pid, access):
+			opened.append(pid)
+			yield pid
+		def check():
+			if opened:
+				raise Task.Canceled()
+		api.open.side_effect = open_process
+		api.image_name.return_value = 'C:\\Apps\\editor.exe'
+		with self.assertRaises(Task.Canceled):
+			locks.describe((11, 12, 13), api, check)
+		self.assertEqual([11], opened)
+
+	def test_describe_names_programs_and_denied_processes(self):
+		from process_pane import locks
+		api = Mock()
+		@contextmanager
+		def opened(pid, access):
+			self.assertEqual(0x1000, access)
+			if pid != 12:
+				raise windows_error(5)
+			yield 'handle'
+		api.open.side_effect = opened
+		api.image_name.return_value = 'C:\\Apps\\editor.exe'
+		self.assertEqual({12: ('editor.exe', 'C:\\Apps\\editor.exe'), 4: ('System', ''), 99: ('Unavailable', '')},
+			locks.describe((12, 4, 99), api))
+
+
+class NativeLockTest(TestCase):
+	def test_regular_user_query_finds_exclusive_file_working_folder_and_executable(self):
+		from pathlib import Path
+		from process_pane import locks
+		from tempfile import TemporaryDirectory
+		with TemporaryDirectory() as temporary:
+			root = Path(temporary).resolve()
+			folder = root / 'work'
+			folder.mkdir()
+			locked, free = folder / 'locked.txt', root / 'free.txt'
+			locked.write_text('x')
+			free.write_text('x')
+			# Share mode 0: other programs cannot open, rename or delete the file.
+			child = subprocess.Popen([sys.executable, '-c', 'import _winapi, sys; '
+				'_winapi.CreateFile(sys.argv[1], 0x80000000, 0, 0, 3, 0, 0); print("ready", flush=True); sys.stdin.read(1)',
+				str(locked)], cwd=folder, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+			try:
+				self.assertEqual('ready', child.stdout.readline().strip())
+				self.assertIn(child.pid, locks.process_ids(str(locked)))
+				self.assertEqual((), locks.process_ids(str(free)))
+				self.assertIn(os.getpid(), locks.process_ids(sys.executable))
+				usage = locks.find(str(root))
+				found = {path: ids for path, ids in usage.items}
+				self.assertIn(child.pid, found[str(folder)])
+				self.assertIn(child.pid, found[str(locked)])
+				self.assertNotIn(str(free), found)
+				self.assertEqual((0, True), (usage.failed, usage.complete))
+				name, program = locks.describe((child.pid,), WindowsApi())[child.pid]
+				self.assertEqual(os.path.basename(program), name)
+				self.assertTrue(name.lower().endswith('.exe'))
+			finally:
+				child.kill()
+				child.wait(timeout=5)
+				child.stdin.close()
+				child.stdout.close()
+
+	def test_delete_sharing_user_does_not_prevent_rename_or_delete(self):
+		from pathlib import Path
+		from process_pane import locks
+		from tempfile import TemporaryDirectory
+		with TemporaryDirectory() as temporary:
+			source = Path(temporary).resolve() / 'shared.txt'
+			destination = source.with_name('renamed.txt')
+			source.write_bytes(b'shared fixture')
+			script = ('import _winapi, sys; handle = _winapi.CreateFile(sys.argv[1], '
+				'0x80000000, 7, 0, 3, 0, 0); print("ready", flush=True); '
+				'sys.stdin.read(1); _winapi.CloseHandle(handle)')
+			child = subprocess.Popen([sys.executable, '-c', script, str(source)],
+				stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+			try:
+				self.assertEqual('ready', child.stdout.readline().strip())
+				self.assertIn(child.pid, locks.process_ids(str(source)))
+				source.rename(destination)
+				destination.unlink()
+				self.assertFalse(source.exists() or destination.exists())
+			finally:
+				child.kill()
+				child.wait(timeout=5)
+				child.stdin.close()
+				child.stdout.close()
+
+
+class FindLockingProcessesTest(TestCase):
+	def setUp(self):
+		import process_pane
+		from process_pane.locks import Usage
+		self.plugin = process_pane
+		self.Usage = Usage
+		self.pane = Mock()
+		self.pane.get_path.return_value = 'file://C:/work'
+		self.pane.get_selected_files.return_value = ['file://C:/work/report.docx']
+		self.pane.get_file_under_cursor.return_value = None
+		def submit(task):
+			try:
+				task()
+			except process_pane.Task.Canceled:
+				pass
+		for name, options in (
+			('show_alert', {}), ('show_status_message', {}), ('show_quick_table', {}),
+			('submit_task', {'side_effect': submit}), ('WindowsApi', {}),
+			('locks.find', {}), ('locks.describe', {}),
+		):
+			patcher = patch('process_pane.' + name, **options)
+			patcher.start()
+			self.addCleanup(patcher.stop)
+		self.find, self.describe = process_pane.locks.find, process_pane.locks.describe
+
+	def run_command(self):
+		self.plugin.FindLockingProcesses(self.pane)()
+
+	def test_visibility_and_selection_guard(self):
+		command = self.plugin.FindLockingProcesses(self.pane)
+		self.assertTrue(command.is_visible())
+		self.pane.get_selected_files.return_value = ['file://C:/work/a', 'file://C:/work/b']
+		self.assertFalse(command.is_visible())
+		for selected in ([], ['file://C:/work/a', 'file://C:/work/b']):
+			self.pane.get_selected_files.return_value = selected
+			self.plugin.show_status_message.reset_mock()
+			self.run_command()
+			self.plugin.show_status_message.assert_called_once_with(
+				'Find blocking processes: choose one local file or folder.', timeout_secs=5)
+		self.pane.get_path.return_value = 'process://'
+		self.pane.get_selected_files.return_value = ['process://editor.exe~12~1']
+		self.assertFalse(command.is_visible())
+		self.run_command()
+		self.plugin.submit_task.assert_not_called()
+		self.find.assert_not_called()
+
+	def test_unused_item_cancellation_and_errors(self):
+		self.find.return_value = self.Usage(checked=1)
+		self.run_command()
+		self.assertEqual(os.path.normpath('C:/work/report.docx'), self.find.call_args.args[0])
+		self.plugin.show_alert.assert_called_once_with('No process is using "report.docx".')
+		self.describe.assert_not_called()
+		self.plugin.show_alert.reset_mock()
+		self.find.return_value = self.Usage(checked=40, failed=2, complete=False)
+		self.run_command()
+		self.assertEqual('No process is using "report.docx".\n\n2 items or folders could not be checked.'
+			'\n\nStopped after 40 items; the rest of the folder was not checked.', self.plugin.show_alert.call_args.args[0])
+		self.find.side_effect = FileNotFoundError(2, 'The system cannot find the file specified')
+		self.run_command()
+		self.plugin.show_alert.assert_called_with('Could not check "report.docx": The system cannot find the file specified')
+		self.find.side_effect = self.plugin.Task.Canceled()
+		self.run_command()
+		self.plugin.show_status_message.assert_called_once_with('Find blocking processes cancelled.', timeout_secs=5)
+		self.plugin.show_quick_table.assert_not_called()
+
+	def test_users_are_listed_per_item_with_navigable_paths(self):
+		self.pane.get_selected_files.return_value = ['file://C:/work']
+		inner = os.path.normpath('C:/work/sub/data.db')
+		self.find.return_value = self.Usage([(os.path.normpath('C:/work'), (30,)), (inner, (12, 30))], checked=5, failed=1)
+		self.describe.return_value = {12: ('editor.exe', 'C:\\Apps\\editor.exe'), 30: ('Unavailable', '')}
+		self.run_command()
+		self.assertEqual({12, 30}, set(self.describe.call_args.args[0]))
+		arguments = self.plugin.show_quick_table.call_args.kwargs
+		self.assertEqual(('Processes using work', '2 processes \u00b7 5 items checked \u00b7 1 could not be checked'
+			' \u00b7 Users may not block rename or delete', False),
+			(arguments['title'], arguments['summary'], arguments['truncated']))
+		self.assertIs(self.pane, arguments['pane'])
+		self.assertEqual(['Process', 'PID', 'Item', 'Program'], [column.label for column in arguments['columns']])
+		self.assertEqual([
+			(('editor.exe', 12, os.path.join('work', 'sub', 'data.db'), 'C:\\Apps\\editor.exe'), (None, None, inner, 'C:\\Apps\\editor.exe')),
+			(('Unavailable', 30, 'work', ''), (None, None, os.path.normpath('C:/work'), None)),
+			(('Unavailable', 30, os.path.join('work', 'sub', 'data.db'), ''), (None, None, inner, None)),
+		], [(row.cells, row.targets) for row in arguments['rows']])
+		from fman.impl.ui.table_data import TableSchema
+		shown = TableSchema(arguments['columns']).snapshot(arguments['rows'])
+		self.assertEqual(['12', '30', '30'], [row.cells[1] for row in shown])
+
+	def test_result_rows_are_bounded_before_construction(self):
+		usage = self.Usage([(os.path.normpath('C:/work/file.txt'), tuple(range(5)))], checked=1)
+		processes = {pid: ('Worker', '') for pid in range(5)}
+		constructor = self.plugin.QuickTableRow
+		with patch.object(self.plugin, '_MAX_ROWS', 2), \
+				patch.object(self.plugin, 'QuickTableRow', wraps=constructor) as make_row:
+			rows, truncated = self.plugin._rows(usage, processes, os.path.normpath('C:/work'))
+		self.assertEqual(2, len(rows))
+		self.assertEqual(2, make_row.call_count)
+		self.assertTrue(truncated)
+
+	def test_long_result_paths_fit_the_table_payload_budget(self):
+		from fman.impl.ui.table_data import TableSchema
+		root = os.path.normpath('C:/work')
+		prefix = os.path.join(root, *('folder-%03d' % index for index in range(220)))
+		usage = self.Usage([(os.path.join(prefix, 'item-%05d.txt' % index), (11,))
+			for index in range(5000)], checked=5000)
+		rows, truncated = self.plugin._rows(usage, {11: ('Worker', '')}, root)
+		self.assertTrue(truncated)
+		self.assertTrue(0 < len(rows) < 5000)
+		self.assertEqual(len(rows), len(TableSchema(self.plugin._COLUMNS).snapshot(rows)))
+
+	def test_result_preparation_honors_cancellation(self):
+		usage = self.Usage([(os.path.normpath('C:/work/file.txt'), (11,))], checked=1)
+		with self.assertRaises(self.plugin.Task.Canceled):
+			self.plugin._rows(usage, {11: ('Worker', '')}, os.path.normpath('C:/work'),
+				Mock(side_effect=self.plugin.Task.Canceled))
+
+	def test_aliases_and_context_menu_entry_after_properties(self):
+		import yaml
+		from fman import DirectoryPane, DirectoryPaneCommand
+		from fman.impl.plugins.command_registry import ApplicationCommandRegistry, PaneCommandRegistry
+		from fman.impl.plugins.context_menu import ContextMenuProvider
+		from fman.impl.plugins.key_bindings import KeyBindings
+		from fman.impl.plugins.plugin import _get_command_name
+		from pathlib import Path
+		class ShowExplorerProperties(DirectoryPaneCommand):
+			def __call__(self):
+				pass
+		registry = PaneCommandRegistry(None, None)
+		for command in (ShowExplorerProperties, self.plugin.FindLockingProcesses):
+			registry.register_command(_get_command_name(command), command)
+		self.assertEqual(('Find blocking processes',),
+			registry.get_command_aliases('find_locking_processes'))
+		plugins = Path(self.plugin.__file__).resolve().parents[2]
+		provider = ContextMenuProvider(registry, ApplicationCommandRegistry(None, None, None), KeyBindings())
+		core = yaml.safe_load((plugins / 'Core/File Context Menu.yaml').read_text(encoding='utf-8'))
+		self.assertEqual([], provider.load([entry for entry in core if entry.get('id') == 'properties'
+			or entry.get('command') in registry.get_commands()], '', provider.FILE_CONTEXT))
+		own = yaml.safe_load((plugins / 'ProcessPane/File Context Menu.yaml').read_text(encoding='utf-8'))
+		self.assertEqual([], provider.load(own, '', provider.FILE_CONTEXT))
+		url = 'file://C:/work/report.docx'
+		for location, selected, expected in (
+				('file://C:/work', [], ['P&roperties', 'Find &blocking processes']),
+				('file://C:/work', [url, 'file://C:/work/other.txt'], ['P&roperties']),
+				('process://', [], ['P&roperties'])):
+			with self.subTest(location=location, selected=selected):
+				widget = Mock()
+				widget.get_location.return_value = location
+				widget.get_selected_files.return_value = selected
+				widget.get_file_under_cursor.return_value = url
+				pane = DirectoryPane(None, widget, registry)
+				self.assertEqual(expected, [entry[0] for entry in provider.get_context_menu(pane, url)])

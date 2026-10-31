@@ -64,6 +64,9 @@ See [QuickView](tools.md#quickview), [Directory Size](tools.md#directory-size), 
 - Rename a filtered, ordered group with [Batch File Renamer](tools.md#batch-file-renamer).
 - Edit file and folder attributes, optionally recursively, with
   [Edit attributes](tools.md#edit-attributes).
+- See which processes keep a file or folder in use with
+  [Find blocking processes](tools.md#find-blocking-processes), without
+  assuming that every reported user blocks rename or delete.
 - Copy or move with [Robocopy](tools.md#robocopy) as an alternative to F5/F6,
   using its different native overwrite and skip policies.
 

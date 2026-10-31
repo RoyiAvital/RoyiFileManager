@@ -4639,6 +4639,7 @@ class ProcessPaneIT(QtIT):
 		from fman.impl.plugins.builtin import NullFileSystem, NullColumn
 		from fman.impl.plugins.command_registry import ApplicationCommandRegistry, PaneCommandRegistry
 		from fman.impl.plugins.config import Config
+		from fman.impl.plugins.context_menu import ContextMenuProvider
 		from fman.impl.plugins.key_bindings import KeyBindings
 		from fman.impl.plugins.mother_fs import MotherFileSystem
 		from fman.impl.plugins.plugin import ExternalPlugin, FileSystemWrapper
@@ -4678,7 +4679,8 @@ class ProcessPaneIT(QtIT):
 		self.assertEqual([], bindings.load(binding))
 		config = Config()
 		context = Mock()
-		plugin = ExternalPlugin(str(plugins / 'ProcessPane'), config, Mock(), Mock(), context,
+		self.menus = ContextMenuProvider(commands, applications, bindings)
+		plugin = ExternalPlugin(str(plugins / 'ProcessPane'), config, Mock(), Mock(), self.menus,
 			self.errors, applications, commands, bindings, self.filesystem, Mock())
 		self.support = PluginSupport(lambda path: plugin, applications, bindings, context, config)
 		self.plugin_path = str(plugins / 'ProcessPane')
@@ -4743,6 +4745,38 @@ class ProcessPaneIT(QtIT):
 			QKeyEvent(QEvent.KeyPress, Qt.Key_F8, Qt.NoModifier)))
 		self.assertTrue(self.finished.wait(5), 'F8 command did not finish')
 		self.drain(self.panes[index])
+		self.errors.report.assert_not_called()
+
+	def test_find_locking_processes_from_file_context_menu(self):
+		from fman.url import as_url
+		from unittest.mock import patch
+		import subprocess
+		import sys
+		sample = as_url(self.root / 'sample.txt')
+		self.navigate_processes()
+		captions = lambda index: [entry[0] for entry in self.menus.get_context_menu(self.public_panes[index], sample)]
+		self.assertEqual(['Find &blocking processes'], captions(1))
+		self.assertEqual([], captions(0))
+		child = subprocess.Popen([sys.executable, '-c', 'import _winapi, sys; '
+			'_winapi.CreateFile(sys.argv[1], 0x80000000, 0, 0, 3, 0, 0); print("ready", flush=True); sys.stdin.read(1)',
+			str(self.root / 'sample.txt')], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+		try:
+			self.assertEqual('ready', child.stdout.readline().strip())
+			with patch('process_pane.show_quick_table') as table:
+				self.finished.clear()
+				self.public_panes[1].run_command('find_locking_processes')
+				self.assertTrue(self.finished.wait(10), 'Find blocking processes did not finish')
+			arguments = table.call_args.kwargs
+			self.assertEqual('Processes using sample.txt', arguments['title'])
+			self.assertIs(self.public_panes[1], arguments['pane'])
+			row, = arguments['rows']
+			self.assertEqual((child.pid, 'sample.txt'), row.cells[1:3])
+			self.assertTrue((self.root / 'sample.txt').samefile(row.targets[2]))
+		finally:
+			child.kill()
+			child.wait(timeout=5)
+			child.stdin.close()
+			child.stdout.close()
 		self.errors.report.assert_not_called()
 
 	def test_real_registry_filter_sort_reload_and_f8(self):
