@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.20.0] - 2026-10-31
 
-This release adds the **Edit attributes** plug-in for files and folders.  
+The release adds the **Edit attributes** plug-in for files and folders.  
 A simple, keyboard driven list sets the attributes of several items at once, optionally
 recursively. It is built as a plug-in on the public API.  
 It showcases a new UI element, `QuickCheckList`, which sets a state for each item in a list.
