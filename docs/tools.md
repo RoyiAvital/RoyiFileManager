@@ -429,6 +429,54 @@ Case-only renames and swapping occupied names are not supported.
 
 See [availability and further details](https://github.com/RoyiAvital/RoyiFileManager/tree/main/plugins/BatchFileRenamer).
 
+## Edit Attributes
+
+Select files or folders in a local pane and choose **Edit attributes...** from
+the file context menu, or run **Edit attributes** from Command Center
+(++ctrl+shift+p++). With no selection, it uses the item under the cursor.
+
+The list shows Read-only, Hidden, System, Archive, Not content indexed and
+Temporary. A mixed box means the chosen items differ.
+
+<figure class="product-shot" markdown>
+  ![Edit attributes for two files and a folder: Read-only set on, Archive and Not content indexed mixed, Temporary unavailable](assets/royifilemanager-edit-attributes.png)
+  <figcaption>Read-only is set on (1 changed). Archive and Not content indexed are mixed; Temporary is unavailable because a folder is chosen.</figcaption>
+</figure>
+
+| Key                | Action                                                   |
+| ------------------ | -------------------------------------------------------- |
+| ++space++          | Next state; mixed returns only where it started          |
+| ++shift+space++    | Previous state                                           |
+| ++enter++          | Apply the changes to the chosen items                    |
+| ++shift+enter++    | With a folder chosen: apply recursively to its contents  |
+| ++esc++            | Cancel                                                   |
+
+Only the attributes you changed are written; if nothing changed, nothing is
+written. Recursive runs skip links and junctions instead of following them.
+Panes showing affected folders refresh. Failures are listed at the end.
+
+### Design Decisions
+
+| Decision                     | Behavior                                                                                                         | Why                                                                         |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Changed attributes only      | Unchanged attributes and other bits are never written, also inside folders.                                      | Every write is one the user asked for.                                      |
+| No change, no operation      | If the final states equal the starting states, nothing runs, for ++enter++ and ++shift+enter++ alike.            | Opening and confirming must be safe.                                        |
+| Recursion on approval        | ++shift+enter++ applies recursively; it is offered only when a folder is chosen.                                 | One dialog, no extra prompt.                                                |
+| Static state                 | Attributes are read once: chosen items at start, folder contents while walking. Nothing is re-read before writing. | Simple and predictable; concurrent changes by other programs are the user's responsibility. |
+| Links and junctions          | Rejected when chosen; skipped, never followed, inside folders.                                                   | No loops and no changes outside the chosen folders.                         |
+| Mixed is a starting state    | A mixed box can return to mixed (unchanged) but never becomes mixed otherwise.                                   | Mixed means "leave each item as it is".                                     |
+| Failures do not stop the run | Up to 1,000 failures are listed at the end; the rest are counted.                                               | One locked file should not block the others.                                |
+
+Limitations:
+- Attributes are read when the command starts. Changes made by other programs
+  during the run are overwritten.
+- To give items inside a folder an attribute the folder already has, set it off
+  and then on in two runs, or select those items.
+- Temporary applies to files only. Windows stores Read-only on folders but does
+  not enforce it. Compressed, Encrypted and UNC paths are not supported.
+
+See [further details](https://github.com/RoyiAvital/RoyiFileManager/tree/main/plugins/FileAttributesEditor).
+
 ## Robocopy
 
 Use Windows' multithreaded Robocopy for large folder trees, batches of files or

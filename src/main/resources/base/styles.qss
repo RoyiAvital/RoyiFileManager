@@ -44,9 +44,18 @@ Panel QPushButton:disabled, Panel QComboBox:disabled {
 	color: palette(mid);
 }
 
-QuickList QLineEdit {
+QuickList QLineEdit, QuickCheckList QLineEdit {
 	padding: 5px;
 	border: 1px solid palette(mid);
+}
+
+QuickCheckList #quick-check-list-status {
+	border-top: 1px solid #4d4d4d;
+}
+
+QuickCheckList #quick-check-list-status QLabel {
+	color: #8f908a;
+	font-size: 8pt;
 }
 
 #plugin-tool-window {
@@ -268,7 +277,7 @@ Prompt QLineEdit {
 	min-width: 20em;
 }
 
-Quicksearch, QuickList {
+Quicksearch, QuickList, QuickCheckList {
 	background-color: #404040;
 }
 
@@ -287,7 +296,7 @@ Quicksearch #query-container > Div {
 	border: 1px solid #2c2c2c;
 }
 
-Quicksearch QLineEdit, QuickList QLineEdit {
+Quicksearch QLineEdit, QuickList QLineEdit, QuickCheckList QLineEdit {
 	color: #1d1d1d;
 	background-color: #e6e6e6;
 	border: 1px solid #dddddd;
@@ -307,11 +316,11 @@ Quicksearch QListView {
 	margin-right: 4px;
 }
 
-QuickList QListView {
+QuickList QListView, QuickCheckList QListView {
 	background-color: #404040;
 }
 
-Quicksearch QListView::item:selected {
+Quicksearch QListView::item:selected, QuickCheckList QListView::item:selected {
 	background-color: #575757;
 }
 

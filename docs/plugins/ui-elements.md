@@ -15,6 +15,7 @@ The elements aim for a _buttonless_ experience:
 | ------------------------------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------- |
 | [QuickSearch](#quicksearch)     | Picking a **single** item from a fuzzy-searched text list                                       | The chosen item                               |
 | [QuickList](#quicklist)         | Navigating, sorting and selecting **multiple** items in a fuzzy-searched text list              | The chosen IDs; a handle drives the open list |
+| [QuickCheckList](#quickchecklist) | Setting a **state per item** (checkbox, tri-state or star) over a fixed list                  | The changed states and the approval           |
 | [QuickTable](#quicktable)       | Narrowing a predefined, immutable table with typed columns, per-column filters and fuzzy search | The remaining (visible) rows                  |
 | [QuickBoard](#quickboard)       | Composing one string with a caller-generated typed preview                                      | The exact string and approval/cancellation    |
 | [Panel](#panel)                 | Operation controls and actions docked above the status bar                                      | Values and actions delivered to callbacks     |
@@ -24,6 +25,8 @@ The elements aim for a _buttonless_ experience:
   closes with the item under the cursor.
 - **QuickList** extends that to many items. The current item and the selected
   set are independent, and selections survive filtering.
+- **QuickCheckList** looks like QuickSearch with a state indicator on the left.
+  ++enter++ and ++shift+enter++ approve with meanings the caller defines.
 - **QuickTable** is for results with structure: names, paths, sizes and dates.
   The user narrows the rows down; the caller receives what remains.
   ++ctrl+enter++ is a _Go To_ shortcut on a name or path cell.
@@ -34,7 +37,8 @@ The elements aim for a _buttonless_ experience:
 - **OutputTextBox** shows a computed text, such as a hash, ready to copy.
 
 New plug-ins should prefer the Qt-free services: `show_quicksearch`,
-`show_quick_list`, `show_quick_table`, `show_quick_board` and `show_panel`. OutputTextBox is a Qt
+`show_quick_list`, `show_quick_check_list`, `show_quick_table`, `show_quick_board`
+and `show_panel`. OutputTextBox is a Qt
 widget hosted in a tool window.
 
 ## QuickSearch
@@ -192,6 +196,76 @@ The `QuickListHandle` drives the open list from any thread:
 | `focus()`            | Raises the list.                                                          |
 | `close(result=None)` | Closes it; `result` is `None` or a tuple of current IDs.                  |
 | `is_open`            | `False` after close.                                                      |
+
+## QuickCheckList
+
+<figure class="product-shot" markdown>
+  ![QuickCheckList in Edit attributes with checkbox3 states](../assets/royifilemanager-edit-attributes.png)
+  <figcaption>The Edit attributes command is a QuickCheckList with the <code>checkbox3</code> preset.</figcaption>
+</figure>
+
+A modal, frameless list for setting a state per item, such as file attributes.
+Rows look like QuickSearch rows with a state indicator on the left. The list is
+fixed while the window is open.
+
+```python
+show_quick_check_list(*, items, states='checkbox', title='', summary='', status='',
+    filter=None, alternate=False) -> CheckListResult
+CheckListItem(id, title, state, hint='', description='', enabled=True)
+CheckListResult(changed, approval)
+```
+
+- `items`: 1-1,000 `CheckListItem` records with unique IDs. `state` is the
+  starting state. Disabled items are dimmed and never change.
+- `states`: a preset.
+
+  | Preset      | States                            | Look                                      |
+  | ----------- | --------------------------------- | ----------------------------------------- |
+  | `checkbox`  | `off`, `on`                       | Olive outline / orange box with a check   |
+  | `checkbox3` | `off`, `on`, `mixed` (start-only) | As `checkbox`; mixed is a brown box       |
+  | `star`      | `empty`, `filled`                 | Olive outline / orange star               |
+
+  `mixed` is reachable only on items that started mixed.
+- `title`, `summary`: the draggable header and an optional secondary line.
+  Both, like `status`, show as one elided line with the full text in a tooltip.
+- `status`: caller text on the left of the bottom status bar, typically the key
+  labels. The right side counts the changed items.
+- `filter`: `'fuzzy'` shows a filter box; `None` (default) hides it.
+- `alternate`: whether ++shift+enter++ approves.
+
+```python
+from fman import DirectoryPaneCommand, show_status_message
+from fman.ui import CheckListItem, show_quick_check_list
+
+
+class PickFlags(DirectoryPaneCommand):
+    def __call__(self):
+        changed, approval = show_quick_check_list(
+            items=(CheckListItem('hidden', 'Hidden', 'mixed', 'H'),
+                CheckListItem('readonly', 'Read-only', 'off', 'R')),
+            states='checkbox3', title='Flags',
+            status='Enter: Apply · Shift+Enter: Apply recursively', alternate=True)
+        if approval is not None and changed:
+            show_status_message('%s: %r' % (approval, changed))
+```
+
+`changed` maps item IDs to final states, for changed items only. `approval` is
+`'primary'` (++enter++), `'alternate'` (++shift+enter++) or `None` (++esc++,
+window or main-window close); a cancelled result still carries the changes.
+The caller defines what each approval means. The call blocks: on a worker it
+waits; on the Qt thread it runs a nested loop.
+
+| Key                                | Action                                       |
+| ---------------------------------- | -------------------------------------------- |
+| ++space++ / click on the indicator | Next state                                   |
+| ++shift+space++                    | Previous state                               |
+| ++insert++                         | Next state, then move down                   |
+| ++up++ / ++down++ in the filter    | Move into the list                           |
+| ++enter++ / ++shift+enter++        | Primary / alternate approval                 |
+| ++esc++                            | Cancel                                       |
+
+The indicator colors come from the `.quickchecklist-state`,
+`.quickchecklist-state-active` and `.quickchecklist-state-mark` theme selectors.
 
 ## QuickBoard
 

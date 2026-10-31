@@ -113,7 +113,7 @@ class BuildNamingTest(TestCase):
 					'_require_windows': Mock(), '_ensure_7za': Mock(),
 					'_ensure_everything': Mock(), '_verify_native_parser': Mock(),
 					'_ensure_conda_lock': Mock(), '_remove_previous_freeze': Mock(),
-					'_copy_dependency_manifests': Mock()
+					'_copy_dependency_manifests': Mock(), '_verify_bundled_plugins': Mock()
 				}), patch('subprocess.run') as execute:
 					build['freeze']()
 				arguments = execute.call_args.args[0]
@@ -137,7 +137,8 @@ class BuildNamingTest(TestCase):
 			with patch.dict(build['package'].__globals__, {
 				'_require_windows': Mock(), '_copy_dependency_manifests': Mock(),
 				'_verify_everything': Mock(), '_verify_native_parser_packaged': Mock(),
-				'_verify_pdf_helper_packaged': Mock(), '_verify_csv_helper_packaged': Mock()
+				'_verify_pdf_helper_packaged': Mock(), '_verify_csv_helper_packaged': Mock(),
+				'_verify_bundled_plugins': Mock()
 			}), patch('builtins.print') as output:
 				build['package']()
 			archive = root / 'target/RfmRenameProbe-9.8.7-windows-x86_64.zip'
@@ -191,6 +192,43 @@ class NativeParserPackagingTest(TestCase):
 				patch.object(build, '_sha256') as digest, self.assertRaises(SystemExit):
 			build._verify_native_parser_packaged()
 		digest.assert_not_called()
+
+
+class BundledPluginsPackagingTest(TestCase):
+	def test_spec_lists_every_bundled_plugin(self):
+		import build
+		with patch('PyInstaller.utils.hooks.collect_all', return_value=([], [], [])):
+			spec = runpy.run_path(str(build.ROOT / 'application.spec'), init_globals={
+				'SPECPATH': str(build.ROOT), 'Analysis': Mock(), 'PYZ': Mock(), 'EXE': Mock(), 'COLLECT': Mock()})
+		plugins = sorted(path.name for path in (build.ROOT / 'plugins').iterdir() if path.is_dir())
+		self.assertIn('FileAttributesEditor', plugins)
+		for name in plugins:
+			self.assertIn(('plugins/' + name, 'resources/Plugins/' + name), spec['datas'])
+
+	def test_frozen_plugins_must_match_their_sources(self):
+		import build
+		with TemporaryDirectory() as temporary:
+			root = Path(temporary)
+			source = root / 'plugins/Sample/sample'
+			source.mkdir(parents=True)
+			(source / '__init__.py').write_bytes(b'command')
+			(source / '__pycache__').mkdir()
+			(source / '__pycache__/__init__.pyc').write_bytes(b'cache')
+			packaged = root / 'frozen/_internal/resources/Plugins/Sample/sample/__init__.py'
+			with patch.object(build, 'ROOT', root), patch.object(build, 'DIST_DIR', root / 'frozen'):
+				for content in (None, b'other'):
+					with self.subTest(content=content):
+						if content is not None:
+							packaged.parent.mkdir(parents=True, exist_ok=True)
+							packaged.write_bytes(content)
+						with self.assertRaisesRegex(SystemExit, 'plugins/Sample'):
+							build._verify_bundled_plugins()
+				packaged.write_bytes(b'command')
+				build._verify_bundled_plugins()
+				for path in (root / 'plugins').iterdir():
+					shutil.rmtree(path)
+				with self.assertRaisesRegex(SystemExit, 'No bundled plug-ins'):
+					build._verify_bundled_plugins()
 
 
 class PdfHelperPackagingTest(TestCase):
@@ -337,6 +375,7 @@ class PdfHelperPackagingTest(TestCase):
 				patch.object(build, '_require_windows'), \
 				patch.object(build, '_verify_everything'), \
 				patch.object(build, '_verify_native_parser_packaged'), \
+				patch.object(build, '_verify_bundled_plugins'), \
 				patch.object(build, '_verify_pdf_helper_packaged',
 					side_effect=SystemExit('Packaged PDF helper failed')) as verify, \
 				patch.object(build, '_copy_dependency_manifests') as manifests, \

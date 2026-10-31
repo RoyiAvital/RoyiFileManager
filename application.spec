@@ -27,6 +27,7 @@ checksum_native_destination = 'resources/Plugins/ChecksumFiles/checksum_files/_v
 datas = [
 	('src/main/resources/base', 'resources'),
 	('plugins/BatchFileRenamer', 'resources/Plugins/BatchFileRenamer'),
+	('plugins/FileAttributesEditor', 'resources/Plugins/FileAttributesEditor'),
 	('src/AppMeta.json', 'resources/build-settings'),
 	('src/main/resources/windows', 'resources'),
 	('src/main/icons/Icon.ico', 'resources'),

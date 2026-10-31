@@ -140,10 +140,32 @@ class MotherFileSystemTest(TestCase):
 		self.assertTrue(mother_fs.is_dir('stub://dir'))
 		mother_fs.move('stub://a/b', 'stub://a/../b')
 		self.assertTrue(mother_fs.exists('stub://b'))
+	def test_notify_file_changed_clears_cached_children_before_callbacks(self):
+		fs = ValuesFileSystem({'folder/file': 'old'})
+		mother_fs = self._create_mother_fs(fs)
+		url = 'values://folder/file'
+		self.assertEqual('old', mother_fs.query(url, 'stat'))
+		fs.values['folder/file'] = 'new'
+		self.assertEqual('old', mother_fs.query(url, 'stat'))
+		seen = []
+		mother_fs.add_file_changed_callback('values://folder', lambda _: seen.append(mother_fs.query(url, 'stat')))
+		mother_fs.notify_file_changed('values://folder')
+		self.assertEqual(['new'], seen)
 	def _create_mother_fs(self, fs):
 		result = MotherFileSystem()
 		result.add_child(fs.scheme, fs)
 		return result
+
+class ValuesFileSystem(FileSystem):
+
+	scheme = 'values://'
+
+	def __init__(self, values):
+		super().__init__()
+		self.values = values
+	@cached
+	def stat(self, path):
+		return self.values[path]
 
 class FileSystemCountingIsdirCalls(FileSystem):
 

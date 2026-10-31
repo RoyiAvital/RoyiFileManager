@@ -1,0 +1,3 @@
+# Adds Edit attributes... after Properties in the file context menu.
+- {caption: '-', id: properties}
+- {command: edit_attributes, caption: Edit &attributes...}

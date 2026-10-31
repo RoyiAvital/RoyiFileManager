@@ -10649,6 +10649,208 @@ class QuickListServiceIT(QtIT):
 		self.run_in_app(self.main.close)
 		self.assertIsNone(self.finish(thread, results))
 
+class QuickCheckListFixture(QtIT):
+	def setUp(self):
+		from unittest.mock import Mock, patch
+		from fman.impl.widgets import MainWindow
+		def create():
+			main = MainWindow(Mock(), Mock(), Mock(), Mock(), 'null://')
+			main._theme.get_quicksearch_item_css.return_value = None
+			main.resize(960, 600)
+			main.show()
+			return main
+		self.main = self.run_in_app(create)
+		window_patch = patch('fman.impl.ui.quick_check_list._main_window', return_value=self.main)
+		window_patch.start()
+		self.addCleanup(window_patch.stop)
+
+	def tearDown(self):
+		def dispose():
+			self.main.close()
+			self.main.deleteLater()
+		self.run_in_app(dispose)
+
+	def items(self):
+		from fman.ui import CheckListItem
+		return (CheckListItem('r', 'Read-only', 'mixed', 'R', 'Prevent changes'),
+			CheckListItem('h', 'Hidden', 'off', 'H', 'Hide the item'),
+			CheckListItem('t', 'Temporary', 'off', 'T', 'Files only', enabled=False))
+
+	def find_window(self):
+		from fman.impl.ui.quick_check_list import QuickCheckListWindow
+		from time import monotonic, sleep
+		deadline = monotonic() + 5
+		while monotonic() < deadline:
+			windows = self.run_in_app(lambda: [widget for widget in QApplication.topLevelWidgets()
+				if isinstance(widget, QuickCheckListWindow) and widget.isVisible()])
+			if windows:
+				return windows[-1]
+			sleep(.02)
+		self.fail('No QuickCheckList window opened')
+
+	def open(self, **arguments):
+		"""Run show_quick_check_list on its own worker; return (window, results, thread)."""
+		from fman.ui import show_quick_check_list
+		from threading import Thread
+		results = []
+		arguments.setdefault('items', self.items())
+		arguments.setdefault('states', 'checkbox3')
+		thread = Thread(target=lambda: results.append(show_quick_check_list(**arguments)), daemon=True)
+		thread.start()
+		return self.find_window(), results, thread
+
+	def finish(self, thread, results):
+		thread.join(5)
+		self.assertFalse(thread.is_alive())
+		return results[0]
+
+	def key(self, window, key, modifiers=Qt.NoModifier):
+		from PyQt5.QtTest import QTest
+		def press():
+			window.list.view.setFocus()
+			QTest.keyClick(window.list.view, key, modifiers)
+		self.run_in_app(press)
+
+class QuickCheckListIT(QuickCheckListFixture):
+	def test_keys_cycle_states_and_enter_approves(self):
+		window, results, thread = self.open(title='Attributes', status='Enter: Apply')
+		self.assertTrue(self.run_in_app(lambda: window.windowFlags() & Qt.FramelessWindowHint))
+		self.assertEqual('Attributes', self.run_in_app(window.list.header.text))
+		self.assertEqual('Enter: Apply', self.run_in_app(lambda: window.list.status.content))
+		self.assertFalse(self.run_in_app(window.list.query.isVisible))
+		count = lambda: self.run_in_app(window.list.count.text)
+		self.assertEqual('0 changed', count())
+		tooltip = lambda row: self.run_in_app(lambda: window.list.model.index(row, 0).data(Qt.ToolTipRole))
+		self.assertEqual('Read-only: Mixed', tooltip(0))
+		self.key(window, Qt.Key_Space)
+		self.assertEqual(('Read-only: Off', '1 changed'), (tooltip(0), count()))
+		self.key(window, Qt.Key_Space)
+		self.key(window, Qt.Key_Space)
+		self.assertEqual(('Read-only: Mixed', '0 changed'), (tooltip(0), count()))
+		self.key(window, Qt.Key_Space, Qt.ShiftModifier)
+		self.assertEqual('Read-only: On', tooltip(0))
+		self.key(window, Qt.Key_Down)
+		self.key(window, Qt.Key_Insert)
+		self.assertEqual(2, self.run_in_app(lambda: window.list.view.currentIndex().row()))
+		self.key(window, Qt.Key_Space)
+		self.assertEqual(('Temporary: Off', '2 changed'), (tooltip(2), count()))
+		self.assertIn('unavailable', self.run_in_app(lambda: window.list.model.index(2, 0).data(Qt.AccessibleTextRole)))
+		self.key(window, Qt.Key_Return)
+		self.assertEqual(({'r': 'on', 'h': 'on'}, 'primary'), self.finish(thread, results))
+
+	def test_shift_enter_needs_alternate_and_escape_returns_changes(self):
+		window, results, thread = self.open()
+		self.key(window, Qt.Key_Space)
+		self.key(window, Qt.Key_Return, Qt.ShiftModifier)
+		self.assertTrue(self.run_in_app(window.isVisible))
+		self.key(window, Qt.Key_Escape)
+		changed, approval = self.finish(thread, results)
+		self.assertEqual(({'r': 'off'}, None), (changed, approval))
+		window, results, thread = self.open(alternate=True)
+		self.key(window, Qt.Key_Return, Qt.ShiftModifier)
+		self.assertEqual(({}, 'alternate'), self.finish(thread, results))
+
+	def test_filter_keeps_states_and_clicks_cycle_only_on_the_indicator(self):
+		from PyQt5.QtCore import QPoint
+		from PyQt5.QtTest import QTest
+		window, results, thread = self.open(filter='fuzzy')
+		self.run_in_app(window.list.query.setText, 'hd')
+		titles = lambda: self.run_in_app(lambda: [row.item.title for row in window.list.model.rows])
+		self.assertEqual(['Hidden'], titles())
+		self.assertEqual((0, 2), self.run_in_app(lambda: window.list.model.rows[0].matches))
+		self.run_in_app(QTest.keyClick, window.list.query, Qt.Key_Down)
+		self.assertIs(window.list.view, self.run_in_app(QApplication.focusWidget))
+		self.key(window, Qt.Key_Space)
+		self.run_in_app(window.list.query.setText, '')
+		self.assertEqual(['Read-only', 'Hidden', 'Temporary'], titles())
+		self.assertEqual('1 changed', self.run_in_app(window.list.count.text))
+		def click(x):
+			view = window.list.view
+			rect = view.visualRect(view.model().index(0, 0))
+			QTest.mouseClick(view.viewport(), Qt.LeftButton, Qt.NoModifier, QPoint(rect.left() + x, rect.top() + 8))
+			return view.model().index(0, 0).data(Qt.ToolTipRole)
+		self.assertEqual('Read-only: Off', self.run_in_app(click, 10))
+		self.assertEqual('Read-only: Off', self.run_in_app(click, 150))
+		self.run_in_app(QTest.keyClick, window.list.query, Qt.Key_Return)
+		self.assertEqual(({'r': 'off', 'h': 'on'}, 'primary'), self.finish(thread, results))
+
+	def test_presets_paint_theme_colors(self):
+		from fman.ui import CheckListItem
+		def colors(window, offset):
+			view = window.list.view
+			image = view.viewport().grab().toImage()
+			ratio = image.devicePixelRatio()
+			result = []
+			for row in range(view.model().rowCount()):
+				box = view.itemDelegate().indicator_rect(view.visualRect(view.model().index(row, 0)), view.font())
+				size = box.height() * .75 * offset
+				point = box.center() - type(box.center())(size, size)
+				color = image.pixelColor(int(point.x() * ratio), int(point.y() * ratio))
+				result.append((color.red(), color.green(), color.blue()))
+			return result
+		def near(color, expected):
+			return all(abs(a - b) <= 16 for a, b in zip(color, expected))
+		orange, brown = (0xf6, 0x8f, 0x33), (0x3c, 0x3a, 0x2d)
+		items = (CheckListItem('a', 'A', 'on'), CheckListItem('b', 'B', 'mixed'), CheckListItem('c', 'C', 'off'))
+		window, results, thread = self.open(items=items)
+		on, mixed, off = self.run_in_app(colors, window, .3)
+		self.assertTrue(near(on, orange), on)
+		self.assertTrue(near(mixed, brown), mixed)
+		self.assertFalse(near(off, orange) or near(off, brown), off)
+		self.key(window, Qt.Key_Escape)
+		self.finish(thread, results)
+		window, results, thread = self.open(states='star', items=(CheckListItem('a', 'A', 'filled'),
+			CheckListItem('b', 'B', 'empty')))
+		filled, empty = self.run_in_app(colors, window, 0)
+		self.assertTrue(near(filled, orange), filled)
+		self.assertFalse(near(empty, orange), empty)
+		self.key(window, Qt.Key_Escape)
+		self.finish(thread, results)
+
+	def test_qt_thread_caller_main_window_close_and_invalid_input(self):
+		from fman.impl.ui.quick_check_list import QuickCheckListWindow
+		from fman.ui import CheckListItem, show_quick_check_list
+		from PyQt5.QtCore import QTimer
+		from PyQt5.QtTest import QTest
+		def call():
+			def approve():
+				window = next(widget for widget in QApplication.topLevelWidgets()
+					if isinstance(widget, QuickCheckListWindow) and widget.isVisible())
+				QTest.keyClick(window.list.view, Qt.Key_Return)
+			QTimer.singleShot(50, approve)
+			return show_quick_check_list(items=self.items(), states='checkbox3')
+		self.assertEqual(({}, 'primary'), self.run_in_app(call))
+		window, results, thread = self.open()
+		self.key(window, Qt.Key_Space)
+		self.run_in_app(self.main.close)
+		self.assertEqual(({'r': 'off'}, None), self.finish(thread, results))
+		with self.assertRaises(ValueError):
+			show_quick_check_list(items=(CheckListItem('a', 'A', 'mixed'),), states='checkbox')
+
+	def test_long_valid_text_stays_within_a_small_screen(self):
+		from fman.impl.ui.quick_check_list import QuickCheckListWindow
+		from fman.ui import CheckListItem
+		from PyQt5.QtCore import QRect
+		from unittest.mock import patch
+		screen = QRect(0, 0, 640, 360)
+		items = (CheckListItem('a', 'Tall', 'off', description='x\u2028' * 200),) + self.items()
+		with patch.object(QuickCheckListWindow, 'available_geometry', return_value=screen):
+			window, results, thread = self.open(items=items, title='W' * 512, summary='S\n' * 100,
+				status='Esc: Cancel\nEnter: Apply', filter='fuzzy')
+		def measure():
+			view, inner = window.list.view, window.list.rect()
+			reachable = all(widget.isVisible() and inner.contains(widget.geometry())
+				for widget in (window.list.header, window.list.query, window.list.status.parentWidget()))
+			return (window.width(), window.height(), reachable, window.list.header.text() != 'W' * 512,
+				window.list.header.content == 'W' * 512, window.list.summary.content.count('\n'),
+				view.verticalScrollBar().maximum() > 0, view.height() > 0)
+		width, height, reachable, elided, content, newlines, scrollable, shown = self.run_in_app(measure)
+		self.assertLessEqual(width, screen.width())
+		self.assertLessEqual(height, screen.height())
+		self.assertEqual((True, True, True, 0, True, True), (reachable, elided, content, newlines, scrollable, shown))
+		self.key(window, Qt.Key_Escape)
+		self.finish(thread, results)
+
 class QuickListLimitIT(QtIT):
 	"""Opt-in: set QUICKLIST_BENCHMARK=1. Limits are ~4x the first native measurement (68/24/23 ms)."""
 

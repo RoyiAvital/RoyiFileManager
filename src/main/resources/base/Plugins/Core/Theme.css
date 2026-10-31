@@ -48,6 +48,19 @@ th {
 	color: #8f908a;
 }
 
+/* QuickCheckList state indicators: olive outline, orange fill, brown mark. */
+.quickchecklist-state {
+	color: #75715e;
+}
+
+.quickchecklist-state-active {
+	color: #f68f33;
+}
+
+.quickchecklist-state-mark {
+	color: #3c3a2d;
+}
+
 * {
 	font-family: "Roboto Bold";
 }

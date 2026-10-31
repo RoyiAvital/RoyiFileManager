@@ -1,5 +1,13 @@
 from collections import OrderedDict
 from fman.impl.util.css import parse_css, CSSEngine, CSSParseError
+from PyQt5.QtGui import QColor
+
+# QuickCheckList indicator colors: key, selector, default. Themes may omit them.
+CHECK_COLORS = (
+	('state', '.quickchecklist-state', '#75715e'),
+	('active', '.quickchecklist-state-active', '#f68f33'),
+	('mark', '.quickchecklist-state-mark', '#3c3a2d'),
+)
 
 class Theme:
 
@@ -8,8 +16,9 @@ class Theme:
 		'th': 'QTableView QHeaderView::section',
 		'.statusbar': 'QStatusBar, QStatusBar QLabel',
 		'.statusbar-pane': 'PaneStatusWidget, PaneStatusWidget QLabel',
-		'.quicksearch-query': 'Quicksearch QLineEdit, QuickList QLineEdit',
-		'.quicksearch-item': 'Quicksearch QListView::item, QuickList QListView::item',
+		'.quicksearch-query': 'Quicksearch QLineEdit, QuickList QLineEdit, QuickCheckList QLineEdit',
+		'.quicksearch-item': 'Quicksearch QListView::item, QuickList QListView::item, '
+			'QuickCheckList QListView::item',
 		'.panel': '#panel',
 		'.bottom-panel': '#panel',
 		'.plugin-panel-dock': '#plugin-panel-dock',
@@ -97,6 +106,10 @@ class Theme:
 				),
 				'color':
 					engine.parse_color('.quicksearch-item-description', 'color')
+			},
+			'check': {
+				key: _optional_color(engine, selector, default)
+				for key, selector, default in CHECK_COLORS
 			}
 		}
 	def _css_rule_to_qss(self, rule):
@@ -121,6 +134,12 @@ class Theme:
 			return
 		qss = self._qss_base + ''.join(self._extra_qss_from_css.values())
 		self._app.set_style_sheet(qss)
+
+def _optional_color(engine, selector, default):
+	try:
+		return engine.parse_color(selector, 'color')
+	except ValueError:
+		return QColor(default)
 
 class ThemeError(Exception):
 	@property

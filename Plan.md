@@ -41,6 +41,7 @@
 - [Favorites 003: Favorites as a Pane Location (superseded)](Done/Favorites003.md)
 - [Favorites 004: Favorites Manager on QuickList](Done/Favorites004.md)
 - [File and Folder Comparators](Done/FileAndFolderComparators.md)
+- [File Attributes Editor 001](Done/FileAttributesEditor001.md)
 - [File Operations 001: Large-Selection Copy Startup](Done/FileOperations001.md)
 - [File Operations 002: Robocopy Plug-In](Done/FileOperations002.md)
 - [File System and Pane Architecture 001: Columnar Snapshots](Done/FSPaneArch001.md)
@@ -79,4 +80,5 @@
 - [UI Elements 001: QuickTable](Done/UIElements001.md)
 - [UI Elements 002: QuickList](Done/UIElements002.md)
 - [UI Elements 003: QuickBoard](Done/UIElements003.md)
+- [UI Elements 004: QuickCheckList](Done/UIElements004.md)
 - [Unpack Archive](Done/UnpackArchive.md)

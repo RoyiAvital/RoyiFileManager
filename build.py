@@ -502,6 +502,7 @@ def freeze():
 		],
 		check=True, cwd=ROOT, env=_environment()
 	)
+	_verify_bundled_plugins()
 	(DIST_DIR / 'UserSettings').mkdir(exist_ok=True)
 	_copy_dependency_manifests()
 
@@ -527,6 +528,7 @@ def package():
 		raise SystemExit('Run `python build.py freeze` first.')
 	_verify_everything(DIST_DIR / '_internal/resources/Plugins/Everything/bin')
 	_verify_native_parser_packaged()
+	_verify_bundled_plugins()
 	_verify_pdf_helper_packaged()
 	_verify_csv_helper_packaged()
 	_copy_dependency_manifests()
@@ -555,6 +557,20 @@ def _verify_native_parser_packaged():
 	expected = _sha256(NATIVE_PARSER_BINARY)
 	if expected is None or _sha256(packaged) != expected:
 		raise SystemExit(f'{packaged} is missing or differs from {NATIVE_PARSER_BINARY}.')
+
+
+def _verify_bundled_plugins():
+	"""Every plug-in under plugins/ is frozen into resources/Plugins with identical files."""
+	sources = sorted(path for path in (ROOT / 'plugins').iterdir() if path.is_dir())
+	if not sources:
+		raise SystemExit(f'No bundled plug-ins found under {ROOT / "plugins"}.')
+	for source in sources:
+		files = [path for path in source.rglob('*') if path.is_file() and '__pycache__' not in path.parts]
+		for path in files:
+			packaged = DIST_DIR / '_internal/resources/Plugins' / source.name / path.relative_to(source)
+			if _sha256(packaged) != _sha256(path):
+				raise SystemExit(f'{packaged} is missing or differs from {path}. '
+					f'List plugins/{source.name} in the application.spec datas.')
 
 
 def _pdf_smoke_fixture(sizes=((200, 200), (300, 150)), rotation=0):

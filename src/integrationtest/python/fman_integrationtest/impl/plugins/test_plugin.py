@@ -87,6 +87,7 @@ class BundledCommandCategoryTest(TestCase):
 		root = Path(__file__).resolve().parents[6]
 		plugin_dirs = sorted((root / 'src/main/resources/base/Plugins').iterdir())
 		plugin_dirs.append(root / 'plugins/BatchFileRenamer')
+		plugin_dirs.append(root / 'plugins/FileAttributesEditor')
 		commands = {'TourCommand': TourCommand, 'ToggleFullscreen': ToggleFullscreen}
 		path_before = list(sys.path)
 		self.addCleanup(setattr, sys, 'path', path_before)
@@ -293,6 +294,104 @@ class BatchFileRenamerPluginIT(qt_tests.QuickBoardFixture):
 					self.assertTrue(finished.wait(5))
 					pane.select.assert_called_once_with((as_url(files / expected_name),))
 					self.assertFalse(callbacks)
+			finally:
+				fixture._plugin.unload()
+
+
+class FileAttributesEditorPluginIT(qt_tests.QuickCheckListFixture):
+	def test_installed_command_applies_and_publishes(self):
+		self._exercise_editor(bundled=False)
+
+	def test_spec_bundled_command_applies_and_publishes(self):
+		self._exercise_editor(bundled=True)
+
+	def _exercise_editor(self, bundled):
+		from pathlib import Path
+		from shutil import copy2, copytree
+		from tempfile import TemporaryDirectory
+		from threading import Thread
+		from unittest.mock import Mock, patch
+		from fman.fs import FileSystem
+		from fman.url import as_url
+		from PyQt5.QtCore import Qt
+		import os
+		source = Path(__file__).resolve().parents[6] / 'plugins/FileAttributesEditor'
+		fixture = ExternalPluginTest()
+		fixture.setUp()
+		self.addCleanup(fixture.tearDown)
+		with TemporaryDirectory() as directory:
+			root = Path(directory).resolve()
+			if bundled:
+				import build
+				from runpy import run_path
+				from PyInstaller.building.utils import format_binaries_and_datas
+				from fman.impl.plugins.discover import find_plugin_dirs
+				with patch('PyInstaller.utils.hooks.collect_all', return_value=([], [], [])):
+					specification = run_path(str(build.ROOT / 'application.spec'), init_globals={
+						'SPECPATH': str(build.ROOT), 'Analysis': Mock(), 'PYZ': Mock(), 'EXE': Mock(), 'COLLECT': Mock()})
+				data = [entry for entry in specification['datas'] if entry[1] == 'resources/Plugins/FileAttributesEditor']
+				self.assertTrue(data, 'File Attributes Editor must be included in the frozen resources')
+				for destination, origin in format_binaries_and_datas(data, workingdir=str(build.ROOT)):
+					target = root / '_internal' / destination
+					target.parent.mkdir(parents=True, exist_ok=True)
+					copy2(origin, target)
+				installed = root / '_internal/resources/Plugins/FileAttributesEditor'
+				self.assertTrue((installed / 'file_attributes_editor/engine.py').is_file())
+				self.assertIn(str(installed), find_plugin_dirs(str(root / '_internal/resources/Plugins'),
+					str(root / 'Third-party'), str(root / 'User')))
+			else:
+				installed = root / 'Third-party/FileAttributesEditor'
+				copytree(source, installed)
+			files = root / 'files'
+			for relative in ('a.txt', 'sub/c.txt', 'sub/deep/d.txt'):
+				(files / relative).parent.mkdir(parents=True, exist_ok=True)
+				(files / relative).write_text(relative, encoding='utf-8')
+			fixture._plugin._path = str(installed)
+			self.assertTrue(fixture._plugin.load(), fixture._error_handler.error_messages)
+			try:
+				self.assertIn('edit_attributes', fixture._panecmd_registry.get_commands())
+				self.assertIn({'command': 'edit_attributes', 'caption': 'Edit &attributes...'},
+					fixture._plugin._context_menu_provider._sanitized_config['file'])
+				from file_attributes_editor import EditAttributes
+				from file_attributes_editor.engine import HIDDEN, SYSTEM
+				class Silent(FileSystem):
+					scheme = 'file://'
+				mother = MotherFileSystem()
+				mother.add_child('file://', Silent())
+				calls = []
+				for name, folder in (('pane 1', files), ('pane 2', files), ('pane in sub', files / 'sub')):
+					mother.add_file_changed_callback(as_url(folder), lambda url, name=name: calls.append(name))
+				attributes = lambda relative: os.lstat(files / relative).st_file_attributes
+				def run(chosen, row, modifiers):
+					pane = Mock()
+					pane.get_path.return_value = as_url(files)
+					pane.get_selected_files.return_value = [as_url(files / name) for name in chosen]
+					calls.clear()
+					with patch('fman.fs._get_mother_fs', return_value=mother), \
+							patch('fman.submit_task', side_effect=lambda task: task()), \
+							patch('fman.show_status_message') as status, patch('fman.show_alert') as alert:
+						thread = Thread(target=EditAttributes(pane), daemon=True)
+						thread.start()
+						window = self.find_window()
+						for _ in range(row):
+							self.key(window, Qt.Key_Down)
+						self.key(window, Qt.Key_Space)
+						self.key(window, Qt.Key_Return, modifiers)
+						thread.join(10)
+					self.assertFalse(thread.is_alive())
+					alert.assert_not_called()
+					return status.call_args.args[0]
+				message = run(('a.txt', 'sub'), 1, Qt.NoModifier)
+				self.assertIn('2 changed', message)
+				self.assertTrue(attributes('a.txt') & HIDDEN and attributes('sub') & HIDDEN)
+				self.assertFalse(attributes('sub/c.txt') & HIDDEN)
+				self.assertEqual(['pane 1', 'pane 2'], calls)
+				message = run(('sub',), 2, Qt.ShiftModifier)
+				self.assertIn('4 changed', message)
+				for relative in ('sub', 'sub/c.txt', 'sub/deep', 'sub/deep/d.txt'):
+					self.assertTrue(attributes(relative) & SYSTEM, relative)
+				self.assertFalse(attributes('sub/c.txt') & HIDDEN)
+				self.assertEqual(['pane in sub', 'pane 1', 'pane 2'], calls)
 			finally:
 				fixture._plugin.unload()
 

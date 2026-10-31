@@ -80,7 +80,7 @@ class PluginApiCompatibilityTest(TestCase):
 			'TextField', 'Toggle', 'Choice', 'Label', 'Action', 'PanelHandle',
 			'Select', 'DateField', 'IntegerField', 'Separator',
 			'show_quick_table', 'show_panel', 'show_quick_list', 'QuickListHandle', 'QuickListState',
-			'show_quick_board'
+			'show_quick_board', 'show_quick_check_list', 'CheckListItem', 'CheckListResult'
 		}
 		self.assertEqual(expected, set(fman.ui.__all__))
 		self.assertFalse(hasattr(fman.ui, 'BottomPanel'))

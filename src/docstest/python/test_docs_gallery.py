@@ -280,6 +280,47 @@ screenshots._validate_image(screenshots._source_outputs(args.output_dir, 'batch-
 				capture_output=True, text=True, timeout=45)
 			self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
+	def test_edit_attributes_capture_shows_states_without_writing(self):
+		script = '''
+import os, sys
+from pathlib import Path
+from unittest.mock import patch
+sys.path.insert(0, sys.argv[1])
+import generate_docs_screenshots as screenshots
+from fman.impl.ui.quick_check_list import QuickCheckListWindow
+from PyQt5.QtGui import QScreen
+
+screenshots.WORK_DIR = Path(os.environ['ROYIFILEMANAGER_USER_SETTINGS']).parent.parent
+captured = []
+original = QuickCheckListWindow.grab
+def grab(window):
+	assert window.windowTitle() == 'Attributes: 3 items (1 folder)'
+	assert window.list.summary.content == 'Attributes sample'
+	assert window.list.count.text() == '1 changed'
+	assert 'Shift+Enter: Apply recursively' in window.list.status.content
+	captured.append(True)
+	return original(window)
+args = screenshots._parse_args([
+	'--_source-child', '--_capture', 'edit-attributes', '--output-dir', sys.argv[2]
+])
+sample = screenshots.WORK_DIR / 'source-edit-attributes/sample'
+with patch.object(QuickCheckListWindow, 'grab', grab), \\
+		patch.object(QScreen, 'grabWindow', side_effect=AssertionError('Desktop capture forbidden')):
+	assert screenshots._capture_source_child(args) == 0
+assert captured == [True], 'Edit attributes was not captured'
+for name, attributes in screenshots.EDIT_ATTRIBUTES_SAMPLE.items():
+	assert os.lstat(sample / name).st_file_attributes & 0x2021 == attributes & 0x2021, name
+screenshots._validate_image(screenshots._source_outputs(args.output_dir, 'edit-attributes')[0])
+'''
+		with resolved_temporary_directory() as directory, patch.object(screenshots, 'WORK_DIR', Path(directory)):
+			settings = screenshots._prepare_settings('source-edit-attributes', initialize=False)
+			environment = screenshots._source_environment(settings)
+			environment['QT_QPA_PLATFORM'] = 'windows'
+			result = subprocess.run([sys.executable, '-B', '-X', 'faulthandler', '-c', dedent(script.expandtabs(4)),
+				str(SCRIPT.parent), str(settings.parent / 'output')], cwd=ROOT, env=environment,
+				capture_output=True, text=True, timeout=45)
+			self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
 	def test_text_capture_generates_its_own_python_sample(self):
 		with resolved_temporary_directory() as temporary_directory, \
 				patch.object(screenshots, 'WORK_DIR', Path(temporary_directory)), \

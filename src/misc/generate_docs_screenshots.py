@@ -49,7 +49,8 @@ SOURCE_CAPTURES = (
 	'overview', 'go-to', 'context-menu', 'filter-pane', 'quick-view', 'quick-view-text', 'quick-view-csv',
 	'fuzzy-find', 'everything-search', 'everything-folders',
 	'search-files', 'find-files', 'favorites', 'directory-size', 'file-hash',
-	'checksum-files', 'process-pane', 'pack-archive', 'quick-table', 'quick-board', 'batch-renamer', 'robocopy',
+	'checksum-files', 'process-pane', 'pack-archive', 'quick-table', 'quick-board', 'batch-renamer',
+	'edit-attributes', 'robocopy',
 	'selection', 'duplicate-file', 'free-space'
 )
 QUICK_BOARD_SAMPLE = dict(text='Archive_', title='Compose a file-name prefix',
@@ -58,6 +59,8 @@ QUICK_BOARD_NAMES = ('report.txt', 'notes.md', 'photo.jpg')
 BATCH_RENAMER_NAMES = ('draft_01.txt', 'draft_02.txt', 'invoice_01.txt', 'invoice_02.txt',
 	'notes.txt', 'report_01.txt', 'report_02.txt', 'report_10.txt')
 BATCH_RENAMER_TEMPLATE = 'Archive_{(index + 1):03d}_{c}{d}{ext}'
+# Name -> Windows attributes: Archive differs and Not content indexed (0x2000) is mixed.
+EDIT_ATTRIBUTES_SAMPLE = {'Projects': 0x80, 'notes.txt': 0x20, 'report.txt': 0x20 | 0x2000}
 SELECTION_NAMES = ('archive.tar.gz', 'backup.gz', 'draft notes.txt', 'draft report.txt',
 	'invoice.csv', 'photo.jpg', 'README.md', 'report.txt', 'report.txt.bak')
 PYTHON_SAMPLE = '''from dataclasses import dataclass
@@ -321,6 +324,17 @@ def _source_capture_paths(capture):
 			path.write_text('Documentation sample: ' + name + '\n', encoding='utf-8')
 			os.utime(path, (modified, modified))
 		return folder, windows
+	if capture == 'edit-attributes':
+		folder = WORK_DIR / 'source-edit-attributes' / 'sample'
+		(folder / 'Projects').mkdir(parents=True, exist_ok=True)
+		(folder / 'Projects' / 'plan.txt').write_text('Documentation sample: plan.txt\n', encoding='utf-8')
+		for name, attributes in EDIT_ATTRIBUTES_SAMPLE.items():
+			path = folder / name
+			if name != 'Projects':
+				path.write_text('Documentation sample: ' + name + '\n', encoding='utf-8')
+			if not ctypes.windll.kernel32.SetFileAttributesW(str(path), attributes):
+				raise ctypes.WinError()
+		return folder, windows
 	if capture == 'checksum-files':
 		from checksum_files import engine
 		folder = WORK_DIR / 'source-checksum-files' / 'sample'
@@ -405,6 +419,7 @@ def _source_outputs(output_dir, capture):
 		),
 		'quick-board': ('royifilemanager-ui-quickboard.png',),
 		'batch-renamer': ('royifilemanager-batch-renamer.png',),
+		'edit-attributes': ('royifilemanager-edit-attributes.png',),
 		'robocopy': ('royifilemanager-robocopy-destination.png',),
 		'selection': ('royifilemanager-select-preview.png', 'royifilemanager-deselect-preview.png',
 			'royifilemanager-select-extension.png'),
@@ -446,6 +461,9 @@ def _capture_source_child(args):
 	_seed_settings(settings, args._capture)
 	if args._capture == 'batch-renamer':
 		shutil.copytree(ROOT / 'plugins/BatchFileRenamer', settings / 'Plugins/Third-party/BatchFileRenamer',
+			ignore=shutil.ignore_patterns('__pycache__'))
+	if args._capture == 'edit-attributes':
+		shutil.copytree(ROOT / 'plugins/FileAttributesEditor', settings / 'Plugins/Third-party/FileAttributesEditor',
 			ignore=shutil.ignore_patterns('__pycache__'))
 	left_path, right_path = _source_capture_paths(args._capture)
 	sys.argv = [sys.argv[0], str(left_path), str(right_path)]
@@ -1041,6 +1059,45 @@ def _capture_source_child(args):
 							and row.cells[4].endswith('.txt') for index, row in enumerate(rows))):
 					raise RuntimeError('Batch renamer example preview is incomplete or invalid')
 				finish(window.grab(), outputs[0], window.close)
+			elif args._capture == 'edit-attributes':
+				from fman.impl.ui.quick_check_list import QuickCheckListWindow
+				if not state['started']:
+					pane.clear_selection()
+					pane.select(tuple(as_url(str(left_path / name)) for name in EDIT_ATTRIBUTES_SAMPLE))
+					if len(pane.get_selected_files()) != len(EDIT_ATTRIBUTES_SAMPLE):
+						raise RuntimeError('Edit attributes sample selection is incomplete')
+					pane.focus()
+					state.update(started=True, settled=0)
+					pane.run_command('edit_attributes')
+					return
+				window = next((candidate for candidate in context.main_window.findChildren(QuickCheckListWindow)
+					if candidate.isVisible()), None)
+				if window is None:
+					state['settled'] = 0
+					return
+				if 'edited' not in state:
+					# Show one pending change: Read-only on (first row).
+					window.list.view.setFocus()
+					window.list.cycle(1)
+					state.update(edited=True, settled=0)
+					return
+				if state['settled'] < 3:
+					return
+				states = {item.id: (window.list.states[item.id], item.enabled) for item in window.list.prepared.items}
+				if (window.windowTitle() != 'Attributes: 3 items (1 folder)' or
+						window.list.count.text() != '1 changed' or states['readonly'] != ('on', True) or
+						states['archive'][0] != 'mixed' or states['not_indexed'][0] != 'mixed' or
+						states['temporary'] != ('off', False)):
+					raise RuntimeError('Edit attributes example states differ from the documentation')
+				summary = window.list.summary
+				folder = summary.content
+				summary.set_content('Attributes sample')
+				try:
+					pixmap = _grab_window_with_sample_location(context.main_window,
+						pane._widget._location_bar, 'Attributes sample', window)
+				finally:
+					summary.set_content(folder)
+				finish(pixmap, outputs[0], window.close)
 			elif args._capture == 'process-pane':
 				filter_bar = pane._widget._filter_bar
 				if not state['started']:

@@ -217,6 +217,8 @@ class MotherFileSystem:
 		child.notify_file_added(path)
 	def notify_file_changed(self, url):
 		child, path = self._split(url)
+		# Observers must not read metadata cached before the change.
+		child.cache.clear(path)
 		child.notify_file_changed(path)
 	def notify_file_removed(self, url):
 		child, path = self._split(url)

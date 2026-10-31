@@ -46,6 +46,7 @@ Significant additions compared with `fman`:
 - **QuickView Layer**: Press <kbd>Ctrl</kbd>+<kbd>Q</kbd> to preview the cursor file over the other pane: images, PDFs, CSV/TSV tables, plain text, MarkDown and highlighted source code. See [QuickView Usage](src/main/resources/base/Plugins/Core/README.md#quickview).
 - **UI Components**: New building blocks that expand what plug-ins can do. [Plug-in UI guide](PlugIn.md#ui-extension).
 - **Batch File Renamer**: Fully featured batch file renamer with option for filtering and sorting and renaming using Python's `f string` like syntax. See [usage and syntax](plugins/BatchFileRenamer/README.md).
+- **File Attributes Editor**: Edit Read-only, Hidden, System and other attributes of the chosen items from the keyboard. See [usage](plugins/FileAttributesEditor/README.md).
 - **Copy / Move Files with [Robocopy](https://en.wikipedia.org/wiki/Robocopy)**: Utilizing Windows' `robocopy` for multi threaded copy or move of files. Optimized for large transfers. See [installation and native behavior](src/main/resources/base/Plugins/Robocopy/README.md).
 - **Live Refresh During File Operations**: Run **Toggle live refresh during file operations** to refresh panes once when Copy, Move or Delete ends instead of continuously. Copying 10,000 small files took 10 s instead of 64-71 s. See [Configuration](docs/configuration.md#live-refresh-during-file-operations).
 - **Docked Panel**: Controlling states and operations. Exposed to be used by Plug-In's.

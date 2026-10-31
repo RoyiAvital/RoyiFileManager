@@ -16,6 +16,7 @@ Some guides describe the current development build, not just the latest release.
 | Pane swapping, pattern selection and keypad selection shortcuts                     | Unreleased development builds |
 | Select same extension, clipboard/link navigation and Command Center synonyms        | Unreleased development builds |
 | Numbered duplicate suggestions, copying multiple names and local free-space display | Unreleased development builds |
+| Bundled File Attributes Editor                                                      | Unreleased development builds |
 
 Check the [release notes](https://github.com/RoyiAvital/RoyiFileManager/blob/main/CHANGELOG.md)
 for your installed version. An Unreleased instruction may not work in a released build.
@@ -61,6 +62,8 @@ See [QuickView](tools.md#quickview), [Directory Size](tools.md#directory-size), 
 - Move or copy files into and out of archives.
 - Copy full paths to the clipboard.
 - Rename a filtered, ordered group with [Batch File Renamer](tools.md#batch-file-renamer).
+- Edit file and folder attributes, optionally recursively, with
+  [Edit attributes](tools.md#edit-attributes).
 - Copy or move with [Robocopy](tools.md#robocopy) as an alternative to F5/F6,
   using its different native overwrite and skip policies.
 

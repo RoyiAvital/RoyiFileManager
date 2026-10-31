@@ -12,12 +12,13 @@ UI elements available to plug-ins. `fman.ui` is a provisional RoyiFileManager ex
 | QuickTable      | `fman.ui.show_quick_table` | Narrow a static, typed table      | Modal (default) or modeless window owned by the host             | None (blocks; Enter returns visible row positions, Escape `None`) | `QuickTableColumn` kinds (text, name, path, date, numeric) define headers, sorting, header filter menus and Copy / Go To; static `QuickTableRow` snapshot with raw date/number cells; fuzzy, substring or caller text filter; Ctrl+Enter / double-click Go To; `truncated` count note | Search Files, Find Files, Checksum Files                                |
 | OutputTextBox   | `fman.ui.OutputTextBox` | Selectable plain-text output         | Widget embedded in a tool window                                 | Qt widget                    | Copy icon and Return/Enter copy all                                                                                                                            | Calculate File Hash                                                     |
 | QuickBoard      | `fman.ui.show_quick_board` | Compose one string with a typed preview | Modal window owned by the host | None (blocks; returns exact string and approval/cancellation) | Fixed columns; worker-driven row replacement; optional column filters/sorting; Copy displayed text; no Go To | String-composition plug-ins |
+| QuickCheckList  | `fman.ui.show_quick_check_list` | Set a **state per item** | Modal window owned by the host | None (blocks; returns the changed states with a primary or alternate approval, or cancellation) | Fixed item list; state indicator per item from a preset (`checkbox`, `checkbox3`, `star`); optional fuzzy filter; Enter / Shift+Enter approve with caller-defined meanings; bottom status bar with caller text (for example the key labels) and the count of changed items | [File Attributes Editor](plugins/FileAttributesEditor/README.md) |
 
 Supporting services: `UiController` / `UiOwner` (loader-bound lifetime),
 `ToolWindow` / `PaneToolWindow` (host window, prompts, `work()`), `navigate`
 (tracked navigation), `settings_resource` (shared JSON transactions), `matchers`.
 
-Plug-ins should use the Qt-free services (`show_quick_list`, `show_panel`, `show_quick_table`, `show_quick_board`).
+Plug-ins should use the Qt-free services (`show_quick_list`, `show_quick_check_list`, `show_panel`, `show_quick_table`, `show_quick_board`).
 
 ### Rationale for Elements
 
@@ -30,6 +31,10 @@ Row based elements:
  - `QuickList` - Text list with fuzzy search. Made for selecting **multiple elements** from a mutable list. <kbd>Enter</kbd> returns the selected item(s). Exposes an handler which can read its state and replace its items. Items may carry metadata, optionally sortable.
  - `QuickTable` - Multi column table with typed columns. Made for narrowing a predefined immutable table with filters per column and fuzzy search. <kbd>Enter</kbd> sends the caller the filtered (remaining) item(s). <kbd>Ctrl</kbd>+<kbd>Enter</kbd> as a _Go To_ shortcut on URL.
  - `QuickBoard` - Multi column table with optionally typed columns. Assists the user in composing a string. The input data is mutable by the caller. <kbd>Enter</kbd> sends the caller the string and indication of approval. <kbd>Esc</kbd> sends the caller the string and indication of cancellation. 
+ - `QuickCheckList` - Text list with a state indicator per item and an optional fuzzy filter. Made for composing a state over a fixed list of items, such as file attributes. <kbd>Enter</kbd> and <kbd>Shift</kbd>+<kbd>Enter</kbd> send the caller the changed states with a primary or alternate approval; the caller defines both and describes them in the status bar at the bottom (for example "Enter: Apply · Shift+Enter: Apply recursively"). <kbd>Esc</kbd> sends the caller the states and an indication of cancellation.
+
+> [!TIP]
+> `QuickCheckList` started as a binary state list yet now, with multi state support, its proper name should have been `QuickStateList`.
 
 ## `QuickSearch` vs. `QuickList`
 
@@ -60,6 +65,25 @@ A `QuickList` can be driven by a Panel to allow extended functionality.
 | Use Cases            | Command Palette, choose one    | Favorites Manager, pick several     |
 
 Both share the `QuickSearch` theme (`.quicksearch-item`) and fuzzy matchers.
+
+## `QuickList` vs. `QuickCheckList`
+
+`QuickList` chooses **which** items; `QuickCheckList` sets **a state for each** item.
+
+|              | `QuickList`                              | `QuickCheckList`                                     |
+| ------------ | ---------------------------------------- | ---------------------------------------------------- |
+| Purpose      | Select many items                        | Set a state per item                                 |
+| API          | `fman.ui.show_quick_list()`              | `fman.ui.show_quick_check_list()`                    |
+| API Returns  | The chosen IDs or `None`                 | `(changed, approval)`: changed states only           |
+| Empty Result | Not possible; Enter falls back to current | Possible: an approval with no changes                |
+| Items        | Mutable through a handle                 | Fixed while open                                     |
+| Look         | QuickList rows with a metadata line      | QuickSearch rows with a state indicator on the left  |
+| States       | Selected or not                          | Preset: `checkbox`, `checkbox3` (mixed), `star`      |
+| Approvals    | Enter                                    | Enter (primary), Shift+Enter (alternate, optional)   |
+| Filtering    | Optional fuzzy; hidden selections kept   | Optional fuzzy; hidden states kept                   |
+| Sorting      | By title, hint or metadata               | None; caller order                                   |
+| Modality     | Modal or modeless                        | Modal                                                |
+| Use Cases    | Favorites Manager                        | File attributes, flags                               |
 
 ## `QuickTable` vs. `QuickBoard`
 

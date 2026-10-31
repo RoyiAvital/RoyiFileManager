@@ -129,6 +129,11 @@ notices when updating `fd-find` in the lock file.
 generated `conda-lock.yml`. Extract the archive to a writable directory before
 running it.
 
+Every folder under [plugins](plugins) (Batch File Renamer, File Attributes
+Editor) must be listed in the `application.spec` datas. `freeze` and `package`
+stop when a frozen copy under `_internal/resources/Plugins` is missing or differs
+from its source, so the GitHub release build cannot ship without them.
+
 All mutable application data is stored in `UserSettings` beside the
 executable. Development and tests can override this path with the
 `ROYIFILEMANAGER_USER_SETTINGS` environment variable.
@@ -252,7 +257,8 @@ Exact executed configurations and remaining gates are recorded in the
 repeatable documentation screenshots using only public locations under `C:\`
 and `C:\Windows`. Source mode captures the main window, Command Center,
 Find a Location, pane filtering, image and Python QuickView, recursive fuzzy find, Everything, Search Files,
-Find Files, Favorites, directory sizes, File Hash, Checksum Files, the process pane and the
+Find Files, Favorites, directory sizes, File Hash, Checksum Files, the process pane,
+Batch File Renamer, Edit attributes and the
 Pack prompt. Command Center and Find a Location include the full application.
 Favorites and directory sizes use seeded settings in their isolated `UserSettings`;
 the process pane is filtered to `svchost`, and the Pack prompt is canceled.

@@ -413,6 +413,7 @@ assert not context.main_window.isVisible(), 'Capture left its main window open'
 			'royifilemanager-ui-quicktable-filter.png',
 			'royifilemanager-ui-quickboard.png',
 			'royifilemanager-batch-renamer.png',
+			'royifilemanager-edit-attributes.png',
 			'royifilemanager-robocopy-destination.png',
 			'royifilemanager-select-preview.png',
 			'royifilemanager-deselect-preview.png',

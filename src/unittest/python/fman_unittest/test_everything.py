@@ -898,6 +898,7 @@ class EverythingBuildTest(TestCase):
 				patch.object(build, '_require_windows'), patch.object(build, '_ensure_7za'), \
 				patch.object(build, '_ensure_conda_lock'), patch.object(build, '_remove_previous_freeze'), \
 				patch.object(build, '_copy_dependency_manifests'), patch.object(build, '_run_test_directory'), \
+				patch.object(build, '_verify_bundled_plugins'), \
 				patch.object(build.subprocess, 'run'), patch.object(build, '_ensure_everything') as ensure:
 			for entry in (build.run, build.test, build.freeze):
 				ensure.reset_mock()

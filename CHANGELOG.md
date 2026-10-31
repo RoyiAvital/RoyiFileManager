@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-10-31
+
+This release adds the **Edit attributes** plug-in for files and folders.  
+A simple, keyboard driven list sets the attributes of several items at once, optionally
+recursively. It is built as a plug-in on the public API.  
+It showcases a new UI element, `QuickCheckList`, which sets a state for each item in a list.
+
+### Added
+
+- **Edit attributes** (bundled File Attributes Editor plug-in): view and edit
+  Read-only, Hidden, System, Archive, Not content indexed and Temporary for the
+  chosen files and folders, from the file context menu (**Edit attributes...**)
+  or Command Center. Enter applies to the chosen items; Shift+Enter, with
+  a folder chosen, applies recursively without following links or junctions.
+  Only changed attributes are written, and panes showing affected folders refresh.
+- Plug-in API: `fman.ui.show_quick_check_list`, a QuickSearch-styled list for
+  setting a state per item (`checkbox`, `checkbox3` or `star` presets). Enter and
+  Shift+Enter approve with caller-defined meanings; a status bar shows the
+  caller's key labels and the number of changed items. The title, summary and
+  status are single elided lines and the window stays on screen. Themes can
+  recolor the indicators with the `.quickchecklist-state*` selectors.
+
+### Changed
+
+- Plug-in API: `fman.fs.notify_file_changed(url)` clears cached metadata for the
+  URL and everything below it before notifying consumers.
+
 ## [0.19.3] - 2026-10-28
 
 This release focuses on removing legacy code inherited from `fman`.  

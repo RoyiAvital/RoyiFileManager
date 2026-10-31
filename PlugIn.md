@@ -504,7 +504,7 @@ confirmation automatically. Unknown schemes can surface as `FileNotFoundError`.
 | `prepare_delete(url)` | Return provider-defined deletion tasks. |
 | `prepare_trash(url)` | Return provider-defined trash tasks. |
 | `notify_file_added(url)` | Announce a created entry to the host. |
-| `notify_file_changed(url)` | Announce a changed entry to subscribed consumers. |
+| `notify_file_changed(url)` | Clear cached metadata for the entry and everything below it, then announce the change to subscribed consumers. |
 | `notify_file_removed(url)` | Announce removal so cached listings and consumers can update. |
 
 Cross-scheme copy/move first asks the source provider. On `NotImplementedError`
@@ -665,7 +665,8 @@ Import from `fman.ui`. The complete explicit export list is:
 ListItem, UiController, UiOwner, Resource, settings_resource, matchers,
 ToolWindow, PaneToolWindow, NavigationHandle, navigate, OutputTextBox,
 QuickTableRow, QuickTableColumn, TextField, Toggle, Choice, Select, DateField, IntegerField, Separator, Label, Action,
-PanelHandle, show_quick_table, show_quick_board, show_panel, show_quick_list, QuickListHandle, QuickListState
+PanelHandle, show_quick_table, show_quick_board, show_panel, show_quick_list, QuickListHandle, QuickListState,
+show_quick_check_list, CheckListItem, CheckListResult
 ```
 
 This is an additive **provisional** API, not upstream fman 1.7.5. Public names
@@ -1193,6 +1194,40 @@ and the filter. Tab moves between a modeless list and the docked Panel.
 A driver attaches `handle.close` to its owner in `on_open` and detaches it in a
 `finally`. Callbacks such as Panel actions should start their own thread for
 blocking work (prompts, I/O), since the list keeps the Qt thread responsive.
+
+### QuickCheckList
+
+```python
+CheckListItem(id, title, state, hint='', description='', enabled=True)
+show_quick_check_list(*, items, states='checkbox', title='', summary='', status='',
+  filter=None, alternate=False) -> CheckListResult
+CheckListResult(changed, approval)  # NamedTuple
+```
+
+Sets a state per item of a fixed list. `states` is a preset: `'checkbox'`
+(`off`, `on`), `'checkbox3'` (`off`, `on`, start-only `mixed`) or `'star'`
+(`empty`, `filled`). Each item cycles through the preset's states plus its own
+start-only state, if it started in one; disabled items never change.
+
+Validation runs before any window opens (`TypeError` / `ValueError`): 1-1,000
+frozen `CheckListItem` records (copied), unique nonempty IDs and titles of at most
+512 characters, hints and descriptions of at most 2,048, `title` 512, `summary`
+2,048, `status` 512, no NUL, exact `bool` for `enabled` and `alternate`, starting
+states from the preset, and at most 4 MiB of text in total as UTF-8.
+
+`changed` maps item IDs to final states for changed items only. `approval` is
+`'primary'` for Enter, `'alternate'` for Shift+Enter (only when `alternate=True`;
+otherwise Shift+Enter does nothing) and `None` for Escape, window close or
+main-window close; cancellation still returns the changes. The window is modal
+and frameless with a draggable `title`. `title`, `summary` and `status` show as
+single elided lines with the full text in a tooltip; the window stays within the
+screen, and rows taller than the list scroll. The call blocks: workers wait on an
+event, Qt callers run a nested loop. Space or a click on the indicator selects
+the next state, Shift+Space the previous one, Insert the next one and moves down.
+With `filter='fuzzy'` the filter keeps hidden items' states; Up/Down move from
+the filter into the list. Theme selectors `.quickchecklist-state`,
+`.quickchecklist-state-active` and `.quickchecklist-state-mark` set the indicator
+colors (defaults olive `#75715e`, orange `#f68f33`, brown `#3c3a2d`).
 
 ### OutputTextBox
 
