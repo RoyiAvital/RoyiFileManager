@@ -34,6 +34,16 @@ archive handlers, QuickView table limit, live refresh) live in:
 UserSettings\AppSettings.yaml
 ```
 
+!!! tip "Update Settings Template"
+
+  Run **Settings: Update settings file template** in Command Center after an
+  upgrade to add missing options to `UserSettings\AppSettings.yaml`. Defaults and
+  their descriptions are added as comments; existing values, custom settings and
+  comments are preserved. Existing commented examples are not duplicated, including
+  nested options. The command needs no text editor and makes no changes when the
+  template is up to date. Remove the leading `# ` to activate an added option,
+  then edit its value and restart. Plug-in settings files are not updated.
+
 Plug-in settings, key bindings and menus live in:
 
 ```text

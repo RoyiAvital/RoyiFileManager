@@ -169,6 +169,114 @@ def settings_template(defaults_path):
 		for line in lines]
 	return '\n'.join(header + body) + '\n'
 
+def _commented_setting_paths(source):
+	from yaml.tokens import KeyToken, ScalarToken, ValueToken
+	paths, parents = set(), []
+	for line in source.splitlines():
+		commented = line.startswith('# ')
+		if not commented and (not line.strip() or line.lstrip().startswith('#')):
+			continue
+		content = line[2:] if commented else line
+		try:
+			key = None
+			for token in yaml.scan(content, Loader=yaml.CSafeLoader):
+				if isinstance(token, KeyToken):
+					column = token.start_mark.column
+				elif isinstance(token, ScalarToken) and key is None:
+					key = token.value
+				elif isinstance(token, ValueToken) and key is not None:
+					break
+			else:
+				continue
+		except yaml.YAMLError:
+			continue
+		while parents and parents[-1][0] >= column:
+			parents.pop()
+		parents.append((column, key))
+		if not commented:
+			continue
+		path = tuple(value for _, value in parents)
+		paths.add(path)
+		try:
+			value = yaml.load(content, Loader=yaml.CSafeLoader)
+		except yaml.YAMLError:
+			continue
+		if isinstance(value, dict) and isinstance(value.get(key), dict):
+			def collect(mapping, prefix):
+				for child, child_value in mapping.items():
+					child_path = prefix + (child,)
+					paths.add(child_path)
+					if isinstance(child_value, dict):
+						collect(child_value, child_path)
+			collect(value[key], path)
+	return paths
+
+def _missing_settings(defaults, configured, commented, prefix=()):
+	missing, count = {}, 0
+	for key, value in defaults.items():
+		path = prefix + (key,)
+		if isinstance(value, dict) and value:
+			if key in configured and not isinstance(configured[key], dict):
+				continue
+			children, added = _missing_settings(value, configured.get(key, {}), commented, path)
+			if children:
+				missing[key] = children
+				count += added
+		elif key not in configured and path not in commented:
+			missing[key] = value
+			count += 1
+	return missing, count
+
+def update_settings_template(defaults_path, target_path):
+	"""Append missing commented defaults without changing existing settings or text."""
+	from tempfile import mkstemp
+	with open(defaults_path, encoding='utf-8-sig') as source:
+		defaults_text = source.read()
+	try:
+		with open(target_path, encoding='utf-8-sig', newline='') as source:
+			original = source.read()
+	except FileNotFoundError:
+		original = ''
+	try:
+		defaults = yaml.load(defaults_text, Loader=yaml.CSafeLoader)
+		configured = yaml.load(original, Loader=yaml.CSafeLoader)
+		root = yaml.compose(defaults_text, Loader=yaml.CSafeLoader)
+	except yaml.YAMLError as error:
+		raise ValueError(str(error)) from None
+	if not isinstance(defaults, dict) or configured is not None and not isinstance(configured, dict):
+		raise ValueError('Application settings must contain a YAML mapping.')
+	missing, count = _missing_settings(defaults, configured or {}, _commented_setting_paths(original))
+	if not missing:
+		return 0
+	lines, additions = defaults_text.splitlines(), []
+	for key, value in root.value:
+		if key.value in missing:
+			start = key.start_mark.line
+			comment_start = start
+			while comment_start and (not lines[comment_start - 1].strip() or
+					lines[comment_start - 1].lstrip().startswith('#')):
+				comment_start -= 1
+			comments = [line for line in lines[comment_start:start] if line.lstrip().startswith('#')]
+			body = yaml.dump({key.value: missing[key.value]}, Dumper=yaml.CSafeDumper,
+				allow_unicode=True, sort_keys=False, width=4096)
+			additions.append('\n'.join(comments + ['# ' + line for line in body.splitlines()]))
+	text = original + ('' if not original or original.endswith(('\n', '\r')) else '\n')
+	text += '\n# Missing settings: commented defaults; existing values are unchanged.\n\n'
+	text += '\n\n'.join(additions) + '\n'
+	target_path = str(target_path)
+	makedirs(dirname(target_path), exist_ok=True)
+	descriptor, temporary = mkstemp(prefix='.settings-template-', suffix='.tmp', dir=dirname(target_path))
+	try:
+		with open(descriptor, 'w', encoding='utf-8', newline='', closefd=True) as target:
+			target.write(text)
+		replace(temporary, target_path)
+	finally:
+		try:
+			unlink(temporary)
+		except FileNotFoundError:
+			pass
+	return count
+
 def read_settings_file(path):
 	"""Read a YAML settings file or a JSON file; a YAML file with only comments returns None."""
 	if not is_settings_file(path):

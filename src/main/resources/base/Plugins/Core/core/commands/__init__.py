@@ -437,6 +437,24 @@ class EditSettings(ApplicationCommand):
 		if open_file(as_url(path), 'editor'):
 			show_status_message('Restart %s after saving settings.' % APP_NAME, timeout_secs=5)
 
+class UpdateSettingsFileTemplate(ApplicationCommand):
+	category = 'Settings'
+	aliases = ('Update settings file template',)
+
+	def __call__(self):
+		from fman.impl.plugins.config import APP_SETTINGS, update_settings_template
+		from fman.ui import settings_resource
+		path = os.path.join(DATA_DIRECTORY, APP_SETTINGS)
+		try:
+			with settings_resource(APP_SETTINGS).lock:
+				added = update_settings_template(PurePath(__file__).parents[2] / APP_SETTINGS, path)
+		except (OSError, ValueError) as error:
+			show_alert('Could not update settings file template %s: %s' % (path, error))
+			return
+		message = 'Settings file template is already up to date.' if not added else \
+			'Added %d commented default%s to the settings file.' % (added, '' if added == 1 else 's')
+		show_status_message(message, timeout_secs=5)
+
 class SetFileComparator(DirectoryPaneCommand):
 	category = 'Settings'
 	aliases = ('Set file comparator',)

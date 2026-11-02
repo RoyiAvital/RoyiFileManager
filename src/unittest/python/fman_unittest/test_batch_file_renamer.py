@@ -115,6 +115,51 @@ class BatchFileRenamerTest(TestCase):
 		edited = self.engine.plan(self.captured, 'prefix_' + template, (0, 1))
 		self.assertEqual(tuple('prefix_' + entry.target for entry in entries), tuple(entry.target for entry in edited))
 
+	def test_short_id_aliases_share_eight_characters_and_stay_with_the_file(self):
+		baseline = self.engine.plan(self.captured, '{SQIDS}', (0, 1))
+		for entry in baseline:
+			self.assertRegex(entry.target, r'^[A-Za-z0-9]{8}$')
+			self.assertIsNone(entry.problem)
+		for field in ('UUID', 'HASHID', 'SQIDS'):
+			with self.subTest(field=field):
+				template = '{' + field + '}'
+				self.assertEqual(baseline, self.engine.plan(self.captured, template, (0, 1)))
+				reordered = self.engine.plan(self.captured, template, (1, 0))
+				self.assertEqual(tuple(entry.target for entry in baseline), tuple(entry.target for entry in reordered))
+				filtered = self.engine.plan(self.captured, template, (None, 0))
+				self.assertEqual(baseline[1].target, filtered[1].target)
+				rows = self.engine.preview(self.captured, template + '{ext}', (0, 1))
+				self.assertEqual(tuple(entry.target + '.txt' for entry in baseline), tuple(row.cells[4] for row in rows))
+		combined = self.engine.plan(self.captured, '{UUID}_{HASHID}_{SQIDS}', (0, 1))
+		self.assertEqual(tuple('_'.join([entry.target] * 3) for entry in baseline), tuple(entry.target for entry in combined))
+
+	def test_short_id_boundaries_have_exact_length_and_reject_formatting(self):
+		maximum = (len(self.engine._SHORT_ID_ALPHABET) - 1) ** 7 - 1
+		for number in (0, 1, 60, 61, 61 ** 6 - 1, maximum):
+			with self.subTest(number=number):
+				self.assertRegex(self.engine._encode_short_id(number), r'^[A-Za-z0-9]{8}$')
+		for template in ('{UUID:8}', '{HASHID!r}', '{SQIDS + 1}', '{UUID:{index}}'):
+			with self.subTest(template=template), self.assertRaises(ValueError):
+				self.engine.parse(template)
+		with patch.object(self.engine, 'Random', side_effect=AssertionError('Unused short ID')):
+			self.engine.plan(self.captured, '{{UUID}}_{{HASHID}}_{{SQIDS}}_{name}{ext}', (0, 1))
+			self.engine.plan(self.captured, '{SQIDS}{ext}', (None, None))
+
+	def test_short_ids_keep_collision_checks_and_execute_without_rerolling(self):
+		from fman.fs import RenameResult
+		with patch.object(self.engine, '_encode_short_id', return_value='AbCd0123'):
+			entries = self.engine.plan(self.captured, '{UUID}{ext}', (0, 1))
+		self.assertTrue(all(entry.problem == 'Duplicate target' for entry in entries))
+		with self.assertRaises(ValueError):
+			self.engine.preflight(self.captured, entries)
+		entries = self.engine.plan(self.captured, '{name}_{HASHID}{ext}', (0, 1))
+		rename = Mock(side_effect=lambda source, target: RenameResult(source, target, True))
+		with patch.object(self.engine, 'Random', side_effect=AssertionError('No reroll after preview')):
+			self.engine.preflight(self.captured, entries)
+			report, confirmed = self.engine.execute(self.captured, entries, rename)
+		self.assertEqual(tuple(as_url(self.root / entry.target) for entry in entries), confirmed)
+		self.assertTrue(all(outcome == 'Renamed' for old, current, outcome in report))
+
 	def test_random_field_sequences_are_independent_and_extend_without_rerolling(self):
 		mixed = self.engine.plan(self.captured, '{c}{d}{c}{d}', (0, 1))
 		letters = self.engine.plan(self.captured, '{c}{c}', (0, 1))
@@ -140,7 +185,7 @@ class BatchFileRenamerTest(TestCase):
 			self.assertEqual(2, entropy.call_count)
 			self.assertTrue(all(call.args == (16,) for call in entropy.call_args_list))
 		self.assertNotEqual(first.random_seed, second.random_seed)
-		template = '{name}_' + '{c}' * 12 + '{d}' * 12 + '{ext}'
+		template = '{name}_' + '{c}' * 12 + '{d}' * 12 + '_{SQIDS}{ext}'
 		before = getstate()
 		with patch.object(self.engine.os, 'urandom', side_effect=AssertionError('No preview entropy reads')):
 			first_plan = self.engine.plan(first, template, (0, 1))

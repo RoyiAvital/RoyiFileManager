@@ -24,6 +24,8 @@ Variables: `{current_date}`, `{file_date}` (modified time), `{index}` (visible
 zero-based order), `{file_index}` (captured natural position among all regular
 folder files, including hidden/unselected ones), `{name}`, `{ext}` (with dot),
 `{c}` (one random letter, `a-z` or `A-Z`) and `{d}` (one random digit, `0-9`).
+`{UUID}`, `{HASHID}` and `{SQIDS}` are aliases for one eight-character random
+alphanumeric ID per file (`a-z`, `A-Z`, `0-9`).
 Folder numbering ignores link counts, so unselected hard-linked names still
 consume an index. Selected files are checked separately and hard links refused.
 
@@ -35,14 +37,25 @@ Trip_{(index + 1):03d}{ext}
 {file_date:%Y%m%d}_{(index + 5):03d}{ext}
 {(file_index + 1):03d}_{name}{ext}
 {name}_{c}{c}{d}{d}{ext}
+{name}_{UUID}{ext}
+{SQIDS}{ext}
 ```
 
-For example, the last template could produce `photo_aB07.jpg`. Repeat `{c}` or
+For example, `{name}_{c}{c}{d}{d}{ext}` could produce `photo_aB07.jpg`. Repeat `{c}` or
 `{d}` to control length; each occurrence is an independent draw and may repeat.
 The sequences stay with each file during the session, including template edits,
 sorting and filtering. The actual rename matches the preview. Reopening starts
 a new random set. Names are not guaranteed unique: collisions are reported,
 not silently regenerated. Random fields accept no format widths or arithmetic.
+
+The three ID aliases use the same value for a file, even when repeated or mixed
+in one template. That value stays fixed through edits, sorting, filtering and
+execution; reopening creates a new set. For example, `{UUID}_{HASHID}{ext}`
+could produce `8fj2LmQ9_8fj2LmQ9.jpg`. The generator is a small, dependency-free
+adaptation of [Sqids' single-number encoding](https://github.com/sqids/sqids-python/blob/main/sqids/sqids.py),
+with fixed eight-character output and no word blocklist. These are short IDs,
+not standard UUIDs or cryptographic hashes, and uniqueness is not guaranteed.
+Existing collision checks still block duplicate or occupied target names.
 
 Only index fields allow addition of a positive integer. No Python expressions, calls,
 subtraction, conversions or nested fields. Date directives: `%Y`, `%y`, `%m`,

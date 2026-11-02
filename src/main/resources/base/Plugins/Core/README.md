@@ -492,6 +492,10 @@ local, but later archive operations beneath it may hit the same parser limitatio
 - **Edit settings**: open `UserSettings\AppSettings.yaml`
   in the editor. If missing, it is created with every option listed as a comment.
   Without an editor it shows the same alert as `F4`. Restart the application after saving.
+- **Update settings file template**: add missing defaults to
+	`UserSettings\AppSettings.yaml` as comments, without replacing existing values
+	or comments. Existing examples are kept, including nested options. No editor
+	is required; an up-to-date template is left unchanged.
 
 Press `Ctrl+Shift+P` and run **Set text editor** or **Set text viewer**.
 Choose Notepad++, CudaText, Notepad 4, EmEditor, Ecode, Royi Text Editor, or **Manual configuration**.

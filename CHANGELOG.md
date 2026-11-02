@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.2] - 2026-11-03
+
+### Added
+
+- The pane's empty-space context menu offers **New file** to create an empty
+  file without opening an editor, beside the sentence-case **New folder** entry.
+- **Update settings file template** in Command Center adds missing application
+  settings as commented defaults, preserving existing values, custom settings
+  and comments. Existing examples are not duplicated; no editor is required.
+- Batch File Renamer accepts `{UUID}`, `{HASHID}` and `{SQIDS}` as aliases for
+  one eight-character random alphanumeric ID per file, using a dependency-free
+  Sqids-style encoder. IDs stay stable through preview edits, sorting, filtering
+  and execution; existing collision checks remain. The in-tool hint shows
+  `{UUID}`; the other aliases are documented separately.
+
 ## [0.20.1] - 2026-10-31
 
 This release adds a simple way to find processes keeping a file or folder open.  

@@ -194,7 +194,10 @@ class BatchFileRenamerPluginIT(qt_tests.QuickBoardFixture):
 	def test_random_preview_matches_bundled_command_execution(self):
 		self._exercise_renamer(bundled=True, random_fields=True)
 
-	def _exercise_renamer(self, bundled, random_fields=False):
+	def test_short_id_preview_matches_bundled_command_execution(self):
+		self._exercise_renamer(bundled=True, random_fields=True, short_ids=True)
+
+	def _exercise_renamer(self, bundled, random_fields=False, short_ids=False):
 		from pathlib import Path
 		from tempfile import TemporaryDirectory
 		from shutil import copy2, copytree
@@ -261,11 +264,17 @@ class BatchFileRenamerPluginIT(qt_tests.QuickBoardFixture):
 					self.settled(board)
 					self.assertIn('{c} random letter', self.run_in_app(lambda: board.summary.content))
 					self.assertIn('{d} random digit', self.run_in_app(lambda: board.summary.content))
+					summary = self.run_in_app(lambda: board.summary.content)
+					self.assertIn('{UUID}: 8-character ID', summary)
+					self.assertNotIn('{HASHID}', summary)
+					self.assertNotIn('{SQIDS}', summary)
 					self.assertEqual((900, 600), self.run_in_app(lambda: (board.width(), board.height())))
 					widths = self.run_in_app(lambda: tuple(board.table.view.columnWidth(index) for index in range(6)))
 					for index in (0, 1, 5):
 						self.assertLess(widths[index], min(widths[2], widths[4]))
-					template = 'renamed_{index}_{c}{c}{d}{d}{ext}' if random_fields else 'renamed_{index}{ext}'
+					template = 'renamed_{index}{ext}'
+					if random_fields:
+						template = 'renamed_{index}_{UUID}{ext}' if short_ids else 'renamed_{index}_{c}{c}{d}{d}{ext}'
 					self.run_in_app(board.input.setText, template)
 					self.settled(board)
 					if random_fields:
@@ -279,7 +288,9 @@ class BatchFileRenamerPluginIT(qt_tests.QuickBoardFixture):
 					self.assertEqual((None, 0), board.mapping)
 					expected_name = self.run_in_app(lambda: board.table.rows[1].cells[4])
 					if random_fields:
-						self.assertRegex(expected_name, r'^edited_renamed_0_[a-zA-Z]{2}[0-9]{2}\.txt$')
+						pattern = r'^edited_renamed_0_[A-Za-z0-9]{8}\.txt$' if short_ids else \
+							r'^edited_renamed_0_[a-zA-Z]{2}[0-9]{2}\.txt$'
+						self.assertRegex(expected_name, pattern)
 						self.assertEqual(initial[1].removeprefix('renamed_1_'),
 							expected_name.removeprefix('edited_renamed_0_'))
 					else:

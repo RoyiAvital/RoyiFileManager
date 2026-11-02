@@ -1017,6 +1017,28 @@ class EditSettingsTest(TestCase):
 		self.assertIn('denied', self.show_alert.call_args.args[0])
 		self.open_file.assert_not_called()
 
+	def test_updates_missing_template_defaults_without_opening_an_editor(self):
+		from core.commands import UpdateSettingsFileTemplate
+		self.assertEqual('update_settings_file_template', _get_command_name(UpdateSettingsFileTemplate))
+		self.assertEqual(('Update settings file template',), UpdateSettingsFileTemplate.aliases)
+		self.assertEqual('Settings', UpdateSettingsFileTemplate.category)
+		original = '# My settings\nlive_refresh_during_file_operations: false  # Keep off\n'
+		with open(self.path, 'w', encoding='utf-8') as file:
+			file.write(original)
+		self._load_settings.return_value = {}
+		UpdateSettingsFileTemplate(Mock())()
+		with open(self.path, encoding='utf-8') as file:
+			updated = file.read()
+		self.assertTrue(updated.startswith(original))
+		self.assertIn('# quickview_table_max_file_mb: 2048', updated)
+		self.assertEqual(yaml.safe_load(original), yaml.safe_load(updated))
+		self.open_file.assert_not_called()
+		self.show_alert.assert_not_called()
+		UpdateSettingsFileTemplate(Mock())()
+		self.show_status_message.assert_called_with('Settings file template is already up to date.', timeout_secs=5)
+		with open(self.path, encoding='utf-8') as file:
+			self.assertEqual(updated, file.read())
+
 
 class AboutTest(TestCase):
 	def test_includes_the_zen_and_opens_the_about_window(self):

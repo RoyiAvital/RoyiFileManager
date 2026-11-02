@@ -364,16 +364,19 @@ Ordinary text is copied directly into the new name.
     The syntax is inspired by _Python_ `f-strings`.  
     There are predefined variables to be used in the renaming pattern.
 
-| Field            | Meaning                                                     |
-| ---------------- | ----------------------------------------------------------- |
-| `{name}`         | Original filename without its final extension               |
-| `{ext}`          | Final extension, including the dot                          |
-| `{index}`        | Position among the current visible results, starting at 0   |
+| Field            | Meaning                                                    |
+| ---------------- | ---------------------------------------------------------- |
+| `{name}`         | Original filename without its final extension              |
+| `{ext}`          | Final extension, including the dot                         |
+| `{index}`        | Position among the current visible results, starting at 0  |
 | `{file_index}`   | Fixed natural-order position among all regular folder files |
-| `{current_date}` | Local date/time when this rename session opened             |
+| `{current_date}` | Local date/time when this rename session opened            |
 | `{file_date}`    | File's last-modified date/time, in local time               |
 | `{c}`            | One random letter: `a-z` or `A-Z`                           |
-| `{d}`            | One random digit: `0-9`                                     |
+| `{d}`            | One random digit: `0-9`                                    |
+| `{UUID}`         | Eight-character random alphanumeric ID                     |
+| `{HASHID}`       | Alias of `{UUID}`                                          |
+| `{SQIDS}`        | Alias of `{UUID}`                                          |
 
 Both indices start at zero. Sorting and filtering change `{index}`; `{file_index}`
 keeps its captured value and includes hidden and unselected regular files.
@@ -385,18 +388,19 @@ These examples use `report.txt`, visible index **0**, folder index **2**, and a
 file modified on **2026-03-15 at 10:30:00**. The session date is **2026-10-14**.
 Random characters in the examples are illustrative.
 
-| Template                             | Example Result            |
-| ------------------------------------ | ------------------------- |
-| `{name}{ext}`                        | `report.txt`              |
-| `Copy_{name}{ext}`                   | `Copy_report.txt`         |
-| `{index:03d}_{name}{ext}`            | `000_report.txt`          |
-| `{(index + 1):03d}_{name}{ext}`      | `001_report.txt`          |
-| `{(file_index + 1):03d}_{name}{ext}` | `003_report.txt`          |
-| `{file_date:%Y%m%d}_{name}{ext}`     | `20260315_report.txt`     |
+| Template                           | Example Result          |
+| ---------------------------------- | ----------------------- |
+| `{name}{ext}`                       | `report.txt`            |
+| `Copy_{name}{ext}`                  | `Copy_report.txt`       |
+| `{index:03d}_{name}{ext}`            | `000_report.txt`         |
+| `{(index + 1):03d}_{name}{ext}`       | `001_report.txt`         |
+| `{(file_index + 1):03d}_{name}{ext}`  | `003_report.txt`         |
+| `{file_date:%Y%m%d}_{name}{ext}`     | `20260315_report.txt`    |
 | `{file_date:%Y-%m-%d_%H-%M-%S}{ext}` | `2026-03-15_10-30-00.txt` |
-| `{current_date}_{name}{ext}`         | `2026-10-14_report.txt`   |
-| `{name}_{c}{c}{d}{d}{ext}`           | `report_aB07.txt`         |
-| `{{draft}}_{name}{ext}`              | `{draft}_report.txt`      |
+| `{current_date}_{name}{ext}`        | `2026-10-14_report.txt`  |
+| `{name}_{c}{c}{d}{d}{ext}`           | `report_aB07.txt`        |
+| `{name}_{UUID}{ext}`                | `report_8fj2LmQ9.txt`    |
+| `{{draft}}_{name}{ext}`             | `{draft}_report.txt`     |
 
 ### Formatting Rules
 
@@ -411,6 +415,12 @@ Random characters in the examples are illustrative.
   a separate draw, so characters can repeat. The sequences stay with each file
   through edits, sorting and filtering; the rename matches the preview. Reopening
   generates a new set. Random names are not guaranteed unique.
+- **Short IDs:** `{UUID}`, `{HASHID}` and `{SQIDS}` are aliases for the same
+  eight-character ID per file, using `a-z`, `A-Z` and `0-9`. Repeated aliases use
+  the same value; editing, sorting and filtering do not regenerate it. The
+  dependency-free generator follows [Sqids](https://sqids.org)' single-number
+  encoding concept without its word blocklist. These are not standard UUIDs,
+  cryptographic hashes or guaranteed-unique names; collisions still block renaming.
 - **Literal braces:** write `{{` and `}}` to include `{` and `}` in a filename.
 - **Limits:** this is f-string-like syntax, not Python code. Function calls,
   attribute access, conversions such as `!r`, subtraction and nested fields are

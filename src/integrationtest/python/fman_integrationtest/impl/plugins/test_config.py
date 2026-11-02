@@ -273,6 +273,55 @@ class AppSettingsTest(TestCase):
 		with self.assertRaises(ValueError):
 			self.config().load_json('AppSettings.yaml')
 
+	def test_template_update_preserves_values_comments_and_is_idempotent(self):
+		from fman.impl.plugins.config import update_settings_template
+		import yaml
+		defaults = join(self.bundled, 'AppSettings.yaml')
+		with open(defaults, 'a', encoding='utf-8') as file:
+			file.write('\n# New option description.\nnew_option: 7\n')
+		original = '# Custom header\nterminal:\n  args: custom  # Keep this\ncustom: value\n'
+		original += '# archive_handlers:\n#   .zip: zip://\n'
+		with open(self.app_settings, 'w', encoding='utf-8') as file:
+			file.write(original)
+		self.assertEqual(1, update_settings_template(defaults, self.app_settings))
+		updated = self.read(self.app_settings)
+		self.assertTrue(updated.startswith(original))
+		self.assertIn('# New option description.\n# new_option: 7\n', updated)
+		self.assertEqual(yaml.safe_load(original), yaml.safe_load(updated))
+		self.assertEqual(0, update_settings_template(defaults, self.app_settings))
+		self.assertEqual(updated, self.read(self.app_settings))
+
+	def test_template_update_adds_only_missing_nested_defaults(self):
+		from fman.impl.plugins.config import update_settings_template
+		import yaml
+		defaults = join(self.bundled, 'AppSettings.yaml')
+		with open(defaults, 'w', encoding='utf-8') as file:
+			file.write('# Terminal options.\nterminal:\n  args: cmd\n  shell: true\n  cwd: home\n')
+		for original in ('terminal: {args: custom}\n# terminal:\n#   shell: true\n',
+				'terminal:\n  args: custom\n#   shell: true\n'):
+			with self.subTest(original=original):
+				with open(self.app_settings, 'w', encoding='utf-8') as file:
+					file.write(original)
+				self.assertEqual(1, update_settings_template(defaults, self.app_settings))
+				updated = self.read(self.app_settings)
+				self.assertIn('# terminal:\n#   cwd: home\n', updated)
+				self.assertNotIn('#   args: cmd', updated)
+				self.assertEqual(yaml.safe_load(original), yaml.safe_load(updated))
+				self.assertEqual(0, update_settings_template(defaults, self.app_settings))
+
+	def test_template_update_creates_missing_file_and_leaves_invalid_yaml_untouched(self):
+		from fman.impl.plugins.config import update_settings_template
+		import yaml
+		defaults = join(self.bundled, 'AppSettings.yaml')
+		self.assertEqual(2, update_settings_template(defaults, self.app_settings))
+		self.assertIsNone(yaml.safe_load(self.read(self.app_settings)))
+		original = 'terminal: [unclosed\n'
+		with open(self.app_settings, 'w', encoding='utf-8') as file:
+			file.write(original)
+		with self.assertRaises(ValueError):
+			update_settings_template(defaults, self.app_settings)
+		self.assertEqual(original, self.read(self.app_settings))
+
 
 class LoadJsonTest(TestCase):
 	def test_nonexistent_file(self):

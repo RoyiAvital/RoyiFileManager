@@ -18,6 +18,8 @@ MAX_PREVIEW_BYTES = 16 * 1024 * 1024
 DEFAULT_TEMPLATE = '{name}{ext}'
 REPARSE_NAME_SURROGATE = 0x20000000
 RANDOM_ALPHABETS = {'c': ascii_letters, 'd': digits}
+SHORT_ID_FIELDS = frozenset(('UUID', 'HASHID', 'SQIDS'))
+SHORT_ID_LENGTH = 8
 COLUMNS = (
 	QuickTableColumn('Index', 'numeric', sortable=False, filterable=False, missing=''),
 	QuickTableColumn('File Index', 'numeric'),
@@ -26,6 +28,37 @@ COLUMNS = (
 	QuickTableColumn('New Name', 'file_name', sortable=False, filterable=False),
 	QuickTableColumn('Valid Name', sortable=False, filterable=False),
 )
+
+
+def _shuffle_id_alphabet(alphabet):
+	characters = list(alphabet)
+	for left, right in enumerate(range(len(characters) - 1, 0, -1)):
+		other = (left * right + ord(characters[left]) + ord(characters[right])) % len(characters)
+		characters[left], characters[other] = characters[other], characters[left]
+	return ''.join(characters)
+
+
+_SHORT_ID_ALPHABET = _shuffle_id_alphabet(ascii_letters + digits)
+
+
+def _encode_short_id(number):
+	"""Sqids-style single-number encoding with eight characters and no word blocklist."""
+	alphabet = _SHORT_ID_ALPHABET
+	offset = (ord(alphabet[number % len(alphabet)]) + 1) % len(alphabet)
+	prefix = alphabet[offset]
+	alphabet = (alphabet[offset:] + alphabet[:offset])[::-1]
+	symbols = alphabet[1:]
+	encoded = []
+	while True:
+		number, remainder = divmod(number, len(symbols))
+		encoded.append(symbols[remainder])
+		if not number:
+			break
+	identifier = prefix + ''.join(reversed(encoded))
+	if len(identifier) < SHORT_ID_LENGTH:
+		identifier += alphabet[0]
+		identifier += _shuffle_id_alphabet(alphabet)[:SHORT_ID_LENGTH - len(identifier)]
+	return identifier
 
 
 def natural_key(name):
@@ -134,7 +167,9 @@ def parse(template):
 		if field is not None:
 			if conversion is not None or '{' in specification or '}' in specification:
 				raise ValueError('Conversions and nested replacement fields are not supported.')
-			if field not in ('name', 'ext', 'current_date', 'file_date', 'index', 'file_index', 'c', 'd'):
+			if field in SHORT_ID_FIELDS:
+				field = 'SQIDS'
+			if field not in ('name', 'ext', 'current_date', 'file_date', 'index', 'file_index', 'c', 'd', 'SQIDS'):
 				expression = field.strip(' \t')
 				if expression.startswith('(') and expression.endswith(')'):
 					expression = expression[1:-1].strip(' \t')
@@ -192,6 +227,7 @@ class Candidate:
 def plan(captured, template, mapping):
 	parts = parse(template)
 	random_counts = Counter(field for literal, field, specification, offset in parts if field in RANDOM_ALPHABETS)
+	short_ids = any(field == 'SQIDS' for literal, field, specification, offset in parts)
 	if not isinstance(mapping, tuple) or len(mapping) != len(captured.sources):
 		raise ValueError('Invalid row mapping.')
 	visible = [position for position in mapping if position is not None]
@@ -212,6 +248,9 @@ def plan(captured, template, mapping):
 		for field, count in random_counts.items():
 			generator = Random(captured.random_seed + ('/%d/%s' % (source.file_index, field)).encode('ascii'))
 			values[field] = iter(generator.choices(RANDOM_ALPHABETS[field], k=count))
+		if short_ids:
+			generator = Random(captured.random_seed + ('/%d/SQIDS' % source.file_index).encode('ascii'))
+			values['SQIDS'] = _encode_short_id(generator.randrange((len(_SHORT_ID_ALPHABET) - 1) ** (SHORT_ID_LENGTH - 1)))
 		target, display, problem = render(parts, values)
 		preview_bytes += len(display.encode('utf-8'))
 		if preview_bytes > MAX_PREVIEW_BYTES:
