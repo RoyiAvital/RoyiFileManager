@@ -7,6 +7,32 @@ from fman import DirectoryPane
 from fman.impl.plugins.command_registry import PaneCommandRegistry
 
 
+class DirectoryPaneNavigationTest(TestCase):
+	def test_missing_location_fallback_preserves_url_scheme(self):
+		pane = DirectoryPane(None, Mock(), None)
+		pane.set_path('file://C:/missing')
+		onerror = pane._widget.set_location.call_args.args[4]
+		for url, parent in (
+			('file://C:/missing', 'file://C:'),
+			('file://', 'file://'),
+			('file:////server/share/missing', 'file:////server/share'),
+			('zip://C:/archive.zip/missing', 'zip://C:/archive.zip'),
+		):
+			with self.subTest(url=url):
+				self.assertEqual(parent, onerror(FileNotFoundError(), url))
+
+	def test_other_navigation_errors_still_propagate(self):
+		pane = DirectoryPane(None, Mock(), None)
+		pane.set_path('file://C:/restricted')
+		onerror = pane._widget.set_location.call_args.args[4]
+		try:
+			raise PermissionError('Access denied')
+		except PermissionError as error:
+			with self.assertRaises(PermissionError) as caught:
+				onerror(error, 'file://C:/restricted')
+			self.assertIs(error, caught.exception)
+
+
 class CommandContextTest(TestCase):
 	def test_nested_exception_restores_context(self):
 		pane = DirectoryPane(None, Mock(), None)

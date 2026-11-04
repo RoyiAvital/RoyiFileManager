@@ -81,7 +81,8 @@
 - [x] FEATURE: Add "Update settings file template" to append missing application settings as commented defaults, preserving existing values and comments.
 - [x] FEATURE: The context menu for empty space in a pane shows "New folder" and "New file".
 - [x] FEATURE: The context menu for empty space in a pane shows "New folder" and "New file".
-- [x] FEATURE: Add `{UUID}`, `{HASHID}` and `{SQIDS}` aliases to the Batch Rename Tool for session-stable, eight-character random alphanumeric IDs using a dependency-free [Sqids](https://sqids.org)-style encoder.
+- [x] FEATURE: Add `{UUID}`, `{HASHID}` and `{SQIDS}` aliases to the Batch Rename Tool.
+- [x] BUG: Hitting `Backspace` at the root of a drive yields [error](https://i.imgur.com/DI23zZb.png).
 
 ## Performance
 

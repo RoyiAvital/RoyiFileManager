@@ -294,12 +294,19 @@ try:
 		open_files.assert_not_called()
 	bar.close()
 	from core.fs.local.windows.drives import DrivesFileSystem
-	expected_drive = DrivesFileSystem()._get_drive_label('C:')
-	with patch.object(DrivesFileSystem, '_get_drives', return_value=['C:']):
+	drive = Path(fixture.anchor).drive.upper()
+	expected_drive = DrivesFileSystem()._get_drive_label(drive)
+	with patch.object(DrivesFileSystem, '_get_drives', return_value=[drive]):
 		press(Qt.Key_F1, Qt.AltModifier)
 		until(lambda: settled('drives://') and pane._widget._model.rowCount() == 2)
 		model = pane._widget._model
 		assert [model.index(index, 0).data() for index in range(2)] == [expected_drive, 'Network...']
+		drive_root = as_url(fixture.anchor)
+		pane.set_path(drive_root)
+		until(lambda: settled(drive_root))
+		press(Qt.Key_Backspace)
+		until(lambda: settled('drives://') and pane.get_file_under_cursor() == 'drives://' + drive)
+		assert not errors.called, errors.call_args_list
 		pane.set_path(as_url(fixture))
 		until(lambda: settled(as_url(fixture)))
 	from core.about import ZEN

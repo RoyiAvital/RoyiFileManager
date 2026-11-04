@@ -1,5 +1,5 @@
 from . import clipboard
-from .url import dirname
+from .url import dirname as _url_dirname
 from .listing import LocationInfo
 from fbs_runtime.build_settings import get_build_settings
 from .impl.task import StubProgressDialog, ChildProgressDialog
@@ -68,7 +68,7 @@ class ApplicationCommand:
 
 def _set_path_onerror(e, url):
 	if isinstance(e, FileNotFoundError):
-		return dirname(url)
+		return _url_dirname(url)
 	raise
 
 class DirectoryPane:

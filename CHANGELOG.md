@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Backspace at a drive root opens the drive list and highlights that drive
+  instead of reporting an invalid URL. Missing-folder navigation keeps a valid
+  parent URL.
+
 ## [0.20.2] - 2026-11-03
 
 ### Added

@@ -27,6 +27,8 @@ Open a source on one side. Open a destination on the other. Then copy or move.
 | New folder            | ++f7++        |
 | Delete to Recycle Bin | ++f8++        |
 
+At a drive root, ++backspace++ opens the drive list and highlights that drive.
+
 See [Everyday Workflows](workflows.md) for complete tasks and
 [which items a command uses](workflows.md#which-items-will-change).
 

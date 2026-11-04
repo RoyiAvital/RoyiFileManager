@@ -207,6 +207,12 @@ class GoUp(DirectoryPaneCommand):
 
 def go_up(pane):
 	path_before = pane.get_path()
+	scheme, path = splitscheme(path_before)
+	if scheme == 'file://' and re.fullmatch('[A-Za-z]:/?', path):
+		parent_dir = _get_volumes_url()
+		path = path.rstrip('/').upper()
+	else:
+		parent_dir = dirname(path_before)
 	def callback():
 		path_now = pane.get_path()
 		# Only move the cursor if we actually changed directories; For
@@ -217,13 +223,11 @@ def go_up(pane):
 			# Consider: The user is in zip:///Temp.zip and invokes GoUp.
 			# This takes us to file:///. We want to place the cursor at
 			# file:///Temp.zip. "Switch" schemes to make this happen:
-			cursor_dest = splitscheme(path_now)[0] + \
-						  splitscheme(path_before)[1]
+			cursor_dest = splitscheme(path_now)[0] + path
 			try:
 				pane.place_cursor_at(cursor_dest)
 			except ValueError as dest_doesnt_exist:
 				pane.move_cursor_home()
-	parent_dir = dirname(path_before)
 	try:
 		pane.set_path(parent_dir, callback)
 	except FileNotFoundError:

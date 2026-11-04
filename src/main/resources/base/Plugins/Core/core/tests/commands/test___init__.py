@@ -725,6 +725,56 @@ class DeleteTaskTest(TestCase):
 			'Use Delete permanently instead.'
 		)
 
+class GoUpTest(TestCase):
+	def test_drive_roots_open_drives_and_select_previous_drive(self):
+		from core.commands import GoUp
+		for root in ('file://C:', 'file://D:', 'file://C:/', 'file://z:'):
+			with self.subTest(root=root):
+				pane = Mock()
+				pane.get_path.side_effect = [root, 'drives://']
+				GoUp(pane)()
+				self.assertEqual('drives://', pane.set_path.call_args.args[0])
+				pane.set_path.call_args.args[1]()
+				pane.place_cursor_at.assert_called_once_with('drives://' + root[7:].rstrip('/').upper())
+				pane.move_cursor_home.assert_not_called()
+
+	def test_parent_navigation_keeps_child_and_archive_cursor_targets(self):
+		from core.commands import go_up
+		for before, requested, after, cursor in (
+			('file://C:/folder', 'file://C:', 'file://C:', 'file://C:/folder'),
+			('zip://C:/archive.zip', 'zip://C:', 'file://C:', 'file://C:/archive.zip'),
+			('file:////server/share/folder', 'file:////server/share',
+				'file:////server/share', 'file:////server/share/folder'),
+		):
+			with self.subTest(before=before):
+				pane = Mock()
+				pane.get_path.side_effect = [before, after]
+				go_up(pane)
+				self.assertEqual(requested, pane.set_path.call_args.args[0])
+				pane.set_path.call_args.args[1]()
+				pane.place_cursor_at.assert_called_once_with(cursor)
+
+	def test_drive_list_root_keeps_current_cursor(self):
+		from core.commands import go_up
+		pane = Mock()
+		pane.get_path.return_value = 'drives://'
+		go_up(pane)
+		self.assertEqual('drives://', pane.set_path.call_args.args[0])
+		pane.set_path.call_args.args[1]()
+		pane.place_cursor_at.assert_not_called()
+		pane.move_cursor_home.assert_not_called()
+
+	def test_missing_previous_drive_falls_back_to_first_row(self):
+		from core.commands import go_up
+		pane = Mock()
+		pane.get_path.side_effect = ['file://D:', 'drives://']
+		pane.place_cursor_at.side_effect = ValueError('Drive no longer listed')
+		go_up(pane)
+		self.assertEqual('drives://', pane.set_path.call_args.args[0])
+		pane.set_path.call_args.args[1]()
+		pane.move_cursor_home.assert_called_once_with()
+
+
 class CommandCleanupTest(TestCase):
 	def test_clipboard_text_and_messages(self):
 		from core.commands import CopyFilePath
