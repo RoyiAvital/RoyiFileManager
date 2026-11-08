@@ -83,6 +83,8 @@
 - [x] FEATURE: The context menu for empty space in a pane shows "New folder" and "New file".
 - [x] FEATURE: Add `{UUID}`, `{HASHID}` and `{SQIDS}` aliases to the Batch Rename Tool.
 - [x] BUG: Hitting `Backspace` at the root of a drive yields [error](https://i.imgur.com/DI23zZb.png).
+- [ ] FEATURE: Add support to _copy and paste_ from archives into pane (Windows Explorer in a `zip` file to a pane).
+- [ ] FEATURE: Add support to _drag and drop_ from archives into pane (Windows Explorer in a `zip` file to a pane).
 
 ## Performance
 
