@@ -150,6 +150,38 @@ class GoToClipboardPathTest(TestCase):
 				GoToClipboardPath(pane)()
 				pane.run_command.assert_not_called()
 
+
+class ExplorerArchiveItemsTest(TestCase):
+	ITEMS = ['zip://C:/Data/sample.zip/folder', 'zip://C:/Data/sample.zip/report.txt']
+
+	def test_paste_and_drop_copy_archive_items(self):
+		from core.commands import DragAndDropListener, Paste
+		pane = Mock()
+		pane.get_path.return_value = 'file://C:/target'
+		with patch('core.commands.clipboard.get_files', return_value=self.ITEMS), \
+				patch('core.commands.clipboard.files_were_cut', return_value=False):
+			Paste(pane)()
+		pane.run_command.assert_called_once_with('copy', {'files': self.ITEMS, 'dest_dir': 'file://C:/target'})
+		pane = Mock()
+		# Shift-drop reports a move; leaving the archive scheme still copies.
+		DragAndDropListener(pane).on_files_dropped(self.ITEMS, 'file://C:/target', False)
+		pane.run_command.assert_called_once_with('copy', {'files': self.ITEMS, 'dest_dir': 'file://C:/target'})
+
+	def test_paste_explains_a_refused_explorer_selection(self):
+		from core.commands import Paste
+		for problem in ('sample.rar: this archive type has no entry in archive_handlers (AppSettings.yaml).', None):
+			with self.subTest(problem=problem), \
+					patch('core.commands.clipboard.get_files', return_value=[]), \
+					patch('fman.impl.shell_items.clipboard_problem', return_value=problem), \
+					patch('core.commands.show_alert') as alert:
+				pane = Mock()
+				Paste(pane)()
+				pane.run_command.assert_not_called()
+				if problem:
+					alert.assert_called_once_with(problem)
+				else:
+					alert.assert_not_called()
+
 class GoToLinkTargetTest(TestCase):
 	def setUp(self):
 		from core.commands import GoToLinkTarget

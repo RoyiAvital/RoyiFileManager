@@ -165,7 +165,7 @@ class UnpackArchiveTest(TestCase):
 		self.show_alert.assert_called_once_with('Destination already exists: Reports')
 		self.submit_task.assert_not_called()
 		self.assert_no_success()
-	def test_archive_looking_output_is_local_but_nested_unpack_fails_closed(self):
+	def test_archive_looking_output_is_local_and_unpacks_inside_it(self):
 		from core.commands import ArchiveOpenListener
 		from core.fs.zip import SevenZipFileSystem, _run_7zip
 		archive = self.root / 'archive.zip.7z'
@@ -184,11 +184,12 @@ class UnpackArchiveTest(TestCase):
 		self.pane.get_path.return_value = as_url(output)
 		self.pane.get_file_under_cursor.return_value = as_url(output / self.source.name)
 		self.prepare_copy.side_effect = self.backend.prepare_copy
+		# The folder named archive.zip is not taken for the archive.
 		self.command()
-		self.show_alert.assert_called_once()
-		self.assertFalse((output / 'Reports').exists())
+		self.show_alert.assert_not_called()
+		self.assertEqual(b'payload', (output / 'Reports' / 'file.txt').read_bytes())
 		self.assertEqual(self.original, (output / self.source.name).read_bytes())
-		self.assert_no_success()
+		self.assertEqual(original, archive.read_bytes())
 	def test_unsupported_prepared_task_never_runs(self):
 		child = Task('Unsafe handler', fn=Mock())
 		self.prepare_copy.side_effect = None
@@ -196,7 +197,8 @@ class UnpackArchiveTest(TestCase):
 		self.command()
 		self.show_alert.assert_called_once_with('This archive handler does not support safe Unpack.')
 		self.assert_no_success()
-	def test_parent_archive_substring_rejected_without_publication(self):
+	def test_parent_archive_substring_unpacks_the_selected_archive(self):
+		# 'backup.zip.old' merely contains '.zip'; the decoy backup.zip must not be read.
 		parent = self.root / 'backup.zip.old'
 		parent.mkdir()
 		selected = parent / 'Reports.zip'
@@ -208,11 +210,10 @@ class UnpackArchiveTest(TestCase):
 		self.pane.get_path.return_value = as_url(parent)
 		self.pane.get_file_under_cursor.return_value = as_url(selected)
 		self.command()
-		self.assertIn('selected archive root', self.show_alert.call_args.args[0])
-		self.assertFalse((parent / 'Reports').exists())
+		self.show_alert.assert_not_called()
+		self.assertEqual(b'payload', (parent / 'Reports' / 'file.txt').read_bytes())
 		self.assertEqual(self.original, selected.read_bytes())
 		self.assertEqual(other_bytes, other.read_bytes())
-		self.assert_no_success()
 	def test_prepared_destination_mismatch_is_rejected(self):
 		child = Extract(StubFS(), str(self.source), '', str(self.root / 'wrong'))
 		self.prepare_copy.side_effect = None

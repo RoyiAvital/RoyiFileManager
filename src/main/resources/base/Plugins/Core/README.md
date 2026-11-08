@@ -455,6 +455,13 @@ select its contents instead. Local-to-archive Move is disabled before mutation:
 use Copy, verify the archive contents, then delete originals explicitly.
 Same-archive rename keeps its existing behavior.
 
+Items copied or dragged from Explorer's archive view (for example inside
+`C:\Data\Reports.zip`) arrive without file paths, only as shell items. The host
+asks the shell where each archive ends, maps the members to the archive file
+system (`zip://C:/Data/Reports.zip/...`) with `archive_handlers`, and Paste or
+drop runs the normal Copy. They are always copied, so the archive is never
+changed. If any item cannot be mapped, nothing is copied and an alert explains why.
+
 ## Unpack Archive
 
 Select one local archive (or leave it under the cursor), then run **Unpack archive**

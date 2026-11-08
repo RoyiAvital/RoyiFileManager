@@ -370,7 +370,7 @@ class WindowsCleanupIT(QtIT):
 								patch.object(QTableView, 'dropEvent') as dispatch:
 							view.dropEvent(event)
 							dispatch.assert_called_once_with(event)
-						event.setDropAction.assert_called_once_with(action)
+						self.assertEqual({action}, {args[0] for args, _ in event.setDropAction.call_args_list})
 						self.assertEqual(action == Qt.MoveAction, event.ignore.called)
 						hover = Mock()
 						hover.keyboardModifiers.return_value = modifiers
@@ -382,6 +382,108 @@ class WindowsCleanupIT(QtIT):
 			finally:
 				view.deleteLater()
 		self.run_in_app(check)
+
+	def test_explorer_archive_items_paste_and_drop_as_copies(self):
+		from fman_unittest.impl.test_shell_items import explorer_idlist, make_archive
+		from tempfile import TemporaryDirectory
+		with TemporaryDirectory() as directory:
+			archive = make_archive(directory)
+			raw = explorer_idlist(archive, names={'report', 'folder'})
+			def check():
+				from fman import clipboard
+				from fman.impl import shell_items
+				from fman.impl.model.drag_and_drop import DragAndDrop as DropModel
+				from fman.impl.shell_items import SHELL_IDLIST_MIME
+				from fman.impl.view.drag_and_drop import DragAndDrop
+				from fman.url import as_url
+				from fman_unittest.impl.test_shell_items import HANDLERS
+				from PyQt5.QtCore import QMimeData, QModelIndex
+				from PyQt5.QtWidgets import QTableView
+				from unittest.mock import Mock, patch
+				handlers = patch.object(shell_items, '_archive_handlers', return_value=HANDLERS)
+				handlers.start()
+				self.addCleanup(handlers.stop)
+				member = 'zip://' + as_url(archive)[len('file://'):] + '/'
+				expected = {member + 'report.txt', member + 'folder'}
+				mime = QMimeData()
+				mime.setData(SHELL_IDLIST_MIME, raw)
+				# Explorer's Cut marks the move effect; the archive must still not change.
+				mime.setData(clipboard._CF_PREFERREDDROPEFFECT, clipboard._DROPEFFECT_MOVE)
+				with patch.object(clipboard, '_clipboard', return_value=Mock(mimeData=Mock(return_value=mime))):
+					self.assertEqual(expected, set(clipboard.get_files()))
+					self.assertFalse(clipboard.files_were_cut())
+				view = DragAndDrop()
+				try:
+					for modifiers in (Qt.NoModifier, Qt.ShiftModifier, Qt.ControlModifier):
+						with self.subTest(modifiers=modifiers):
+							event = Mock()
+							event.keyboardModifiers.return_value = modifiers
+							event.mimeData.return_value = mime
+							with patch.object(view, 'model', return_value=Mock(get_location=Mock(return_value=as_url(directory)))), \
+									patch.object(QTableView, 'dropEvent'):
+								view.dropEvent(event)
+							self.assertEqual({Qt.CopyAction}, {args[0] for args, _ in event.setDropAction.call_args_list})
+							self.assertEqual(Qt.CopyAction, event.setDropAction.call_args.args[0])
+							event.ignore.assert_not_called()
+				finally:
+					view.deleteLater()
+				class Model(DropModel):
+					def rowCount(self, parent=QModelIndex()):
+						return 0
+					def columnCount(self, parent=QModelIndex()):
+						return 0
+					def get_location(self):
+						return 'file://C:/target'
+				model = Model()
+				dropped = []
+				model.files_dropped.connect(lambda *args: dropped.append(args))
+				self.assertIn(SHELL_IDLIST_MIME, model.mimeTypes())
+				self.assertTrue(model.canDropMimeData(mime, Qt.CopyAction, -1, -1, QModelIndex()))
+				self.assertTrue(model.dropMimeData(mime, Qt.CopyAction, -1, -1, QModelIndex()))
+				self.assertEqual(1, len(dropped))
+				self.assertEqual((expected, 'file://C:/target', True), (set(dropped[0][0]),) + dropped[0][1:])
+				self.assertFalse(model.canDropMimeData(QMimeData(), Qt.CopyAction, -1, -1, QModelIndex()))
+				# Real Qt handling: Shift proposes Move; Explorer must still be told Copy.
+				from PyQt5.QtCore import QPoint
+				from PyQt5.QtGui import QDragEnterEvent, QDragMoveEvent, QDropEvent
+				view = DragAndDrop()
+				view.setModel(model)
+				view.resize(300, 200)
+				view.show()
+				try:
+					point, actions = QPoint(150, 150), Qt.CopyAction | Qt.MoveAction
+					for event_type in (QDragEnterEvent, QDragMoveEvent):
+						QApplication.sendEvent(view.viewport(), event_type(point, actions, mime, Qt.LeftButton, Qt.ShiftModifier))
+					event = QDropEvent(point, actions, mime, Qt.LeftButton, Qt.ShiftModifier)
+					self.assertEqual(Qt.MoveAction, event.proposedAction())
+					QApplication.sendEvent(view.viewport(), event)
+					self.assertEqual((Qt.CopyAction, True), (event.dropAction(), event.isAccepted()))
+					self.assertEqual(2, len(dropped))
+				finally:
+					view.deleteLater()
+				# A refused selection is accepted for the drop, then explained, never copied.
+				with patch.object(shell_items, '_archive_handlers', return_value={'.7z': '7z://'}), \
+						patch('fman.impl.model.drag_and_drop.show_alert') as alert, \
+						patch.object(shell_items, '_cache', (None, None)):
+					self.assertTrue(model.canDropMimeData(mime, Qt.CopyAction, -1, -1, QModelIndex()))
+					self.assertFalse(model.dropMimeData(mime, Qt.CopyAction, -1, -1, QModelIndex()))
+					alert.assert_not_called()
+					QApplication.processEvents()
+					alert.assert_called_once()
+					self.assertIn('archive_handlers', alert.call_args.args[0])
+				self.assertEqual(2, len(dropped))
+				# An empty Explorer selection is refused quietly.
+				from win32com.shell import shell
+				empty = QMimeData()
+				empty.setData(SHELL_IDLIST_MIME, shell.CIDAAsString(([], [])))
+				with patch('fman.impl.model.drag_and_drop.show_alert') as alert, \
+						patch.object(shell_items, '_cache', (None, None)):
+					self.assertFalse(model.canDropMimeData(empty, Qt.CopyAction, -1, -1, QModelIndex()))
+					self.assertFalse(model.dropMimeData(empty, Qt.CopyAction, -1, -1, QModelIndex()))
+					QApplication.processEvents()
+					alert.assert_not_called()
+				self.assertEqual(2, len(dropped))
+			self.run_in_app(check)
 
 	def test_native_prompts_and_shortcut_choices(self):
 		def check():

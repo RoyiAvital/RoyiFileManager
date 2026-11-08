@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.4] - 2026-11-08
+
+This release enables _copy and paste_ and _drag and drop_ of archive contents
+from Windows Explorer into a pane.
+
+### Added
+
+- Copy and paste, or drag and drop, items from an archive opened in Windows
+  Explorer (`.zip`, `.7z`, `.tar`) into a pane. They are extracted with the usual
+  copy prompt, progress and Cancel. The archive is never changed: cut and
+  `Shift` still copy. An archive type without an `archive_handlers` entry is
+  refused with a message; items are never silently left out.
+
+### Fixed
+
+- An archive inside a folder named like an archive (`C:\Backups\old.zip\Reports.zip`)
+  or containing `.zip` in its name (`C:\my.zipper\a.zip`) could not be opened,
+  unpacked or copied from, and going up from it could fail. `.zipx` archives could
+  also fail to open, depending on the session.
+
+### Documentation
+
+- The Archives guide explains working with Explorer's archive view.
+  `PlugIn.md` describes how such items appear in `clipboard.get_files()` and
+  `on_files_dropped`.
+
 ## [0.20.3] - 2026-11-04
 
 ### Fixed

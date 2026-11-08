@@ -103,6 +103,10 @@ for Qt integration, or `-m fman_integrationtest.everything_smoke` for the isolat
 live portable-runtime check and 30 warm IPC timings. The latter uses temporary
 state under `UserSettings/Local` and never controls the unnamed instance.
 
+`-m fman_integrationtest.explorer_archive_smoke` (with `QT_QPA_PLATFORM=windows`)
+pastes and drops items from Explorer's ZIP view into a real application and checks
+the archive is unchanged. It replaces the current clipboard contents.
+
 After freezing, `python build.py smoke-everything` verifies the bundled executable
 and license, then runs the same live check using the frozen Everything plug-in
 files and the development interpreter. It uses a restricted, medium-integrity

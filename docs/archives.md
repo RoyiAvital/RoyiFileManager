@@ -58,5 +58,20 @@ or between two archives of the same format.
 - Avoid changing the archive or destination while an operation runs.
 - There is no password prompt for encrypted archives.
 
+## From Explorer's Archive View
+
+Windows Explorer opens `.zip`, `.7z` and `.tar` files as folders.
+Copy items there and paste them into a pane, or drag them onto a pane:
+
+| In Explorer, inside `Reports.zip`  | In {{ app_name }}           |
+| ---------------------------------- | --------------------------- |
+| Select items, press ++ctrl+c++     | Press ++ctrl+v++ in a pane  |
+| Drag items                         | Drop onto a pane or folder  |
+
+- The items are extracted with the usual copy prompt, progress and Cancel.
+- They are always copied. Cut (++ctrl+x++) and ++shift++ do not change the archive.
+- The archive type needs an entry in `archive_handlers` (see [Configuration](configuration.md)).
+  Otherwise nothing is copied and a message explains why.
+
 See [Archive usage](https://github.com/RoyiAvital/RoyiFileManager/blob/main/src/main/resources/base/Plugins/Core/README.md#archive-transfers).
 See [Advanced Notes](advanced.md#file-transfers) for local-copy and recovery cautions.

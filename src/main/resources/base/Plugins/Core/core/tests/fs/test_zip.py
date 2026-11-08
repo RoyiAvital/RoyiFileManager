@@ -170,18 +170,21 @@ class UnpackExtractionTest(TestCase):
 					self.assertEqual(b'payload', (output / 'file.txt').read_bytes())
 					self.assertTrue((output / 'empty').is_dir())
 					self.assertEqual(original, archive.read_bytes())
-	def test_overlapping_suffix_does_not_extract_wrong_source(self):
-		self.create_task([('file', b'payload')])
+	def test_overlapping_suffix_extracts_the_selected_source(self):
+		# '.zip' is a prefix of '.zipx': the whole component decides the archive.
+		self.create_task([('file', b'decoy')])
 		selected = self.root / 'Reports.zipx'
-		selected.write_bytes(self.original)
+		with ZipFile(selected, 'w') as writer:
+			writer.writestr('file', b'payload')
+		selected_bytes = selected.read_bytes()
 		backend = ZipFileSystem(StubFS(), ('.zip', '.zipx'))
 		archive_url = backend.scheme + splitscheme(as_url(selected))[1]
 		task, = backend.prepare_copy(archive_url, as_url(self.output))
-		with self.assertRaisesRegex(OSError, 'selected archive root'):
-			task.require_new_directory(selected, self.output)
-		self.assertEqual(self.original, selected.read_bytes())
+		task.require_new_directory(selected, self.output)
+		task()
+		self.assertEqual(b'payload', (self.output / 'file').read_bytes())
+		self.assertEqual(selected_bytes, selected.read_bytes())
 		self.assertEqual(self.original, self.archive.read_bytes())
-		self.assertFalse(self.output.exists())
 	def test_tar_symlink_uses_7zip_behavior(self):
 		from tarfile import open as open_tar, TarInfo, SYMTYPE
 		archive = self.root / 'linked.tar'
@@ -608,6 +611,64 @@ class SevenZipExecutableTest(TestCase):
 			with ZipFile(archive) as zip_file:
 				self.assertEqual(['smoke-test.txt'], zip_file.namelist())
 				self.assertEqual(b'7za works', zip_file.read('smoke-test.txt'))
+
+class ArchivePathSplitTest(TestCase):
+	def test_split_uses_whole_components_and_skips_archive_named_folders(self):
+		fs = ZipFileSystem(StubFS(), {'.zip', '.zipx'})
+		with TemporaryDirectory() as directory:
+			root = as_url(Path(directory).resolve())[len('file://'):]
+			os.makedirs(os.path.join(directory, 'old.zip'))
+			for path, expected in (
+					('C:/my.zipper/a.zip/x/y.txt', ('C:/my.zipper/a.zip', 'x/y.txt')),
+					('C:/data/a.ZIPX/x', ('C:/data/a.ZIPX', 'x')),
+					('C:/a.zip', ('C:/a.zip', '')),
+					('/dest.zip/a.txt', ('/dest.zip', 'a.txt')),
+					('//server/share/a.zip/x', ('//server/share/a.zip', 'x')),
+					(root + '/old.zip/new.zip/x', (root + '/old.zip/new.zip', 'x')),
+					(root + '/missing.zip/inner.zip/x', (root + '/missing.zip', 'inner.zip/x'))):
+				with self.subTest(path=path):
+					self.assertEqual(expected, fs._split(path))
+			with self.assertRaises(FileNotFoundError):
+				fs._split('C:/data/archive.zip.old/x')
+
+	def test_single_archive_component_needs_no_disk_check(self):
+		fs = ZipFileSystem(StubFS(), {'.zip'})
+		with patch('core.fs.zip.os.path.isdir') as isdir:
+			self.assertEqual(('C:/a.zip', 'b/c.txt'), fs._split('C:/a.zip/b/c.txt'))
+		isdir.assert_not_called()
+
+	def test_resolve_treats_archive_named_folders_as_file_system_locations(self):
+		with TemporaryDirectory() as directory:
+			root = Path(directory).resolve()
+			for name in ('ordinary.zip', 'my.zipper'):
+				(root / name).mkdir()
+				with ZipFile(root / name / 'container.zip', 'w') as writer:
+					writer.writestr('report.txt', b'report')
+			fs = ZipFileSystem(Mock(resolve=lambda url: url), {'.zip'})
+			base = as_url(root)[len('file://'):]
+			for name in ('ordinary.zip', 'my.zipper'):
+				with self.subTest(name=name):
+					# Going up from the archive reaches the containing folder.
+					self.assertEqual(as_url(root / name), fs.resolve(base + '/' + name))
+					self.assertEqual('zip://' + base + '/' + name + '/container.zip',
+						fs.resolve(base + '/' + name + '/container.zip'))
+			with self.assertRaises(FileNotFoundError):
+				fs.resolve(base + '/missing.zip/item')
+
+	def test_archive_below_an_archive_named_folder_reads_its_members(self):
+		with TemporaryDirectory() as directory:
+			archive = Path(directory).resolve() / 'real.zip' / 'container.zip'
+			archive.parent.mkdir()
+			with ZipFile(archive, 'w') as writer:
+				writer.writestr('ordinary.zip/report.txt', b'report')
+			filesystem = StubFS()
+			fs = ZipFileSystem(filesystem, {'.zip'})
+			filesystem.add_child(fs)
+			base = as_url(archive, 'zip://')[len('zip://'):]
+			self.assertEqual(['ordinary.zip'], list(fs.iterdir(base)))
+			self.assertTrue(fs.is_dir(base + '/ordinary.zip'))
+			self.assertEqual(['report.txt'], list(fs.iterdir(base + '/ordinary.zip')))
+			self.assertTrue(fs.exists(base + '/ordinary.zip/report.txt'))
 
 class ZipFileSystemTest(TestCase):
 	def test_move_rejects_source_rewrite_with_unchanged_stat(self):

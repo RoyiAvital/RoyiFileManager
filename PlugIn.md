@@ -283,7 +283,7 @@ hooks are no-ops.
 | `on_name_edited(file_url, new_name)` | Notification of an inline name edit. |
 | `on_path_changed()` | Notification that the pane path changed. |
 | `before_location_change(url, sort_column='', ascending=True)` | Return a replacement `(url, sort_column, ascending)` or no replacement. |
-| `on_files_dropped(file_urls, dest_dir, is_copy_not_move)` | Notification of dropped URLs and copy/move intent. |
+| `on_files_dropped(file_urls, dest_dir, is_copy_not_move)` | Notification of dropped URLs and copy/move intent. Items from Explorer's archive view arrive as archive URLs (see `clipboard.get_files`) with copy intent. |
 | `on_command(command_name, args)` | Return a replacement `(command_name, args)` or no replacement. |
 | `on_location_bar_clicked()` | Notification of a location-bar click. |
 
@@ -652,8 +652,8 @@ synchronously to the UI thread. An application instance must already exist.
 | `get_text()` | Return clipboard text. |
 | `copy_files(file_urls)` | Store application file URLs with copy metadata. Existing clipboard text is preserved. |
 | `cut_files(file_urls)` | Store URLs with Windows/Qt cut metadata, preserving existing clipboard text. |
-| `get_files()` | Return decoded application URLs; skip clipboard entries that cannot be converted. |
-| `files_were_cut()` | Report whether the clipboard's file metadata denotes a cut operation. |
+| `get_files()` | Return decoded application URLs; skip clipboard entries that cannot be converted. Items copied in Explorer's archive view are returned as archive URLs, for example `zip://C:/Data/a.zip/folder`. If any of them cannot be mapped (for example an archive type without an `archive_handlers` entry), none are returned. |
+| `files_were_cut()` | Report whether the clipboard's file metadata denotes a cut operation. Always false for items from Explorer's archive view. |
 
 Clipboard functions do not themselves copy, move, delete, or paste files.
 

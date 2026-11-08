@@ -1,4 +1,5 @@
-from fman.impl.util.qt import as_qurl, from_qurl
+from fman.impl.shell_items import dropped_urls, forget_failure
+from fman.impl.util.qt import as_qurl
 from fman.impl.util.qt.thread import run_in_main_thread
 from PyQt5.QtCore import QMimeData
 from PyQt5.QtWidgets import QApplication
@@ -39,20 +40,18 @@ def cut_files(file_urls):
 
 @run_in_main_thread
 def get_files():
-	result = []
-	for qurl in _clipboard().mimeData().urls():
-		try:
-			result.append(from_qurl(qurl))
-		except ValueError:
-			# On at least Windows 10, we sometimes get plain text (not file
-			# URLs) on the text/uri-list clipboard. Ignore this:
-			pass
-	return result
+	"""File URLs on the clipboard. Items copied in Explorer's archive view are
+	returned as archive URLs, e.g. zip://C:/a.zip/folder; none if any cannot be mapped."""
+	forget_failure()
+	return dropped_urls(_clipboard().mimeData())[0]
 
 @run_in_main_thread
 def files_were_cut():
-	data = _clipboard().mimeData().data(_CF_PREFERREDDROPEFFECT)
-	return data == _DROPEFFECT_MOVE
+	mime = _clipboard().mimeData()
+	# Items cut in Explorer's archive view are only copied: never change the archive.
+	if dropped_urls(mime)[1]:
+		return False
+	return mime.data(_CF_PREFERREDDROPEFFECT) == _DROPEFFECT_MOVE
 
 def _clipboard():
 	return QApplication.instance().clipboard()

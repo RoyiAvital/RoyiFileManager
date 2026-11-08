@@ -56,7 +56,8 @@ As in Explorer:
 | With ++shift++ held             | Move   |
 
 Network shares count as separate drives. Files dragged out of archives are
-always copied.
+always copied, including from an archive opened in Explorer
+(see [Archives](archives.md#from-explorers-archive-view)).
 
 ### Duplicate In The Same Folder
 

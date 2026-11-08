@@ -48,11 +48,14 @@ class _7ZipFileSystem(FileSystem):
 	def get_default_columns(self, path):
 		return 'core.Name', 'core.Size', 'core.Modified'
 	def resolve(self, path):
-		for suffix in self._suffixes:
-			if suffix in path.lower():
-				if not self.exists(path):
-					raise FileNotFoundError(self.scheme + path)
-				return super().resolve(path)
+		# A path is inside an archive only below a component named like an archive
+		# that is not a real folder; otherwise it is a file system location (going
+		# up from C:/old.zip/a.zip reaches the folder C:/old.zip).
+		parts, candidates = self._archive_components(path)
+		if any(not os.path.isdir('/'.join(parts[:index + 1])) for index in candidates):
+			if not self.exists(path):
+				raise FileNotFoundError(self.scheme + path)
+			return super().resolve(path)
 		return self._fs.resolve(as_url(path))
 	def iterdir(self, path):
 		path_in_zip = self._split(path)[1]
@@ -243,14 +246,26 @@ class _7ZipFileSystem(FileSystem):
 								restore(parent)
 		return CM()
 	def _split(self, path):
-		for suffix in self._suffixes:
-			try:
-				split_point = path.lower().index(suffix) + len(suffix)
-			except ValueError as suffix_not_found:
-				continue
-			else:
-				return path[:split_point], path[split_point:].lstrip('/')
-		raise filenotfounderror(self.scheme + path) from None
+		"""Split into (archive path, path inside it) at a whole path component.
+
+		Components named like archives can also be folders (C:/old.zip/a.zip) or
+		members (a.zip/inner.zip/x). With one such component, it is the archive and
+		no disk check is made. With several, the first that is not an existing
+		folder is the archive; a missing archive still splits so callers report it.
+		"""
+		parts, candidates = self._archive_components(path)
+		if not candidates:
+			raise filenotfounderror(self.scheme + path) from None
+		index = candidates[0]
+		if len(candidates) > 1:
+			index = next((candidate for candidate in candidates[:-1]
+				if not os.path.isdir('/'.join(parts[:candidate + 1]))), candidates[-1])
+		return '/'.join(parts[:index + 1]), '/'.join(parts[index + 1:]).lstrip('/')
+	def _archive_components(self, path):
+		"""Path components and the indices of those named like an archive."""
+		parts = path.split('/')
+		return parts, [index for index, part in enumerate(parts)
+			if any(part.lower().endswith(suffix) for suffix in self._suffixes)]
 	def _iter_infos(self, path, cache=True):
 		zip_path, path_in_zip = self._split(path)
 		self._raise_filenotfounderror_if_not_exists(zip_path)

@@ -1191,6 +1191,10 @@ class Paste(DirectoryPaneCommand):
 	def __call__(self):
 		files = clipboard.get_files()
 		if not files:
+			from fman.impl.shell_items import clipboard_problem
+			problem = clipboard_problem()
+			if problem:
+				show_alert(problem)
 			return
 		if clipboard.files_were_cut():
 			self.pane.run_command('paste_cut')

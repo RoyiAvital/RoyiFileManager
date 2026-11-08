@@ -1,3 +1,4 @@
+from fman.impl.shell_items import dropped_urls, forget_failure
 from fman.impl.util.qt import MoveAction, NoButton, \
 	ControlModifier, CopyAction, from_qurl
 from fman.url import as_human_readable, splitscheme
@@ -66,6 +67,10 @@ class DragAndDrop(QTableView):
 				if generation == getattr(self, '_view_generation', None):
 					self.selectionModel().select(selection, QISM.ClearAndSelect)
 					self.selectionModel().setCurrentIndex(current, QISM.NoUpdate)
+	def dragEnterEvent(self, event):
+		# A new drag retries Explorer items that failed to resolve before.
+		forget_failure()
+		super().dragEnterEvent(event)
 	def dragMoveEvent(self, event):
 		super().dragMoveEvent(event)
 		if event.isAccepted():
@@ -79,15 +84,23 @@ class DragAndDrop(QTableView):
 			# If we accept the event (which super().dropEvent(...) does above),
 			# then Windows moves the file to the Recycle Bin!!! Avoid this:
 			event.ignore()
+		else:
+			# Qt reports the proposed action (Move while Shift is held). A Move
+			# reply makes Explorer delete the source, e.g. entries of a ZIP.
+			event.setDropAction(action)
 	def _drop_action(self, event):
-		"""Like Explorer: Ctrl copies, Shift moves, otherwise copy across volumes and move within one."""
+		"""Like Explorer: Ctrl copies, Shift moves, otherwise copy across volumes and move within one.
+		Items from Explorer's archive view are always copied: the archive is never changed."""
+		urls, from_shell = dropped_urls(event.mimeData())
+		if from_shell:
+			return CopyAction
 		modifiers = event.keyboardModifiers()
 		if modifiers & ControlModifier:
 			return CopyAction
 		if modifiers & Qt.ShiftModifier:
 			return MoveAction
 		destination = _volume(self.model().get_location())
-		sources = [_volume(qurl) for qurl in event.mimeData().urls()]
+		sources = [_volume(url) for url in urls]
 		if destination is not None and any(source != destination for source in sources):
 			return CopyAction
 		return MoveAction
