@@ -88,7 +88,8 @@ class BuildNamingTest(TestCase):
 		settings_path = root / 'src/AppMeta.json'
 		settings_path.parent.mkdir(parents=True)
 		settings_path.write_text(json.dumps({
-			'app_name': name, 'version': '9.8.7'
+			'app_name': name, 'version': '9.8.7',
+			'description': 'Portable file manager for Windows.'
 		}), encoding='utf-8')
 		helper = root / 'src/main/python/fbs_runtime/build_settings.py'
 		helper.parent.mkdir(parents=True)
@@ -98,6 +99,15 @@ class BuildNamingTest(TestCase):
 		shutil.copy2(self.ROOT / checksum_helper.relative_to(root), checksum_helper)
 		shutil.copy2(self.ROOT / 'build.py', root / 'build.py')
 		return settings_path
+
+	def _load_spec(self, root, console=False):
+		with patch('PyInstaller.utils.hooks.collect_all', return_value=([], [], [])), \
+				patch('PyInstaller.utils.hooks.copy_metadata', return_value=[]), \
+				patch.dict('os.environ', {'ROYIFILEMANAGER_BUILD_CONSOLE': '1' if console else '0'}):
+			return runpy.run_path(str(self.ROOT / 'application.spec'), init_globals={
+				'SPECPATH': str(root), 'Analysis': Mock(), 'PYZ': Mock(),
+				'EXE': Mock(), 'COLLECT': Mock()
+			})
 
 	def test_build_paths_freeze_and_help_use_settings(self):
 		for name in ('RfmRenameProbe', 'build'):
@@ -150,17 +160,69 @@ class BuildNamingTest(TestCase):
 		with TemporaryDirectory() as temporary:
 			root = Path(temporary).resolve(strict=True)
 			self._fixture(root, 'RfmRenameProbe')
-			executable, collection = Mock(), Mock()
-			with patch('PyInstaller.utils.hooks.collect_all', return_value=([], [], [])), \
-					patch.dict('os.environ', {'ROYIFILEMANAGER_BUILD_CONSOLE': '1'}):
-				spec = runpy.run_path(str(self.ROOT / 'application.spec'), init_globals={
-					'SPECPATH': str(root), 'Analysis': Mock(), 'PYZ': Mock(),
-					'EXE': executable, 'COLLECT': collection
-				})
+			spec = self._load_spec(root, console=True)
+			executable, collection = spec['EXE'], spec['COLLECT']
 			self.assertEqual('RfmRenameProbe', executable.call_args.kwargs['name'])
 			self.assertTrue(executable.call_args.kwargs['console'])
 			self.assertEqual('RfmRenameProbe', collection.call_args.kwargs['name'])
 			self.assertIn(('src/AppMeta.json', 'resources/build-settings'), spec['datas'])
+
+	def test_spec_metadata_is_readable_from_executables_by_windows(self):
+		import PyInstaller
+		import win32api
+		from PyInstaller.utils.win32.versioninfo import write_version_info_to_executable
+		for console, version in (
+				(False, '9.8.7'), (True, '65535.0.65535.42'),
+				(False, '1.2.3-rc.1'), (True, '1.2.3-alpha.0')):
+			with self.subTest(console=console, version=version), TemporaryDirectory() as temporary:
+				root = Path(temporary).resolve(strict=True)
+				settings_path = self._fixture(root, 'RfmRenameProbe')
+				settings = json.loads(settings_path.read_text(encoding='utf-8'))
+				settings.update(version=version, description='Portable file manager \u2014 Windows.')
+				settings_path.write_text(json.dumps(settings), encoding='utf-8')
+				spec = self._load_spec(root, console=console)
+				options = spec['EXE'].call_args.kwargs
+				self.assertEqual(console, options['console'])
+				bootloader = Path(PyInstaller.__file__).parent / 'bootloader' / PyInstaller.PLATFORM
+				executable = root / 'RfmRenameProbe.exe'
+				shutil.copy2(bootloader / ('run.exe' if console else 'runw.exe'), executable)
+				write_version_info_to_executable(str(executable), options['version'])
+				parts = tuple(map(int, version.split('-', 1)[0].split('.')))
+				parts += (0,) * (4 - len(parts))
+				fixed = win32api.GetFileVersionInfo(str(executable), '\\')
+				self.assertEqual(0x2 if '-' in version else 0, fixed['FileFlags'])
+				for prefix in ('FileVersion', 'ProductVersion'):
+					self.assertEqual((parts[0] << 16) | parts[1], fixed[prefix + 'MS'] & 0xffffffff)
+					self.assertEqual((parts[2] << 16) | parts[3], fixed[prefix + 'LS'] & 0xffffffff)
+				translations = win32api.GetFileVersionInfo(str(executable), r'\VarFileInfo\Translation')
+				self.assertEqual(((0x0409, 1200),), translations)
+				language, codepage = translations[0]
+				query = '\\StringFileInfo\\%04x%04x\\' % (language, codepage)
+				for field, expected in {
+					'FileVersion': version,
+					'ProductVersion': version,
+					'ProductName': settings['app_name'],
+					'FileDescription': settings['description']
+				}.items():
+					with self.subTest(field=field):
+						self.assertEqual(expected, win32api.GetFileVersionInfo(str(executable), query + field))
+
+	def test_spec_rejects_versions_that_cannot_fit_windows_version_fields(self):
+		with TemporaryDirectory() as temporary:
+			root = Path(temporary).resolve(strict=True)
+			settings_path = self._fixture(root, 'RfmRenameProbe')
+			settings = json.loads(settings_path.read_text(encoding='utf-8'))
+			for version in (None, 1, '', '1', '1.2', '1.2.3.4.5', '1.2.x', '1.2.',
+					'-1.2.3', '65536.0.0', '1.2.65536', '1.2.3.65536',
+					'1.2.3-', '1.2.3-01', '1.2.3-rc..1', '1.2.3-rc_1',
+					'\u0661.2.3', ' 1.2.3', '1.2.3 '):
+				with self.subTest(version=version):
+					settings['version'] = version
+					settings_path.write_text(json.dumps(settings), encoding='utf-8')
+					with self.assertRaises(ValueError) as caught:
+						self._load_spec(root)
+					self.assertIn(str(settings_path), str(caught.exception))
+					self.assertIn('version', str(caught.exception))
 
 
 class NativeParserPackagingTest(TestCase):

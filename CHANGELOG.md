@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The executable embeds File Version, Product Version, Product Name and File
+  Description from the application metadata during freeze, including GitHub
+  Actions release builds. Windows **Properties > Details** shows the values;
+  both version strings preserve the value in the metadata, including prerelease
+  suffixes such as `-rc.1`.
+
 ## [0.20.4] - 2026-11-08
 
 This release enables _copy and paste_ and _drag and drop_ of archive contents

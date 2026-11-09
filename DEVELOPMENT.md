@@ -44,6 +44,15 @@ python build.py package
 ```
 
 `doc` builds the documentation in strict mode. `test` checks application behavior and release/build inputs.
+`freeze` embeds File Version, Product Version, Product Name and File Description
+from [`src/AppMeta.json`](src/AppMeta.json) into the executable's Windows version
+resource. Update that file only; no separate version file is needed. `version`
+must contain three or four dot-separated integers from 0 to 65535, optionally
+followed by a prerelease suffix such as `-rc.1`. File Version and Product Version
+preserve the full string unchanged. Only Windows' binary version fields use four
+numeric components (`0.20.4` becomes `0.20.4.0`). Prerelease executables also carry
+the Windows prerelease flag.
+
 `test-docs` runs the documentation gallery capture tests in `src/docstest`; the Pages
 workflow runs it before capturing, and `test` does not. Benchmark harnesses,
 synthetic performance fixtures, report generation and standalone PoCs are outside
@@ -173,6 +182,11 @@ It runs `python build.py test`, `freeze`, `smoke-everything` and `package`, then
 release whose notes are that version's section and whose assets are the ZIP
 and its SHA-256. Draft entries under `Unreleased` are not included in the
 release notes. Tags with a suffix (`v1.0.0-rc.1`) are published as pre-releases.
+
+The Freeze step embeds the version automatically through `application.spec`.
+It reads `src/AppMeta.json` directly, without deriving or overriding metadata
+from the tag. Both version strings retain the value in that file, including a
+prerelease suffix. No separate embedding step or manual executable edit is needed.
 
 Run the workflow manually from the Actions tab (`workflow_dispatch`) to build
 without publishing; the ZIP is then available as a workflow artifact. The

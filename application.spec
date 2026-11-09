@@ -1,7 +1,9 @@
 from PyInstaller.utils.hooks import collect_all, copy_metadata
+from PyInstaller.utils.win32 import versioninfo
 from pathlib import Path
 from runpy import run_path
 import os
+import re
 import sys
 
 
@@ -9,7 +11,38 @@ root = Path(SPECPATH)
 load_build_settings = run_path(
 	str(root / 'src/main/python/fbs_runtime/build_settings.py')
 )['load_build_settings']
-app_name = load_build_settings(root / 'src/AppMeta.json')['app_name']
+build_settings_path = root / 'src/AppMeta.json'
+build_settings = load_build_settings(build_settings_path)
+app_name = build_settings['app_name']
+app_version = build_settings.get('version')
+identifier = r'(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)'
+version_match = re.fullmatch(
+	r'([0-9]+(?:\.[0-9]+){2,3})(?:-%s(?:\.%s)*)?' % (identifier, identifier),
+	app_version
+) if isinstance(app_version, str) else None
+if version_match is None or any(int(part) > 65535 for part in version_match.group(1).split('.')):
+	raise ValueError(
+		'%s: invalid version; use three or four integers from 0 to 65535, '
+		'separated by dots, optionally followed by a SemVer prerelease suffix '
+		'such as -rc.1.' % build_settings_path
+	)
+version_parts = tuple(map(int, version_match.group(1).split('.')))
+version_parts += (0,) * (4 - len(version_parts))
+version_info = versioninfo.VSVersionInfo(
+	ffi=versioninfo.FixedFileInfo(
+		filevers=version_parts, prodvers=version_parts,
+		flags=0x2 if '-' in app_version else 0
+	),
+	kids=[
+		versioninfo.StringFileInfo([versioninfo.StringTable('040904b0', [
+			versioninfo.StringStruct('FileVersion', app_version),
+			versioninfo.StringStruct('ProductVersion', app_version),
+			versioninfo.StringStruct('ProductName', app_name),
+			versioninfo.StringStruct('FileDescription', build_settings['description'])
+		])]),
+		versioninfo.VarFileInfo([versioninfo.VarStruct('Translation', [0x0409, 1200])])
+	]
+)
 
 send2trash_datas, send2trash_binaries, send2trash_imports = \
 	collect_all('send2trash')
@@ -75,6 +108,7 @@ exe = EXE(
 	[],
 	exclude_binaries=True,
 	name=app_name,
+	version=version_info,
 	console=os.environ.get('ROYIFILEMANAGER_BUILD_CONSOLE') == '1',
 	icon='src/main/icons/Icon.ico'
 )

@@ -84,6 +84,18 @@ class ReleaseNotesTest(TestCase):
 
 
 class ReleaseProductNameTest(TestCase):
+	def test_release_freezes_after_version_validation_and_before_packaging(self):
+		import yaml
+		workflow = yaml.safe_load((ROOT / '.github/workflows/release.yml').read_text(encoding='utf-8'))
+		steps = workflow['jobs']['build']['steps']
+		names = [step['name'] for step in steps]
+		freeze = names.index('Freeze')
+		self.assertLess(names.index('Resolve version'), freeze)
+		self.assertLess(freeze, names.index('Package'))
+		self.assertEqual('micromamba run -n $env:RELEASE_ENV python build.py freeze',
+			steps[freeze]['run'])
+		self.assertNotIn('continue-on-error', steps[freeze])
+
 	def test_artifact_upload_uses_node24_pin_and_preserves_handoff(self):
 		import yaml
 		workflow = yaml.safe_load((ROOT / '.github/workflows/release.yml').read_text(encoding='utf-8'))
