@@ -29,7 +29,7 @@ Your context window: 1M.
 ## Reviewer
 
 ```
-# Features Review Claude Fable 5.1
+# Features Review Claude Fable 5.2
 
 We are developing a File Manager.  
 A dual pane, keyboard focused, aesthetic, responsive and Sublime Text inspired.
@@ -47,7 +47,7 @@ Your onboarding tasks:
 
 Once you're ready, We'll start reviewing features.
 
-Your model signature: Claude Fable 5.1.
+Your model signature: Claude Fable 5.2.
 Your effort level: Extra High.
 Your context window: 1M.
 ```

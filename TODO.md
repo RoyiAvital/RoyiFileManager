@@ -85,7 +85,8 @@
 - [x] BUG: Hitting `Backspace` at the root of a drive yields [error](https://i.imgur.com/DI23zZb.png).
 - [x] FEATURE: Add support to _copy and paste_ from archives into pane (Windows Explorer in a `zip` file to a pane).
 - [x] FEATURE: Add support to _drag and drop_ from archives into pane (Windows Explorer in a `zip` file to a pane).
-- [x] Change: Embed metadata into the `exe`: File Version, Product Version, Product Name, File Description.
+- [x] CHANGE: Embed metadata into the `exe`: File Version, Product Version, Product Name, File Description.
+- [ ] BUG: Move / Copy of same named files from different folders (Paste / Drop from Explorer search results) into one folder silently overwrites: Only the last file survives.
 
 ## Performance
 

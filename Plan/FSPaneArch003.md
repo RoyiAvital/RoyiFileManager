@@ -4,14 +4,26 @@ Status: Design draft, 2026-10-26. Open for review; no implementation authorized.
 The public `fman` plug-in API may be replaced (user decision, 2026-10-26).
 Pipelines and a Rust engine were added in the second pass the same day; the
 third pass reframed pipelines as virtual folders driven from the UI.
+Reviewed 2026-11-15: needs revision before P0; see the last reviewer record.
 
 ## Task
 
-Turn the pane into a general **item table**. A pane shows a set of items from
-any source: a folder, an archive, a recursive (flat) listing, or the results of
-`fd`, ripgrep or Everything. Every column can be sorted, filtered and searched.
-File actions (Copy, Move, Delete, Rename, Open, QuickView) apply to any item
-that refers to a file, wherever it was listed.
+Turn the pane into a general **item table** and generate that table as fast as
+possible. Every item is a row with an ID and typed columns. Two motivations:
+
+- **Performance**: the table is the single input of display, refresh, sort,
+  filter, Find and every tool. Generating it fast, in a compact form those
+  operations read directly, lowers the latency of all of them.
+- **Composability and modularity**: sources, columns, tools and actions meet
+  only at the table. The rows one tool produces are the input of the next, as
+  objects flow through a PowerShell pipeline, and a new source or column needs
+  no change to the pane.
+
+A pane shows a set of items from any source: a folder, an archive, a recursive
+(flat) listing, or the results of `fd`, ripgrep or Everything. Every column can
+be sorted, filtered and searched. File actions (Copy, Move, Delete, Rename,
+Open, QuickView) apply to any item that refers to a file, wherever it was
+listed.
 
 Every result set is a **virtual folder**. Filter the pane, run Search files
 (ripgrep) on what remains, select some results and press Delete: each step
@@ -20,14 +32,14 @@ or selection as its scope and produces a new virtual folder with history,
 Back/Forward and refresh. Internally a virtual folder records the chain of
 steps that produced it; no pipeline language is required from the user.
 
-Motivation:
+Background:
 
 - Search results live in separate QuickTable windows today and cannot be used
   like a pane (no Copy/Move/QuickView, no keyboard workflow, no history).
 - File operations refresh panes by rescanning whole folders per notification
   ([CodeReview007](../Done/CodeReview007.md)); the cost scales with folder size.
 - Navigation commands read the committed location, not the requested one
-  ([CodeReview008](CodeReview008.md) F15).
+  ([CodeReview008](../Done/CodeReview008.md) F15).
 - Item identity is a string URL; aliases and case rules are handled per feature
   (F04, CodeReview099 C08).
 - Latency must improve on [FSPaneArch002](../Done/FSPaneArch002.md): the
@@ -75,7 +87,7 @@ Compatibility:
 - Subsumes [Flat View](FlatView.md) and the metadata parts of
   [Find Files 003](FindFiles003.md); both are re-scoped onto this model.
   [CodeReview007](../Done/CodeReview007.md) is the interim setting for rescans during
-  file operations; the rescans and [CodeReview008](CodeReview008.md) F15 are
+  file operations; the rescans and [CodeReview008](../Done/CodeReview008.md) F15 are
   resolved here.
 
 ## Design
@@ -337,7 +349,8 @@ flags the libraries do not expose.
 
 ### Persistence
 
-- Column layout, sort and visible columns are saved per source type.
+- The sort order stays remembered per folder, as today (`Sort Settings.json`).
+- Column layout and visible columns are saved per source type.
 - History and favorites store locations, including query locations.
 - Snapshots are never persisted.
 
@@ -528,3 +541,351 @@ flags the libraries do not expose.
   target 150 ms for a complete sorted 200k folder. Specified the column
   contract: typed values and optional sort keys from plug-ins, batch
   production, computed columns arriving as change sets; no Python comparators.
+
+### 2026_11_15 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Claude Fable 5.2
+- Effort: Extra High
+- Context Window: 1M
+- Outcome: Needs revision before P0. The direction holds: enumeration is the
+  measured floor and change sets are the largest win. Four findings block
+  approval: F01 and F02 (operations on multi-folder and stale rows), F06 (one
+  update path) and F15 (split into independent tasks). F12 corrects one speed
+  lever. Fixed two dead CodeReview008 links and added the status line; the
+  design text is otherwise unchanged. No application code changed.
+
+Requested focus: speed, fewer edge cases, data safety. Priorities are High,
+Medium and Low, to avoid the P0-P8 phase names.
+
+#### Data Safety
+
+**F01 - High: batches from several folders can overwrite themselves.**
+Virtual folders make multi-folder selections the normal input, but
+[FileTreeOperation](../src/main/resources/base/Plugins/Core/core/fileoperations.py)
+assumes one parent: the layout comes from `dirname(files[0])` and destinations
+are checked only against the disk, before anything runs. Probe: moving
+`a\x.txt` and `b\x.txt` into an empty folder left one `x.txt` (from `b`), with
+no prompt and both sources gone. Copy silently kept the second. With three
+items, one order flattened them and another failed on a missing subfolder.
+Paste and drop pass external multi-folder lists to the same class today.
+Required: map every source to its destination during preparation and refuse
+the batch before any mutation when two map to one name, ignoring case. Define
+one layout for multi-folder batches. Drop a selected item that lies inside a
+selected folder. Commands that assume one folder (Pack, Batch File Renamer,
+Checksum, Robocopy, Compare) refuse multi-folder selections unless they opt in
+with tests. Fix the existing overwrite in its own task first.
+
+**F02 - High: result rows describe the past; destructive commands must check
+them.** A folder pane rescans on activation. A result set can be minutes old,
+spans many folders, and Delete acts on the path. Required: each file-backed row
+keeps what was listed (volume and file ID, else type, size and modification
+time). Delete, Move and Rename from a virtual folder re-read each target
+without following links during preparation and put mismatches in the existing
+skipped-errors summary. Rows from `fd`, ripgrep and Everything get the ID from
+one stat per returned row (10 µs measured). Decision for the user: whether
+ordinary folders adopt this check or keep name-based behavior.
+
+**F03 - Medium: define what a command acts on.** Marks are a subset of the
+visible rows today: [the view](../src/main/python/fman/impl/view/__init__.py)
+drops marks whose rows a filter hides. Selection "by item key", column filters
+and streaming can break that silently. Required: targets are the marked and
+visible rows at command capture, else the cursor row. Rows arriving later never
+join a running command. Several match rows of one file are one target, and the
+confirmation counts targets.
+
+**F04 - Medium: the engine is read-only and the operation layer stays.** State
+in Scope that the Rust engine has no filesystem mutation entry points and that
+item selection is an adapter in front of the existing `fman.fs` operations.
+Snapshot values and change-set fields never parameterize a mutation, as
+[PlugIn.md](../PlugIn.md) already requires for listing identities.
+
+**F05 - Medium: contain the walker and searcher.** In-process, a native fault
+or a failed allocation (Rust aborts) ends the application during a running
+transfer, and a blocked network read cannot be canceled. PDF and CSV previews
+use helper processes for this reason. FO01, an undiagnosed native crash during
+pane refresh, and CS05 are still open in [CodeReview099](CodeReview099.md).
+Required: P0 compares one persistent helper process for walking and searching
+(ending it is a hard cancel) with in-process hosting, against a stated
+throughput budget. Memory-only kernels (keys, sort, filter, find) stay
+in-process. In both cases: row and byte caps per result set with the
+"incomplete" marker, unwinding panics and no memory maps.
+
+#### Fewer Edge Cases
+
+**F06 - High: one update path: a hint, then an authoritative re-read.** Drop
+"exact deltas" with producer-supplied values. The local filesystem and the
+host already emit `notify_file_added/changed/removed(url)` after each mutation.
+The store turns each into a re-read of that one entry and derives the change
+itself. Probe: `NtQueryDirectoryFile` with the entry name returns the record
+the scanner parses. 10,000 of 10,000 single-entry reads equaled the scan
+through the same `_fsparser`, at 12 µs each. A missing name returns no record;
+the filesystem resolves case and returns the on-disk name. This removes wrong
+producer values, name matching, link-metadata rules and identity capture as
+separate concerns. It needs no new producer API and is the input a directory
+watcher ([Roadmap002](Roadmap002.md) priority 3) would use. 10,000 copied
+files cost about 0.12 s of re-reads, against 34-61 s of rescans today
+([CodeReview007](../Done/CodeReview007.md)). Keep a coalesced rescan outside
+the native scanner's scope (UNC, FAT), when the hint names the location
+itself, when the returned name is not the requested one ignoring case
+(wildcard or short-name match), and at task end.
+
+**F07 - Medium: a total order, then one merge.** Sorting is stable over
+enumeration order, so ties follow scan order. Appended and streamed rows arrive
+in another order, so "position vectors equal a fresh query" cannot hold.
+Required: every sort ends with a tie-break on the row key. Then replace "binary
+insertion for small deltas, re-query for large" with one path: sort the changed
+rows and merge them into the retained order. Probe at 200k in Python, an upper
+bound for native code: insertion 2.2 ms, re-sorting the previous order 12.8 ms,
+same result. Retained keys live along one store lineage and are dropped when a
+rescan differs; state this against the R08 refusal in
+[FSPaneArch002](../Done/FSPaneArch002.md).
+
+**F08 - Medium: row key, target and identity are three things.** A file ID
+cannot be the row key: hard links share it, a match row is a file plus a line,
+and one file can appear twice. Define the row key (unique per snapshot), the
+target (the URL acted on) and the identity (the check token for F02, marks and
+rename tracking). Favorites and history stay lexical: identity needs I/O, fails
+offline, and two paths to one folder are different favorites.
+
+**F09 - Medium: result sets are static in the first version.** Remove "live
+updates flow through steps" and reruns on verification: regaining focus would
+rerun a search. Rows change through the application's own operations on their
+targets (the F06 re-read, per target) or an explicit refresh. While a tool
+streams, rows append in arrival order and are sorted once on completion, so
+rows do not move under the cursor. Back to a result set shows retained rows
+under a count and byte cap, or "expired, press Ctrl+R". History and session
+restore never start a search.
+
+**F10 - Medium: locations are structured values, not parsed strings.**
+`rg://C:/src?text=TODO&glob=*.py` cannot be parsed reliably: application URLs
+are not percent-encoded, and `&`, `=`, `#` and `%` are legal in names and
+patterns. The archive path parser had this class of bug (fixed in 0.20.4).
+Keep chains as typed steps with one serializer for persistence; `fman.url`
+functions apply to real locations only. Steps scoped to a selection hold
+explicit target lists and are session-only. Decision 6: no command language.
+
+**F11 - Medium: `pane.get_path()` in a virtual folder is undefined.** Copy and
+Move default to the opposite pane's path; New folder, Paste, Pack here and the
+terminal use the active pane's. These are the [FlatView](FlatView.md) blockers
+this plan inherits. Proposal, consistent with the 2026_09_17 approval there: a
+chain with one real root returns it and prompts show it; rootless sources
+(Everything, processes) have no path and those commands refuse. Carry
+FlatView's parity matrix into Tests.
+
+#### Speed
+
+**F12 - Medium: where the 150 ms goes.** Measured at 200k entries (see Review
+Validation): kernel enumeration 77-100 ms, C parse 52 ms, Name keys 81 ms, sort
+30 ms. Enumeration is the floor and takes half to two-thirds of the budget.
+
+- Large buffers are not a lever. NTFS returned about 64 KiB per call (733
+  calls) for 64 KiB, 1 MiB and larger buffers, through both
+  `GetFileInformationByHandleEx` and `NtQueryDirectoryFile`; larger buffers
+  were slower. The current information class is the cheap one
+  (`FileIdBothDirectoryInfo` took twice as long). Remove this lever from
+  Findings.
+- Overlap is the lever, and it needs enumeration off the GIL: a second Python
+  thread recovered 22 ms (195 to 173 ms). The target holds only if parsing and
+  key building finish inside the enumeration time on native threads, and
+  nothing serial but the sort follows. Gate P0 on that pipeline. Decision 1:
+  keep `_fsparser` until the pipeline beats it; F06 reuses it unchanged.
+
+**F13 - Medium: marks on the Qt thread break the 16 ms criterion.** Marks live
+in `QItemSelectionModel` and are remapped on Qt at every commit: about 30 ms at
+200k marked rows, before Qt's own selection update. Moving a large selection
+gives the source pane continuous removals with everything marked. Required:
+marks are an engine-side set remapped on the worker and painted from the model,
+as the pattern-selection preview already is. Commits are coalesced to one per
+frame, and wait while an inline editor or a drag is active (a model reset
+closes the editor; probed).
+
+**F14 - Low: two specifications to add.**
+
+- Snapshot representation. Copying immutable columns per delta is O(n): 8 ms
+  for the tuple columns at 200k, which cannot meet 10 ms at 1M items. Specify
+  append-only columns with per-row validity by version (or chunked columns),
+  the compaction rule and the memory while two versions are alive.
+- Case folding and natural keys with parity by construction: ASCII in native
+  code, other names through Python's own `str.lower` and `casefold`, as
+  `natural_keys` does today. Build the folded column at the first filter, not
+  at load. Decision 7: port the current fuzzy scoring with the Python matcher
+  as the oracle.
+
+#### Scope and Sequence
+
+**F15 - High: this is nine tasks.** [AGENTS.md](../AGENTS.md) asks for
+independently planned and completed tasks, and the Rust gate in P0 blocks work
+that needs no Rust. Suggested order, each with its own document and gate:
+
+1. The existing overwrite in F01.
+2. Target and shown location (CodeReview008 F15).
+3. Store, hints and re-read on the current `Listing` model, replacing the
+   CodeReview007 setting. Gate: `copy.flat.large` within 15 % of
+   `copy.flat.large.deferred`.
+4. Row key, total order and model-owned marks (F07, F08, F13).
+5. Native kernels behind the same interface; the Rust P0 belongs here, with the
+   toolchain target, locked crates, license notices and a frozen-build load as
+   exit criteria. Gates: `pane.load.large` and `filter.large`.
+6. Results in panes from the existing `fd.exe`, `rg.exe` and Everything, with
+   F01-F03 and F11.
+7. Column filters and Find.
+8. A hosted walker and searcher where a measurement asks for it (F05).
+9. The plug-in API last and once ([Roadmap002](Roadmap002.md) wants it stable
+   through 1.x): add `Source` beside `FileSystem.scan`, whose result is already
+   an item batch, and remove the old API in a later release.
+
+Acceptance criteria to add: no mutation when two sources share a destination;
+a replaced target is refused; hidden rows are never acted on; ending the search
+helper during a Copy leaves the Copy unaffected; the heartbeat criterion names
+its mark counts (none, 1,000, all).
+
+#### Review Validation
+
+Disposable probes through `build._environment()` in temporary folders, removed
+afterwards. No application tests, suite, build or performance catalog were run.
+The suite fixtures are not on this machine: timings come from a generated
+folder of 200,000 empty files with 73-character names, warm, medians of five.
+
+| Measurement                                                     | Result              |
+| --------------------------------------------------------------- | ------------------: |
+| `scan()`, current code                                          | 173.5 ms            |
+| Kernel enumeration only, two folder instances                   | 77-100 ms           |
+| `_fsparser` parse and `finish`                                  | 52.4 ms             |
+| Name keys / sort                                                | 81.4 / 30.4 ms      |
+| Enumerate, parse and keys per batch: one thread / reader thread | 195.0 / 173.3 ms    |
+| One added entry: insertion / re-sort / copy of tuple columns    | 2.2 / 12.8 / 8.0 ms |
+| Single-entry `NtQueryDirectoryFile`: reused / new handle        | 12.4 / 60.4 µs      |
+| Mark capture / restore, 200,000 marked rows                     | 3.3 / 26.0 ms       |
+
+Not verified: anything in Rust, the suite fixtures, network and non-NTFS
+volumes, end-to-end timings for F06, and F01 through the Paste and drop
+commands themselves (reproduced on `MoveFiles` and `CopyFiles` directly).
+
+### 2026_11_15 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Claude Fable 5.2
+- Effort: Extra High
+- Context Window: 1M
+- Outcome: At the user's request, restated the Task with its two motivations:
+  fast generation of the item table, for performance and for composability
+  and modularity. Renamed the former Motivation list to Background. User
+  clarifications: the native engine is a tool, not the goal, and file
+  operations stay outside it, so F04 stands. The load target is judged
+  feasible as Windows enumeration time plus 30-40 ms; this is an estimate
+  from measured parts, not a demonstration. The F12 note on decision 1 and the
+  F15 order are under discussion and not yet revised. No other design text or
+  application code changed.
+
+### 2026_11_15 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Claude Fable 5.2
+- Effort: Extra High
+- Context Window: 1M
+- Outcome: User decision: the existing per-folder sort memory stays as is.
+  Persistence now says so; the draft had moved the sort to per source type.
+  The order proposed in F15 is withdrawn: the plan's own sequence stands.
+  Three changes remain proposed and undecided: the spike generates the table
+  from a folder, P1 and P3 merge so the table is native before the store is
+  built, and decision 1 is settled with enumeration inside the engine.
+
+### 2026_11_15 - GitHub Copilot
+
+- Role: Reviewer
+- Activity: Review
+- Agent: GitHub Copilot
+- Model: Not exposed by host
+- Effort: High
+- Context Window: Not exposed by host
+- Outcome: Independent design review; needs revision. Added F16-F18 on scan/
+  change-set ordering, shared-source cancellation ownership and exact chained-
+  tool scope. Earlier F01-F14 concerns are not independently reproduced here;
+  the later withdrawal of F15's proposed order is respected. The plan's phase
+  sequence, per-folder sort memory and approved API-replacement scope are not
+  changed. No application edits, tests, probes or benchmarks were performed.
+
+#### F16 - High: Publication Versions Do Not Define Scan/Delta Ordering
+
+- Evidence: Change Sets queues updates on a store worker and Failure Behavior
+  rejects stale versions, but neither defines a full scan's relationship to
+  changes accepted while it runs. A version assigned when work finishes is not
+  evidence that its input is newer.
+- Failure sequence: a verification scan reads a folder before a new file is
+  added; the add hint is applied and published; the scan then finishes and
+  replaces that snapshot without the new file. A late field-computation result
+  can similarly overwrite values after its source item changed. Rejecting old
+  pane query revisions does not protect the shared store from these cases.
+- Required: define the store's location epoch, scan base/event boundary and
+  publication order. Serialize publication and reconcile hints received during
+  enumeration before exposing the verified snapshot, or use another explicit
+  rule that prevents accepted changes being lost. Field updates must identify
+  the input row revision they computed, not merely receive a new version on
+  completion. Late callbacks from a closed/reopened location must be rejected.
+  This complements F06's authoritative re-read; it does not require trusting
+  producer-supplied metadata or rescanning for every hint.
+- Checks: deterministically interleave scan, add/remove/rename hints, a late
+  computed-column result and location close/reopen. Once a change is accepted,
+  an older scan/job must not roll it back. The final store must equal an
+  authoritative rescan after all inputs settle.
+
+#### F17 - Medium: Shared Stores Need a Separate Cancellation Lifetime
+
+- Evidence: Layers and Ownership shares one store per open location between
+  panes, while Virtual Folders gives a chain one cancellation token and Failure
+  Behavior says cancellation stops sources. The owner of a shared source and
+  the meaning of its last consumer disappearing are not specified.
+- Failure sequence: panes A and B share a folder source; A navigates away or
+  cancels its chain. Cancelling that source with A stops B's input. Conversely,
+  retaining every source to protect B can leave jobs or watchers running after
+  both panes close. Per-pane latest-wins query jobs alone do not decide this.
+- Required: distinguish per-pane query/chain cancellation from shared-store
+  source ownership. Specify acquisition/release, the final-consumer stop path,
+  cancellation of unshared downstream stages and stale-callback rejection on
+  reopening. One pane must not cancel work still required by another; no
+  consumer must mean no source-specific recurring work.
+- Checks: two panes sharing a source while one filters, cancels, navigates or
+  closes; close the final pane during enumeration; reopen before an old callback
+  arrives. Assert the surviving pane still completes and final release stops
+  workers/watchers without blocking Qt.
+
+#### F18 - High: Tool Adapters Must Preserve the Captured Input Scope
+
+- Evidence: tools can take a folder, current pane items or selection, but the
+  chain contract does not define an immutable scope capture or how library/CLI
+  stages distinguish these inputs. F03 defines action selection and F10 defines
+  serialized locations; neither specifies this tool-adapter boundary.
+- Failure sequence: Filter `*.py` then Search files is implemented by passing
+  the folder root to the searcher, which also searches excluded files. Treating
+  an explicitly empty item/selection scope as an omitted scope can expand it to
+  the whole folder. The resulting rows then become apparently valid input to
+  Copy/Delete even though the user never included those files.
+- Required: distinguish folder scope, a captured view result and an explicit
+  selection, including empty scope versus no scope. Bind item/selection scope
+  to its snapshot/query revision so later arrivals or UI edits cannot enlarge a
+  running tool. Specify when folder rows expand into descendants rather than
+  leaving that to each adapter. Embedded and external stages must honor the
+  same contract; unsupported provider targets must fail explicitly instead of
+  falling back to a real root or URL interpreted as a native path.
+- Checks: filtered and empty panes, an empty explicit selection, new rows while
+  the tool runs, folder rows, and unsupported archive/provider targets. Record
+  exactly which files the searcher opens; excluded/outside-scope sentinels must
+  never be searched or become targets of the downstream operation.
+
+#### Review Validation
+
+- Read the complete current plan, including the latest reviewer clarifications.
+  F16-F18 are contract/counterexample findings, not new runtime reproductions or
+  independent confirmation of the older native timings and mutation probes.
+- Validation is document-only: required sections, unique finding IDs, existing
+  relative link targets, Pending index placement, whitespace and preservation
+  of the complete pre-review document as an unchanged prefix.
+- No application source changes, tests, native probes, performance catalog,
+  toolchain changes or build/freeze were run. Implementation remains unauthorized.
