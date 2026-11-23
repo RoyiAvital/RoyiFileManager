@@ -9,7 +9,7 @@ from core.quicksearch_matchers import contains_chars, \
 	contains_chars_after_separator, display_positions
 from core.quick_view import switch_quick_view as _switch_quick_view
 from fman import *
-from fman.fs import exists, touch, mkdir, is_dir, delete, samefile, \
+from fman.fs import exists, touch, is_dir, delete, samefile, \
 	iterdir, resolve, prepare_copy, prepare_move, prepare_delete, \
 	FileSystem, prepare_trash, query, makedirs, notify_file_added
 from fman.impl.product import APP_NAME
@@ -24,6 +24,7 @@ from os import strerror
 from os.path import basename, pardir
 from pathlib import PurePath
 from subprocess import Popen
+from threading import Thread
 
 import errno
 import fman.fs
@@ -144,9 +145,11 @@ class _Delete(Task):
 	def __call__(self):
 		try:
 			self._gather_tasks()
-		except (UnsupportedOperation, NotImplementedError):
+		except (UnsupportedOperation, NotImplementedError) as error:
 			failing_url = self._urls[self._num_urls_prepared]
-			self.show_alert(self._unsupported % splitscheme(failing_url)[0])
+			# A read-only file system explains itself, e.g. "Archives are read-only. ..."
+			message = str(error) if isinstance(error, UnsupportedOperation) else ''
+			self.show_alert(message or self._unsupported % splitscheme(failing_url)[0])
 			return
 		ignore_errors = False
 		for i, task in enumerate(self._tasks):
@@ -272,19 +275,20 @@ class OpenDirectory(DirectoryPaneCommand):
 				request.fail(e)
 				return
 			show_alert(
-				'Could not read from %s (%s)' % (as_human_readable(url), e)
+				'Could not read from %s (%s)' % (as_human_readable(url), _reason(e))
 			)
 			return
 		if url_is_dir:
-			try:
-				self.pane.set_path(url, onerror=None)
-			except PermissionError as error:
-				if request:
+			if request:
+				try:
+					self.pane.set_path(url, onerror=None)
+				except PermissionError as error:
 					request.fail(error)
-					return
-				show_alert(
-					'Access to "%s" was denied.' % as_human_readable(url)
-				)
+				return
+			try:
+				self.pane.set_path(url, onerror=_report_unreadable_folder)
+			except OSError:
+				pass # _report_unreadable_folder has shown it.
 		else:
 			def callback():
 				try:
@@ -295,6 +299,20 @@ class OpenDirectory(DirectoryPaneCommand):
 			self.pane.set_path(dirname(url), callback=callback, onerror=None)
 	def is_visible(self):
 		return False
+
+def _report_unreadable_folder(error, url):
+	"""set_path's onerror: say why a folder or an archive cannot be read; the pane stays."""
+	if not isinstance(error, OSError):
+		raise error
+	message = 'Could not read from %s (%s)' % (as_human_readable(url), _reason(error))
+	# A failed scan calls this on the Qt thread: do not hold it with a dialog.
+	Thread(target=show_alert, args=(message,), daemon=True).start()
+	# The same URL ends the navigation without a fallback.
+	return url
+
+def _reason(error):
+	"""An OS error's text without the "[Errno N]" prefix."""
+	return getattr(error, 'strerror', None) or str(error)
 
 class OpenFile(DirectoryPaneCommand):
 	category = 'File'
@@ -584,7 +602,7 @@ class CreateAndEditFile(OpenWithEditor):
 		super().__call__(file_to_edit)
 
 def _find_extension_start(file_name, start=0):
-	for dual_extension in ('.pkg.tar.xz', '.tar.xz', '.tar.gz'):
+	for dual_extension in ('.pkg.tar.xz', '.tar.xz', '.tar.gz', '.tar.bz2', '.tar.zst'):
 		if file_name.endswith(dual_extension):
 			return len(file_name) - len(dual_extension)
 	try:
@@ -1823,22 +1841,11 @@ except ImportError as e:
 
 class UnpackArchive(DirectoryPaneCommand):
 	category = 'File'
-	aliases = ('Unpack archive', 'Extract archive')
+	aliases = ('Unpack archive', 'Extract archive', 'Unpack here')
 	def __call__(self):
 		directory = self.pane.get_path()
-		chosen = self.get_chosen_files()
-		if len(chosen) != 1:
-			show_alert('Choose exactly one archive to unpack.')
-			return
-		source = chosen[0]
 		try:
-			if splitscheme(directory)[0] != 'file://' or splitscheme(source)[0] != 'file://':
-				raise ValueError('Unpack requires a local archive in the current folder.')
-			if not samefile(dirname(source), directory) or is_dir(source):
-				raise ValueError('Choose an archive file directly inside the current folder.')
-			settings = load_settings('AppSettings.yaml', default={})
-			handlers = settings.get('archive_handlers') if isinstance(settings, Mapping) else None
-			name, scheme = _unpack_archive_name(basename(source), handlers)
+			source, name, scheme = _chosen_archive(self.get_chosen_files(), directory)
 			destination = join(directory, name)
 			if os.path.lexists(as_human_readable(destination)):
 				show_alert('Destination already exists: ' + name)
@@ -1850,7 +1857,7 @@ class UnpackArchive(DirectoryPaneCommand):
 				show_alert(_unpack_error_text(error, destination))
 				return
 		except (OSError, ValueError) as error:
-			show_alert(str(error))
+			show_alert(_reason(error))
 			return
 		if task.succeeded:
 			show_status_message('Unpacked ' + name, timeout_secs=5)
@@ -1859,6 +1866,57 @@ class UnpackArchive(DirectoryPaneCommand):
 					self.pane.place_cursor_at(destination)
 			except (OSError, RuntimeError, ValueError):
 				pass
+
+class UnpackArchiveTo(DirectoryPaneCommand):
+	category = 'File'
+	aliases = ('Unpack to...', 'Unpack archive to...', 'Extract to...')
+	def __call__(self):
+		directory = self.pane.get_path()
+		try:
+			source, name, scheme = _chosen_archive(self.get_chosen_files(), directory)
+		except (OSError, ValueError) as error:
+			show_alert(_reason(error))
+			return
+		default = _get_opposite_pane(self.pane).get_path()
+		if splitscheme(default)[0] != 'file://':
+			default = directory
+		text, ok = show_prompt('Unpack %s to' % basename(source), as_human_readable(default))
+		if not (text and text.strip() and ok):
+			return
+		destination = _from_human_readable(text.strip(), directory, directory)
+		try:
+			if splitscheme(destination)[0] != 'file://':
+				raise ValueError('Unpack to... requires a local folder.')
+			path = os.path.normpath(as_human_readable(destination))
+			destination = as_url(path)
+			into = os.path.isdir(path)
+			if not into and os.path.lexists(path):
+				raise ValueError('Destination already exists: ' + os.path.basename(path))
+			task = _UnpackArchive(source, scheme + splitscheme(source)[1], destination, into)
+			try:
+				submit_task(task)
+			except OSError as error:
+				show_alert(_unpack_error_text(error, destination))
+				return
+		except (OSError, ValueError) as error:
+			show_alert(_reason(error))
+			return
+		if task.succeeded:
+			show_status_message('Unpacked ' + basename(source), timeout_secs=5)
+
+def _chosen_archive(chosen, directory):
+	"""(archive URL, folder name, scheme) of the one archive chosen for Unpack."""
+	if len(chosen) != 1:
+		raise ValueError('Choose exactly one archive to unpack.')
+	source = chosen[0]
+	if splitscheme(directory)[0] != 'file://' or splitscheme(source)[0] != 'file://':
+		raise ValueError('Unpack requires a local archive in the current folder.')
+	if not samefile(dirname(source), directory) or is_dir(source):
+		raise ValueError('Choose an archive file directly inside the current folder.')
+	settings = load_settings('AppSettings.yaml', default={})
+	handlers = settings.get('archive_handlers') if isinstance(settings, Mapping) else None
+	name, scheme = _unpack_archive_name(basename(source), handlers)
+	return source, name, scheme
 
 def _unpack_archive_name(file_name, handlers):
 	if not isinstance(handlers, Mapping) or any(
@@ -1878,11 +1936,12 @@ def _unpack_archive_name(file_name, handlers):
 	return name, scheme
 
 class _UnpackArchive(Task):
-	def __init__(self, source, archive, destination):
+	def __init__(self, source, archive, destination, into=False):
 		super().__init__('Unpacking ' + basename(source), size=0)
 		self._source = source
 		self._archive = archive
 		self._destination = destination
+		self._into = into
 		self.succeeded = False
 	def __call__(self):
 		from core.fs.zip import Extract
@@ -1890,9 +1949,9 @@ class _UnpackArchive(Task):
 		children = list(prepare_copy(self._archive, self._destination))
 		if len(children) != 1 or type(children[0]) is not Extract:
 			raise UnsupportedOperation('This archive handler does not support safe Unpack.')
-		children[0].require_new_directory(
-			as_human_readable(self._source), as_human_readable(self._destination)
-		)
+		require = children[0].require_existing_directory if self._into else \
+			children[0].require_new_directory
+		require(as_human_readable(self._source), as_human_readable(self._destination))
 		self.set_size(sum(child.get_size() for child in children))
 		for child in children:
 			self.check_canceled()
@@ -1908,7 +1967,7 @@ def _unpack_error_text(error, destination):
 				return 'Destination already exists: ' + basename(destination)
 		except OSError:
 			pass
-	return str(error)
+	return _reason(error)
 
 class Pack(DirectoryPaneCommand):
 	category = 'File'
@@ -1938,23 +1997,23 @@ class Pack(DirectoryPaneCommand):
 			selection_start, selection_end
 		)
 		if dest and ok:
+			from core.fs.zip import PackArchive
 			dest = _from_human_readable(dest, dest_dir, self.pane.get_path())
-			scheme = _get_handler_for_archive(basename(dest))
-			if not scheme:
+			archive_type = PackArchive.TYPES.get(_get_handler_for_archive(basename(dest)))
+			if not archive_type:
 				show_alert('Sorry, but this archive format is not supported.')
 				return
-			dest_rewritten = scheme + splitscheme(dest)[1]
+			if any(splitscheme(url)[0] != 'file://' for url in [*files, dest]):
+				show_alert('Pack requires local files and a local destination folder.')
+				return
+			path = as_human_readable(dest)
+			if os.path.lexists(path):
+				show_alert('Destination already exists: ' + basename(path))
+				return
 			try:
-				# Create empty archive:
-				mkdir(dest_rewritten)
-			except FileExistsError:
-				answer = show_alert(
-					'%s already exists. Do you want to add/update the selected '
-					'files?' % basename(dest_rewritten), YES | NO, YES
-				)
-				if not answer & YES:
-					return
-			submit_task(_Pack(files, dest_rewritten))
+				submit_task(PackArchive([as_human_readable(url) for url in files], path, archive_type))
+			except OSError as error:
+				show_alert(_reason(error))
 	def _get_dest_dir(self):
 		return _get_opposite_pane(self.pane).get_path()
 	def is_visible(self):
@@ -1965,17 +2024,6 @@ class PackHere(Pack):
 
 	def _get_dest_dir(self):
 		return self.pane.get_path()
-
-class _Pack(Task):
-	def __init__(self, files, archive_url):
-		super().__init__('Packing ' + _describe(files), size=len(files) * 100)
-		self._files = files
-		self._archive = archive_url
-	def __call__(self):
-		for f in self._files:
-			for task in prepare_copy(f, join(self._archive, basename(f))):
-				self.check_canceled()
-				self.run(task)
 
 def _get_handler_for_archive(file_name):
 	match = _get_archive_handler(file_name)

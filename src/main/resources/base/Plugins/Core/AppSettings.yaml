@@ -11,6 +11,15 @@ archive_handlers:
   .xpi: zip://
   .7z: 7z://
   .tar: tar://
+  .tar.gz: ctar://
+  .tgz: ctar://
+  .tar.bz2: ctar://
+  .tbz2: ctar://
+  .tbz: ctar://
+  .tar.xz: ctar://
+  .txz: ctar://
+  .tar.zst: ctar://
+  .tzst: ctar://
 
 # F9 terminal. args: a command string (with shell: true) or a list of arguments.
 # cwd and args may use {curr_dir}, the folder of the active pane.

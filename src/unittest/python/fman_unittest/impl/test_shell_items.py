@@ -147,3 +147,53 @@ class ShellItemsTest(TestCase):
 		for name, expected in (('a.TAR.GZ', 'tar://'), ('a.gz', 'gz://'), ('A.ZIP', 'zip://'), ('a.rar', None)):
 			with self.subTest(name=name):
 				self.assertEqual(expected, shell_items.archive_scheme(name, handlers))
+
+	def test_bundled_handlers_map_compressed_tars_to_ctar(self):
+		handlers = bundled_handlers()
+		for name, expected in (('x.tar.gz', 'ctar://'), ('X.TGZ', 'ctar://'), ('x.tar.bz2', 'ctar://'),
+				('x.tbz2', 'ctar://'), ('x.tbz', 'ctar://'), ('x.tar.xz', 'ctar://'), ('x.txz', 'ctar://'),
+				('x.tar.zst', 'ctar://'), ('x.tzst', 'ctar://'), ('x.tar', 'tar://'), ('x.gz', None)):
+			with self.subTest(name=name):
+				self.assertEqual(expected, shell_items.archive_scheme(name, handlers))
+
+	def test_explorer_items_of_a_compressed_tar_copy_out_through_ctar(self):
+		import tarfile
+		from io import BytesIO
+		from core import LocalFileSystem
+		from core.fileoperations import CopyFiles
+		from core.fs.zip import CompressedTarFileSystem, _MEMBER_LISTS
+		from fman.impl.plugins.mother_fs import MotherFileSystem
+		self.handlers.return_value = handlers = bundled_handlers()
+		self.addCleanup(_MEMBER_LISTS.clear)
+		with TemporaryDirectory() as directory:
+			root = Path(directory).resolve()
+			for name in ('x.tar.gz', 'x.tgz'):
+				with self.subTest(name=name):
+					archive = root / name
+					with tarfile.open(archive, 'w:gz') as writer:
+						info = tarfile.TarInfo('dir/a.txt')
+						info.size = 7
+						writer.addfile(info, BytesIO(b'payload'))
+					try:
+						raw = explorer_idlist(archive / 'dir')
+					except Exception as error:
+						self.skipTest('Explorer cannot open %s here: %s' % (name, error))
+					shell_items._cache = (None, None)
+					url = self.archive_url(archive, 'dir/a.txt', 'ctar://')
+					self.assertEqual((url,), shell_selection(shell_mime(raw)).urls)
+					filesystem = MotherFileSystem()
+					filesystem.add_child('file://', LocalFileSystem())
+					filesystem.add_child('ctar://', CompressedTarFileSystem(filesystem,
+						{suffix for suffix, scheme in handlers.items() if scheme == 'ctar://'}))
+					output = root / ('out-' + name)
+					output.mkdir()
+					operation = CopyFiles([url], as_url(output), fs=filesystem)
+					with patch.object(operation, 'show_alert', side_effect=AssertionError('Unexpected alert')):
+						operation()
+					self.assertEqual(b'payload', (output / 'a.txt').read_bytes())
+
+
+def bundled_handlers():
+	import yaml
+	settings = Path(__file__).resolve().parents[4] / 'main' / 'resources' / 'base' / 'Plugins' / 'Core' / 'AppSettings.yaml'
+	return yaml.safe_load(settings.read_text(encoding='utf-8'))['archive_handlers']

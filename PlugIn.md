@@ -512,6 +512,14 @@ or `io.UnsupportedOperation`, the host may try the destination provider. There
 is no general host-provided byte-stream copy API or cross-provider fallback that
 guarantees every pair of schemes works.
 
+A provider with a non-empty `read_only_message` is refused before any provider
+runs and before that fall-back: the host raises `io.UnsupportedOperation` with
+the message for `touch`, `mkdir`, `makedirs`, `delete`, `prepare_delete`,
+`move_to_trash` and `prepare_trash` on its URLs; `move`, `prepare_move` and
+`rename_no_replace` with its URL as source or destination; and `copy` and
+`prepare_copy` into it. Copying out of it still reaches the provider. Core's
+archive file systems use this; Copy, Move, Rename and Delete show the message.
+
 ### FileSystem Providers
 
 Subclass `fman.fs.FileSystem`, set `scheme` including `://`, and expose the class
@@ -525,6 +533,7 @@ receive full source/destination URLs so they can negotiate cross-scheme transfer
 | Provider member | Contract/default |
 | --- | --- |
 | `scheme = 'example://'` | Unique registered URL scheme. Base default is empty and should be overridden. |
+| `read_only_message = ''` | Optional. A non-empty string marks the file system read-only: the host refuses every change with this text before calling the provider (see [Filesystem Functions](#filesystem-functions)). |
 | `scan(path, check_canceled)` | Required for pane browsing; return a complete `fman.listing.Listing` whose location is `scheme + path`. Runs off Qt; call cancellation between bounded units of work and close resources on failure/cancellation. |
 | `iterdir(path)` | Yield child names for operation/traversal clients. Panes do not call it or automatically adapt it to `scan`. |
 | `get_default_columns(path)` | Qualified column identifiers; default `('core.Name',)`. |

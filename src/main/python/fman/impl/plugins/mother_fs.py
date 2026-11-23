@@ -76,21 +76,21 @@ class MotherFileSystem:
 	def is_dir(self, existing_url):
 		return self.query(existing_url, 'is_dir')
 	def touch(self, url):
-		child, path = self._split(url)
+		child, path = self._writable(url)
 		child.touch(path)
 	def mkdir(self, url):
-		child, path = self._split(url)
+		child, path = self._writable(url)
 		child.mkdir(path)
 	def makedirs(self, url, exist_ok=True):
-		child, path = self._split(url)
+		child, path = self._writable(url)
 		child.makedirs(path, exist_ok=exist_ok)
 	def move(self, src_url, dst_url):
 		"""
 		:param dst_url: must be the final destination url, not just the parent
 		                directory.
 		"""
-		src_fs, src_path = self._split(src_url)
-		dst_fs, dst_path = self._split(dst_url)
+		src_fs, src_path = self._writable(src_url)
+		dst_fs, dst_path = self._writable(dst_url)
 		try:
 			src_fs.move(src_url, dst_url)
 		except (UnsupportedOperation, NotImplementedError):
@@ -100,8 +100,8 @@ class MotherFileSystem:
 				# Maybe the destination FS can handle the operation:
 				dst_fs.move(src_url, dst_url)
 	def prepare_move(self, src_url, dst_url):
-		src_fs, src_path = self._split(src_url)
-		dst_fs, dst_path = self._split(dst_url)
+		src_fs, src_path = self._writable(src_url)
+		dst_fs, dst_path = self._writable(dst_url)
 		try:
 			return src_fs.prepare_move(src_url, dst_url)
 		except (UnsupportedOperation, NotImplementedError):
@@ -116,8 +116,8 @@ class MotherFileSystem:
 					raise e from None
 	def rename_no_replace(self, source_url, destination_url):
 		from fman.fs import RenameResult
-		source_fs, source_path = self._split(source_url)
-		destination_fs, destination_path = self._split(destination_url)
+		source_fs, source_path = self._writable(source_url)
+		destination_fs, destination_path = self._writable(destination_url)
 		if source_fs is not destination_fs or dirname(source_url) != dirname(destination_url):
 			raise UnsupportedOperation('Rename requires the same filesystem and parent folder.')
 		result = source_fs.rename_no_replace(source_url, destination_url)
@@ -148,16 +148,16 @@ class MotherFileSystem:
 					attempt(callback, url)
 		return RenameResult(result.source_url, result.destination_url, True, tuple(warnings))
 	def move_to_trash(self, url):
-		child, path = self._split(url)
+		child, path = self._writable(url)
 		child.move_to_trash(path)
 	def prepare_trash(self, url):
-		child, path = self._split(url)
+		child, path = self._writable(url)
 		return child.prepare_trash(path)
 	def delete(self, url):
-		child, path = self._split(url)
+		child, path = self._writable(url)
 		child.delete(path)
 	def prepare_delete(self, url):
-		child, path = self._split(url)
+		child, path = self._writable(url)
 		return child.prepare_delete(path)
 	def resolve(self, url):
 		child, path = self._split(url)
@@ -168,7 +168,7 @@ class MotherFileSystem:
 		return fs_1 == fs_2 and fs_1.samefile(path_1, path_2)
 	def copy(self, src_url, dst_url):
 		src_fs, src_path = self._split(src_url)
-		dst_fs, dst_path = self._split(dst_url)
+		dst_fs, dst_path = self._writable(dst_url)
 		try:
 			src_fs.copy(src_url, dst_url)
 		except (UnsupportedOperation, NotImplementedError):
@@ -183,7 +183,7 @@ class MotherFileSystem:
 					raise e from None
 	def prepare_copy(self, src_url, dst_url):
 		src_fs, src_path = self._split(src_url)
-		dst_fs, dst_path = self._split(dst_url)
+		dst_fs, dst_path = self._writable(dst_url)
 		try:
 			return src_fs.prepare_copy(src_url, dst_url)
 		except (UnsupportedOperation, NotImplementedError):
@@ -234,6 +234,13 @@ class MotherFileSystem:
 			child = self._children[scheme]
 		except KeyError:
 			raise filenotfounderror(url)
+		return child, path
+	def _writable(self, url):
+		"""Like _split(...), but refuses a read-only file system before any provider runs."""
+		child, path = self._split(url)
+		message = getattr(child, 'read_only_message', '')
+		if message and isinstance(message, str):
+			raise UnsupportedOperation(message)
 		return child, path
 	def _remove(self, url):
 		child, path = self._split(url)

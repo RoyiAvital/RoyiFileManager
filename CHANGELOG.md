@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-11-23
+
+This version streamlines and optimize the work with archives.  
+It makes unpacking far more efficient while keeping them as "Read Only".
+
 ### Added
 
 - The executable embeds File Version, Product Version, Product Name and File
@@ -14,6 +19,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Actions release builds. Windows **Properties > Details** shows the values;
   both version strings preserve the value in the metadata, including prerelease
   suffixes such as `-rc.1`.
+- Compressed tars open as archives: `.tar.gz`, `.tgz`, `.tar.bz2`, `.tbz2`,
+  `.tbz`, `.tar.xz`, `.txz`, `.tar.zst` and `.tzst`. Browse them, copy items out
+  and unpack them; paste and drop from Explorer's view of them work too. Nothing
+  is written besides the output. The status bar shows the progress of reading one.
+- **Unpack to...** puts an archive's content into a typed folder, by default the
+  other pane's folder, without entering the archive. It only creates: an existing
+  top-level item stops it before anything is extracted.
+- The file context menu offers **Unpack to...** and **Unpack here**. **Unpack
+  here** is a new name of **Unpack archive**.
+- Plug-in API: `FileSystem.read_only_message`. A non-empty message makes the host
+  refuse every change to that file system with this text.
+
+### Changed
+
+- Copying many items out of an archive is fast: all chosen items of one archive
+  are extracted in one 7-Zip run. Enter, Select all and F5 on an archive of
+  202,600 files took 95 seconds instead of an estimated 83 hours. If the
+  run fails or is canceled, none of its items is copied. An item that cannot be
+  moved into place is skipped; one message at the end names the skipped items.
+- Folders inside an archive open from memory after the first listing; changing
+  folders no longer reads the archive again.
+- An archive that 7-Zip cannot read, for example a truncated one, does not open.
+  One message gives the reason. Before, it opened with the entries 7-Zip could list.
+- Pack creates a new archive in one 7-Zip run. An existing archive name, a missing
+  folder, two chosen items with the same name and items that are not local are refused.
+- Symbolic links inside an archive are skipped and reported, never created. Before,
+  one link could fail a whole copy or Unpack.
+- New folder is no longer offered inside an archive.
+
+### Removed
+
+- Changing archives: copy or move into an archive, Pack into an existing archive,
+  move out of or between archives, and Rename, Delete and New folder inside an
+  archive. Each is refused with one message.
+  **Migration:** to change an archive, unpack it, change the files and pack them
+  into a new archive. Copy items out instead of moving them.
+
+### Fixed
+
+- Archives whose entries start with `./`, as `tar` and Python's `shutil.make_archive`
+  write them, open, copy out and unpack. Before, they could not be opened.
+- Enter on a folder or archive that cannot be read shows why, and the pane stays.
+  Before, nothing happened.
+- An archive item copied on its own keeps its content when another item's name
+  differs only by case (`Makefile` and `makefile`). Before, it could get the other's.
+
+### Documentation
+
+- The Archives guide describes the read-only policy, both Unpack commands,
+  compressed tars, skipped links and names Windows changes on copy-out.
+  `PlugIn.md` documents `read_only_message`.
 
 ## [0.20.4] - 2026-11-08
 

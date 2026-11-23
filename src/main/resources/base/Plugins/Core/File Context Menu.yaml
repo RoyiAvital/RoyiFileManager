@@ -17,5 +17,7 @@
 - {caption: '-', id: archive}
 - {command: pack, caption: Add to archive...}
 - {command: pack_here, caption: Pack here...}
+- {command: unpack_archive_to, caption: Unpack to...}
+- {command: unpack_archive, caption: Unpack here}
 - {caption: '-', id: properties}
 - {command: show_explorer_properties, caption: P&roperties}

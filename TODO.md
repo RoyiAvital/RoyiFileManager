@@ -87,10 +87,10 @@
 - [x] FEATURE: Add support to _drag and drop_ from archives into pane (Windows Explorer in a `zip` file to a pane).
 - [x] CHANGE: Embed metadata into the `exe`: File Version, Product Version, Product Name, File Description.
 - [ ] BUG: Move / Copy of same named files from different folders (Paste / Drop from Explorer search results) into one folder silently overwrites: Only the last file survives.
-- [ ] BUG: Extracting the `CelebA` zip file (~200,000 files) is too slow.
-- [ ] CHANGE: Add "Unpack to..." as option to unpack archive to the other pane without entering it.
-- [ ] CHANGE: It seems `.tar` files are not registered as archive files.
-- [ ] BUG: Copy and Patse / Darg and Drop from a file `<FielName>.tar` fails with: "<File> This archive type has no entry in `archive_handlers` (`AppSettings.yaml`)".
+- [x] BUG: Extracting the `CelebA` zip file (~200,000 files) is too slow.
+- [x] CHANGE: Add "Unpack to..." as option to unpack the archive content to a path (Other pane as default) without entering it.
+- [x] CHANGE: Add "Unpack to..." and "Unpack here" to context menu on archives.
+
 
 ## Performance
 

@@ -1,4 +1,3 @@
-from core.util import is_parent
 from fman import Task, YES, NO, YES_TO_ALL, NO_TO_ALL, ABORT, OK
 from fman.url import basename, join, dirname, splitscheme, relpath, \
 	as_human_readable
@@ -11,9 +10,6 @@ import os
 
 _REPORTED_ERRORS = 10
 _REPORTED_ERROR_LENGTH = 200
-
-class ArchiveUpdateError(OSError):
-	pass
 
 def _describe_error(error):
 	# Providers may wrap the OS error, e.g. FileExistsError(path) from WinError 183.
@@ -47,6 +43,9 @@ class FileTreeOperation(Task):
 		self._suppressed_errors = 0
 		self._skipped_examples = []
 		self._ancestor_identities = {}
+		self._resolved = {}
+		# Tasks that take further items of one batch, e.g. the Extract of an archive.
+		self._open_batches = {}
 	def _prepare_transfer(self, src, dest):
 		raise NotImplementedError()
 	def _can_transfer_samefile(self):
@@ -71,6 +70,8 @@ class FileTreeOperation(Task):
 			return
 		finally:
 			self._ancestor_identities.clear()
+			self._resolved.clear()
+			self._open_batches.clear()
 		if not gathered or self._tasks == [self._destination_task]:
 			return
 		self.set_size(sum(task.get_size() for task in self._tasks))
@@ -79,9 +80,6 @@ class FileTreeOperation(Task):
 			progress_before = self.get_progress()
 			try:
 				self.run(task)
-			except ArchiveUpdateError as error:
-				self.show_alert(str(error), OK, OK)
-				break
 			except (OSError, IOError) as e:
 				if task is self._destination_task:
 					self.show_alert('Could not create the destination folder %s (%s).' %
@@ -152,13 +150,13 @@ class FileTreeOperation(Task):
 				metadata = os.stat(source_path) if is_dir else os.lstat(source_path)
 				identity = metadata.st_dev, metadata.st_ino
 				if not all(identity):
-					return is_parent(source, destination, self._fs)
+					return self._is_parent(source, destination)
 				if not is_dir and (not S_ISREG(metadata.st_mode) or getattr(metadata, 'st_reparse_tag', 0) & 0x20000000):
-					return is_parent(source, destination, self._fs)
+					return self._is_parent(source, destination)
 				if destination_exists:
 					target = os.stat(destination_path)
 					if not target.st_dev or not target.st_ino:
-						return is_parent(source, destination, self._fs)
+						return self._is_parent(source, destination)
 					if identity == (target.st_dev, target.st_ino):
 						return True
 				if not is_dir:
@@ -185,7 +183,40 @@ class FileTreeOperation(Task):
 					return identity in identities
 			except OSError:
 				pass
-		return is_parent(source, destination, self._fs)
+		return self._is_parent(source, destination)
+	def _is_parent(self, source, destination):
+		"""Whether `destination` is `source` or inside it. Each URL is resolved once per operation."""
+		resolved = self._resolve(source)
+		if resolved is None:
+			return False
+		scheme = splitscheme(resolved)[0]
+		url = destination
+		while True:
+			target = self._resolve(url)
+			# samefile(...) is only true within one file system.
+			if target is not None and splitscheme(target)[0] == scheme:
+				if target == resolved:
+					return True
+				try:
+					if self._fs.samefile(target, resolved):
+						return True
+				except FileNotFoundError:
+					pass
+			parent_url = dirname(url)
+			if parent_url == url:
+				return False
+			url = parent_url
+	def _resolve(self, url):
+		try:
+			return self._resolved[url]
+		except KeyError:
+			pass
+		try:
+			result = self._fs.resolve(url)
+		except FileNotFoundError:
+			result = None
+		self._resolved[url] = result
+		return result
 	def _merge_directory(self, src):
 		for url in (src, self._get_dest_url(src)):
 			if splitscheme(url)[0] == 'file://':
@@ -251,6 +282,12 @@ class FileTreeOperation(Task):
 					'Preparing to {} {:,} files.'
 						.format(self._descr_verb, self._num_files)
 				)
+			batch = getattr(task, 'batch_key', None)
+			if batch is not None:
+				open_task = self._open_batches.get(batch)
+				if open_task is not None and open_task.absorb(task):
+					continue
+				self._open_batches[batch] = task
 			self._tasks.append(task)
 	def _handle_exception(self, message, is_last, exc):
 		failure = '%s (%s).' % (message, _describe_error(exc))
@@ -351,12 +388,6 @@ class CopyFiles(FileTreeOperation):
 class MoveFiles(FileTreeOperation):
 	def __init__(self, *super_args, **super_kwargs):
 		super().__init__('move', *super_args, **super_kwargs)
-	def _gather_files(self):
-		if splitscheme(self._get_dest_dir_url())[0] == 'zip://' and any(
-			splitscheme(source)[0] == 'file://' for source in self._files
-		):
-			raise OSError('Moving local files into archives is disabled for safety. Copy and verify them before deleting the originals.')
-		return super()._gather_files()
 	def _can_transfer_samefile(self):
 		# May be able to move to the same file on case insensitive file systems.
 		# Consider a/ and A/: They are the "same" file yet it does make sense to

@@ -1,15 +1,17 @@
-"""End-to-end check: paste and drop items from Explorer's ZIP view into a pane.
+"""End-to-end check: paste and drop items from Explorer's archive view into a pane.
 
-Uses Explorer's own data object for the archive (no file paths, only shell IDs),
-the real OLE clipboard, and the real application. Run:
+Uses Explorer's own data object for a ZIP and a .tar.gz (no file paths, only
+shell IDs), the real OLE clipboard, and the real application. Run:
 	python -m fman_integrationtest.explorer_archive_smoke
 Note: this replaces the current clipboard contents.
 """
 import hashlib
+from io import BytesIO
 import os
 from pathlib import Path
 import subprocess
 import sys
+import tarfile
 from tempfile import TemporaryDirectory
 from threading import Event, Thread
 import traceback
@@ -42,6 +44,8 @@ def exercise(context, root):
 	# A real folder named like an archive holds the archive (Sol's ambiguity cases).
 	archive = root / 'real.zip' / 'sample.zip'
 	before = hashlib.sha256(archive.read_bytes()).hexdigest()
+	tarred = root / 'sample.tar.gz'
+	tarred_before = hashlib.sha256(tarred.read_bytes()).hexdigest()
 	code = 1
 	try:
 		wait_for(lambda: len(context.window.get_panes()) == 2, 'Panes did not load')
@@ -77,8 +81,7 @@ def exercise(context, root):
 		print('PASS: Ctrl+V extracted report.txt, folder/ and the archive-named folder ordinary.zip/', flush=True)
 
 		drop_target = root / 'drop'
-		raw = explorer_idlist(archive, names={'report'})
-		def drop():
+		def drop(raw):
 			from fman.impl.shell_items import SHELL_IDLIST_MIME
 			from PyQt5.QtGui import QDragEnterEvent, QDragMoveEvent
 			viewport = right._widget._file_view.viewport()
@@ -92,16 +95,33 @@ def exercise(context, root):
 			event = QDropEvent(point, actions, mime, Qt.LeftButton, Qt.ShiftModifier)
 			QApplication.sendEvent(viewport, event)
 			return event.dropAction(), event.isAccepted()
-		action, accepted = gui(drop)
+		raw = explorer_idlist(archive, names={'report'})
+		action, accepted = gui(lambda: drop(raw))
 		assert action == Qt.CopyAction and accepted, (action, accepted)
 		wait_for(lambda: (drop_target / 'report.txt').is_file(), 'Shift+drop did not extract: dialogs=%r' % dialogs)
 		assert (drop_target / 'report.txt').read_text(encoding='utf-8') == 'report\n'
 		print('PASS: Shift+drop copied report.txt from Explorer\'s ZIP view', flush=True)
 
+		# A compressed tar with './' names, as tar and shutil.make_archive write them.
+		expected_prompts = ['Copy 3 files to', 'Copy "report.txt" to']
+		try:
+			raw = explorer_idlist(tarred, names={'notes'})
+		except Exception as error:
+			print('SKIP: Explorer cannot open .tar.gz here: %s' % error, flush=True)
+		else:
+			action, accepted = gui(lambda: drop(raw))
+			assert action == Qt.CopyAction and accepted, (action, accepted)
+			wait_for(lambda: (drop_target / 'notes' / 'tarred.txt').is_file(),
+				'Drop from the .tar.gz did not extract: dialogs=%r' % dialogs)
+			assert (drop_target / 'notes' / 'tarred.txt').read_text(encoding='utf-8') == 'tarred\n'
+			expected_prompts.append('Copy "notes" to')
+			print('PASS: Shift+drop copied notes/ from Explorer\'s view of a .tar.gz', flush=True)
+
 		assert hashlib.sha256(archive.read_bytes()).hexdigest() == before, 'The archive changed'
-		assert [name for name, text in dialogs] == ['Prompt', 'Prompt'], dialogs
-		assert dialogs[0][1] == 'Copy 3 files to' and dialogs[1][1] == 'Copy "report.txt" to', dialogs
-		print('PASS: archive unchanged; only the usual copy prompts: %r' % [text for name, text in dialogs], flush=True)
+		assert hashlib.sha256(tarred.read_bytes()).hexdigest() == tarred_before, 'The .tar.gz changed'
+		assert [name for name, text in dialogs] == ['Prompt'] * len(expected_prompts), dialogs
+		assert [text for name, text in dialogs] == expected_prompts, dialogs
+		print('PASS: archives unchanged; only the usual copy prompts: %r' % [text for name, text in dialogs], flush=True)
 		code = 0
 	except BaseException:
 		traceback.print_exc()
@@ -139,6 +159,15 @@ def main():
 			zipped.writestr('report.txt', 'report\n')
 			zipped.writestr('folder/inner.txt', 'inner\n')
 			zipped.writestr('ordinary.zip/note.txt', 'note\n')
+		with tarfile.open(root / 'sample.tar.gz', 'w:gz') as tarred:
+			for name, contents in (('.', None), ('./notes', None), ('./notes/tarred.txt', b'tarred\n')):
+				info = tarfile.TarInfo(name)
+				if contents is None:
+					info.type = tarfile.DIRTYPE
+					tarred.addfile(info)
+				else:
+					info.size = len(contents)
+					tarred.addfile(info, BytesIO(contents))
 		return subprocess.run([sys.executable, '-m', 'fman_integrationtest.explorer_archive_smoke', str(root)],
 			timeout=120).returncode
 

@@ -151,6 +151,39 @@ class MotherFileSystemTest(TestCase):
 		mother_fs.add_file_changed_callback('values://folder', lambda _: seen.append(mother_fs.query(url, 'stat')))
 		mother_fs.notify_file_changed('values://folder')
 		self.assertEqual(['new'], seen)
+	def test_read_only_file_system_is_refused_before_it_or_the_fallback_runs(self):
+		from io import UnsupportedOperation
+		from unittest.mock import Mock
+		read_only, other = Mock(scheme='ro://', read_only_message='Read-only here.'), Mock(scheme='rw://')
+		other.read_only_message = ''
+		mother_fs = MotherFileSystem()
+		for fs in (read_only, other):
+			mother_fs.add_child(fs.scheme, fs)
+		inside, outside = 'ro://a/b', 'rw://a/c'
+		for name, call in (
+				('touch', lambda: mother_fs.touch(inside)), ('mkdir', lambda: mother_fs.mkdir(inside)),
+				('makedirs', lambda: mother_fs.makedirs(inside)), ('delete', lambda: mother_fs.delete(inside)),
+				('prepare_delete', lambda: mother_fs.prepare_delete(inside)),
+				('move_to_trash', lambda: mother_fs.move_to_trash(inside)),
+				('prepare_trash', lambda: mother_fs.prepare_trash(inside)),
+				('move out', lambda: mother_fs.move(inside, outside)),
+				('prepare_move in', lambda: mother_fs.prepare_move(outside, inside)),
+				('rename_no_replace', lambda: mother_fs.rename_no_replace(inside, 'ro://a/d')),
+				('copy in', lambda: mother_fs.copy(outside, inside)),
+				('prepare_copy in', lambda: mother_fs.prepare_copy(outside, inside))):
+			with self.subTest(name), self.assertRaisesRegex(UnsupportedOperation, 'Read-only here.'):
+				call()
+		self.assertEqual([], [call for call in read_only.mock_calls if not call[0].startswith('_file_')])
+		self.assertEqual([], [call for call in other.mock_calls if not call[0].startswith('_file_')])
+		other.prepare_copy.return_value = ['task']
+		read_only.prepare_copy.return_value = ['extract']
+		self.assertEqual(['extract'], mother_fs.prepare_copy(inside, outside))
+	def test_file_system_with_an_empty_message_is_writable(self):
+		fs = StubFileSystem({})
+		mother_fs = self._create_mother_fs(fs)
+		self.assertEqual('', fs.read_only_message)
+		mother_fs.mkdir(fs.scheme + 'new')
+		self.assertTrue(mother_fs.is_dir(fs.scheme + 'new'))
 	def _create_mother_fs(self, fs):
 		result = MotherFileSystem()
 		result.add_child(fs.scheme, fs)

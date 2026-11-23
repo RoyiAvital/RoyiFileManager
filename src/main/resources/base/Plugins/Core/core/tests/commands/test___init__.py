@@ -483,11 +483,12 @@ class DuplicateFileTest(TestCase):
 
 class PackTest(TestCase):
 	def test_same_folder_commands_are_exported_and_in_context_menu(self):
-		from core import DuplicateFile, PackHere
+		from core import DuplicateFile, PackHere, UnpackArchive, UnpackArchiveTo
 		from pathlib import Path
 		menu_path = Path(__file__).resolve().parents[3] / 'File Context Menu.yaml'
 		entries = yaml.safe_load(menu_path.read_text(encoding='utf-8'))
-		for command_type, caption in ((DuplicateFile, 'Duplicate...'), (PackHere, 'Pack here...')):
+		for command_type, caption in ((DuplicateFile, 'Duplicate...'), (PackHere, 'Pack here...'),
+				(UnpackArchiveTo, 'Unpack to...'), (UnpackArchive, 'Unpack here')):
 			with self.subTest(command=command_type.__name__):
 				matching = [entry for entry in entries if entry.get('command') == _get_command_name(command_type)]
 				self.assertEqual([{'command': _get_command_name(command_type), 'caption': caption}], matching)
@@ -512,11 +513,12 @@ class PackTest(TestCase):
 	def test_pack_here_creates_archive_from_selection_or_cursor(self):
 		from core.commands import PackHere
 		for selected in ([], ['file://C:/reports/one.txt', 'file://C:/reports/two.txt']):
-			for suffix, scheme in (('.zip', 'zip://'), ('.7z', '7z://'), ('.tar', 'tar://')):
+			for suffix, scheme, archive_type in (('.zip', 'zip://', 'zip'), ('.7z', '7z://', '7z'), ('.tar', 'tar://', 'tar')):
 				with self.subTest(selected=selected, suffix=suffix), \
 					patch('core.commands.show_prompt', return_value=('packed' + suffix, True)), \
 					patch('core.commands._get_handler_for_archive', return_value=scheme), \
-					patch('core.commands.mkdir') as make_directory, patch('core.commands.submit_task') as submit:
+					patch('core.commands.os.path.lexists', return_value=False), \
+					patch('core.commands.submit_task') as submit:
 					pane = Mock()
 					pane.get_path.return_value = 'file://C:/reports'
 					pane.get_selected_files.return_value = selected
@@ -524,40 +526,43 @@ class PackTest(TestCase):
 					command = PackHere(pane)
 					self.assertTrue(command.is_visible())
 					command()
-					destination = scheme + 'C:/reports/packed' + suffix
-					make_directory.assert_called_once_with(destination)
 					task = submit.call_args.args[0]
-					self.assertEqual(selected or ['file://C:/reports/cursor.txt'], task._files)
-					self.assertEqual(destination, task._archive)
+					self.assertEqual([as_human_readable(url) for url in selected or ['file://C:/reports/cursor.txt']],
+						task._sources)
+					self.assertEqual(as_human_readable('file://C:/reports/packed' + suffix), task._destination)
+					self.assertEqual(archive_type, task._type)
 	def test_pack_here_empty_selection_or_unsupported_format_does_nothing(self):
 		from core.commands import PackHere
 		for files in ([], ['file://C:/reports/file.txt']):
-			with self.subTest(files=files), patch('core.commands.show_alert') as alert, \
-				patch('core.commands.show_prompt', return_value=('packed.invalid', True)), \
-				patch('core.commands._get_handler_for_archive', return_value=None), \
-				patch('core.commands.mkdir') as make_directory, patch('core.commands.submit_task') as submit:
+			for handler in (None, 'ctar://'):
+				with self.subTest(files=files, handler=handler), patch('core.commands.show_alert') as alert, \
+					patch('core.commands.show_prompt', return_value=('packed.tar.gz', True)), \
+					patch('core.commands._get_handler_for_archive', return_value=handler), \
+					patch('core.commands.submit_task') as submit:
+					pane = Mock()
+					pane.get_path.return_value = 'file://C:/reports'
+					command = PackHere(pane)
+					with patch.object(command, 'get_chosen_files', return_value=files):
+						command()
+					alert.assert_called_once()
+					submit.assert_not_called()
+	def test_pack_refuses_an_existing_name_and_items_that_are_not_local(self):
+		from core.commands import PackHere
+		for files, exists, message in (
+				(['file://C:/reports/file.txt'], True, 'Destination already exists: packed.zip'),
+				(['zip://C:/reports/a.zip/file.txt'], False, 'Pack requires local files and a local destination folder.')):
+			with self.subTest(message), patch('core.commands.show_alert') as alert, \
+				patch('core.commands.show_prompt', return_value=('C:/reports/packed.zip', True)), \
+				patch('core.commands._get_handler_for_archive', return_value='zip://'), \
+				patch('core.commands.os.path.lexists', return_value=exists), \
+				patch('core.commands.submit_task') as submit:
 				pane = Mock()
 				pane.get_path.return_value = 'file://C:/reports'
 				command = PackHere(pane)
 				with patch.object(command, 'get_chosen_files', return_value=files):
 					command()
-				alert.assert_called_once()
-				make_directory.assert_not_called()
+				alert.assert_called_once_with(message)
 				submit.assert_not_called()
-	def test_pack_here_existing_archive_requires_confirmation(self):
-		from core.commands import PackHere
-		for answer in (NO, YES):
-			with self.subTest(answer=answer), patch('core.commands.show_alert', return_value=answer) as alert, \
-				patch('core.commands.show_prompt', return_value=('packed.zip', True)), \
-				patch('core.commands._get_handler_for_archive', return_value='zip://'), \
-				patch('core.commands.mkdir', side_effect=FileExistsError), patch('core.commands.submit_task') as submit:
-				pane = Mock()
-				pane.get_path.return_value = 'file://C:/reports'
-				pane.get_selected_files.return_value = []
-				pane.get_file_under_cursor.return_value = 'file://C:/reports/file.txt'
-				PackHere(pane)()
-				alert.assert_called_once()
-				self.assertEqual(answer == YES, submit.called)
 	def test_pack_here_uses_pack_call_and_visibility(self):
 		from core.commands import Pack, PackHere
 		self.assertIs(Pack.__call__, PackHere.__call__)
@@ -577,11 +582,9 @@ class PackTest(TestCase):
 				with patch.object(command, 'get_chosen_files', return_value=files), \
 					patch('core.commands._get_opposite_pane', side_effect=AssertionError('Opposite pane used')), \
 					patch('core.commands.show_prompt', return_value=('', False)) as prompt, \
-					patch('core.commands.mkdir') as make_directory, \
 					patch('core.commands.submit_task') as submit:
 					command()
 				self.assertEqual(as_human_readable(join(path, expected)), prompt.call_args.args[1])
-				make_directory.assert_not_called()
 				submit.assert_not_called()
 	def _check_suggestion(self, path, files, expected):
 		from core.commands import Pack
@@ -592,11 +595,9 @@ class PackTest(TestCase):
 		with patch.object(command, 'get_chosen_files', return_value=files), \
 			patch('core.commands._get_opposite_pane', return_value=opposite), \
 			patch('core.commands.show_prompt', return_value=('', False)) as prompt, \
-			patch('core.commands.mkdir') as make_directory, \
 			patch('core.commands.submit_task') as submit:
 			command()
 		self.assertEqual(as_human_readable(join('file://D:/output', expected)), prompt.call_args.args[1])
-		make_directory.assert_not_called()
 		submit.assert_not_called()
 
 class SameFolderOperationsTest(TestCase):
@@ -756,6 +757,15 @@ class DeleteTaskTest(TestCase):
 			'The Recycle Bin is not available in zip://. Nothing was deleted. '
 			'Use Delete permanently instead.'
 		)
+	def test_read_only_file_system_explains_the_refusal(self):
+		from core.commands import _Delete
+		from core.fs.zip import READ_ONLY_MESSAGE
+		from io import UnsupportedOperation
+		task = _Delete(['zip://C:/archive.zip/report.txt'], Mock(side_effect=UnsupportedOperation(READ_ONLY_MESSAGE)))
+		with patch.object(task, 'run') as run, patch.object(task, 'show_alert') as alert:
+			task()
+		run.assert_not_called()
+		alert.assert_called_once_with(READ_ONLY_MESSAGE)
 
 class GoUpTest(TestCase):
 	def test_drive_roots_open_drives_and_select_previous_drive(self):
@@ -1913,6 +1923,34 @@ class FindExtensionStartTest(TestCase):
 		self.assertEqual(7, _find_extension_start('archive.tar.xz'))
 	def test_tar_gz(self):
 		self.assertEqual(7, _find_extension_start('archive.tar.gz'))
+	def test_tar_bz2_and_tar_zst(self):
+		self.assertEqual(7, _find_extension_start('archive.tar.bz2'))
+		self.assertEqual(7, _find_extension_start('archive.tar.zst'))
+
+class OpenDirectoryTest(TestCase):
+	def test_a_folder_that_cannot_be_read_shows_one_alert_and_the_pane_stays(self):
+		from core.commands import OpenDirectory
+		from errno import EIO
+		url = 'zip://C:/data/bad.zip'
+		error = OSError(EIO, 'Cannot read bad.zip: Unexpected end of archive')
+		def scan_fails_later(url, onerror):
+			# The same URL ends the navigation where it is.
+			self.assertEqual(url, onerror(error, url))
+		def listing_fails_at_once(url, onerror):
+			onerror(error, url)
+			raise error
+		pane = Mock()
+		with patch('core.commands.is_dir', return_value=True), \
+				patch('core.commands.show_alert') as show_alert, \
+				patch('core.commands.Thread', side_effect=lambda target, args, daemon:
+					Mock(start=lambda: target(*args))):
+			for set_path in (scan_fails_later, listing_fails_at_once):
+				with self.subTest(set_path.__name__):
+					show_alert.reset_mock()
+					pane.set_path.side_effect = set_path
+					OpenDirectory(pane)(url)
+					show_alert.assert_called_once_with('Could not read from %s (Cannot read bad.zip: '
+						'Unexpected end of archive)' % as_human_readable(url))
 
 class ConfirmTreeOperationTest(TestCase):
 	def test_copy_and_move_submit_before_mkdir_or_bulk_validation(self):

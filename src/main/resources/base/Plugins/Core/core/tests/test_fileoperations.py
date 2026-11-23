@@ -1,4 +1,4 @@
-from core.fileoperations import CopyFiles, MoveFiles, ArchiveUpdateError
+from core.fileoperations import CopyFiles, MoveFiles
 from core.tests import StubFS, SYMLINKS_SUPPORTED
 from fman import YES, NO, OK, YES_TO_ALL, NO_TO_ALL, ABORT, Task
 from fman.url import join, dirname, as_url, as_human_readable
@@ -6,6 +6,7 @@ from os.path import exists
 from tempfile import TemporaryDirectory
 from unittest import TestCase, skipIf, skipUnless
 from unittest.mock import Mock, patch
+from zipfile import ZipFile
 
 import os
 import os.path
@@ -368,7 +369,7 @@ class PreparationSafetyTest(TestCase):
 			operation = CopyFiles(files, as_url(destination), fs=StubFS())
 			original = Path.resolve
 			with patch('core.fileoperations.Path.resolve', autospec=True, side_effect=original) as resolve, \
-					patch('core.fileoperations.is_parent', side_effect=AssertionError('No repeated ancestor walk')):
+					patch.object(operation, '_is_parent', side_effect=AssertionError('No repeated ancestor walk')):
 				self.assertTrue(operation._gather_files())
 				resolve.assert_called_once()
 			self.assertFalse(destination.exists())
@@ -399,16 +400,16 @@ class PreparationSafetyTest(TestCase):
 		from types import SimpleNamespace
 		operation = CopyFiles(['file://C:/source/item'], 'file://C:/destination', fs=Mock())
 		with patch('core.fileoperations.os.lstat', return_value=SimpleNamespace(st_dev=0, st_ino=0)), \
-				patch('core.fileoperations.is_parent', return_value=True) as fallback:
+				patch.object(operation, '_is_parent', return_value=True) as fallback:
 			self.assertTrue(operation._contains_destination('file://C:/source/item', 'file://C:/destination/item', False, False))
 			fallback.assert_called_once()
-		with patch('core.fileoperations.is_parent', return_value=True) as fallback:
+		with patch.object(operation, '_is_parent', return_value=True) as fallback:
 			self.assertTrue(operation._contains_destination('zip://archive/item', 'file://C:/destination/item', False, False))
 			fallback.assert_called_once()
 		with patch('core.fileoperations.os.stat', return_value=SimpleNamespace(st_dev=1, st_ino=1)), \
 				patch('core.fileoperations.Path.stat', return_value=SimpleNamespace(st_dev=0, st_ino=0)), \
 				patch('core.fileoperations.Path.resolve', return_value=Path('C:/destination')), \
-				patch('core.fileoperations.is_parent', return_value=True) as fallback:
+				patch.object(operation, '_is_parent', return_value=True) as fallback:
 			self.assertTrue(operation._contains_destination('file://C:/source', 'file://C:/destination/source', True, False))
 			fallback.assert_called_once()
 
@@ -424,7 +425,7 @@ class PreparationSafetyTest(TestCase):
 				path.write_bytes(b'payload')
 				files.append(as_url(path))
 			operation = CopyFiles(files, as_url(destination), fs=StubFS())
-			with patch('core.fileoperations.is_parent', side_effect=AssertionError('No file ancestor walk')):
+			with patch.object(operation, '_is_parent', side_effect=AssertionError('No file ancestor walk')):
 				self.assertTrue(operation._gather_files())
 			self.assertFalse(destination.exists())
 			self.assertEqual(33, len(operation._tasks))
@@ -488,13 +489,22 @@ class ArchiveTransferErrorTest(TestCase):
 					self.assertEqual(b'keep', (target / 'keep').read_bytes())
 					self.assertEqual(b'original', (regular / 'nested' / 'original').read_bytes())
 					self.assertTrue(os.path.isjunction(linked / 'nested'))
-	def test_local_archive_move_refuses_before_gathering_or_mutation(self):
-		filesystem = Mock()
-		operation = MoveFiles(['file://C:/source'], 'zip://C:/archive.zip', fs=filesystem)
-		with patch.object(operation, 'show_alert') as alert:
-			operation()
-			alert.assert_called_once()
-		self.assertEqual([], filesystem.mock_calls)
+	def test_read_only_destination_is_refused_before_any_transfer(self):
+		from core.fs.zip import READ_ONLY_MESSAGE
+		from io import UnsupportedOperation
+		for operation_class in (CopyFiles, MoveFiles):
+			with self.subTest(operation=operation_class.__name__):
+				filesystem = Mock()
+				filesystem.is_dir.return_value = False
+				filesystem.exists.return_value = False
+				filesystem.resolve.side_effect = lambda url: url
+				filesystem.prepare_copy.side_effect = filesystem.prepare_move.side_effect = \
+					UnsupportedOperation(READ_ONLY_MESSAGE)
+				operation = operation_class(['file://C:/source'], 'zip://C:/archive.zip', fs=filesystem)
+				with patch.object(operation, 'show_alert') as alert:
+					operation()
+				alert.assert_called_once_with(READ_ONLY_MESSAGE, OK, OK)
+				filesystem.makedirs.assert_not_called()
 	def test_merge_refuses_source_and_destination_links(self):
 		for operation_class in (CopyFiles, MoveFiles):
 			for linked in ('file://C:/source/folder', 'file://C:/destination/folder'):
@@ -516,17 +526,6 @@ class ArchiveTransferErrorTest(TestCase):
 		with patch.object(operation, 'check_canceled', side_effect=[None, Task.Canceled()]):
 			with self.assertRaises(Task.Canceled):
 				operation._merge_directory('stub://source/folder')
-	def test_update_failure_stops_even_after_ignore_all(self):
-		operation = MoveFiles(['zip://source.zip/item'], 'file:///destination')
-		operation._ignore_exceptions = True
-		later = Mock()
-		operation._tasks = [Task('Update', fn=Mock(side_effect=ArchiveUpdateError(5, 'retained'))),
-			Task('Later', fn=later)]
-		with patch.object(operation, '_gather_files', return_value=True), \
-			patch.object(operation, 'show_alert', return_value=OK) as alert:
-			operation()
-			alert.assert_called_once()
-		later.assert_not_called()
 	def test_continue_skips_failed_composite_not_just_extraction(self):
 		operation = MoveFiles(['zip://source.zip/item'], 'file:///destination')
 		deleted = Mock()
@@ -542,6 +541,70 @@ class ArchiveTransferErrorTest(TestCase):
 			alert.assert_called_once()
 		deleted.assert_not_called()
 		later.assert_called_once()
+
+class ArchiveCopyBatchTest(TestCase):
+	"""Copies out of one archive share one 7-Zip run."""
+	def setUp(self):
+		from core import LocalFileSystem
+		from core.fs.zip import ZipFileSystem, _MEMBER_LISTS
+		from fman.impl.plugins.mother_fs import MotherFileSystem
+		from pathlib import Path
+		_MEMBER_LISTS.clear()
+		self.addCleanup(_MEMBER_LISTS.clear)
+		temporary = TemporaryDirectory()
+		self.addCleanup(temporary.cleanup)
+		self.root = Path(temporary.name)
+		self.fs = MotherFileSystem()
+		self.fs.add_child('file://', LocalFileSystem())
+		self.zip_fs = ZipFileSystem(self.fs, {'.zip'})
+		self.fs.add_child('zip://', self.zip_fs)
+		self.archive = self.root / 'many.zip'
+	def url(self, member):
+		return as_url(self.archive, 'zip://') + '/' + member
+	def test_gathering_starts_no_7zip_and_resolves_each_url_once(self):
+		from core.tests.fs.test_zip import _count_7zip_starts
+		with ZipFile(self.archive, 'w') as writer:
+			for index in range(1000):
+				writer.writestr('many/%04d.txt' % index, b'%d' % index)
+		self.zip_fs.members(str(self.archive))
+		destination = self.root / 'out'
+		destination.mkdir()
+		files = [self.url('many/%04d.txt' % index) for index in range(1000)]
+		operation = CopyFiles(files, as_url(destination), fs=self.fs)
+		resolved = []
+		original = self.fs.resolve
+		def resolve(url):
+			resolved.append(url)
+			return original(url)
+		with _count_7zip_starts() as starts, patch.object(self.fs, 'resolve', side_effect=resolve), \
+				patch.object(operation, 'show_alert', side_effect=AssertionError('Unexpected alert')):
+			operation()
+		self.assertEqual(1, len(starts))
+		self.assertEqual('x', starts[0][0])
+		self.assertEqual(len(resolved), len(set(resolved)))
+		self.assertEqual(2, len(operation._tasks))
+		self.assertEqual(1000, len(os.listdir(destination)))
+		self.assertEqual(b'999', (destination / '0999.txt').read_bytes())
+	def test_merge_with_yes_and_no_answers_is_one_run(self):
+		from core.tests.fs.test_zip import _count_7zip_starts
+		with ZipFile(self.archive, 'w') as writer:
+			for name in ('a.txt', 'b.txt', 'c.txt'):
+				writer.writestr('folder/' + name, b'new ' + name.encode())
+		existing = self.root / 'out' / 'folder'
+		existing.mkdir(parents=True)
+		(existing / 'a.txt').write_bytes(b'old a')
+		(existing / 'b.txt').write_bytes(b'old b')
+		self.zip_fs.members(str(self.archive))
+		operation = CopyFiles([self.url('folder')], as_url(self.root / 'out'), fs=self.fs)
+		with _count_7zip_starts() as starts, \
+				patch.object(operation, 'show_alert', side_effect=[YES, NO]) as alert:
+			operation()
+		self.assertEqual(2, alert.call_count)
+		self.assertEqual(1, len(starts))
+		self.assertEqual(b'new a.txt', (existing / 'a.txt').read_bytes())
+		self.assertEqual(b'old b', (existing / 'b.txt').read_bytes())
+		self.assertEqual(b'new c.txt', (existing / 'c.txt').read_bytes())
+		self.assertEqual({'a.txt', 'b.txt', 'c.txt'}, set(os.listdir(existing)))
 
 class FileTreeOperationAT:
 

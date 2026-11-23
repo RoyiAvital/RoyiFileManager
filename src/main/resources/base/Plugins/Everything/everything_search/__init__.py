@@ -572,6 +572,6 @@ class EverythingFoldersListener(DirectoryPaneListener):
 				return 'add_everything_folders', {'files': files, 'dest_dir': dest}
 			if in_manager or from_manager or _is_folder_url(dest):
 				return 'everything_folder_operation_unsupported', {}
-		if in_manager and command_name in ('rename', 'pack', 'unpack_archive', 'create_directory',
+		if in_manager and command_name in ('rename', 'pack', 'unpack_archive', 'unpack_archive_to', 'create_directory',
 				'new_empty_file', 'create_and_edit_file', 'cut', 'copy_to_clipboard', 'paste_cut'):
 			return 'everything_folder_operation_unsupported', {}

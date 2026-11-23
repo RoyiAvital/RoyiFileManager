@@ -434,26 +434,83 @@ nothing is selected. Only the default destination changes; the name, destination
 and format remain editable. The command ID is `pack_here`; no default shortcut
 is assigned.
 
+The name's `archive_handlers` entry picks the format: `zip://`, `7z://` or `tar://`.
+Pack creates a new archive in one 7-Zip run, with progress and Cancel. 7-Zip writes
+a temporary file beside the destination, which is renamed to the archive name only
+after success; a failure or Cancel removes it. The temporary folder is excluded
+from the archive, also when the destination lies inside a chosen folder. Pack
+refuses an existing archive name, a missing destination folder, items that are
+not local, compressed tar names, and two chosen items with the same name (7-Zip's
+"Duplicate filename"; the message names the item). Nothing is written in these cases.
+
 ## Archive Transfers
 
-Enter an archive as a folder, select items, then use the existing Copy or Move
-workflow. Extraction reports 7-Zip progress when available. Cancel stops
-extraction and removes unfinished staging; completed items remain.
+Archives are read-only. Core's archive file systems (`zip://`, `7z://`, `tar://`
+and `ctar://` for compressed tars) set `read_only_message`, so the host refuses
+every change before any provider runs: copy or move into an archive, move out of
+or within it, Rename, Delete (Recycle Bin or permanent), New file and New folder.
+The message is "Archives are read-only. Unpack the archive, change the files and
+pack them again." New folder and New file are hidden inside archives.
 
-Moving out of an archive or between archives of the same format verifies file
-contents before removing source entries. Cross-format Move is not supported;
-extract and verify the files first, then copy them into the destination archive.
-Cross-archive Move re-extracts the destination for verification. These
-checks deliberately add reads, temporary space, and time. During an archive
-update, Cancel waits for that update and empty-parent restoration to finish.
-Source-update failure stops the operation and retains the copied output.
+**Member list.** One 7-Zip listing (`7za l -slt`) per archive version is kept in
+memory and answers browsing, `is_dir`, `exists`, `resolve`, sizes and dates. Lists
+are keyed by the archive's path, volume, file ID, size and modification time; a
+changed archive is listed again. Lists holding more than 1,000,000 members
+together are dropped, least recently used first; the newest list always stays.
+A pane scan and tasks can cancel a listing; other reads cannot, but run off the
+Qt thread. A leading `./` in names is removed and the `.` entry is skipped;
+extraction uses the stored names. An archive with absolute or `..` paths is
+refused with one message. A listing that fails refuses the archive with 7-Zip's
+reason, for example "Cannot read logs.zip: Unexpected end of archive". Enter
+shows it in one alert (`OpenDirectory`'s `onerror`) and the pane stays; the same
+applies to a local folder that cannot be listed.
 
-Avoid editing either archive or the destination concurrently. Change detection
-does not lock files or guarantee recovery from crashes or storage failure.
-Verified Moves reject symbolic links, junctions, and the archive root itself;
-select its contents instead. Local-to-archive Move is disabled before mutation:
-use Copy, verify the archive contents, then delete originals explicitly.
-Same-archive rename keeps its existing behavior.
+**Copy out.** Enter an archive, select items, then use Copy (F5), Paste or drop.
+Gathering is answered from the member list and starts no 7-Zip process. All
+chosen items of one archive share one `Extract` task and one 7-Zip run:
+
+1. The chosen member names go into a quoted UTF-8 list file (`-i@`), matched
+   case-sensitively (`-ssc`). A folder whose entries were all chosen stands for
+   them; for the root, no list is passed. 7-Zip takes `./docs` and `docs` for
+   different names, so in an archive that stores both forms only files are passed
+   and a chosen folder is refused.
+2. 7-Zip extracts with `-snl-` into a temporary folder beside the first destination.
+3. After exit code 0, each item is moved into place with one rename. A rename never
+   replaces, except for an ordinary file the user agreed to overwrite; a folder,
+   a link, a junction or a file with several hard links is never replaced. Each
+   destination folder is announced once.
+
+A failed or canceled run publishes nothing and removes the stage. An item whose
+rename fails is skipped and the others are still moved; then one error gives the
+count and the first three names, for example "1 of 5 items was not copied:
+f3.txt: Access is denied". Cancel during the renames stops between items. The
+items already moved stay, each complete, and their folders are refreshed.
+Progress follows 7-Zip's percentage, then the renames.
+
+7-Zip compares each chosen name with the entries of its own folder. Large partial
+choices from one very large folder therefore cost more: 1,000 of the 202,600 files
+in the root of one archive took 1.8 s, 20,000 took 43 s.
+
+**Compressed tars.** `.tar.gz`, `.tgz`, `.tar.bz2`, `.tbz2`, `.tbz`, `.tar.xz`,
+`.txz`, `.tar.zst` and `.tzst` map to `ctar://`. 7-Zip reads the inner tar
+through a pipe of two processes (`7za x -so` into `7za l -si -ttar` or
+`7za x -si -ttar`); no temporary tar is written. A tar has no index, so each
+listing and each extraction decompresses the archive once. A file is accepted
+only if 7-Zip reports gzip, bzip2, xz or zstd, both processes exit with 0, and an
+empty listing has a `.` entry or starts with a 512-byte zero block. Otherwise:
+"Not a compressed tar archive". The type check reads only the archive's
+properties, not its entry list. Outside a task, the status bar shows "Reading
+*name*: N%" at most four times a second and clears it afterwards.
+
+**Symbolic links** are never created: every extraction uses `-snl-`. The task
+reports once how many links it skipped. Hard links extract as ordinary files.
+A later entry of the same path replaces a link, as 7-Zip's extraction does.
+
+7-Zip changes names that Windows does not allow when it extracts a folder
+(`aux.c` becomes `_aux.c`; of `Makefile` and `makefile` one remains). Copy keeps
+this, and a chosen item with such a name is skipped as "*name*: not extracted".
+Chosen items whose names differ only by case are all skipped, since they would
+become one file. Unpack refuses such an archive.
 
 Items copied or dragged from Explorer's archive view (for example inside
 `C:\Data\Reports.zip`) arrive without file paths, only as shell items. The host
@@ -464,30 +521,32 @@ changed. If any item cannot be mapped, nothing is copied and an alert explains w
 
 ## Unpack Archive
 
-Select one local archive (or leave it under the cursor), then run **Unpack archive**
-from the Command Center. In a pane showing `C:\Work`, `Reports.zip` creates
-`C:\Work\Reports\`. The other pane is not used; there is no destination chooser.
-The source archive stays unchanged. Any existing destination file, folder or
-link, including an empty folder, causes an alert and stops extraction. Unpack
-never merges, overwrites or automatically renames the destination.
+Choose one local archive (or leave it under the cursor), then run a command from
+the file context menu or the Command Center:
 
-The existing progress dialog supports Cancel. Before publication, cancellation
-removes unfinished output; a folder already published is retained. A temporary
-sibling holds extracted contents until publication, requiring free space only
-for those contents. Unpack reads the archive directly, without a snapshot copy
-or a post-extraction tree scan.
+| Command (ID)                           | Aliases                             | Destination                                                         |
+| -------------------------------------- | ----------------------------------- | ------------------------------------------------------------------- |
+| **Unpack here** (`unpack_archive`)     | Unpack archive, Extract archive     | A new folder beside the archive: `Reports.zip` creates `Reports\`   |
+| **Unpack to...** (`unpack_archive_to`) | Unpack archive to..., Extract to... | The archive's content in a typed folder; default: other pane folder |
 
-Core's ZIP-family, 7Z and TAR handlers are used; custom extraction tasks are not
-supported. Naming collisions and names that 7-Zip may rewrite are rejected before
-extraction. Links, attributes and extraction errors use 7-Zip's normal behavior;
-no password prompt is provided. Concurrent archive changes are unsupported;
-a size/mtime comparison detects some changes, not all.
+Both only create. Unpack here stops if its folder exists, even an empty one.
+Unpack to... stops if any top-level item of the archive exists in the chosen
+folder; a missing folder is created, and removed again if Unpack fails. A path
+through an existing file is refused before the archive is read. The typed path
+must be local; a relative path starts at the current folder. Neither has a
+default shortcut. The context menu entries are always shown; on a file that is
+not an archive the command explains why.
 
-The existing archive-path parser can confuse overlapping suffixes such as
-`.zip`/`.zipx` or archive-looking parent names such as `backup.zip.old`.
-Unpack rejects a misidentified source instead of extracting the wrong archive.
-`archive.zip.7z` can produce the ordinary folder `archive.zip`; browsing it is
-local, but later archive operations beneath it may hit the same parser limitation.
+The member list is built if needed, then Unpack's name rules run on it: names that
+Windows or 7-Zip would change and names that collide (case-insensitively) refuse
+the archive before 7-Zip starts. One 7-Zip run extracts everything with `-snl-`
+into a temporary folder: beside the new folder, or inside the chosen folder. After
+success the stage is renamed to the new folder, or each top-level entry is renamed
+into the chosen folder. Cancel before publication removes unfinished output; Cancel
+while top-level entries are moved keeps those already moved. The source archive
+stays unchanged, and a size/mtime comparison detects some concurrent changes.
+No password prompt is provided; encrypted entries fail with "The archive needs a
+password".
 
 ## Text Editor and Viewer
 

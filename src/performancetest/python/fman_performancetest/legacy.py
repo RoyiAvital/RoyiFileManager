@@ -1,6 +1,5 @@
 """Existing scale measurements, invoked individually through run.py."""
 
-from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
 import subprocess
@@ -9,7 +8,7 @@ from tempfile import TemporaryDirectory
 from threading import Event
 from time import monotonic, perf_counter
 from unittest import TestCase, skipUnless
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 from zipfile import ZipFile
 
 from fman.url import as_url
@@ -24,11 +23,8 @@ from PyQt5.QtCore import Qt
 
 
 poc = poc_tests.poc
-Extract = zip_tests.Extract
 StubFS = zip_tests.StubFS
 ZipFileSystem = zip_tests.ZipFileSystem
-_run_7zip = zip_tests._run_7zip
-_tree_digest = zip_tests._tree_digest
 setUpModule = qt_tests.setUpModule
 tearDownModule = qt_tests.tearDownModule
 
@@ -610,72 +606,30 @@ class QuickBoardPerformance(qt_tests.QuickBoardFixture):
 
 
 class ArchivePerformance(zip_tests.SevenZipExecutableTest):
-	def test_copy_verification_timing(self):
+	def test_many_item_copy_is_one_run(self):
 		with TemporaryDirectory() as directory:
 			root = Path(directory)
-			archive = root / 'timing.zip'
+			archive = root / 'many.zip'
 			with ZipFile(archive, 'w') as writer:
-				writer.writestr('payload.bin', b'x' * (8 * 1024 * 1024))
-			started = monotonic()
-			_run_7zip(['x', str(archive), '-o' + str(root / 'baseline')])
-			baseline = monotonic() - started
-			started = monotonic()
-			Extract(StubFS(), str(archive), '', str(root / 'verified'), verify_output=True)()
-			verified = monotonic() - started
-			self.assertEqual(_tree_digest(root / 'baseline', lambda: None),
-				_tree_digest(root / 'verified', lambda: None))
-			print('8 MiB baseline extraction %.3fs; staged/verified extraction %.3fs' % (baseline, verified))
-	def test_multi_item_move_verification_cost(self):
-		with TemporaryDirectory() as directory:
-			root = Path(directory)
-			archive = root / 'timing.zip'
-			output = root / 'output'
-			output.mkdir()
-			payload = b'x' * (3 * 1024 * 1024)
-			retained = b'y' * (4 * 1024 * 1024)
-			names = ['item-%02d.bin' % number for number in range(20)]
-			with ZipFile(archive, 'w') as writer:
-				for name in names:
-					writer.writestr(name, payload)
-				writer.writestr('retained.bin', retained)
+				for index in range(20_000):
+					writer.writestr('folder/%05d.txt' % index, b'x')
 			filesystem = ZipFileSystem(StubFS(), {'.zip'})
-			original_open = Path.open
-			read_bytes = {'archive': 0, 'output': 0}
-			@contextmanager
-			def counted_open(path, *args, **kwargs):
-				with original_open(path, *args, **kwargs) as stream:
-					def read(*read_args):
-						data = stream.read(*read_args)
-						kind = 'archive' if path == archive else 'output'
-						read_bytes[kind] += len(data)
-						return data
-					proxy = Mock(wraps=stream)
-					proxy.read.side_effect = read
-					yield proxy
-			def measured_digest(path, check):
-				with patch.object(Path, 'open', counted_open):
-					return _tree_digest(path, check)
-			samples = []
-			print('20-item Move, 64 MiB stored ZIP payload; Python hash-read bytes only')
-			for name in names:
-				read_bytes.update(archive=0, output=0)
-				archive_size = archive.stat().st_size
+			started = monotonic()
+			filesystem.members(str(archive))
+			print('20,000-member listing %.3fs' % (monotonic() - started))
+			base = as_url(archive, 'zip://') + '/folder/'
+			for count in (1000, 20_000):
+				output = root / ('out%d' % count)
+				output.mkdir()
 				started = monotonic()
-				with patch('core.fs.zip._tree_digest', side_effect=measured_digest):
-					filesystem.move(as_url(archive, 'zip://') + '/' + name, as_url(output / name))
-				elapsed = monotonic() - started
-				self.assertEqual(2 * archive_size, read_bytes['archive'])
-				self.assertEqual(2 * len(payload), read_bytes['output'])
-				self.assertEqual(payload, (output / name).read_bytes())
-				samples.append((elapsed, read_bytes['archive'], read_bytes['output']))
-				print('%s %.3fs archive=%d output=%d' % (name, *samples[-1]))
-			with ZipFile(archive) as reader:
-				self.assertEqual(['retained.bin'], reader.namelist())
-				self.assertEqual(retained, reader.read('retained.bin'))
-			self.assertEqual(set(names), {path.name for path in output.iterdir()})
-			self.assertEqual({'timing.zip', 'output'}, {path.name for path in root.iterdir()})
-			print('Total %.3fs archive=%d output=%d' % (
-				sum(sample[0] for sample in samples),
-				sum(sample[1] for sample in samples),
-				sum(sample[2] for sample in samples)
-			))
+				tasks = [filesystem.prepare_copy(base + '%05d.txt' % index, as_url(output / ('%05d.txt' % index)))[0]
+					for index in range(count)]
+				for task in tasks[1:]:
+					self.assertTrue(tasks[0].absorb(task))
+				prepared = monotonic() - started
+				with zip_tests._count_7zip_starts() as starts:
+					tasks[0]()
+				self.assertEqual(1, len(starts))
+				self.assertEqual(count, len(list(output.iterdir())))
+				print('Copy %d of 20,000 files from one folder: prepare %.3fs, one 7-Zip run and publish %.3fs' %
+					(count, prepared, monotonic() - started - prepared))

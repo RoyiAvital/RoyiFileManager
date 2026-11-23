@@ -113,8 +113,10 @@ live portable-runtime check and 30 warm IPC timings. The latter uses temporary
 state under `UserSettings/Local` and never controls the unnamed instance.
 
 `-m fman_integrationtest.explorer_archive_smoke` (with `QT_QPA_PLATFORM=windows`)
-pastes and drops items from Explorer's ZIP view into a real application and checks
-the archive is unchanged. It replaces the current clipboard contents.
+pastes and drops items from Explorer's ZIP view, and drops a folder from its view
+of a `.tar.gz` with `./` names, into a real application. It checks the extracted
+bytes, the prompts and that both archives are unchanged; the `.tar.gz` part is
+skipped where Explorer cannot open that type. It replaces the current clipboard contents.
 
 After freezing, `python build.py smoke-everything` verifies the bundled executable
 and license, then runs the same live check using the frozen Everything plug-in

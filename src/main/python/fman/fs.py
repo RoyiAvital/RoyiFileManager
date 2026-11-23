@@ -90,6 +90,8 @@ def notify_file_removed(url):
 class FileSystem:
 
 	scheme = ''
+	# Non-empty for a read-only file system: fman refuses every change with it.
+	read_only_message = ''
 
 	def __init__(self):
 		self.cache = Cache()

@@ -5073,7 +5073,7 @@ class UnpackArchiveIT(QtIT):
 				pane.place_cursor_at(as_url(archive))
 				self.assertEqual(as_url(archive), pane.get_file_under_cursor())
 				self.assertIn('unpack_archive', registry.get_commands())
-				self.assertEqual(('Unpack archive', 'Extract archive'), registry.get_command_aliases('unpack_archive'))
+				self.assertEqual(('Unpack archive', 'Extract archive', 'Unpack here'), registry.get_command_aliases('unpack_archive'))
 				with patch('core.commands.load_settings', return_value={'archive_handlers': {'.zip': 'zip://'}}), \
 					patch('core.commands.samefile', side_effect=filesystem.samefile), \
 					patch('core.commands.is_dir', side_effect=filesystem.is_dir), \
@@ -5115,6 +5115,77 @@ class UnpackArchiveIT(QtIT):
 					parent.close()
 					parent.deleteLater()
 					return model
+				self.run_in_app(close)
+
+class OpenDamagedArchiveIT(QtIT):
+	def test_one_alert_names_the_reason_and_the_pane_stays(self):
+		from core import Name, Size, Modified
+		from core.commands import OpenDirectory
+		from core.fs.local import LocalFileSystem
+		from core.fs.zip import ZipFileSystem, _MEMBER_LISTS
+		from fman import DirectoryPane
+		from fman.impl.plugins.builtin import NullFileSystem, NullColumn
+		from fman.impl.plugins.command_registry import PaneCommandRegistry
+		from fman.impl.plugins.mother_fs import MotherFileSystem
+		from fman.impl.plugins.plugin import FileSystemWrapper, Plugin
+		from fman.impl.widgets import DirectoryPaneWidget
+		from fman.url import as_url, splitscheme
+		from pathlib import Path
+		from PyQt5.QtWidgets import QWidget
+		from tempfile import TemporaryDirectory
+		from unittest.mock import Mock, patch
+		from zipfile import ZipFile
+		import os
+		import time
+		with TemporaryDirectory() as temporary:
+			root = Path(temporary)
+			valid = root / 'valid.zip'
+			with ZipFile(valid, 'w') as writer:
+				for index in range(20):
+					writer.writestr('f%d.txt' % index, os.urandom(1000))
+			(root / 'random.zip').write_bytes(os.urandom(5000))
+			(root / 'truncated.zip').write_bytes(valid.read_bytes()[:3000])
+			errors = Mock()
+			filesystem = MotherFileSystem()
+			for backend in (LocalFileSystem(), NullFileSystem(), ZipFileSystem(filesystem, {'.zip'})):
+				filesystem.add_child(backend.scheme, FileSystemWrapper(backend, filesystem, errors))
+			for column in (Name(), Size(), Modified(), NullColumn()):
+				filesystem.register_column(column.get_qualified_name(), column)
+			def create():
+				parent = QWidget()
+				registry = PaneCommandRegistry(errors, Mock())
+				plugin = Plugin(errors, Mock(), registry, Mock(), filesystem, Mock())
+				plugin._register_directory_pane_command(OpenDirectory)
+				widget = DirectoryPaneWidget(filesystem, 'null://', parent, Mock())
+				pane = DirectoryPane(Mock(), widget, registry)
+				parent.show()
+				return parent, widget, pane
+			parent, widget, pane = self.run_in_app(create)
+			try:
+				loaded = Event()
+				widget.set_location(as_url(root), callback=loaded.set)
+				self.assertTrue(loaded.wait(5), 'Pane did not load')
+				for name, reason in (('random.zip', 'Cannot open the file as [zip] archive'),
+						('truncated.zip', 'Unexpected end of archive')):
+					with self.subTest(name):
+						_MEMBER_LISTS.clear()
+						shown = Event()
+						with patch('core.commands.is_dir', side_effect=filesystem.is_dir), \
+								patch('core.commands.show_alert', side_effect=lambda *args: shown.set()) as alert:
+							url = 'zip://' + splitscheme(as_url(root / name))[1]
+							self.run_in_app(pane.run_command, 'open_directory', {'url': url})
+							self.assertTrue(shown.wait(10), 'No alert')
+							time.sleep(.3)
+						alert.assert_called_once()
+						self.assertIn('(Cannot read %s: %s)' % (name, reason), alert.call_args.args[0])
+						self.assertEqual(as_url(root), self.run_in_app(lambda: widget._model.get_location()))
+				errors.report.assert_not_called()
+			finally:
+				def close():
+					model = widget._model
+					model.shutdown()
+					parent.close()
+					parent.deleteLater()
 				self.run_in_app(close)
 
 class EverythingIT(QtIT):

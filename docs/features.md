@@ -17,6 +17,7 @@ Some guides describe the current development build, not just the latest release.
 | Select same extension, clipboard/link navigation and Command Center synonyms        | Unreleased development builds |
 | Numbered duplicate suggestions, copying multiple names and local free-space display | Unreleased development builds |
 | Bundled File Attributes Editor                                                      | Unreleased development builds |
+| Compressed tars, Unpack to... and read-only archives                                | Unreleased development builds |
 
 Check the [release notes](https://github.com/RoyiAvital/RoyiFileManager/blob/main/CHANGELOG.md)
 for your installed version. An Unreleased instruction may not work in a released build.
@@ -58,8 +59,8 @@ See [QuickView](tools.md#quickview), [Directory Size](tools.md#directory-size), 
 
 - Create files and folders.
 - Send files to the Recycle Bin or delete permanently.
-- Pack and unpack archives.
-- Move or copy files into and out of archives.
+- Pack and unpack archives: **Unpack here** or **Unpack to...** a chosen folder.
+- Browse archives and copy items out of them, including compressed tars such as `.tar.gz`.
 - Copy full paths to the clipboard.
 - Rename a filtered, ordered group with [Batch File Renamer](tools.md#batch-file-renamer).
 - Edit file and folder attributes, optionally recursively, with
@@ -77,7 +78,7 @@ See [Archives](archives.md).
 - Files are copied completely before replacing an existing destination.
 - Failed or canceled copies preserve existing data whenever possible.
 - Risky operations involving file-system links are refused.
-- Archive moves verify copied files before deleting their sources.
+- Archives are never changed. Extraction publishes only complete output.
 
 See [Advanced Notes](advanced.md#file-transfers).
 

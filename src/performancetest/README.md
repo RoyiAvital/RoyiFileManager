@@ -399,7 +399,7 @@ python src/performancetest/run.py suite --compare baseline.json current.json
 ```
 
 `run.py legacy-search`, `legacy-metadata`, `pane-filter`, `ui-table`, `poc`,
-`image`, `fd`, `archive-copy` and `archive-move` preserve earlier opt-in
+`image`, `fd` and `archive-copy` preserve earlier opt-in
 measurements outside verification discovery. `image` includes the separate
 128 MP stress case. These print diagnostics; they are not catalog-versioned
 history. `run.py search` retains the earlier configurable seeded Filter/Find

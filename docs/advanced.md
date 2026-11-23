@@ -34,11 +34,14 @@ skipped errors at the end.
 
 ### Archives
 
-- To add local files to an archive, copy them, verify the archive, then delete
-  the originals. Moving them directly into an archive is disabled.
-- Moving between different archive formats is not supported.
-- Moving out of an archive, or between archives of the same format, verifies
-  copied data before deleting the source and may need extra time and space.
+- Archives are read-only. To change one, unpack it, change the files and pack
+  them into a new archive.
+- A copy out of an archive extracts all chosen items in one 7-Zip run into
+  temporary space beside the destination, then moves them into place. Keep
+  enough free space for the extracted items. A failed or canceled run copies
+  nothing; Cancel while items are moved into place keeps those already moved.
+  An item that cannot be moved into place is skipped and named at the end.
+- Unpack and Pack only create. An existing destination is refused.
 
 See the [archive guide](archives.md), [file-system link behavior](file-system-operations.md)
 and the Core plug-in's detailed

@@ -1,4 +1,4 @@
-from core.commands import UnpackArchive, _UnpackArchive, _unpack_archive_name, \
+from core.commands import UnpackArchive, UnpackArchiveTo, _UnpackArchive, _unpack_archive_name, \
 	_get_handler_for_archive, _unpack_error_text
 from core.fs.zip import Extract, ZipFileSystem
 from core.tests import StubFS
@@ -167,9 +167,9 @@ class UnpackArchiveTest(TestCase):
 		self.assert_no_success()
 	def test_archive_looking_output_is_local_and_unpacks_inside_it(self):
 		from core.commands import ArchiveOpenListener
-		from core.fs.zip import SevenZipFileSystem, _run_7zip
+		from core.fs.zip import SevenZipFileSystem, PackArchive
 		archive = self.root / 'archive.zip.7z'
-		_run_7zip(['a', str(archive), self.source.name], cwd=str(self.root))
+		PackArchive([str(self.source)], str(archive), '7z')()
 		original = archive.read_bytes()
 		self.load_settings.return_value = {'archive_handlers': {'.zip': 'zip://', '.7z': '7z://'}}
 		self.prepare_copy.side_effect = SevenZipFileSystem(StubFS(), {'.7z'}).prepare_copy
@@ -228,6 +228,144 @@ class UnpackArchiveTest(TestCase):
 			task()
 		self.assertTrue(task.succeeded)
 
+class UnpackArchiveToTest(TestCase):
+	def setUp(self):
+		temporary = TemporaryDirectory()
+		self.addCleanup(temporary.cleanup)
+		self.root = Path(temporary.name)
+		self.source = self.root / 'Reports.zip'
+		with ZipFile(self.source, 'w') as archive:
+			archive.writestr('file.txt', b'payload')
+			archive.writestr('docs/a.txt', b'A')
+		self.original = self.source.read_bytes()
+		self.other = self.root / 'other'
+		self.other.mkdir()
+		self.pane = Mock()
+		self.pane.get_path.return_value = as_url(self.root)
+		self.pane.get_selected_files.return_value = []
+		self.pane.get_file_under_cursor.return_value = as_url(self.source)
+		other_pane = Mock()
+		other_pane.get_path.return_value = as_url(self.other)
+		self.pane.window.get_panes.return_value = [self.pane, other_pane]
+		self.other_pane = other_pane
+		self.command = UnpackArchiveTo(self.pane)
+		for name in ('show_alert', 'show_prompt', 'show_status_message', 'submit_task', 'load_settings', 'samefile', 'is_dir', 'prepare_copy'):
+			patcher = patch('core.commands.' + name)
+			setattr(self, name, patcher.start())
+			self.addCleanup(patcher.stop)
+		self.load_settings.return_value = {'archive_handlers': {'.zip': 'zip://'}}
+		self.samefile.side_effect = lambda first, second: os.path.samefile(as_human_readable(first), as_human_readable(second))
+		self.is_dir.side_effect = lambda url: Path(as_human_readable(url)).is_dir()
+		self.prepare_copy.side_effect = ZipFileSystem(StubFS(), {'.zip'}).prepare_copy
+		self.submit_task.side_effect = lambda task: task()
+		for name in ('notify_file_added', 'notify_file_changed'):
+			patcher = patch('fman.fs.' + name)
+			setattr(self, name, patcher.start())
+			self.addCleanup(patcher.stop)
+	def unpack_to(self, text):
+		self.show_prompt.return_value = (text, True)
+		self.command()
+	def assert_refused(self, message):
+		self.show_alert.assert_called_once_with(message)
+		self.show_status_message.assert_not_called()
+		self.assertEqual(self.original, self.source.read_bytes())
+	def test_registration_prompt_and_default_folder(self):
+		self.assertEqual('unpack_archive_to', _get_command_name(UnpackArchiveTo))
+		self.assertEqual(('Unpack to...', 'Unpack archive to...', 'Extract to...'), UnpackArchiveTo.aliases)
+		self.assertIn('Unpack here', UnpackArchive.aliases)
+		self.show_prompt.return_value = ('', False)
+		self.command()
+		self.show_prompt.assert_called_once_with('Unpack Reports.zip to', str(self.other))
+		self.other_pane.get_path.return_value = 'zip://C:/elsewhere.zip'
+		self.command()
+		self.assertEqual(str(self.root), self.show_prompt.call_args.args[1])
+		self.submit_task.assert_not_called()
+	def test_a_missing_folder_is_created_and_published_with_one_rename(self):
+		destination = self.root / 'new' / 'deeper'
+		self.unpack_to(str(destination))
+		self.show_alert.assert_not_called()
+		self.assertEqual(b'payload', (destination / 'file.txt').read_bytes())
+		self.assertEqual(b'A', (destination / 'docs' / 'a.txt').read_bytes())
+		self.assertEqual({'Reports.zip', 'other', 'new'}, set(os.listdir(self.root)))
+		# The pane shows root, where 'new' is the entry that appeared.
+		self.notify_file_added.assert_called_once_with(as_url(self.root / 'new'))
+		self.show_status_message.assert_called_once_with('Unpacked Reports.zip', timeout_secs=5)
+		self.pane.place_cursor_at.assert_not_called()
+	def test_an_existing_folder_receives_the_top_level_entries(self):
+		(self.other / 'kept.txt').write_bytes(b'kept')
+		self.unpack_to(str(self.other))
+		self.show_alert.assert_not_called()
+		self.assertEqual({'kept.txt', 'file.txt', 'docs'}, set(os.listdir(self.other)))
+		self.assertEqual(b'kept', (self.other / 'kept.txt').read_bytes())
+		self.notify_file_changed.assert_called_once_with(as_url(self.other))
+	def test_one_existing_top_level_name_refuses_before_7zip_starts(self):
+		(self.other / 'docs').mkdir()
+		with patch.object(Extract, 'run_7zip_with_progress') as extract:
+			self.unpack_to(str(self.other))
+		extract.assert_not_called()
+		self.assert_refused('Destination already exists: docs')
+		self.assertEqual(['docs'], os.listdir(self.other))
+		self.assertEqual([], os.listdir(self.other / 'docs'))
+	def test_cancel_while_publishing_keeps_moved_entries_and_removes_the_rest(self):
+		def submit(task):
+			try:
+				task()
+			except Task.Canceled:
+				pass
+		self.submit_task.side_effect = submit
+		rename, moved = os.rename, []
+		def move(source, destination):
+			rename(source, destination)
+			moved.append(os.path.basename(destination))
+		def check(task):
+			if moved:
+				raise Task.Canceled()
+		with patch('core.fs.zip.os.rename', side_effect=move), \
+				patch.object(Extract, 'check_canceled', autospec=True, side_effect=check):
+			self.unpack_to(str(self.other))
+		self.show_alert.assert_not_called()
+		self.show_status_message.assert_not_called()
+		self.assertEqual(moved, os.listdir(self.other))
+		self.assertEqual(1, len(moved))
+		self.notify_file_changed.assert_called_once_with(as_url(self.other))
+		self.assertEqual(self.original, self.source.read_bytes())
+	def test_a_relative_path_starts_at_the_current_folder(self):
+		self.unpack_to('relative')
+		self.assertEqual(b'payload', (self.root / 'relative' / 'file.txt').read_bytes())
+	def test_a_file_on_the_way_refuses_before_the_archive_is_read(self):
+		(self.root / 'file.txt').write_bytes(b'mine')
+		with patch.object(Extract, '_members') as members:
+			self.unpack_to(str(self.root / 'file.txt' / 'sub' / 'out'))
+		members.assert_not_called()
+		self.assert_refused('Not a folder: ' + str(self.root / 'file.txt'))
+		self.assertEqual(b'mine', (self.root / 'file.txt').read_bytes())
+	def test_folders_created_for_a_failed_unpack_are_removed(self):
+		destination = self.root / 'new' / 'deeper' / 'out'
+		rename = os.rename
+		def publish(source, target):
+			if os.path.normcase(target) == os.path.normcase(str(destination)):
+				raise PermissionError(13, 'Access is denied', source, None, target)
+			rename(source, target)
+		with patch('core.fs.zip.os.rename', side_effect=publish):
+			self.unpack_to(str(destination))
+		self.assert_refused('Access is denied')
+		self.assertEqual({'Reports.zip', 'other'}, set(os.listdir(self.root)))
+		self.notify_file_added.assert_not_called()
+	def test_a_file_or_a_path_that_is_not_local_is_refused(self):
+		(self.root / 'file.txt').write_bytes(b'mine')
+		self.unpack_to(str(self.root / 'file.txt'))
+		self.assert_refused('Destination already exists: file.txt')
+		self.assertEqual(b'mine', (self.root / 'file.txt').read_bytes())
+		self.show_alert.reset_mock()
+		self.unpack_to('zip://' + splitscheme(as_url(self.source))[1] + '/inside')
+		self.assert_refused('Unpack to... requires a local folder.')
+		self.submit_task.assert_not_called()
+	def test_source_refusals_come_before_the_prompt(self):
+		self.pane.get_file_under_cursor.return_value = None
+		self.command()
+		self.show_prompt.assert_not_called()
+		self.assert_refused('Choose exactly one archive to unpack.')
+
 class UnpackNamingTest(TestCase):
 	def test_longest_suffix_and_legacy_wrapper(self):
 		handlers = {'.zip': 'zip://', '.zipx': 'zip://', '.gz': 'gz://', '.tar.gz': 'tar://'}
@@ -253,7 +391,7 @@ class UnpackNamingTest(TestCase):
 			with patch('core.commands.os.path.lexists', return_value=True):
 				self.assertEqual('Destination already exists: Reports', _unpack_error_text(error, destination))
 			with patch('core.commands.os.path.lexists', return_value=False):
-				self.assertEqual(str(error), _unpack_error_text(error, destination))
+				self.assertEqual('publish failed', _unpack_error_text(error, destination))
 		for error in (PermissionError('input denied'), OSError('cleanup failed'), FileExistsError('different conflict')):
 			with patch('core.commands.os.path.lexists', return_value=True):
 				self.assertEqual(str(error), _unpack_error_text(error, destination))

@@ -543,7 +543,8 @@ class EverythingFoldersTest(TestCase):
 			self.assertEqual(('open_everything_folder', {'url': url}), listener.on_command(name, {'url': url}))
 		for name in ('move_to_trash', 'delete_permanently'):
 			self.assertEqual(('remove_everything_folders', {}), listener.on_command(name, {}))
-		for name in ('copy', 'move', 'symlink', 'rename', 'pack', 'cut', 'copy_to_clipboard', 'new_empty_file'):
+		for name in ('copy', 'move', 'symlink', 'rename', 'pack', 'unpack_archive', 'unpack_archive_to', 'cut',
+				'copy_to_clipboard', 'new_empty_file'):
 			self.assertEqual(('everything_folder_operation_unsupported', {}), listener.on_command(name, {}))
 		self.assertEqual(('copy_everything_folder_paths', {}), listener.on_command('copy_file_path', {}))
 		pane.get_path.return_value = 'file://C:'

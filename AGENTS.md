@@ -4,193 +4,153 @@ These instructions apply to the entire repository.
 
 ## Guidelines
 
- - We are developing on Windows system, targeting Windows system and building GitHub Action Windows runner.
- - Use the available `python` command in path. It is based on the environment file.
- - Do not create new virtual Python environments.
- - Do not install new Python packages. You may ask the user to install.
- - Do not change `.gitattributes` or `.gitignore` without permission or explicitly being asked for.
- - Make the code easy to grasp for human and agents.
- - Be focused and short on documentation and text.
- - Do not apply `git add` or `git commit` unless explicitly asked for.
+### Environment & Git
+
+- Develop on Windows, targeting Windows and GitHub Actions Windows runners.
+- Use the `python` on `PATH` (from `environment.yml`). 
+- Do not create virtual environments or install packages.  
+  You may ask the operator if a package is needed.
+- Do not modify `.gitattributes` or `.gitignore` unless explicitly asked.
+- Do not run `git add`, `git pull`, `git push` or `git commit` unless explicitly asked.
+
+### Engineering Principles
+
+- **Readable code**: keep code clear and easy to grasp for humans and agents.
+- **Data correctness**: protect user data above all.
+- **Performance**: keep the UI reactive and hot paths lean.
+- **Simplicity**: prefer simple, robust solutions that avoid unnecessary edge cases.
+- **No over protective code**: validate at real boundaries (user input, OS/FS I/O, thread/process handoffs, public APIs), not impossible internal states.
+- **Clean deletion**: remove obsolete code, flags, and shims instead of layering workarounds, unless compatibility is explicitly required.
+- **Measure before optimizing**: back non-trivial performance complexity with measurements.
+
+## Runtime & Compatibility
+
+- Disabled optional features must not run background jobs, I/O, scans, timers, or recurring signals unless explicitly justified.
+- Keep Qt widgets and models on the Qt thread. Pass immutable plain data to workers and deliver results via queued signals or equivalent safe dispatch.
+- Long-running work must support cancellation or stale-result rejection.
+- Keep Windows portability: store mutable state under `UserSettings`; never intentionally write to the Windows Registry.
+- Preserve the documented plug-in API (`PlugIn.md`) unless a task explicitly approves a break and migration note.
+- Prefer existing repository abstractions and keep host/plug-in boundaries clean.
+
+## Testing
+
+- Write fast, focused regression tests for changed behavior and real failure modes.
+- Match test weight to risk: prefer pure unit tests; use Qt integration or smoke tests only for signals, widgets, thread affinity, persistence, packaging, or external tools.
+- Avoid bloated or redundant tests (trivial accessors, constants, framework behavior, or impossible internal states).
+- Run focused `unittest` checks with `build._environment()` and `QT_QPA_PLATFORM=offscreen` (see `DEVELOPMENT.md`).
+- Run the narrowest relevant test after the first substantive edit, then focused tests covering all changed files before completion.
+- Validate `docs/` edits with `python build.py doc`, and screenshot script changes with `python build.py test-docs`.
+- Do not run the full `python build.py test` suite, `build.py clean`, or `build.py freeze` unless explicitly requested.
+- Never mark a task complete when required tests fail; report unrelated or environmental failures transparently.
+- State the exact validation commands run in your final response (and in the task document when one exists).
 
 ## Task Documents
 
-Create a dedicated Markdown task document under `Plan/` only when the user
-explicitly requests a plan or task document. A plan us mostly needed for new features or change of the code.
-Do not create one automatically for documentation, build changes, or repository
-maintenance. Do not create or update `Plan.md` entries for tasks without a task
-document, or create a document under `Done/` to bypass this rule.
+Create a task document under `Plan/` **only** when the user explicitly requests a plan or task document (typically for new features or significant code changes).  
+Do not create one automatically for documentation, build, or maintenance work, and do not add `Plan.md` or `Done/` entries without a task document.
 
-When a task document is explicitly requested:
+- One canonical file per task: `Plan/PascalCaseName.md`, linked under **Pending** in `Plan.md` (index only; no duplicate body).
+- Keep unrelated work in separate task documents.
+- Write `Not applicable` with a brief reason when a subsection genuinely does not apply.
 
-- Use one canonical file per task: `Plan/TaskName.md`.
-- Use descriptive PascalCase filenames without spaces, for example
-  `Plan/ExtendedQuicksearchUI.md`.
-- Add the task to the Pending section of `Plan.md`.
-- Do not keep a second copy of the task body in `Plan.md`; it is an index only.
-- Keep unrelated work in separate task documents so each task can be planned,
-  reviewed, implemented, tested, and completed independently.
+### Provenance Metadata
 
-Each task document must contain these sections:
-
-1. `Task`: user-visible goal and motivation.
-2. `Scope`: included behavior, explicit exclusions, and compatibility constraints.
-3. `Design`: ownership boundaries, data flow, threading, persistence, and failure behavior.
-4. `Alternatives`: credible alternatives considered and why the selected design won.
-5. `Runtime Effects`: startup cost, steady-state CPU and memory cost, I/O, threading or process use, cancellation, and the disabled/no-op path.
-6. `Tests`: exact unit, integration, regression, performance, and manual checks required.
-7. `Implementation Steps`: ordered, independently verifiable changes.
-8. `Acceptance Criteria`: observable completion conditions.
-9. `Reviewers`: planning and review provenance using the format below.
-
-Use `Not applicable` with a short reason when a required section genuinely does
-not apply. Do not silently omit it.
-
-## Reviewer Records
-
-When a task document exists, append a record whenever that task is designed or
-reviewed. Do not create a task document solely to record provenance:
+Every contributor subsection below begins with this block (append-only; never rewrite prior records):
 
 ```markdown
-## Reviewers
-
-### YYYY_MM_DD - <Contributor name>
-
-- Role: Reviewer
-- Activity: Design
-- Agent: <Acting agent>
-- Model: <Model identifier>
-- Effort: <Low, Medium, or High>
-- Context Window: <Context-window size>
-- Outcome: <Review outcome>
+- Date: YYYY_MM_DD
+- Agent: <Acting product/agent>
+- Model: <Exact operator-assigned signature>
+- Effort: <Exact operator-assigned level>
+- Context Window: <Exact operator-assigned size>
 ```
 
-Rules:
+Use the exact `Model`, `Effort`, and `Context Window` assigned by the user/operator. If unassigned, use the current host's exposed value, or `Not exposed by host` — never infer.
 
-- Dates use `YYYY_MM_DD`.
-- The acting contributor supplies its own metadata for every record.
-- `Agent` identifies the product or agent performing the work.
-- `Model` defaults to the exact signature assigned by the User/Operator, even
-  when the session host exposes a different model identifier. Without an
-  assignment, use an explicit current-session host or official-API identifier;
-  if neither is available, write `Not exposed by host`. Do not infer an identifier
-  from a model catalog, configured default, agent name, or another session's
-  metadata. Do not add a separate label field or a suffix to the signature.
-- A User/Operator-assigned signature is an attribution convention, not independent
-  verification of the underlying model. Preserve historical records; do not
-  rewrite their signatures when the default changes.
-- `Effort` uses the User/Operator-assigned level when provided; otherwise it
-  reflects the effort used for the activity. Use `Low`, `Medium`, or `High`.
-- `Context Window` uses the User/Operator-assigned size when provided; otherwise
-  use the size exposed to the acting agent, or `Not exposed by host` if neither
-  is available. Use exactly this field capitalization in new records.
-- Only the first planning record for a task uses `Activity: Design`.
-- Every later planning pass uses `Activity: Review`, including revisions by the
-  original designer.
-- `Role` states `Reviewer` in this section.
-- `Outcome` briefly records the decision, important concerns, or approval state.
-- Preserve previous records; reviewer history is append only.
+### Document Structure
 
-## Implementation and Completion
+```markdown
+# <Task Title>
 
-When a task document exists, ensure its design is reviewed and its acceptance
-criteria are testable before implementation. Keep that document aligned with
-deliberate design changes. Without a task document, proceed with the requested
-work and report the changes and validation results in the final response; no
-formal plan or provenance document is required.
+<One-paragraph high-level summary.>
 
-Once implementation is complete, apply the following steps only when a task
-document exists:
+## Task & Guidelines
 
-1. Add an `Implementer` section using the same metadata fields:
+- **Goal**: user-visible objective and motivation (starting from operator input).
+- **Scope**: included behavior, explicit exclusions, and compatibility constraints.
+- **Acceptance Criteria**: observable, testable completion conditions.
 
-   ```markdown
-   ## Implementer
+## Design Review
 
-  ### YYYY_MM_DD - <Contributor name>
+### Initial Design - <Model Signature>
 
-  - Role: Implementer
-  - Activity: Implementation
-  - Agent: <Acting agent>
-  - Model: <Model signature>
-  - Effort: <Low, Medium, or High>
-  - Context Window: <Context-window size>
-  - Outcome: <Implementation outcome and decisive checks>
-   ```
+<Provenance metadata>
 
-2. `Role` must explicitly be `Implementer` or `Reviewer`. Use `Reviewer` when
-   the contributor only validated an implementation and did not author it.
-3. Add a `Validation Results` section containing commands or procedures run,
-   outcomes, expected skips, and any checks that could not be run.
-4. Move the canonical task file from `Plan/TaskName.md` to
-   `Done/TaskName.md`; do not copy it and leave a duplicate behind.
-5. Move its link from Pending to Completed in `Plan.md`.
+- **Architecture & Data Flow**: ownership boundaries, threading, persistence, and failure behavior.
+- **Alternatives Considered**: credible options and why they were rejected.
+- **Runtime Effects**: startup, steady-state CPU/memory, I/O, cancellation, and disabled/no-op path.
+- **Planned Tests**: focused unit, Qt integration, smoke, or manual checks.
 
-Update `CHANGELOG.md` when a task makes an implemented application change covered
-by the Changelog policy below, whether or not a task document exists. Plans,
-reviews, and documentation only work do not require a changelog entry.  
-Unless a features is in released version, no need to add fixes to it in the 
-changelog.
+### Review - <Model Signature>
 
-Apply the same User/Operator-first metadata rules to reviewer and implementer
-records.
+<Provenance metadata>
 
-## Runtime and Compatibility Requirements
+- **Verdict**: Approved / Approved with changes / Changes requested
+- **Findings**: correctness, safety, edge cases, performance, or unnecessary complexity.
+- **Recommendations**: concrete simplifications or fixes.
 
-- Disabled optional features must avoid feature-specific background jobs, I/O,
-  model scans, timers, and recurring signal work unless the task explicitly
-  documents and justifies otherwise.
-- Qt widgets and models stay on the Qt thread. Workers receive immutable plain
-  data and return results through queued signals or equivalent safe dispatch.
-- Long-running work must support cancellation or stale-result rejection.
-- Preserve the public `fman` plug-in API unless a task explicitly approves a
-  compatibility break and migration path.
-- Keep Windows portability: mutable state belongs under `UserSettings`, and
-  changes must not intentionally write to the Windows Registry.
-- Prefer existing repository abstractions and keep upstream mergeability in
-  mind; document unavoidable fork-specific coupling.
+### Final Design - <Model Signature>
 
-## Test Requirements
+<Provenance metadata>
 
-- Add focused regression tests for behavior changed by the task.
-- Match test breadth to risk: unit tests for pure logic, Qt integration tests
-  for signals/widgets/thread affinity, and end-to-end smoke tests for startup,
-  persistence, packaging, or external tools.
-- State the exact focused validation commands in the final report and, when one
-  exists, the task document.
-- Run the narrowest relevant test immediately after the first substantive edit,
-  then run focused tests covering the task and every file changed by it before
-  completion.
-- Do not run the complete `python build.py test` suite automatically at the end
-  of a task. Run it only when the user explicitly requests the full suite.
-- No need to run `build.py clean` / `build.py freeze`.  
-  Avoid running them unless explicitly asked.
-- Do not mark a task complete when required tests fail. Document unrelated or
-  environmental failures rather than hiding them.
+- **Consolidated Design**: single coherent specification incorporating accepted feedback.
+- **Review Decisions**: brief note of key feedback accepted or rejected.
+- **Implementation Steps**: ordered, independently verifiable steps.
+- **Validation Plan**: exact focused test/check commands to run.
+
+## Implementation
+
+### Implementer - <Model Signature>
+
+<Provenance metadata>
+
+- **Changes**: files modified/added, key decisions, and edge cases handled.
+- **Deviations**: any deliberate changes from Final Design and why.
+- **Validation Results**: exact commands run, outcomes, and expected skips.
+
+### Implementation Review - <Model Signature>
+
+<Provenance metadata>
+
+- **Verdict**: Approved / Approved with changes / Changes requested
+- **Findings**: bugs, regressions, data safety, readability, over-engineering, or test gaps.
+- **Required Changes**: concrete items to fix before finalizing.
+
+## Final Implementation
+
+<Provenance metadata>
+
+- **Final Summary**: review fixes applied and final delivered state.
+- **Validation Results**: exact final commands run, outcomes, skips, or checks not run.
+```
+
+### Completion (When a Task Document Exists)
+
+1. Complete `## Final Implementation` with provenance and validation results.
+2. Move `Plan/TaskName.md` to `Done/TaskName.md` (no duplicate left behind).
+3. Move its link from **Pending** to **Completed** in `Plan.md`.
+4. Update `CHANGELOG.md` if the change qualifies below.
 
 ## Changelog
 
-Record implemented application features, fixes, and code changes only, including
-application assets or build/packaging changes that affect the delivered product.
-Do not record planned or proposed features, work on task documents, review or
-provenance bookkeeping, agent instructions, development-process policies, or
-documentation-only and test-only changes. Document an application's actual change,
-not the planning or review activity that preceded it. A task with a qualifying
-application change is not complete until that change is represented here.
+Record implemented product changes (features, fixes, assets, packaging) under `## [Unreleased]` using Keep a Changelog subsections (`Added`, `Changed`, `Fixed`, `Removed`, `Documentation`).
 
-Follow Keep a Changelog structure. Keep `## [Unreleased]` as the first section
-and use `## [X.Y.Z]` for each release. A ` - YYYY-MM-DD` date suffix is optional.
-Section bodies are free-form and may be empty; no API compatibility statement
-is required. Describe compatibility changes and migration guidance when relevant.
+- Use `### Documentation` for user/API documentation updates shipped with a feature or release, or notable user-guide additions.
+- Do **not** record plans, reviews, agent/process docs, test-only changes, trivial doc edits, or fixes to unreleased features.
+- For releases, move entries under `## [X.Y.Z]` (optional ` - YYYY-MM-DD` date). Describe breaking changes and migration steps when relevant.
 
-Documentation changes should appear under `Documentation` sub section (Like `Added`, `Changed` and `Fixed`).
+## Documentation
 
-## Documentation Quality
-
-- Keep task documents factual and implementation-oriented.
-- Link to real repository files with relative paths where useful.
-- Record decisions and rejected alternatives, not a transcript of discussion.
-- Keep secrets, credentials, private keys, tokens, and machine-specific paths
-  out of task documents and changelogs.
-- Update README usage instructions whenever a completed task changes commands,
-  shortcuts, setup, packaging, configuration, or user-visible workflows.
+- Be concise: use short sentences and visual or concrete examples.
+- Keep documentation factual, use relative links inside Markdown files, and never include secrets or machine-specific paths.
+- Update `README.md`, `docs/`, `PlugIn.md`, and `UIElements.md` whenever a task changes user-visible workflows, shortcuts, configuration, packaging, or plug-in APIs.

@@ -17,6 +17,7 @@
 ## Completed
 
 - [Archive Transfers](Done/ArchiveTransfers.md)
+- [Archives 001: One Policy for Archive Operations](Done/Archives001.md)
 - [Assigned Model Signatures](Done/AssignedModelSignatures.md)
 - [Batch File Renamer](Done/BatchFileRenamer.md)
 - [Calculate File Hash](Done/CalculateFileHash.md)

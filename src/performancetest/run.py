@@ -22,8 +22,7 @@ WORKLOADS = {
 	'copy-buffer': ('-m', 'unittest', 'fman_performancetest.test_copy_buffer'),
 	'pane-filter': ('-m', 'unittest', 'fman_performancetest.legacy.PaneFilterPerformance.test_full_update_performance'),
 	'ui-table': ('-m', 'unittest', 'fman_performancetest.legacy.TablePerformance.test_large_snapshot_projection_timing'),
-	'archive-copy': ('-m', 'unittest', 'fman_performancetest.legacy.ArchivePerformance.test_copy_verification_timing'),
-	'archive-move': ('-m', 'unittest', 'fman_performancetest.legacy.ArchivePerformance.test_multi_item_move_verification_cost'),
+	'archive-copy': ('-m', 'unittest', 'fman_performancetest.legacy.ArchivePerformance.test_many_item_copy_is_one_run'),
 }
 
 

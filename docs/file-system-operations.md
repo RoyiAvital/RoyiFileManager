@@ -157,7 +157,7 @@ Same-volume Move retains its link-object behavior.
 Symbolic-link creation uses the current Windows permissions. {{ app_name }} does
 not elevate or change system policy.
 
-Archive operations do not promise to preserve file system links. Moving local
-entries into an archive is disabled; use Copy, verify the archive, and remove the
-source explicitly. Directory Size does not follow links, and Find Files leaves
+Archives are read-only, and their file system links are not recreated:
+symbolic links inside an archive are skipped by Copy and Unpack, and counted in a
+message. Directory Size does not follow links, and Find Files leaves
 **Follow links** off by default.
