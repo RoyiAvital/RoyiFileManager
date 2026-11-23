@@ -90,6 +90,7 @@
 - [ ] BUG: Extracting the `CelebA` zip file (~200,000 files) is too slow.
 - [ ] CHANGE: Add "Unpack to..." as option to unpack archive to the other pane without entering it.
 - [ ] CHANGE: It seems `.tar` files are not registered as archive files.
+- [ ] BUG: Copy and Patse / Darg and Drop from a file `<FielName>.tar` fails with: "<File> This archive type has no entry in `archive_handlers` (`AppSettings.yaml`)".
 
 ## Performance
 
