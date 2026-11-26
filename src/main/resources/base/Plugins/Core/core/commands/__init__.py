@@ -1367,9 +1367,13 @@ def _hidden_file_filter(url):
 	return not is_hidden(path)
 
 def _snapshot_hidden_file_filter():
+	from array import array
+	from core.fs.local.windows.listing import _fsenum
 	def predicate(listing, index):
 		return not listing.attributes[index] & 2
 	def filter_indices(listing, order, check):
+		if listing._native is not None and isinstance(order, array) and order.typecode == 'I':
+			return array('I', _fsenum.without_attributes(listing._native, order, 2))
 		attributes = listing.attributes
 		visible = []
 		for start in range(0, len(order), 256):

@@ -1,3 +1,4 @@
+from array import array
 from collections import OrderedDict
 from dataclasses import dataclass, replace
 from threading import Event as ThreadEvent, Lock, Thread
@@ -20,7 +21,8 @@ class Canceled(Exception):
 
 YIELD_INTERVAL = .016
 # Row map (R05): up to this many requested entries are located with
-# tuple.index (< 1 ms each at 200k rows); beyond it the full map is cheaper.
+# index() (tuple < 2 ms, native array('I') order ~3 ms each at 200k rows);
+# beyond it the full map is cheaper.
 ROW_MAP_LIMIT = 8
 
 class ScanObservation:
@@ -175,7 +177,7 @@ class LatestJobs:
 @dataclass(frozen=True, slots=True)
 class Projection:
 	listing: object
-	visible: tuple
+	visible: tuple | array  # entry indices in row order
 	rows: dict
 	remap: dict | None
 	column: int
@@ -214,6 +216,9 @@ def project(listing, previous, column, column_index, ascending, filters, check, 
 	(cursor and marks), or None for a complete row map."""
 	check()
 	if order is None:
+		native = getattr(column, 'order', None)
+		order = native(listing, ascending) if native is not None else None
+	if order is None:
 		keys = column.keys(listing, ascending)
 		check()
 		order = tuple(sorted(range(len(listing.names)), key=keys.__getitem__, reverse=not ascending))
@@ -232,7 +237,9 @@ def project(listing, previous, column, column_index, ascending, filters, check, 
 		visible = filtered
 	check()
 	remap = {} if previous is None or previous is listing else reconcile(previous, listing, check)
-	visible = tuple(visible)
+	# A native order stays an array('I') instead of becoming a tuple of ints.
+	if not isinstance(visible, array):
+		visible = tuple(visible)
 	preferred_row, preferred = next(((row, entry) for row, entry in enumerate(visible)
 		if listing.display_names[entry].lower().startswith(prefix)), (None, None)) if prefix else (None, None)
 	if wanted is None or len(wanted) > ROW_MAP_LIMIT:

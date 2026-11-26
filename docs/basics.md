@@ -59,6 +59,12 @@ Network shares count as separate drives. Files dragged out of archives are
 always copied, including from an archive opened in Explorer
 (see [Archives](archives.md#from-explorers-archive-view)).
 
+!!! warning "Same-Named Files From Different Folders"
+    When one Paste or Drop batch brings same-named files from different folders
+    into one folder (for example from Explorer search results), later files
+    overwrite earlier ones without a prompt and only the last file survives.
+    See [Same-Named Files in One Batch](advanced.md#same-named-files-in-one-batch).
+
 ### Duplicate In The Same Folder
 
 **Duplicate item** in Command Center, or **Duplicate...** in the context menu,

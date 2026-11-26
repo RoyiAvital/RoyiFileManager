@@ -61,25 +61,26 @@ EVERYTHING_LICENSE_SHA256 = \
 DOWNLOAD_SETTLE_SECONDS = 0.25
 DOWNLOAD_RETRY_DELAYS = (1, 2, 4)
 DOWNLOAD_USER_AGENT = f'{APP_NAME}-build (+https://github.com/RoyiAvital/RoyiFileManager)'
-NATIVE_PARSER_DIRECTORY = ROOT / 'src' / 'main' / 'c'
-NATIVE_PARSER_BINARY = NATIVE_PARSER_DIRECTORY / '_fsparser.pyd'
+NATIVE_ENUMERATOR_DIRECTORY = ROOT / 'src' / 'main' / 'rust' / 'fsenum'
+NATIVE_ENUMERATOR_BINARY = NATIVE_ENUMERATOR_DIRECTORY / '_fsenum.pyd'
 
 
-def _verify_native_parser():
-	"""src/main/c/_fsparser.pyd must match fsparser.c per fsparser.sha256 (Done/FSParser.md).
+def _verify_native_enumerator():
+	"""src/main/rust/fsenum/_fsenum.pyd must match its sources per fsenum.sha256
+	(Plan/DirectoryEnumerator001.md).
 
 	The source digest is line-ending normalised, so Git CRLF/LF conversion cannot
 	fail this; a Git LFS pointer in place of the binary is reported as such.
 	"""
-	sys.path.insert(0, str(NATIVE_PARSER_DIRECTORY))
+	sys.path.insert(0, str(NATIVE_ENUMERATOR_DIRECTORY))
 	try:
-		from check_hashes import check
+		from fsenum_hashes import check
 	finally:
-		sys.path.remove(str(NATIVE_PARSER_DIRECTORY))
+		sys.path.remove(str(NATIVE_ENUMERATOR_DIRECTORY))
 	problems = check()
 	if problems:
-		raise SystemExit('Native directory parser check failed:\n  ' + '\n  '.join(problems))
-	print('Native directory parser: src/main/c/_fsparser.pyd matches fsparser.c')
+		raise SystemExit('Native directory enumerator check failed:\n  ' + '\n  '.join(problems))
+	print('Native directory enumerator: src/main/rust/fsenum/_fsenum.pyd matches its sources')
 
 
 def _require_windows():
@@ -371,7 +372,7 @@ def test():
 	_require_windows()
 	_ensure_7za()
 	_ensure_everything()
-	_verify_native_parser()
+	_verify_native_enumerator()
 	environment = _test_environment()
 	test_directories = [
 		ROOT / 'src' / 'unittest' / 'python',
@@ -490,7 +491,7 @@ def freeze():
 	_require_windows()
 	_ensure_7za()
 	_ensure_everything()
-	_verify_native_parser()
+	_verify_native_enumerator()
 	_ensure_conda_lock()
 	_remove_previous_freeze()
 	subprocess.run(
@@ -509,7 +510,7 @@ def freeze():
 
 def smoke_everything():
 	_require_windows()
-	_verify_native_parser_packaged()
+	_verify_native_enumerator_packaged()
 	plugin = DIST_DIR / '_internal/resources/Plugins/Everything'
 	_verify_everything(plugin / 'bin')
 	environment = _environment()
@@ -527,7 +528,7 @@ def package():
 	if not DIST_DIR.is_dir():
 		raise SystemExit('Run `python build.py freeze` first.')
 	_verify_everything(DIST_DIR / '_internal/resources/Plugins/Everything/bin')
-	_verify_native_parser_packaged()
+	_verify_native_enumerator_packaged()
 	_verify_bundled_plugins()
 	_verify_pdf_helper_packaged()
 	_verify_csv_helper_packaged()
@@ -550,13 +551,13 @@ def publish():
 	package()
 
 
-def _verify_native_parser_packaged():
+def _verify_native_enumerator_packaged():
 	"""The frozen tree carries the extension next to the scanner, byte-identical to the verified pair."""
-	_verify_native_parser()
-	packaged = DIST_DIR / '_internal/resources/Plugins/Core/core/fs/local/windows/_fsparser.pyd'
-	expected = _sha256(NATIVE_PARSER_BINARY)
+	_verify_native_enumerator()
+	packaged = DIST_DIR / '_internal/resources/Plugins/Core/core/fs/local/windows/_fsenum.pyd'
+	expected = _sha256(NATIVE_ENUMERATOR_BINARY)
 	if expected is None or _sha256(packaged) != expected:
-		raise SystemExit(f'{packaged} is missing or differs from {NATIVE_PARSER_BINARY}.')
+		raise SystemExit(f'{packaged} is missing or differs from {NATIVE_ENUMERATOR_BINARY}.')
 
 
 def _verify_bundled_plugins():

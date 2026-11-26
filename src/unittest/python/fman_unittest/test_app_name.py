@@ -121,7 +121,7 @@ class BuildNamingTest(TestCase):
 				build['DIST_DIR'].mkdir(parents=True)
 				with patch.dict(build['freeze'].__globals__, {
 					'_require_windows': Mock(), '_ensure_7za': Mock(),
-					'_ensure_everything': Mock(), '_verify_native_parser': Mock(),
+					'_ensure_everything': Mock(), '_verify_native_enumerator': Mock(),
 					'_ensure_conda_lock': Mock(), '_remove_previous_freeze': Mock(),
 					'_copy_dependency_manifests': Mock(), '_verify_bundled_plugins': Mock()
 				}), patch('subprocess.run') as execute:
@@ -146,7 +146,7 @@ class BuildNamingTest(TestCase):
 			(distribution / 'RfmRenameProbe.exe').write_bytes(b'fixture')
 			with patch.dict(build['package'].__globals__, {
 				'_require_windows': Mock(), '_copy_dependency_manifests': Mock(),
-				'_verify_everything': Mock(), '_verify_native_parser_packaged': Mock(),
+				'_verify_everything': Mock(), '_verify_native_enumerator_packaged': Mock(),
 				'_verify_pdf_helper_packaged': Mock(), '_verify_csv_helper_packaged': Mock(),
 				'_verify_bundled_plugins': Mock()
 			}), patch('builtins.print') as output:
@@ -225,15 +225,15 @@ class BuildNamingTest(TestCase):
 					self.assertIn('version', str(caught.exception))
 
 
-class NativeParserPackagingTest(TestCase):
+class NativeEnumeratorPackagingTest(TestCase):
 	def test_packaged_copy_must_exist_and_match_the_verified_binary(self):
 		import build
 		with TemporaryDirectory() as temporary:
 			root = Path(temporary)
 			official = root / 'official.pyd'
-			packaged = root / 'frozen/_internal/resources/Plugins/Core/core/fs/local/windows/_fsparser.pyd'
-			with patch.object(build, '_verify_native_parser') as verify, \
-					patch.object(build, 'NATIVE_PARSER_BINARY', official), \
+			packaged = root / 'frozen/_internal/resources/Plugins/Core/core/fs/local/windows/_fsenum.pyd'
+			with patch.object(build, '_verify_native_enumerator') as verify, \
+					patch.object(build, 'NATIVE_ENUMERATOR_BINARY', official), \
 					patch.object(build, 'DIST_DIR', root / 'frozen'):
 				for official_bytes, packaged_bytes in ((None, None), (b'module', None), (b'module', b'other')):
 					with self.subTest(official=official_bytes, packaged=packaged_bytes):
@@ -243,16 +243,16 @@ class NativeParserPackagingTest(TestCase):
 								path.parent.mkdir(parents=True, exist_ok=True)
 								path.write_bytes(content)
 						with self.assertRaises(SystemExit):
-							build._verify_native_parser_packaged()
+							build._verify_native_enumerator_packaged()
 				packaged.write_bytes(b'module')
-				build._verify_native_parser_packaged()
+				build._verify_native_enumerator_packaged()
 				self.assertEqual(4, verify.call_count)
 
 	def test_source_check_failure_stops_the_packaged_check(self):
 		import build
-		with patch.object(build, '_verify_native_parser', side_effect=SystemExit('mismatch')), \
+		with patch.object(build, '_verify_native_enumerator', side_effect=SystemExit('mismatch')), \
 				patch.object(build, '_sha256') as digest, self.assertRaises(SystemExit):
-			build._verify_native_parser_packaged()
+			build._verify_native_enumerator_packaged()
 		digest.assert_not_called()
 
 
@@ -436,7 +436,7 @@ class PdfHelperPackagingTest(TestCase):
 				patch.object(build, 'DIST_DIR', Path(temporary)), \
 				patch.object(build, '_require_windows'), \
 				patch.object(build, '_verify_everything'), \
-				patch.object(build, '_verify_native_parser_packaged'), \
+				patch.object(build, '_verify_native_enumerator_packaged'), \
 				patch.object(build, '_verify_bundled_plugins'), \
 				patch.object(build, '_verify_pdf_helper_packaged',
 					side_effect=SystemExit('Packaged PDF helper failed')) as verify, \

@@ -1,5 +1,5 @@
 from collections import Counter
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, field, fields
 
 NATIVE_LOCAL = 'native_local'
 NETWORK = 'network'
@@ -12,7 +12,7 @@ class LocationInfo:
 	access_hint: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, weakref_slot=True)
 class Listing:
 	location: str
 	names: tuple
@@ -25,6 +25,9 @@ class Listing:
 	scope: tuple
 	labels: object = None
 	extra: tuple = ()
+	# Core's native folder table (Plan/DirectoryEnumerator001.md); only
+	# _trusted sets it, so replace() and the constructors give None.
+	_native: object = field(default=None, init=False, repr=False, compare=False)
 
 	@classmethod
 	def create(cls, location, names, *, is_dir=None, sizes=None, mtimes_ns=None,
@@ -41,29 +44,32 @@ class Listing:
 			(0, bytes(16)) if scope is None else scope, labels, extra)
 
 	@classmethod
-	def _trusted(cls, location, names, is_dir, sizes, mtimes_ns, attributes, created_ns, identities, scope):
+	def _trusted(cls, location, names, is_dir, sizes, mtimes_ns, attributes, created_ns, identities, scope,
+		native=None):
 		"""Safe path: a Listing from columns Core's local scanners already guarantee.
 
 		Equivalent to ``Listing(location, names, is_dir, ...)`` minus ``__post_init__``:
 		no tuple() copies and none of the validation below. Reserved for
-		``core.fs.local.windows.listing.scan`` with the ``_fsparser`` extension
-		(Done/FSParser.md, "Integration") and Core's ``os.scandir`` fallback in
+		``core.fs.local.windows.listing.scan`` with the ``_fsenum`` extension
+		(Plan/DirectoryEnumerator001.md), which also passes its folder table as
+		``native``, and Core's ``os.scandir`` fallback in
 		``LocalFileSystem._scan_entries`` (Done/CodeReview009.md, F13); every other
 		producer - plug-ins, zip://, network://, drives://, Everything, ProcessPane -
 		is the regular path and must use ``Listing(...)`` or ``Listing.create(...)``
 		so its columns are checked.
 
 		Why each skipped check holds: names come from the kernel (non-empty, no
-		'/', '\\\\' or NUL; '.' and '..' dropped in C or by scandir; the fallback
-		checks for exact duplicates); is_dir/int values are created in C, by
-		``Columns.patch`` or from ``os.stat`` results; sizes are >= 0; identities are
-		16 bytes per entry by construction; scope comes from ``NativeDirectory.scope``
-		or is unknown. The columns must already be tuples.
+		'/', '\\\\' or NUL; '.' and '..' dropped natively or by scandir; the fallback
+		checks for exact duplicates); is_dir/int values are created natively or
+		from ``os.stat`` results; sizes are >= 0; identities are 16 bytes per entry
+		by construction; scope comes from the directory handle or is unknown. The
+		columns must already be tuples.
 		"""
 		listing = object.__new__(cls)
-		values = (location, names, is_dir, sizes, mtimes_ns, attributes, created_ns, identities, scope, None, ())
-		for field, value in zip(fields(cls), values):
-			object.__setattr__(listing, field.name, value)
+		values = (location, names, is_dir, sizes, mtimes_ns, attributes, created_ns, identities, scope, None, (),
+			native)
+		for field_, value in zip(fields(cls), values, strict=True):
+			object.__setattr__(listing, field_.name, value)
 		return listing
 
 	@property

@@ -7,11 +7,14 @@ These instructions apply to the entire repository.
 ### Environment & Git
 
 - Develop on Windows, targeting Windows and GitHub Actions Windows runners.
-- Use the `python` on `PATH` (from `environment.yml`). 
+- Use the `python` on `PATH` (from `environment.yml`).
+- If needed, `C` and `Rust` environments will be on `PATH`. Use only them.  
+  In case of a need, ask for them.
 - Do not create virtual environments or install packages.  
   You may ask the operator if a package is needed.
 - Do not modify `.gitattributes` or `.gitignore` unless explicitly asked.
 - Do not run `git add`, `git pull`, `git push` or `git commit` unless explicitly asked.
+- MarkDown: Use "Title Case" for titles, Ensure width normalized tables.
 
 ### Engineering Principles
 

@@ -340,8 +340,13 @@ always shown. Units follow
 
 F5 Copy and F6 Move show cancellable preparation for large selections. Overwrite
 decisions are collected before transfers begin; cancelling preparation does not
-create the destination or transfer files. Once copying/moving starts, completed
-items remain completed after cancellation or an error.
+create the destination or transfer files. Overwrite checks inspect only entries
+already in the destination: if one Copy, Move, Paste or Drop batch contains
+same-named files from different folders (for example from Explorer search
+results) targeting one folder, later files overwrite earlier ones without a
+prompt and only the last file survives (for Move, earlier sources are removed).
+Once copying/moving starts, completed items remain completed after cancellation
+or an error.
 The whole selected/discovered batch is prepared before the first transfer, using
 ordinary provider metadata and directory traversal.
 

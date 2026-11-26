@@ -86,10 +86,12 @@
 - [x] FEATURE: Add support to _copy and paste_ from archives into pane (Windows Explorer in a `zip` file to a pane).
 - [x] FEATURE: Add support to _drag and drop_ from archives into pane (Windows Explorer in a `zip` file to a pane).
 - [x] CHANGE: Embed metadata into the `exe`: File Version, Product Version, Product Name, File Description.
-- [ ] BUG: Move / Copy of same named files from different folders (Paste / Drop from Explorer search results) into one folder silently overwrites: Only the last file survives.
+- [x] BUG: Move / Copy of same named files from different folders (Paste / Drop from Explorer search results) into one folder silently overwrites: Only the last file survives.  
+      Royi: I am OK with this simple rule. Close it and just make sure it is documented for the user.
 - [x] BUG: Extracting the `CelebA` zip file (~200,000 files) is too slow.
 - [x] CHANGE: Add "Unpack to..." as option to unpack the archive content to a path (Other pane as default) without entering it.
 - [x] CHANGE: Add "Unpack to..." and "Unpack here" to context menu on archives.
+- [ ] BUG: Opus claims "`EverythingFoldersIT` fails intermittently: 6 of 80 runs with the original binary, 5 of 105 with the new one.".
 
 
 ## Performance
@@ -97,7 +99,8 @@
 List of small performance focused optimization.  
 Each task should be pretty localized and low risk.
 
-- [ ] CHANGE: When adopting Python 3.15, use `identities.take_bytes()` instead of
+- [x] CHANGE: Obsolete since [Directory Enumerator 001](Done/DirectoryEnumerator001.md): the scan is native and
+  no longer builds `bytes(identities)` in Python. When adopting Python 3.15, use `identities.take_bytes()` instead of
   `bytes(identities)` at the end of `scan` in the
   [Windows listing scanner](src/main/resources/base/Plugins/Core/core/fs/local/windows/listing.py).
   Taking the entire private bytearray transfers its contents to immutable bytes

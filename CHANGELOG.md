@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Plug-in API: `Column.order(listing, ascending)`. A column can return its
+  complete display order, for example an `array('I')`, instead of sort keys.
+
+### Changed
+
+- NTFS and ReFS folders load faster. A new native enumerator reads the folder
+  on its own threads, overlaps the kernel calls with decoding and Python object
+  creation, and sorts by name natively. On the reference machine, a
+  200,000-file folder appears complete in 134 ms instead of 425 ms and is first
+  painted after 159 ms instead of 458 ms. Folders of a few hundred files scan
+  in a third of a millisecond, about 40 % faster than before.
+- Refreshing an unchanged NTFS or ReFS folder reuses the shown listing without
+  creating its objects again. After a change, the unchanged leading entries are
+  reused.
+- The native enumerator is written in Rust (`src/main/rust/fsenum`) and replaces
+  the C directory parser `_fsparser`. Its notices are in `Plugins/Core/licenses`.
+
+### Removed
+
+- The C directory parser `src/main/c` and its scripts
+  `src/misc/benchmark_fsparser.py` and `src/misc/validate_fsparser.py`. Use
+  `src/misc/benchmark_fsenum.py`.
+
 ## [0.21.0] - 2026-11-23
 
 This version streamlines and optimize the work with archives.  

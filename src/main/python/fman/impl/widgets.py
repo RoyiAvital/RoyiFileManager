@@ -565,7 +565,12 @@ class FilterBar(QFrame):
 				len(self._model.sourceModel().get_rows()))
 	def snapshot_filter(self):
 		matcher, active = self._matcher, self._active
-		return lambda listing, index: not active or matcher.matches(listing.display_names[index])
+		if not active:
+			def accept_all(listing, index):
+				return True
+			accept_all.filter_indices = lambda listing, order, check: order
+			return accept_all
+		return lambda listing, index: matcher.matches(listing.display_names[index])
 	def snapshot_prefix(self):
 		return self._input.text().lower()
 

@@ -2161,7 +2161,9 @@ class RoadmapCommandsIT(QtIT):
 				keys_entered.set()
 				release_keys.wait(5)
 			return keys(column, listing, ascending)
-		with patch.object(self.filesystem, 'get_snapshot_scanner', side_effect=scanner), patch.object(Name, 'keys', new=blocked_keys):
+		# A native listing's order skips keys(); fall back so the blocking keys are reached.
+		with patch.object(self.filesystem, 'get_snapshot_scanner', side_effect=scanner), \
+				patch.object(Name, 'keys', new=blocked_keys), patch.object(Name, 'order', return_value=None):
 			pane.set_path(as_url(folder))
 			self.assertTrue(scan_entered.wait(5))
 			self.assertEqual(initial, pane.get_location_info())
@@ -3096,7 +3098,9 @@ class SnapshotFilterBarIT(FilterBarIT):
 		committed, hooks = Mock(), []
 		self.run_in_app(source.committed.connect, committed)
 		with patch.object(sys, 'excepthook', lambda *args: hooks.append(args)):
-			with patch.object(Name, 'keys', side_effect=RuntimeError('injected key failure')):
+			# A native listing's order skips keys(); fall back so the injected failure is reached.
+			with patch.object(Name, 'keys', side_effect=RuntimeError('injected key failure')), \
+					patch.object(Name, 'order', return_value=None):
 				def rebuild_keys():
 					source._order_cache = None  # otherwise the cached order skips Name.keys
 					source.update()

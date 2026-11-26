@@ -240,6 +240,9 @@ class Column:
 		raise NotImplementedError('Pane columns must implement text(listing, index) without I/O')
 	def keys(self, listing, ascending):
 		raise NotImplementedError('Pane columns must implement keys(listing, ascending)')
+	def order(self, listing, ascending):
+		"""Optional: every entry index once, sorted for this direction, or None to sort by keys()."""
+		return None
 	@property
 	def display_name(self):
 		return self.__class__.__name__

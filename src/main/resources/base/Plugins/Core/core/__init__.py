@@ -7,9 +7,10 @@ from core.directory_size import DirectorySizeService, ToggleDirectorySizeColumn,
 from core.quick_view import QuickViewService, ToggleQuickView, QuickViewFit, \
 	QuickViewActualSize, QuickViewZoomIn, QuickViewZoomOut, QuickViewPan, SetQuickViewTableLimit
 from datetime import datetime
+from array import array
 from fman.fs import Column
 from fman.impl.status_bar import format_size
-from core.fs.local.windows.listing import _fsparser
+from core.fs.local.windows.listing import _fsenum
 from PyQt5.QtCore import QLocale, QDateTime
 
 # Define here so get_default_columns(...) can reference it as core.Name:
@@ -18,21 +19,28 @@ class Name(Column):
 
 	def text(self, listing, index):
 		return listing.display_names[index]
+	def order(self, listing, ascending):
+		# The order the native scan sorted (Plan/DirectoryEnumerator001.md), equal
+		# to sorting keys() below; None for listings without a native table.
+		table = listing._native
+		if table is None or listing.labels is not None:
+			return None
+		return array('I', _fsenum.order(table, ascending))
 	def keys(self, listing, ascending):
 		# One string per entry: '1'/'0' for is_dir ^ ascending, then natural_key(name)
 		# from fman.impl.util.natural. '0' < '1' orders like False < True, so directory
 		# grouping is unchanged. The native version (Done/FSPaneArch002.md R10) equals
-		# that; core.tests.fs.test_fsparser checks it over every code point.
+		# that; core.tests.fs.test_fsenum checks it over every code point.
 		names, is_dir = listing.display_names, listing.is_dir
 		if len(names) <= _NATIVE_KEY_SLICE:
-			return _fsparser.natural_keys(names, is_dir, ascending)
+			return _fsenum.natural_keys(names, is_dir, ascending)
 		# Bounded calls so the interpreter can hand the GIL to the Qt thread
 		# between them: one call over 200k long names holds it ~65 ms; 4096-name
 		# slices measured 11-13 ms worst Qt gap for +7 ms total (IR3 probe).
 		result = []
 		for start in range(0, len(names), _NATIVE_KEY_SLICE):
 			stop = start + _NATIVE_KEY_SLICE
-			result.extend(_fsparser.natural_keys(names[start:stop], is_dir[start:stop], ascending))
+			result.extend(_fsenum.natural_keys(names[start:stop], is_dir[start:stop], ascending))
 		return tuple(result)
 
 _NATIVE_KEY_SLICE = 4096

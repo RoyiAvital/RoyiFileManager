@@ -13,6 +13,8 @@ from pathlib import Path
 from shutil import copystat, SameFileError
 from stat import S_ISDIR, S_ISREG, S_ISLNK, S_IWRITE
 from tempfile import mkstemp, mkdtemp
+from threading import Lock
+from weakref import WeakValueDictionary
 
 import errno
 import os
@@ -30,6 +32,10 @@ class LocalFileSystem(FileSystem):
 
 	def __init__(self):
 		super().__init__()
+		# The last native Listing of each location, so a rescan can reuse its
+		# objects; weak, so it never keeps a snapshot alive.
+		self._native_listings = WeakValueDictionary()
+		self._native_listings_lock = Lock()
 	def get_default_columns(self, path):
 		return 'core.Name', 'core.Size', 'core.Modified'
 	def scan(self, path, check_canceled):
@@ -37,10 +43,16 @@ class LocalFileSystem(FileSystem):
 		if not self._isabs(os_path):
 			raise filenotfounderror(path)
 		from core.fs.local.windows.listing import scan
-		listing = scan(self.scheme + path, os_path, check_canceled)
-		if listing is not None:
-			return listing
-		return self._scan_entries(path, os_path, check_canceled)
+		location = self.scheme + path
+		with self._native_listings_lock:
+			previous = self._native_listings.get(location)
+		listing = scan(location, os_path, check_canceled, previous)
+		if listing is None:
+			return self._scan_entries(path, os_path, check_canceled)
+		if listing is not previous:
+			with self._native_listings_lock:
+				self._native_listings[location] = listing
+		return listing
 	def _scan_entries(self, path, os_path, check_canceled):
 		from fman.listing import Listing
 		names, directories, sizes, modified, attributes = ([] for field in range(5))

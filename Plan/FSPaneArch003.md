@@ -6,6 +6,34 @@ Pipelines and a Rust engine were added in the second pass the same day; the
 third pass reframed pipelines as virtual folders driven from the UI.
 Reviewed 2026-11-15: needs revision before P0; see the last reviewer record.
 
+## Summary by Operator (Royi)
+
+### 1. Objective
+
+Turn the pane into a single, general-purpose **Item Table**, and generate and query that table as fast as possible.
+
+Every view in the application — a real folder, an archive, a flat/recursive tree, `fd` / `ripgrep` / `Everything` results, OS processes, Favorites, or a batch-rename / operation-result view — is just a table of typed rows shown in the same pane, rather than separate special-purpose dialogs (`QuickTable`, `QuickList`, `QuickBoard`).
+
+### 2. Motivation
+
+Two closely linked goals:
+
+1. **Composability and modularity (PowerShell-like pipelines in the UI)**:
+   - Sources, columns, filters, tools, and file actions all meet at **one table contract**.
+   - Any tool can take the pane's current rows (or selection) as its input and output a new table — so you can chain operations naturally (e.g., open a folder → filter → search contents with `ripgrep` → sort → select → Copy or Delete), with the exact same keyboard workflow, QuickView, and Back/Forward history everywhere.
+   - Adding a new source, column, or tool plugs into the table without changing the pane.
+2. **Performance and reactivity**:
+   - Because display, refresh, sort, filter, Find, and tools all read from that **one compact, native columnar table**, making the table fast speeds up all of them at once.
+   - Moving the columnar storage and sort/filter/find kernels to native code (off the GIL) and applying incremental updates instead of full folder rescans targets ≤ 150 ms for a complete sorted 200k-entry folder, ≤ 100 ms large-folder filtering, sub-10 ms single-file updates, and ≤ 16 ms Qt frame gaps.
+
+### 3. Core Concept
+
+- **Item & Typed Schema**: Every row has a key, a kind, typed column values (`text`, `name`, `path`, `size`, `datetime`, `integer`, etc.), and an optional **target** (the real file/folder it refers to). File actions (`F5`/`F6`/`F8`, Rename, QuickView) act on targets; targetless items (like processes) expose only their source's actions.
+- **Native Columnar Engine (Read-Only)**: A compact native table (Rust via PyO3) stores columns and runs sort, per-column filter, and Find with the GIL released. Both built-in and plug-in columns supply typed values in batches (never per-row Python comparators), so every column sorts and filters at native speed. Qt only formats visible cells; the host's existing file-operation layer remains the only code that mutates files.
+- **Virtual Folders as Chained Steps**: Every result set is a **virtual folder** recording the chain of steps that produced it (`Source` → `Filter` / `Expand` / `Shape`), shown as breadcrumbs (e.g., `C:\src > Filter *.py > Search "TODO"`). Sorting/filtering operates on the materialized table without rerunning tools; Backspace steps back up the chain.
+- **Incremental Updates**: Live folder changes update the table incrementally instead of triggering a full rescan and model reset on every file event.
+
+
 ## Task
 
 Turn the pane into a general **item table** and generate that table as fast as
@@ -365,7 +393,8 @@ flags the libraries do not expose.
 
 ### Open Decisions
 
-1. Port `_fsparser` into the Rust engine, or keep it in C.
+1. Port `_fsparser` into the Rust engine, or keep it in C. Settled: ported, and `_fsparser` is retired
+   ([Directory Enumerator 001](../Done/DirectoryEnumerator001.md)).
 2. Multi-column sort and global filter defaults per source.
 3. Whether QuickTable windows remain for plug-ins or are replaced entirely.
 4. Whether CSV Table View later shares the item engine or stays DuckDB-backed.
@@ -889,3 +918,177 @@ commands themselves (reproduced on `MoveFiles` and `CopyFiles` directly).
   of the complete pre-review document as an unchanged prefix.
 - No application source changes, tests, native probes, performance catalog,
   toolchain changes or build/freeze were run. Implementation remains unauthorized.
+
+### 2026_11_25 - GitHub Copilot
+
+- Date: 2026_11_25
+- Agent: GitHub Copilot
+- Model: Gemini 4 Neon
+- Effort: High
+- Context Window: 1M
+- Role: Reviewer
+- Activity: Review
+- Verdict: Changes requested
+- Outcome: Code-grounded design review against the current 0.21.0 codebase and
+  recent repository decisions. Added F19-F23 covering F01's interaction with
+  the 2026-11-25 same-name policy in `TODO.md`, Qt coupling blocked by F13's
+  model-owned marks, hidden-file/link/read-only source parity, virtual-folder
+  pane interactions, computed-column lifecycle and conflicting unresolved P0
+  decisions. Prior F01-F18 records are preserved verbatim; no application code
+  changed and implementation remains unauthorized.
+
+#### F19 - High: Reconcile F01 With the `TODO.md` Same-Name Policy and Separate the `_src_dir` Layout Bug
+
+- Evidence: F01 blocks P0 on fixing the Paste/Drop same-name overwrite first
+  and refusing any multi-folder batch where two sources map to one name. On
+  2026-11-25 the user closed that Paste/Drop item in [TODO.md](../TODO.md),
+  accepting "last file survives" and documenting it in
+  [docs/advanced.md](../docs/advanced.md). Meanwhile,
+  [FileTreeOperation._get_dest_url](../src/main/resources/base/Plugins/Core/core/fileoperations.py)
+  still sets `self._src_dir = dirname(files[0])`.
+- Failure sequence: two independent issues are tangled in F01:
+  1. **Collision policy**: keeping "last file survives" in virtual folders
+     where multi-folder `F6` Move is routine still permanently deletes earlier
+     same-named sources without a prompt.
+  2. **Order-dependent path layout** (a bug regardless of collision policy):
+     selecting `[C:\root\a.txt, C:\root\sub\b.txt]` derives
+     `_src_dir = C:\root`, maps `b.txt` to `dest\sub\b.txt` and fails when
+     `dest\sub` does not exist; reversing the order sets
+     `_src_dir = C:\root\sub` and flattens both into `dest\`. Selecting a
+     folder together with a descendant file queues redundant or conflicting
+     transfers.
+- Required: record an explicit user decision on whether virtual-folder
+  Copy/Move refuses same-name collisions or shares the documented Paste/Drop
+  rule, and decouple the `_src_dir` layout bug: specify one deterministic
+  multi-folder destination layout and ancestor-subsumes-descendant pruning
+  before P6 virtual-folder actions ship.
+
+#### F20 - High: F13's Model-Owned Marks Require Redesigning Four Active `QItemSelectionModel` Consumers
+
+- Evidence: F13 requires moving marks out of `QItemSelectionModel` into an
+  engine-side set painted from the model to satisfy the 16 ms Qt heartbeat
+  target at 200k marked rows. Four existing Qt integrations assume
+  `QItemSelectionModel` holds marks:
+  1. [FileListView.contextMenuEvent](../src/main/python/fman/impl/view/__init__.py)
+     checks `selectionModel().isSelected(index)` and transiently calls
+     `ClearAndSelect | Rows` / `clearSelection()` for right-click on an
+     unmarked row.
+  2. [DragAndDrop.mimeData](../src/main/python/fman/impl/model/drag_and_drop.py)
+     relies on `QAbstractItemView::startDrag` passing
+     `selectionModel()->selectedIndexes()`; moving marks off
+     `QItemSelectionModel` causes drags to carry only the clicked/cursor row.
+  3. [widgets.py](../src/main/python/fman/impl/widgets.py) connects
+     `view.selectionModel().selectionChanged` to refresh extended status totals.
+  4. Pattern-selection preview (`_delegate.preview_rows` in
+     [view/__init__.py](../src/main/python/fman/impl/view/__init__.py))
+     overlays a preview set on top of `QItemSelectionModel`.
+- Required: specify the complete model-owned mark integration with F13:
+  explicit `startDrag`/`mimeData` reading marked keys (with target
+  deduplication and skipping targetless rows), transient right-click target
+  override without touching `QItemSelectionModel`, a dedicated `marks_changed`
+  signal for status bar and plug-in consumers, and unified preview-overlay
+  painting.
+
+#### F21 - High: Specify Windows Link-Target Metadata, Hidden-File Ownership and Read-Only Source Capabilities
+
+- Evidence:
+  1. [windows/listing.py](../src/main/resources/base/Plugins/Core/core/fs/local/windows/listing.py)
+     follows `_LINK_TAGS = (0xA0000003, 0xA000000C)` via `os.stat()` for
+     `is_dir`, `size` and `mtime`, while preserving the **link's own**
+     `attributes` (including `FILE_ATTRIBUTE_HIDDEN`, see
+     [PaneRendering001](../Done/PaneRendering001.md)) and **link's own**
+     128-bit identity.
+  2. Real folders keep hidden entries in the snapshot so `Ctrl+.` toggles them
+     without rescanning. By contrast, `ignore`/`fd` and `ripgrep` prune hidden
+     directories during traversal by default, whereas an explicit `fd` search
+     with `hidden=true` would be silently hidden by a pane whose `show_hidden`
+     is off. In a flat/recursive view, a non-hidden file under a hidden folder
+     (`.git\config`) has `FILE_ATTRIBUTE_HIDDEN == 0` on itself
+     ([FlatView](FlatView.md) requires treating it as hidden).
+  3. `0.21.0` ([Archives001](../Done/Archives001.md),
+     [zip.py](../src/main/resources/base/Plugins/Core/core/fs/zip.py)) added
+     `FileSystem.read_only_message` and an in-memory archive member-list cache
+     covering `.zip`, `.7z`, `.tar` and compressed tars. The `Source`
+     capabilities list omits read-only refusal messages and archive member-list
+     reuse.
+- Required:
+  - If native NTFS enumeration moves into Rust, preserve the target-vs-link
+    metadata split and define cancellation/fallback when a symlink points to an
+    offline UNC share or unresponsive volume so one dead link cannot stall a
+    200k scan past 150 ms.
+  - Define hidden-visibility ownership per source: view-filtered (carrying an
+    inherited-hidden bit for flat views) for folder/flat sources, versus
+    query-owned for `fd`/`rg`/`Everything` where `Ctrl+.` either does not apply
+    or states that a rerun is required.
+  - Add `read_only_message` (or write-refusal capability) to `Source` and state
+    that archive sources retain cached member lists across subfolder navigation
+    instead of re-running 7-Zip.
+
+#### F22 - Medium: Specify Virtual-Folder Pane Interactions (Inline Rename, Drop Targets, Icons, Status Totals and QuickView)
+
+- Evidence: F11 defines `pane.get_path()`, but five pane interactions assume
+  one directory root and one row per file:
+  - **Inline rename (`Shift+F6` / `F2`)**: [edit_name](../src/main/python/fman/impl/view/__init__.py)
+    edits column 0 in place. When column 0 shows a relative/full path or one of
+    several `rg` match rows for the same file, editing the cell text directly
+    is ambiguous (typing `\` to move vs basename rename; updating sibling match
+    rows).
+  - **Drag-and-drop**: [DragAndDrop._get_drop_dest](../src/main/python/fman/impl/model/drag_and_drop.py)
+    drops onto the hovered row or `get_location()`. Dropping onto a folder row
+    in a virtual folder should target that folder's real `target` (when
+    writable), whereas dropping onto a file row or empty space in a chained or
+    rootless view must follow an explicit rule. Dragging out must deduplicate
+    targets and skip/refuse targetless rows.
+  - **Shell icons**: [ListingIcons](../src/main/python/fman/impl/model/listing_icons.py)
+    skips icons whenever `not listing.location.startswith('file://')` and builds
+    paths from `location + '/' + name`. Virtual folders need icon resolution
+    keyed on each row's `target` and `attributes`, preserving cloud/reparse/UNC
+    guards.
+  - **Extended status bar**: [StatusEntries](../src/main/python/fman/impl/status_bar.py)
+    builds URLs via `join(location, name)` and computes free space from
+    `native_local_scope(location, listing)`. In `rg` match results, summing raw
+    row sizes would multiply one file's size by its match count; specify
+    whether totals deduplicate by target and when free space is shown.
+  - **QuickView**: specify target resolution on match rows (optional scroll to
+    match line) and avoiding reload churn when moving between matches of the
+    same file.
+
+#### F23 - Medium: Specify Computed-Column Lifecycle and Consolidate Conflicting P0 Decisions
+
+- Evidence:
+  1. **Computed columns** (for example [Directory Size](../src/main/resources/base/Plugins/Core/core/directory_size/calculator.py)):
+     the design states that computed values arrive as field change sets and the
+     view re-sorts on arrival, and F16 requires row-revision tagging. Neither
+     specifies (a) that computed columns must never run when hidden/disabled
+     (repository disabled-feature rule), (b) how a column declares which inline
+     fields invalidate it (hash on size/mtime vs folder size on explicit
+     refresh), or (c) how progressive updates avoid moving rows under the
+     cursor or in/out of active column filters while the user navigates or
+     presses Delete.
+  2. **Unresolved conflicts before P0**: the design body, F05, F12 and the
+     third `2026_11_15` record disagree on Decision 1 (keep `_fsparser` in C vs
+     move NTFS enumeration into Rust), whether P1 and P3 merge, and whether
+     `fd`/`rg` run in-process (Scope) or in a persistent helper process (F05).
+     Also note coordination with the deferred [PyQt6Migration](PyQt6Migration.md):
+     avoid introducing new PyQt5-only idioms (such as `sip.transferto` in
+     [drag_and_drop.py](../src/main/python/fman/impl/model/drag_and_drop.py))
+     in the rewritten table/drag layer.
+- Required: before authorizing P0, consolidate one revised design that settles
+  Decision 1, the P1+P3 merge question, the F05 helper-process vs in-process
+  benchmark gate, the F01 virtual-folder collision policy, and exact P0
+  exit criteria (including PyO3 `abi3` build and freeze in `build.py` /
+  `application.spec` and memory at 200k/1M items).
+
+#### Review Validation
+
+- Read [Plan/FSPaneArch003.md](FSPaneArch003.md) in full and cross-checked
+  referenced host/Core implementations (`fileoperations.py`, `listing.py`,
+  `windows/listing.py`, `view/__init__.py`, `drag_and_drop.py`,
+  `listing_icons.py`, `status_bar.py`, `widgets.py`, `zip.py`,
+  `directory_size/calculator.py`), [TODO.md](../TODO.md),
+  [FlatView.md](FlatView.md) and [PyQt6Migration.md](PyQt6Migration.md).
+- Appended this review record without modifying any prior text or application
+  source code; verified all added relative links resolve to existing files.
+- No tests, probes, builds or benchmarks were run; implementation remains
+  unauthorized.
+

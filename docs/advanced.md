@@ -17,6 +17,20 @@ If an item fails, choose **Yes** to skip it, **Yes to all** to skip later
 errors without asking, or **Abort**. After **Yes to all**, one summary lists the
 skipped errors at the end.
 
+### Same-Named Files in One Batch
+
+Overwrite prompts check only files already in the destination folder.
+When one Copy, Move, Paste or Drop batch brings files with the same name from
+different folders into one folder — for example from Windows Explorer search
+results — later files overwrite earlier ones without a prompt. Only the last
+file survives.
+
+| Batch (from Explorer search)         | Destination (`C:\Dest`)     |
+| ------------------------------------ | --------------------------- |
+| `C:\A\report.txt`, `C:\B\report.txt` | Only `C:\B\report.txt` kept |
+
+For Move, earlier files are also removed from their original folders.
+
 ### Local Copies
 
 - A copy is completed in temporary space beside the destination before it is

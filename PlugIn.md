@@ -580,7 +580,8 @@ owner. The host calls it on Qt; return a worker-safe predicate
 `predicate(listing, index)` capturing plain immutable state, not widgets.
 The predicate must not perform filesystem I/O. Old URL-only filters are rejected.
 It may also expose `filter_indices(listing, order, check_canceled)`, returning
-the same accepted indices in their input order. Check cancellation between
+the same accepted indices in their input order. `order` is any sequence of
+indices, for example an `array('I')`. Check cancellation between
 bounded chunks. Predicates must be side-effect-free; evaluation order and call
 counts are not guaranteed. The bundled hidden filter uses this batch path.
 
@@ -607,6 +608,7 @@ Subclass `fman.fs.Column` and expose the class in your package namespace.
 | --- | --- |
 | `text(listing, index)` | Required display string; called lazily on Qt. Read snapshot/configuration data only; no I/O or widget mutation. |
 | `keys(listing, ascending)` | Required sequence of one comparable key per entry; computed on a worker. The host reverses order for descending sorts. Direction-dependent grouping must account for that reversal. |
+| `order(listing, ascending)` | Optional; computed on a worker. Return every entry index exactly once, in display order for that direction (a sequence such as `array('I')`), or `None` to sort by `keys`. The host trusts the result. Bundled Name returns the order the native NTFS/ReFS scan already sorted. |
 | `keys_depend_on_external_data` | Defaults to `True`. Set `False` only when keys depend solely on the snapshot and direction; external metadata delivery then repaints without re-sorting or resetting the pane. Bundled Name/Modified opt out; Size remains dependent. |
 | `display_name` | Property used for the heading; defaults to the class name. |
 

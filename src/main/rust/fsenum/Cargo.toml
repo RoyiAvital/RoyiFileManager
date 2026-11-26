@@ -1,0 +1,31 @@
+[package]
+name = "fsenum"
+version = "1.0.0"
+edition = "2024"
+rust-version = "1.99"
+publish = false
+description = "Native NTFS/ReFS folder tables for RoyiFileManager (Plan/DirectoryEnumerator001.md)"
+
+# No dependencies: CPython (limited API, python3.dll) and Win32 (kernel32.dll)
+# are declared by hand and imported with raw-dylib, so no import library or
+# crate download is needed. Notices for the statically linked Rust standard
+# library and MinGW-w64 runtime: src/main/resources/base/Plugins/Core/licenses.
+[dependencies]
+
+[lib]
+name = "_fsenum"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+# A panic unwinds to the extension boundary and becomes RuntimeError.
+panic = "unwind"
+debug = false
+strip = "symbols"
+incremental = false
+
+[profile.test]
+opt-level = 2

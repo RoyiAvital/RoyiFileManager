@@ -77,7 +77,7 @@ Your onboarding tasks:
 Once you're ready, we'll start developing and reviewing features.
 
 Your model signature: Claude Opus 5.5.
-Your effort level: High.
+Your effort level: Extra High.
 Your context window: 1M.
 ```
 

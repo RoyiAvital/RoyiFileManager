@@ -4,6 +4,8 @@
 
 - [Code Review 099: Deferred Work and Release Gates](Plan/CodeReview099.md)
 - [Date Format: Locale or ISO](Plan/DateFormat.md)
+- [Directory Enumerator 001: Native Folder Table](Plan/DirectoryEnumerator001.md)
+- [Directory Enumerator 002: Release Gates and Follow-ups](Plan/DirectoryEnumerator002.md)
 - [File System and Pane Architecture 003: Item Tables](Plan/FSPaneArch003.md)
 - [Filter Files 002: Multiple Terms (AND)](Plan/FilterFiles002.md)
 - [Filesystem Link Operation Policy](Plan/LinkOperationPolicy.md)
@@ -12,6 +14,7 @@
 - [PyQt6 Migration](Plan/PyQt6Migration.md)
 - [QuickView 006: Videos (after PyQt6 Migration)](Plan/QuickView006.md)
 - [Roadmap 002: Before 1.0.000](Plan/Roadmap002.md)
+- [Rust Directory Enumerator](Plan/RustDirectoryEnumerator.md)
 - [UI Design 001: Application Theme](Plan/UIDesign001.md)
 
 ## Completed

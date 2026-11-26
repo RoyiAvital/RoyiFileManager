@@ -1,0 +1,4 @@
+# SHA-256 pairing of the fsenum sources (fsenum_hashes.py) and _fsenum.pyd (raw bytes).
+# Written by build_fsenum.py; checked by check_hashes.py.
+source 3fe55872654350187ecb98d3ca2ab073a7866b5f20491c304a98ba8ceb45dc19
+binary d54ac0cf741263536a83a88842e7abe4fba1821a5b5058f2aafe7bf7f51a77c9
