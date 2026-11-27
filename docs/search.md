@@ -2,6 +2,16 @@
 
 Choose the smallest tool that fits the job.
 
+## Which Search Tool Should I Use?
+
+| Tool                                              | Shortcut                     | Scope                 | Contents? | Syntax / Filters                          | Best For                                       |
+| ------------------------------------------------- | ---------------------------- | --------------------- | :-------: | ----------------------------------------- | ---------------------------------------------- |
+| [Pane Filter](#filter-this-pane)                  | Start typing                 | Current pane          | No        | Substring, glob (`*`, `?`), `^`/`$`, `!`  | Narrowing the visible folder in place          |
+| [Fuzzy Find](#find-by-name)                       | ++ctrl+f++ / ++ctrl+shift+f++ | Folder or subfolders | No        | `fzf` style fuzzy, `'exact`, `!not`, `\|` | Jumping to a file by partial name or path      |
+| [Everything](#search-indexed-folders-with-everything) | ++ctrl+e++                | Indexed folders       | No        | Everything syntax (`ext:`, `size:`, `\|`) | Instant lookup across saved folders            |
+| [Find with `fd`](#find-with-fd)                   | ++shift+f7++                 | Current folder tree   | No        | Glob / Literal / RegEx, date, size, type  | Filtering files by metadata and traversal rules |
+| [Search Files (`ripgrep`)](#search-files)         | ++alt+f7++                   | Current folder tree   | Yes       | Literal / Glob / RegEx, Extended metadata | Searching text inside files (or names + stats) |
+
 ## Filter This Pane
 
 Start typing.

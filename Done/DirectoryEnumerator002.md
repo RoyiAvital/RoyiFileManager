@@ -83,6 +83,26 @@ It adds no feature. The plug-in API, the `Listing` contract and parity with the 
   - D4: if changed, the parity test above.
   - Every change: `core.tests.fs.test_fsenum`, `fman_unittest.test_listing` and `benchmark_fsenum.py` parity.
 
+### Review - Not Applicable
+
+- Date: 2026_11_27
+- Agent: GitHub Copilot
+- Model: Claude Opus 5.5
+- Effort: High
+- Context Window: 1M
+
+- Not applicable: the operator directed finishing the task on the Initial Design (2026-11-26, "Finish the whole task"). The code changes were reviewed instead, under Implementation Review.
+
+### Final Design - Not Applicable
+
+- Date: 2026_11_27
+- Agent: GitHub Copilot
+- Model: Claude Opus 5.5
+- Effort: High
+- Context Window: 1M
+
+- Not applicable: the Initial Design stands. Its deviations are recorded under Implementation.
+
 ## Hand-off from Directory Enumerator 001 (2026_11_26, session ended)
 
 - Agent: GitHub Copilot
@@ -177,3 +197,123 @@ Directory Enumerator 001 is **not closed yet**. It is still at `Plan/DirectoryEn
 - **Link and junction cases** need no fixture:
   - `test_fsenum` creates ordinary and dangling junctions (`_winapi.CreateJunction`) and a junction to `\??\<drive>:` with a hand-built mount-point reparse buffer (`device_junction`).
   - Symbolic links need Developer Mode or the privilege.
+
+## Implementation
+
+### Implementer - Claude Opus 5.5
+
+- Date: 2026_11_27
+- Agent: GitHub Copilot
+- Model: Claude Opus 5.5
+- Effort: High
+- Context Window: 1M
+
+- **Changes**: on the reference machine (Windows 11, NTFS SSD `D:`, ReFS hard disks `E:` and `F:`). Directory Enumerator 001 was closed first (its Review Fixes - Claude Opus 5.5 section: the build, OR2, the reference updates). The performance fixtures are where they always were (`target\performance\fixtures`). Disposable folders (1,000,100 entries, a camera folder, ReFS copies, variant binaries) were outside the repository and are deleted.
+  - **G1**: `python build.py measure` ran all 14 default workloads; every one passed. `pane.load.large`: complete 48.5 ms, first paint 59.7 ms (≤ 150 ms). `refresh.large`: an unchanged refresh repaints after 39.8 ms. Then the suite's `pane.load.large`, `pane.load.small` and `refresh.large` ran from a v0.21.0 worktree and from this tree, back to back, on the same fixtures (three fresh processes each):
+
+    | Workload | Metric | v0.21.0 | This task |
+    | --- | --- | ---: | ---: |
+    | `pane.load.large` | complete | 240.4 ms | 49.4 ms |
+    | `pane.load.large` | first paint | 254.9 ms | 60.2 ms |
+    | `pane.load.large` | working set | 156.1 MiB | 155.3 MiB |
+    | `pane.load.small` | complete | 15.6 ms | 12.1 ms |
+    | `pane.load.small` | first paint | 37.0 ms | 33.9 ms |
+    | `refresh.large` | unchanged refresh to paint | 124.3 ms | 41.8 ms |
+    | `refresh.large` | all selected, refresh to paint | 136.6 ms | 45.7 ms |
+    | `refresh.large` | peak working set | 224.5 MiB | 181.9 MiB |
+
+    `CHANGELOG.md` now quotes these (the first build's 134 and 159 ms came from another computer).
+  - **G2**: `python build.py freeze` and `python build.py package` pass, with their `_fsenum` checks. The frozen application loaded `_internal\resources\Plugins\Core\core\fs\local\windows\_fsenum.pyd` (its module list) and listed `C:\Windows\System32` and `flat-small-v1`. The 33 rows on screen were the expected ones in natural order, directories first, and a hidden file in a small folder was not shown. `freeze` and `package` ran again with the final binary.
+  - **C1**: a folder of 1,000,000 files named as `flat-large-v1` and 100 folders, in a real pane widget (off-screen), with a 1 ms precise `QTimer` on the Qt thread whose callback needs the GIL. The suite's pane workload has no heartbeat metric, so a scratch probe did this: a load, then three unchanged refreshes, each until the model settles.
+    - The first refresh after a load paused for 34–36 ms: one garbage collection of 32.8 ms (31 ms in v0.21.0). It visited the six column tuples of 1,000,000 items each, which CPython tracks until a collection finds that they hold only atomic objects.
+    - Fix in [python.rs](../src/main/rust/fsenum/src/python.rs): `into_tuples` untracks each column tuple (`PyObject_GC_UnTrack`, stable ABI), since it holds only `str`, `int` and `bool`. Test: `ScanTest.test_unchanged_rescan_returns_previous_and_changes_equal_a_fresh_scan` checks that fresh and prefix-reused columns are untracked; it failed on the binary before the fix.
+    - Three runs after the fix, against v0.21.0 (two runs):
+
+      | 1,000,100 entries | v0.21.0 | This task |
+      | --- | ---: | ---: |
+      | Load, settled | 1,177–1,204 ms | 215–217 ms |
+      | Load, largest Qt gap | 147 ms (8–10 gaps over 16 ms) | 9.3–13.2 ms |
+      | Refresh, settled | 642–689 ms | 165–169 ms |
+      | Refresh, largest Qt gap | 43–82 ms | 10.5–13.6 ms |
+      | Collections over 5 ms | one of 31 ms | none |
+      | Peak working set | 763 MiB | 656–657 MiB |
+      | Settled working set | 409 MiB | 505–507 MiB |
+
+      The settled working set is higher by the native table, which keeps about 51 bytes per entry plus the names.
+  - **C2**: run by the operator in an elevated PowerShell (scratch script): a 64 MB NTFS VHDX mounted on `R:`. As found, its root held `System Volume Information`, and the scan listed it. With that removed, `os.listdir` returned `[]`, the first directory query failed with `ERROR_FILE_NOT_FOUND`, and `_fsenum` returned an empty native listing without an error: the case F6 handles, reproduced for the first time. The disk was detached and deleted.
+  - **D1, rejected**: a thread that cannot start makes the scan raise `RuntimeError("can't start new thread: ...")`, as `threading.Thread.start` does; the cancel guard and the joins stop the other threads, and key and sort helpers already leave their work to the others. Creating a thread fails only when the process has no memory or address space for a stack. Then the worker `LatestJobs` starts for every scan fails too, and the pane reports the error. A sequential fallback would be a second path through the pipeline, run only behind a test switch.
+  - **D2, implemented** in [sort.rs](../src/main/rust/fsenum/src/sort.rs):
+    - A bucket with more than one thread's share of a group (and at least 4,096 items) becomes a split task. The split reads each key once: the bytes all its keys share, taken from a 256-key sample and checked for every key while its chunk is reloaded after them; it counts sub-buckets by the next two bytes and scatters them, unless the items are already in order. Splits nest up to 16 levels.
+    - The work list holds runs of buckets, four per thread, and splits. A thread takes a split while the others sort, and the split adds its own runs; threads wait only while a split is in flight.
+    - Measured first: with the sort forced onto one thread, the scan of `flat-large-v1` took 3.3 ms longer in each of four rounds, so the sort is on the scan's critical path.
+    - `bench_name_shapes`, 196,608 names on eight threads (the first version split before the threads started and made presorted shapes up to 0.9 ms slower; the final one is above):
+
+      | Shape | Before | After |
+      | --- | ---: | ---: |
+      | one stem | 2.6 ms | 1.6–1.8 ms |
+      | two stems | 2.4 ms | 1.8–2.1 ms |
+      | dated (`IMG_2024...`) | 7.9 ms | 3.6–3.8 ms |
+      | diverse | 5.7 ms | 4.1 ms |
+      | numbered | 2.7 ms | 1.9–2.1 ms |
+      | short stem | 3.0 ms | 2.1–2.3 ms |
+
+    - Scan, alternating the binaries, four rounds of 31: 200,000 camera names (`IMG_2024MMDD_HHMMSS.jpg`) 24.6–24.7 ms → 22.4–22.8 ms; `flat-large-v1` within noise (−0.6 to +0.5 ms per round).
+    - Test: `sort::tests::a_dominant_stem_is_split_again_and_equals_the_reference` (a dominant stem with duplicates and directories on four threads, and stems nested deeper than the level limit), with the existing sort tests and the gauge's order parity.
+  - **D3, rejected**: the tuple build is 1.2 million `PyTuple_SetItem` calls at 200,000 entries, the floor of the limited API. Writing tuple memory directly would leave abi3 and depend on CPython's object layout, which 001 rejected for robustness. Lazy, native-backed columns belong to FSPaneArch003 P1.
+  - **D4, rejected**: on this machine `GetFinalPathNameByHandleW` takes 11–14 µs in the DOS form and 5–8 µs in the NT form, and a scan of an empty folder 31–46 µs. The 6 µs saved per scan is below 0.1% of any pane load. The NT form would need its own rule for each redirector to keep the reference's UNC fallback.
+  - **ReFS**, at the operator's request (`E:`, a hard disk; the NTFS volume `D:` is an SSD, so absolute times do not compare the file systems):
+    - `core.tests.fs.test_fsenum` and `core.tests.fs.test_local` with `TEMP` on `E:`: 95 tests OK, 5 skipped (symbolic links; ReFS has no 8.3 names). Their live scans, junctions, dangling junctions, Unicode names, prefix reuse and cancellation all ran on ReFS.
+    - `benchmark_fsenum.py` parity holds on `flat-large-v1` and `flat-small-v1` made on `E:`, and on the volume root `E:\`, including the 128-bit file IDs `os.stat` reports for the scope.
+    - Kernel time per buffer size, medians of 7, sizes alternating:
+
+      | Folder | 16 KiB | 60 KiB | 64 KiB | 256 KiB | 1 MiB |
+      | --- | ---: | ---: | ---: | ---: | ---: |
+      | `flat-large-v1`, ReFS, hard disk | 112.9 ms | 99.0 ms | 98.3 ms | 94.6 ms | 93.3 ms |
+      | `flat-large-v1`, NTFS, SSD | 34.1 ms | 27.9 ms | 56.3 ms | 50.2 ms | 49.5 ms |
+      | 200,000 camera names, NTFS, SSD | 17.9 ms | 14.5 ms | 29.0 ms | 26.3 ms | 25.7 ms |
+
+      ReFS has no step at 64 KiB; a larger buffer there would save 4–6%, measured only on a hard disk. The buffer stays at 60 KiB, and the comment on `BUFFER_BYTES` records this. An unchanged rescan on ReFS returns the previous `Listing`, and the order is stable between scans.
+  - Other files: [build_fsenum.py](../src/main/rust/fsenum/build_fsenum.py) and [generate_unicode.py](../src/main/rust/fsenum/generate_unicode.py) (see 001), [test_qt.py](../src/integrationtest/python/fman_integrationtest/test_qt.py) (`drain_model`, see 001), the crate [README](../src/main/rust/fsenum/README.md) and [CHANGELOG.md](../CHANGELOG.md).
+- **Deviations**:
+  - C1 changed code: the column tuples are untracked. The design expected no change for the gates.
+  - D2 runs the splits as tasks, and reads each key once per split; the design's plan, split recursively by the next two bytes, is kept.
+  - C1's heartbeat came from a scratch probe; the suite's pane workload records none.
+- **Validation Results**:
+  - `python src\main\rust\fsenum\build_fsenum.py --test` after each change: 17 Rust tests pass, 3 ignored benchmarks. Final record: source `522fb59b…`, binary `2d710466…`. `python src\main\rust\fsenum\check_hashes.py` and `python src\main\rust\fsenum\generate_unicode.py --check` pass.
+  - Through `build._environment()` with `QT_QPA_PLATFORM=offscreen`, with the final binary:
+    - `unittest core.tests.fs.test_fsenum core.tests.fs.test_local core.tests.commands.test___init__ fman_unittest.test_listing fman_integrationtest.impl.model.test___init__ fman_unittest.test_app_name fman_unittest.test_everything`: 409 tests OK, 4 skipped.
+    - The module set of 001's OR2, twice: see Directory Enumerator 001.
+  - `python src\misc\benchmark_fsenum.py` with the final binary: parity holds on `target\performance\fixtures\flat-large-v1\data`, the camera folder, `C:\Windows\System32`, `C:\Users`, and on ReFS `flat-large-v1` and `E:\`. Earlier in the session also on `C:\Windows\WinSxS`, `C:\Windows` and `flat-small-v1`.
+  - `python build.py measure`, `python src\performancetest\run.py suite --test pane.load.large --test pane.load.small --test refresh.large` (both trees), `python build.py freeze` and `python build.py package`: as reported above.
+  - Not run: `python build.py test` (the full suite) and `python build.py doc` (no user documentation changed).
+
+### Implementation Review - Code Review Agent
+
+- Date: 2026_11_27
+- Agent: GitHub Copilot (code-review agent)
+- Model: Not exposed by host
+- Effort: Not exposed by host
+- Context Window: Not exposed by host
+
+- **Verdict**: Approved.
+- **Findings**: None significant. Checked the sort's order for both directions through the tie bits, the slice arithmetic in `tasks`, termination, the queue (no lost work, no lost wake-up, failures and panics release the waiting threads), `PyObject_GC_UnTrack` on the column tuples (exported by `python3.dll`; safe with `Tuples`' drop and the empty tuple), the remapped build flags, and `drain_model`, which cannot return earlier than before.
+- **Required Changes**: None.
+
+## Final Implementation
+
+- Date: 2026_11_27
+- Agent: GitHub Copilot
+- Model: Claude Opus 5.5
+- Effort: High
+- Context Window: 1M
+
+- **Final Summary**: Every gate and check is met, and every deferred item is settled:
+  - G1: first paint 59.7 ms, with `refresh.large` reported; `CHANGELOG.md` quotes the measured load and refresh times against v0.21.0.
+  - G2: `freeze` and `package` pass, and the frozen application lists folders through its packaged `_fsenum.pyd`.
+  - C1: at 1,000,100 entries the largest Qt gap is 13.6 ms, after the column tuples were untracked; the working set is reported against v0.21.0.
+  - C2: an empty NTFS volume root lists as empty.
+  - D2 lands, with its measurements and a test. D1, D3 and D4 are rejected, with their reasons.
+  - ReFS: the scan is checked on ReFS as well (tests, parity, buffer sizes).
+
+  The binary `_fsenum.pyd` (`2d710466…`) and `fsenum.sha256` are not committed yet, as the operator decided (hand-off above). Commit them together (Git LFS); the build reproduces them on any machine with the pinned toolchain.
+- **Validation Results**: as listed under Implementer, all with the final binary.

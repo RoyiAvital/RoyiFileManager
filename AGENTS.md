@@ -15,6 +15,8 @@ These instructions apply to the entire repository.
 - Do not modify `.gitattributes` or `.gitignore` unless explicitly asked.
 - Do not run `git add`, `git pull`, `git push` or `git commit` unless explicitly asked.
 - MarkDown: Use "Title Case" for titles, Ensure width normalized tables.
+- Never use elevated privileges without the permission of operator.  
+- Never delete files belong to operator (Outside the repository). 
 
 ### Engineering Principles
 

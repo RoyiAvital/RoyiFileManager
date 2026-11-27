@@ -1,4 +1,4 @@
-"""Source/binary pairing of _fsenum.pyd (Plan/DirectoryEnumerator001.md).
+"""Source/binary pairing of _fsenum.pyd (Done/DirectoryEnumerator001.md).
 
 The source digest covers every file that shapes the binary: the manifest and
 lock file, the build helper, the Unicode generator and every Rust source.

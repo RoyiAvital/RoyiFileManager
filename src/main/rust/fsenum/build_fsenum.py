@@ -41,7 +41,13 @@ def toolchain_environment():
 		raise SystemExit('The rust-mingw component is missing: %s' % linker)
 	environment = os.environ.copy()
 	environment['CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER'] = str(linker)
-	environment['RUSTFLAGS'] = '-C link-self-contained=yes -C link-arg=-Wl,--no-insert-timestamp'
+	# With the rust-src component, rustc names standard library sources by their local
+	# path in panic locations; the rustup folder would then change the binary.
+	library = sysroot / 'lib/rustlib/src/rust'
+	flags = ['-C', 'link-self-contained=yes', '-C', 'link-arg=-Wl,--no-insert-timestamp',
+		'--remap-path-prefix=%s=/rustc/%s' % (library, fields['commit-hash'])]
+	environment.pop('RUSTFLAGS', None)
+	environment['CARGO_ENCODED_RUSTFLAGS'] = '\x1f'.join(flags)
 	environment['CARGO_TARGET_DIR'] = str(HERE.parents[3] / 'target' / 'fsenum')
 	return environment
 

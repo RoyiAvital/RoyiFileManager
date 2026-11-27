@@ -67,7 +67,7 @@ NATIVE_ENUMERATOR_BINARY = NATIVE_ENUMERATOR_DIRECTORY / '_fsenum.pyd'
 
 def _verify_native_enumerator():
 	"""src/main/rust/fsenum/_fsenum.pyd must match its sources per fsenum.sha256
-	(Plan/DirectoryEnumerator001.md).
+	(Done/DirectoryEnumerator001.md).
 
 	The source digest is line-ending normalised, so Git CRLF/LF conversion cannot
 	fail this; a Git LFS pointer in place of the binary is reported as such.

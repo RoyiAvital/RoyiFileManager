@@ -41,6 +41,20 @@ New plug-ins should prefer the Qt-free services: `show_quicksearch`,
 and `show_panel`. OutputTextBox is a Qt
 widget hosted in a tool window.
 
+```mermaid
+flowchart TD
+    Start["What does the plug-in UI need?"] --> Q1{"Pick items or<br/>set states?"}
+    Q1 -->|"Pick one text item"| QS["QuickSearch<br/>fman.show_quicksearch"]
+    Q1 -->|"Pick many items"| QL["QuickList<br/>fman.ui.show_quick_list"]
+    Q1 -->|"Toggle state per item"| QCL["QuickCheckList<br/>fman.ui.show_quick_check_list"]
+    Start --> Q2{"Structured rows<br/>or columns?"}
+    Q2 -->|"Narrow static rows"| QT["QuickTable<br/>fman.ui.show_quick_table"]
+    Q2 -->|"Compose string with live preview"| QB["QuickBoard<br/>fman.ui.show_quick_board"]
+    Start --> Q3{"Controls or output?"}
+    Q3 -->|"Docked form / actions"| P["Panel<br/>fman.ui.show_panel"]
+    Q3 -->|"Copyable plain text"| O["OutputTextBox<br/>fman.ui.OutputTextBox"]
+```
+
 ## QuickSearch
 
 <figure class="product-shot" markdown>

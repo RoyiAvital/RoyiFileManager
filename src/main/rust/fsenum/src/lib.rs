@@ -1,4 +1,4 @@
-//! `_fsenum`: native NTFS/ReFS folder tables (Plan/DirectoryEnumerator001.md).
+//! `_fsenum`: native NTFS/ReFS folder tables (Done/DirectoryEnumerator001.md).
 //!
 //! A scan runs as a pipeline: the enumerator thread reads and validates the
 //! folder's records (pipeline.rs), the key thread builds natural keys and the

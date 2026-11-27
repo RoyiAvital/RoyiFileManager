@@ -6,21 +6,26 @@ For step-by-step examples, see [Everyday Workflows](workflows.md).
 
 ## Availability
 
-Some guides describe the current development build, not just the latest release.
+Recent capabilities and the first release that includes them:
 
-| Capability                                                                          | Available In                  |
-| ----------------------------------------------------------------------------------- | ----------------------------- |
-| Bundled Robocopy                                                                    | 0.16.0 and newer              |
-| Bundled Batch File Renamer, including random letter/digit fields                    | 0.16.3 and newer              |
-| Create a duplicate file and Pack here                                               | 0.16.4 and newer              |
-| Pane swapping, pattern selection and keypad selection shortcuts                     | Unreleased development builds |
-| Select same extension, clipboard/link navigation and Command Center synonyms        | Unreleased development builds |
-| Numbered duplicate suggestions, copying multiple names and local free-space display | Unreleased development builds |
-| Bundled File Attributes Editor                                                      | Unreleased development builds |
-| Compressed tars, Unpack to... and read-only archives                                | Unreleased development builds |
+| Capability                                                                          | Available In     |
+| ----------------------------------------------------------------------------------- | ---------------- |
+| Bundled Robocopy                                                                    | 0.16.0 and newer |
+| Bundled Batch File Renamer, including random letter/digit fields                    | 0.16.3 and newer |
+| Create a duplicate file and Pack here                                               | 0.16.4 and newer |
+| Pane swapping, pattern selection, keypad selection shortcuts and free-space display | 0.17.0 and newer |
+| Select same extension, clipboard/link navigation, Command Center synonyms           | 0.17.0 and newer |
+| Numbered duplicate suggestions and copying multiple names (`Shift+F11`)             | 0.17.0 and newer |
+| QuickView Table View for CSV/TSV files                                              | 0.18.0 and newer |
+| Command Palette categories and YAML configuration files                             | 0.19.0 and newer |
+| QuickView animated images (GIF, WebP, APNG)                                         | 0.19.2 and newer |
+| Bundled File Attributes Editor (`QuickCheckList`)                                   | 0.20.0 and newer |
+| Find blocking processes and Explorer archive paste/drop                             | 0.20.1–0.20.4    |
+| Compressed tars, Unpack to... and read-only archives                                | 0.21.0 and newer |
+| Native Rust directory enumerator (`fsenum`) and `Column.order`                      | 0.22.0 and newer |
 
 Check the [release notes](https://github.com/RoyiAvital/RoyiFileManager/blob/main/CHANGELOG.md)
-for your installed version. An Unreleased instruction may not work in a released build.
+for details on your installed version.
 
 ## Dual-Pane Workflow
 

@@ -1,7 +1,7 @@
 # `_fsenum`: Native Folder Tables
 
 `_fsenum.pyd` scans an NTFS or ReFS folder for Core's local file system
-([Plan/DirectoryEnumerator001.md](../../../../Plan/DirectoryEnumerator001.md)).
+([Done/DirectoryEnumerator001.md](../../../../Done/DirectoryEnumerator001.md)).
 One call returns the `Listing` columns, the folder's scope and its Name order;
 `core/fs/local/windows/listing.py` is the only caller.
 
@@ -29,13 +29,17 @@ One call returns the `Listing` columns, the folder's scope and its Name order;
 A folder of up to four kernel batches (60 KiB each) is read, keyed and sorted
 on the calling thread. Larger folders use a reader thread, a decoder thread,
 two key builders and, for the final sort, up to eight threads; all are joined
-before `scan` returns.
+before `scan` returns. The sort splits a bucket of keys that holds more than one
+thread's share again, after the bytes its keys share, so a folder of one stem
+(`IMG_2024...`) still sorts on every thread. The column tuples hold only `str`,
+`int` and `bool`, so they are not tracked by Python's garbage collector, which
+would otherwise visit every item once after a load.
 
 Kernel calls use a buffer below 64 KiB on purpose. While a folder's files have
-recently been created, read or opened, a call with 64 KiB or more is 1.4 to
-2.4 times slower per record and a smaller call is not; `BUFFER_BYTES` in
-`pipeline.rs` has the measurements. Compare builds on the same folder in the
-same state, alternating.
+recently been created, read or opened, a call with 64 KiB or more on NTFS is
+1.4 to 2.4 times slower per record and a smaller call is not; ReFS has no such
+step. `BUFFER_BYTES` in `pipeline.rs` has the measurements. Compare builds on
+the same folder in the same state, alternating.
 
 ## Toolchain
 
@@ -58,8 +62,10 @@ python src\main\rust\fsenum\check_hashes.py
 `--test` runs `cargo test` first. The build checks the module's DLL imports,
 copies it to `_fsenum.pyd` and writes `fsenum.sha256`. `--no-record` builds
 without touching either. The linker writes no build time
-(`--no-insert-timestamp`), so rebuilding unchanged sources gives the recorded
-binary byte for byte, with CRLF or LF line endings. The source digest covers
+(`--no-insert-timestamp`), and the standard library's source paths are named
+`/rustc/<commit>` whether or not the `rust-src` component is installed. So
+rebuilding unchanged sources gives the recorded binary byte for byte, on any
+machine, from any folder, with CRLF or LF line endings. The source digest covers
 `Cargo.toml`, `Cargo.lock`, `build_fsenum.py`, `generate_unicode.py` and
 `src/*.rs`, with CRLF normalized to LF. `check_hashes.py` reports a Git LFS
 pointer as such. `build.py` checks the pairing in `test`, `freeze` and

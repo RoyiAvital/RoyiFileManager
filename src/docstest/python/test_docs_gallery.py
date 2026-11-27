@@ -334,3 +334,64 @@ screenshots._validate_image(screenshots._source_outputs(args.output_dir, 'edit-a
 			self.assertEqual(screenshots.PYTHON_SAMPLE, source)
 			self.assertNotIn('\t', source)
 			compile(source, 'file_summary.py', 'exec')
+
+	def test_new_documentation_captures_render_without_side_effects(self):
+		script = '''
+import os, sys
+from pathlib import Path
+from unittest.mock import patch
+sys.path.insert(0, sys.argv[1])
+import generate_docs_screenshots as screenshots
+from core import commands
+from fman.impl.widgets import MainWindow, Prompt
+from fman.impl.ui.facade import QuickTableWindow
+from PyQt5.QtGui import QScreen
+
+screenshots.WORK_DIR = Path(os.environ['ROYIFILEMANAGER_USER_SETTINGS']).parent.parent
+capture = sys.argv[3]
+captured = []
+original_window, original_prompt, original_table = MainWindow.grab, Prompt.grab, QuickTableWindow.grab
+def grab_window(window):
+	captured.append('window')
+	return original_window(window)
+def grab_prompt(dialog):
+	assert dialog.textValue() == 'C:\\\\Work\\\\Reports'
+	captured.append('prompt')
+	return original_prompt(dialog)
+def grab_table(window):
+	assert window.windowTitle() == 'Processes using Reports'
+	captured.append('table')
+	return original_table(window)
+args = screenshots._parse_args(['--_source-child', '--_capture', capture, '--output-dir', sys.argv[2]])
+patches = [
+	patch.object(MainWindow, 'grab', grab_window),
+	patch.object(Prompt, 'grab', grab_prompt),
+	patch.object(QuickTableWindow, 'grab', grab_table),
+	patch.object(QScreen, 'grabWindow', side_effect=AssertionError('Desktop capture forbidden')),
+]
+if capture == 'unpack-to':
+	patches.append(patch.object(commands, 'submit_task', side_effect=AssertionError('Unpack capture must not extract')))
+from contextlib import ExitStack
+with ExitStack() as stack:
+	for item in patches:
+		stack.enter_context(item)
+	assert screenshots._capture_source_child(args) == 0
+expected = {
+	'quick-view-markdown': ['window'],
+	'quick-view-pdf': ['window'],
+	'unpack-to': ['window', 'prompt'],
+	'find-blocking-processes': ['table'],
+}[capture]
+assert captured == expected, (capture, captured)
+screenshots._validate_image(screenshots._source_outputs(args.output_dir, capture)[0])
+'''
+		for capture in ('quick-view-markdown', 'quick-view-pdf', 'unpack-to', 'find-blocking-processes'):
+			with self.subTest(capture=capture), resolved_temporary_directory() as directory, \
+					patch.object(screenshots, 'WORK_DIR', Path(directory)):
+				settings = screenshots._prepare_settings('source-' + capture, initialize=False)
+				environment = screenshots._source_environment(settings)
+				environment['QT_QPA_PLATFORM'] = 'windows'
+				result = subprocess.run([sys.executable, '-B', '-X', 'faulthandler', '-c', dedent(script.expandtabs(4)),
+					str(SCRIPT.parent), str(settings.parent / 'output'), capture], cwd=ROOT, env=environment,
+					capture_output=True, text=True, timeout=60)
+				self.assertEqual(0, result.returncode, result.stdout + result.stderr)

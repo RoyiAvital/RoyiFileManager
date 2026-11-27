@@ -17,3 +17,12 @@
 Settings are saved in `UserSettings` beside the application. See
 [Configuration](configuration.md). To add plug-ins, see
 [Manual installation](plugins/index.md#manual-installation).
+
+## Upgrading
+
+1. Close {{ app_name }} completely.
+2. Back up your `UserSettings` folder.
+3. Extract the new release ZIP and copy your `UserSettings` folder into the new directory (or overwrite the application files while keeping `UserSettings`).
+4. Start {{ app_name }} and run **Settings: Update settings file template** from the Command Center (++ctrl+shift+p++) to append any new commented defaults to `UserSettings\AppSettings.yaml`.
+
+Existing values, comments, favorites and custom plug-ins in `UserSettings` are preserved. Check the [release notes](https://github.com/RoyiAvital/RoyiFileManager/blob/main/CHANGELOG.md) for any version-specific migration notes.

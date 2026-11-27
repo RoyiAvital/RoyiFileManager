@@ -1,10 +1,10 @@
 # Directory Enumerator 001: Native Folder Table
 
-Generate a local NTFS/ReFS folder as a native table in a Rust extension (`_fsenum`) and deliver it to the pane complete and sorted by Name within the 150 ms target of [FSPaneArch003](FSPaneArch003.md) at 200,000 entries (today 254 ms). Enumeration, record validation, link follow-up, natural sort keys and the sort run on native threads without the GIL, overlapped with the Python objects the current `Listing` contract still needs. The table stays attached to its `Listing`: the Name order and the hidden-file filter come from it, and an unchanged refresh costs one enumeration and no new Python objects. The plug-in API, the `Listing` columns and every non-NTFS path are unchanged. This is the first slice of the native item table; filtering, change sets and the Qt model build on it in their own tasks.
+Generate a local NTFS/ReFS folder as a native table in a Rust extension (`_fsenum`) and deliver it to the pane complete and sorted by Name within the 150 ms target of [FSPaneArch003](../Plan/FSPaneArch003.md) at 200,000 entries (today 254 ms). Enumeration, record validation, link follow-up, natural sort keys and the sort run on native threads without the GIL, overlapped with the Python objects the current `Listing` contract still needs. The table stays attached to its `Listing`: the Name order and the hidden-file filter come from it, and an unchanged refresh costs one enumeration and no new Python objects. The plug-in API, the `Listing` columns and every non-NTFS path are unchanged. This is the first slice of the native item table; filtering, change sets and the Qt model build on it in their own tasks.
 
 ## Task & Guidelines
 
-- **Goal**: Operator direction (2026-11-25): be the fastest file manager, with an architecture that reaches the [FSPaneArch003](FSPaneArch003.md) targets: a complete, sorted 200k-entry folder in ≤ 150 ms (today 254 ms), the slowest Filter Bar query ≤ 100 ms (today 290 ms), a single-file update ≤ 10 ms and Qt heartbeat gaps ≤ 16 ms. This task delivers the load target and the native table the other targets build on. It settles FSPaneArch003 decision 1: enumeration moves into the Rust engine, and `_fsparser` is retired.
+- **Goal**: Operator direction (2026-11-25): be the fastest file manager, with an architecture that reaches the [FSPaneArch003](../Plan/FSPaneArch003.md) targets: a complete, sorted 200k-entry folder in ≤ 150 ms (today 254 ms), the slowest Filter Bar query ≤ 100 ms (today 290 ms), a single-file update ≤ 10 ms and Qt heartbeat gaps ≤ 16 ms. This task delivers the load target and the native table the other targets build on. It settles FSPaneArch003 decision 1: enumeration moves into the Rust engine, and `_fsparser` is retired.
 - **Scope**:
   - **Included**:
     - A read-only Rust crate `src/main/rust/fsenum/`, built as `_fsenum.pyd` (PyO3, `abi3`, CPython ≥ 3.12).
@@ -53,7 +53,7 @@ Generate a local NTFS/ReFS folder as a native table in a Rust extension (`_fsenu
          - `GetFinalPathNameByHandleW` → reject `\\?\UNC\` or paths exceeding 32,768 UTF-16 units (`None`).
          - `GetVolumeInformationByHandleW` → require filesystem in `("NTFS", "ReFS")` and `FILE_SUPPORTS_OPEN_BY_FILE_ID` (`0x01000000`), else `None`.
          - `GetFileInformationByHandleEx(FileIdInfo = 18)` → capture `(volume_serial: u64, dir_file_id: [u8; 16])`.
-       - Allocates one reusable 64 KiB aligned buffer on the heap (reused across all kernel calls — no per-batch `memset` or Python `bytes` copy; F12 in [FSPaneArch003](FSPaneArch003.md) proved NTFS caps each call at ~64 KiB and larger buffers are slower).
+       - Allocates one reusable 64 KiB aligned buffer on the heap (reused across all kernel calls — no per-batch `memset` or Python `bytes` copy; F12 in [FSPaneArch003](../Plan/FSPaneArch003.md) proved NTFS caps each call at ~64 KiB and larger buffers are slower).
        - Loops `GetFileInformationByHandleEx` with `FileIdExtdDirectoryRestartInfo` (20) then `FileIdExtdDirectoryInfo` (19) until `ERROR_NO_MORE_FILES` (18):
          - Checks atomic `CancelToken` before every kernel call.
          - Parses and validates every `FILE_ID_EXTD_DIR_INFO` (88-byte header + UTF-16LE name) directly from the buffer slice using safe bounds checks (`usize` / checked arithmetic):
@@ -74,7 +74,7 @@ Generate a local NTFS/ReFS folder as a native table in a Rust extension (`_fsenu
     - Validates `name` up front: rejects empty names, `.`, `..`, `/`, `\`, `\0`, and Windows wildcard characters (`*`, `?`, `<`, `>`, `"`) with `ValueError`.
     - Opens `dir_path` (or accepts an optional reusable native directory handle in future store work), verifies NTFS/ReFS scope, and calls `NtQueryDirectoryFile` (resolved dynamically from `ntdll.dll` via `GetModuleHandleW`/`GetProcAddress`) with `FileIdExtdDirectoryInformation` (class 60), `ReturnSingleEntry = TRUE`, `RestartScan = TRUE`, and `UNICODE_STRING` set to `name`.
     - Parses the single record through the exact same `parse_record` validator and link follow-up used by `scan_directory`.
-    - Verifies that the returned name equals the requested `name` case-insensitively (rejecting 8.3 short-name or unexpected matches by returning `None` / signaling rescan, per F06 in [FSPaneArch003](FSPaneArch003.md)). Returns `None` on `STATUS_NO_SUCH_FILE` / `STATUS_NO_MORE_FILES`, or the single-entry tuple `(name, is_dir, size, mtime_ns, attributes, created_ns, identity_16bytes)`.
+    - Verifies that the returned name equals the requested `name` case-insensitively (rejecting 8.3 short-name or unexpected matches by returning `None` / signaling rescan, per F06 in [FSPaneArch003](../Plan/FSPaneArch003.md)). Returns `None` on `STATUS_NO_SUCH_FILE` / `STATUS_NO_MORE_FILES`, or the single-entry tuple `(name, is_dir, size, mtime_ns, attributes, created_ns, identity_16bytes)`.
   - **Python Integration & Cancellation**:
     - Expose a lightweight `CancelToken` pyclass (backed by `AtomicBool` with `cancel()` / `is_canceled()`), bridged cleanly to `LatestJobs` cancellation in [listing.py](../src/main/resources/base/Plugins/Core/core/fs/local/windows/listing.py): wiring `CancelToken` directly into `LatestJobs` lets Stage 1 poll cancellation off the GIL without calling back into Python on every batch (with a fallback that polls a Python `check_canceled()` callable if a direct caller supplies one).
     - Unsupported OS errors (`_UNSUPPORTED = (1, 50, 87, 120, 124)`) return `None` so `LocalFileSystem.scan` falls back to `_scan_entries`, identical to today. Other Win32 errors (`ERROR_FILE_NOT_FOUND`, `ERROR_PATH_NOT_FOUND`, `ERROR_ACCESS_DENIED`, `ERROR_NOT_READY`, etc.) map to standard Python `OSError` / `FileNotFoundError` / `PermissionError` with preserved `winerror`.
@@ -131,10 +131,10 @@ Generate a local NTFS/ReFS folder as a native table in a Rust extension (`_fsenu
 - Context Window: 1M
 
 - **Verdict**: Changes requested.
-- **Kept as designed**: the read-only handle and access mask equal `NativeDirectory`; raw UTF-16 names decoded with `surrogatepass` match `fsparser.c`; a link keeps its own attributes, birth time and identity ([FSPaneArch003](FSPaneArch003.md) F21); the `_UNSUPPORTED` and UNC fallback is unchanged; the hash-paired Git LFS binary model is reused (`*.pyd` is already LFS-tracked); natural keys stay out of scope.
+- **Kept as designed**: the read-only handle and access mask equal `NativeDirectory`; raw UTF-16 names decoded with `surrogatepass` match `fsparser.c`; a link keeps its own attributes, birth time and identity ([FSPaneArch003](../Plan/FSPaneArch003.md) F21); the `_UNSUPPORTED` and UNC fallback is unchanged; the hash-paired Git LFS binary model is reused (`*.pyd` is already LFS-tracked); natural keys stay out of scope.
 - **Findings**:
   1. **R1 - High: the design keeps the measured cost and gives up the measured lever.**
-     - Evidence: [FSParser](../Done/FSParser.md) measured 24 ms kernel and 22 ms post-kernel scan at 202,603 entries, "~90 % of the time is CPython object creation", and 0.5 ms for `ctypes.memset` plus `.raw` over 347 batches. [FSPaneArch003](FSPaneArch003.md) F12 (200k, 73-character names) measured 77-100 ms kernel and 52.4 ms `_fsparser` parse and `finish`; overlap is the lever (a reader thread: 195 → 173 ms).
+     - Evidence: [FSParser](../Done/FSParser.md) measured 24 ms kernel and 22 ms post-kernel scan at 202,603 entries, "~90 % of the time is CPython object creation", and 0.5 ms for `ctypes.memset` plus `.raw` over 347 batches. [FSPaneArch003](../Plan/FSPaneArch003.md) F12 (200k, 73-character names) measured 77-100 ms kernel and 52.4 ms `_fsparser` parse and `finish`; overlap is the lever (a reader thread: 195 → 173 ms).
      - This plan issues the same kernel calls with the same 64 KiB cap, then creates the same Python objects after enumeration ends (Stage 2, its own estimate 35-45 ms). What it removes (memset and `.raw` ≈ 1 ms at 733 batches, the per-batch Python loop, microseconds of C validation per batch) is within run-to-run noise. Overlap is rejected because Rust parsing costs 2-4 ms, but the work to overlap is materialization, not parsing.
      - Required: record the operator's goal and choose one. (a) A Rust infrastructure slice with parity, gated on no regression (alternating pairs, scan median within ±5 %), not "measurably faster". (b) Lower latency: a native thread enumerates and validates batches off the GIL into a bounded queue while the calling worker materializes completed batches, so the scan approaches max(kernel, materialization); gate it with numbers. Delete the memset/`.raw` claim. Reconcile with the operator condition in FSPaneArch003 ("The existing C `_fsparser` stays until a port is measured and justified") and settle its Decision 1 (F23).
   2. **R2 - High: a Rust panic stalls the pane; a failed allocation ends the application.**
@@ -155,7 +155,7 @@ Generate a local NTFS/ReFS folder as a native table in a Rust extension (`_fsenu
   8. **R8 - Medium: the toolchain is not available or pinned.**
      - `x86_64-pc-windows-msvc` needs Visual Studio Build Tools (`link.exe`, Windows SDK). FSParser chose llvm-mingw because neither exists on the development machine; this machine has no `cargo`, `rustc` or `link`. With the dynamic MSVC CRT the module imports `VCRUNTIME140.dll`, failing the plan's own DLL criterion; "UCRT-only dynamic linkage" is not an MSVC option. No `rustc` version is pinned.
      - Required: prefer `x86_64-pc-windows-gnullvm` (Tier 2 with host tools; needs an LLVM MinGW toolchain with static libunwind), linked by the already pinned llvm-mingw 20260922, giving UCRT imports like `_fsparser`. Otherwise MSVC with mandatory `+crt-static` and Build Tools documented as a prerequisite. Pin `rust-toolchain.toml` (version and target), build with `--locked`, use PyO3 `abi3-py312` with `generate-import-lib`. The hash manifest covers `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml` and every source; record URLs and SHA-256 as [src/main/c/README.md](../src/main/c/README.md) does.
-  9. **R9 - Low: end state and deletion are missing.** After the switch, `NativeDirectory`, `_fsparser.Columns`, `parse_records` and `parse_batch` have no production caller. State that there is no production A/B switch or fallback between the modules ([CodeReview099](CodeReview099.md) FO03; FSParser's no-fallback rule). Remove them here (rebuild and re-hash `_fsparser.pyd`, keeping `natural_keys`) or name the follow-up. Update the producer list in `Listing._trusted`, [src/main/c/README.md](../src/main/c/README.md) and [DEVELOPMENT.md](../DEVELOPMENT.md). Extend `src/misc/benchmark_fsparser.py` and `src/misc/validate_fsparser.py` instead of a disposable script: they already give alternating pairs, edge-case folders and malformed buffers.
+  9. **R9 - Low: end state and deletion are missing.** After the switch, `NativeDirectory`, `_fsparser.Columns`, `parse_records` and `parse_batch` have no production caller. State that there is no production A/B switch or fallback between the modules ([CodeReview099](../Plan/CodeReview099.md) FO03; FSParser's no-fallback rule). Remove them here (rebuild and re-hash `_fsparser.pyd`, keeping `natural_keys`) or name the follow-up. Update the producer list in `Listing._trusted`, [src/main/c/README.md](../src/main/c/README.md) and [DEVELOPMENT.md](../DEVELOPMENT.md). Extend `src/misc/benchmark_fsparser.py` and `src/misc/validate_fsparser.py` instead of a disposable script: they already give alternating pairs, edge-case folders and malformed buffers.
   10. **R10 - Low: license notices are incomplete.** Cover every crate linked into the binary per `Cargo.lock` (for example `pyo3-ffi` and the `windows-targets` import-library crates), not only `pyo3` and `windows-sys`; build-only proc-macro crates excluded.
   11. **R11 - Low: smaller undecided points.**
       - Duplicate names: keep the kernel invariant documented in `Listing._trusted` (no check, as today) or define the check and its route to a validated `Listing.create`; "a fast duplicate check or hash verification" is not a design.
@@ -179,7 +179,7 @@ Generate a local NTFS/ReFS folder as a native table in a Rust extension (`_fsenu
 - Effort: Extra High
 - Context Window: 1M
 
-- **Consolidated Design**: the subsections below. Today's 254 ms is scan ~122 ms + projection ~110 ms + Qt ~20 ms ([FSPaneArch003](FSPaneArch003.md), preliminary measurements). The projection spends ~106 ms building 200,000 Python natural keys and sorting them. This design turns the scan into a pipeline whose length is the kernel enumeration plus a short tail, and turns the Name projection into a few milliseconds of native array work.
+- **Consolidated Design**: the subsections below. Today's 254 ms is scan ~122 ms + projection ~110 ms + Qt ~20 ms ([FSPaneArch003](../Plan/FSPaneArch003.md), preliminary measurements). The projection spends ~106 ms building 200,000 Python natural keys and sorting them. This design turns the scan into a pipeline whose length is the kernel enumeration plus a short tail, and turns the Name projection into a few milliseconds of native array work.
 
 #### Target Budget
 
@@ -224,7 +224,7 @@ Threads share only immutable chunks, an atomic published count and an atomic can
 #### Link Follow-up
 
 - For an entry with `FILE_ATTRIBUTE_REPARSE_POINT` and a tag in `_LINK_TAGS` (symlink, mount point), E opens the same string today's `os.stat(os.path.join(path, name))` opens, following links (`CreateFileW`, `FILE_READ_ATTRIBUTES`, backup semantics), and reads `GetFileInformationByHandle`.
-- It replaces only `is_dir`, size and modification time. On any error the entry keeps its own values, as `except OSError: continue` does today. Attributes, birth time and identity remain the link's own ([FSPaneArch003](FSPaneArch003.md) F21).
+- It replaces only `is_dir`, size and modification time. On any error the entry keeps its own values, as `except OSError: continue` does today. Attributes, birth time and identity remain the link's own ([FSPaneArch003](../Plan/FSPaneArch003.md) F21).
 - The same path string keeps Win32 path rules (`MAX_PATH`, trailing dots and spaces) identical. `GetFileAttributesExW` is not used: it does not follow links.
 - A target that blocks (an offline share) blocks E, as `os.stat` blocks the worker today; cancellation takes effect when the call returns, off Qt and off the GIL.
 
@@ -616,4 +616,51 @@ Panes rescan on every application activation and after file notifications; today
 - **Required Changes**:
   1. OR1: mirror both branches in `follow_link`, with a test where it can be reached.
   2. OR2: run the module set repeatedly on this tree and on a clean `HEAD` worktree, with thread dumps, to find whether this task causes the hang.
-  3. Move the open operator gates (`build.py measure`, `freeze`, `package`, 1M entries, an empty volume root) and the deferred items to [Directory Enumerator 002](../Plan/DirectoryEnumerator002.md), then close the task.
+  3. Move the open operator gates (`build.py measure`, `freeze`, `package`, 1M entries, an empty volume root) and the deferred items to [Directory Enumerator 002](DirectoryEnumerator002.md), then close the task.
+
+### Review Fixes - Claude Opus 5.5
+
+- Date: 2026_11_27
+- Agent: GitHub Copilot
+- Model: Claude Opus 5.5
+- Effort: High
+- Context Window: 1M
+
+- **Changes**:
+  - OR1 was fixed in the previous session, on another computer (see its hand-off in [Directory Enumerator 002](DirectoryEnumerator002.md)): `follow_link` mirrors both branches of `win32_xstat_slow_impl`, tested by `ScanTest.test_link_to_a_device_reports_what_os_stat_reports`.
+  - OR2 is not a hang in the scan. The failure in 1 of 7 runs, "Snapshot model did not settle" in the cleanup of `ProcessPaneIT`, is a race in the test helper `QtIT.drain_model` and is older than this task:
+    - Unloading the process plug-in moves a pane at `process://` to `null://`, and that navigation completes asynchronously. Meanwhile the outgoing model's file watcher reloads it.
+    - `drain_model` read the pane's model once. When it read the outgoing model, and the navigation shut that model down with its reload scan in flight, the model ignored the result and `_scanning` stayed set. The wait failed after 5 s, although the pane's current model had settled.
+    - Evidence: `ProcessPaneIT` alone failed in 1 of 40 runs, and in 1 of 1,163 runs under the load of three parallel loops. A diagnostic copy recorded both models at the failure: the captured one at `process://`, shut down and scanning; the current one at `null://`, settled. Deferring the `null://` navigation by 50 ms and delaying the `process://` scan results by 200 ms made all four `ProcessPaneIT` tests fail every time, on this tree and on v0.21.0 alike.
+    - Fix in [test_qt.py](../src/integrationtest/python/fman_integrationtest/test_qt.py): `drain_model` reads the pane's current model at every check. With the same delays, all four tests pass. A first version also waited until no navigation was in flight. It failed `SortedFileSystemModelIT.test_navigation_away_from_blocked_local_scan_rejects_stale_rows` in 2 of 3 runs, because a cancelled navigation keeps its blocked job active, and was dropped.
+    - The two long hangs of earlier sessions (more than 10 and 16 minutes) did not recur: five runs of the module set took 42.8–47.2 s, and more than 1,300 runs of `ProcessPaneIT` all ended. The race fails after 5 s, so it does not explain them; they remain unexplained.
+  - Step 1 of the hand-off: `Plan/DirectoryEnumerator001.md` became `Done/DirectoryEnumerator001.md` in the 16 places listed, and the links of this document to `FSPaneArch003.md` and `CodeReview099.md` point to `../Plan/`.
+  - The build is reproducible across machines now. The rebuild here gave binary `fa5ed317…`, not the recorded `d54ac0cf…`. With the `rust-src` component installed, rustc names the standard library's sources by their local path in panic locations, so the binary held the rustup folder (`D:\…\rustup\toolchains\…`). [build_fsenum.py](../src/main/rust/fsenum/build_fsenum.py) remaps that prefix to `/rustc/<commit>` (`--remap-path-prefix`, passed in `CARGO_ENCODED_RUSTFLAGS`). The same binary came out with `rust-src` and without it (a sysroot of junctions to the target libraries alone), and from a copy of the crate in another folder.
+  - [generate_unicode.py](../src/main/rust/fsenum/generate_unicode.py) names only Python's minor version in `src/unicode.rs`. The file came from Python 3.14.10 and this computer has 3.14.7: the tables are the same, and `--check` failed on the header line alone.
+- **Deviations**:
+  - OR2 is fixed in the test helper; the application is unchanged.
+  - The hand-off expected the binary `d54ac0cf…` after step 1. That binary most likely held the other computer's rustup path and cannot be rebuilt; the binaries since are recorded in Directory Enumerator 002.
+- **Validation Results**:
+  - `python src\main\rust\fsenum\build_fsenum.py --test` after step 1: 16 Rust tests pass; source `99253f19…`, binary `854054ac…`. `python src\main\rust\fsenum\check_hashes.py` passes, and `python src\main\rust\fsenum\generate_unicode.py --check` after the header change.
+  - Through `build._environment()` with `QT_QPA_PLATFORM=offscreen`:
+    - `unittest core.tests.fs.test_fsenum core.tests.fs.test_local core.tests.commands.test___init__ fman_unittest.test_listing fman_integrationtest.impl.model.test___init__ fman_unittest.test_app_name fman_unittest.test_everything`: 409 tests OK, 4 skipped (symbolic links need a Windows privilege).
+    - `unittest fman_integrationtest.test_qt.SortedFileSystemModelIT fman_integrationtest.impl.model.test___init__ fman_integrationtest.test_qt.ProcessPaneIT`: 33 tests OK, three times.
+    - The module set `fman_integrationtest.test_qt fman_unittest.test_application_context fman_unittest.test_favorites fman_unittest.test_search_file_fuzzy fman_integrationtest.impl.model.test___init__` with the final code of Directory Enumerator 002, twice: 439 tests in 42.5 and 42.8 s, four failures. Three of them fail alone on v0.21.0 too (`PatternSelectionIT` geometry, `QuickBoardMappingIT` text elision, `RobocopyIT` text fit). `WindowsCleanupIT.test_explorer_archive_items_paste_and_drop_as_copies` passes alone on both trees and fails only within the set.
+
+## Final Implementation
+
+- Date: 2026_11_27
+- Agent: GitHub Copilot
+- Model: Claude Opus 5.5
+- Effort: High
+- Context Window: 1M
+
+- **Final Summary**: Delivered as designed, with the deviations recorded above. The Rust module `_fsenum` scans a local NTFS or ReFS folder on native threads. It returns the `Listing` columns, the folder's scope and a native Name order; Core uses that order and the native hidden-file filter. An unchanged rescan returns the previous `Listing`, and a changed one reuses the objects of its unchanged prefix. `_fsparser` is retired. Review fixes: Gemini 4 Neon IR1–IR3, IR5 and IR6; Claude Fable 5.2 F1–F10; Claude Opus 5.5 OR1 and OR2. The operator gates and the deferred items moved to [Directory Enumerator 002](DirectoryEnumerator002.md), which completed them and holds their measurements. Acceptance, on the reference machine:
+  - Load: `build.py measure` reports `pane.load.large` complete in 48.5 ms and first paint after 59.7 ms (≤ 150 ms; v0.21.0: 240.4 and 254.9 ms). The descending order and the hidden-file filter on it take 0.52 ms at 200,000 entries.
+  - Responsiveness: the largest Qt heartbeat gap during load and refresh is 4.5 ms at 200,000 entries and 13.6 ms at 1,000,100 entries. The 1M refresh met this only after Directory Enumerator 002 stopped Python's garbage collector from tracking the column tuples. Each GIL hold of the native code ends after its 4 ms budget.
+  - Refresh: an unchanged scan returns the previous object. `refresh.large` repaints an unchanged refresh after 41.8 ms (v0.21.0: 124.3 ms).
+  - Parity: `benchmark_fsenum.py` holds on seven NTFS folders and three ReFS folders, including two of 200,000 entries; the tests compare every code point and the order against `sorted`.
+  - Robustness: covered by `core.tests.fs.test_fsenum` (panic, allocation failure, cancellation at every check, handles).
+  - Memory: at 200,000 entries the working set is unchanged (155 MiB). At 1,000,100 entries the peak is 656 MiB against 763 MiB in v0.21.0, and the settled working set 505 MiB against 409 MiB: the native table.
+  - Packaging: `build.py freeze` and `package` pass their `_fsenum` checks, and the frozen application lists folders through its packaged `_fsenum.pyd`.
+- **Validation Results**: the commands under Review Fixes - Claude Opus 5.5 above, and Directory Enumerator 002's Validation Results for the gates and the final binary.

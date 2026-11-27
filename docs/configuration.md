@@ -248,7 +248,7 @@ To add a file-menu command, edit `UserSettings\Plugins\User\Settings\File Contex
 
 ```yaml
 - {caption: '-', id: clipboard}
-- {command: copy_paths_to_clipboard, caption: Copy full path(s)}
+- {command: copy_file_path, caption: Copy full path(s)}
 ```
 
 If the file already has entries, add these to its list. The matching `clipboard` ID inserts the command in that section of the built-in menu; the command copies marked paths, or the clicked file's path when nothing is marked.

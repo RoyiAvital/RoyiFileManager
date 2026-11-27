@@ -130,6 +130,7 @@ unsafe extern "C" {
     fn PyBytes_AsStringAndSize(object: *mut PyObject, buffer: *mut *mut c_char, length: *mut Py_ssize_t) -> c_int;
     fn PyTuple_New(size: Py_ssize_t) -> *mut PyObject;
     fn PyTuple_SetItem(tuple: *mut PyObject, index: Py_ssize_t, item: *mut PyObject) -> c_int;
+    fn PyObject_GC_UnTrack(object: *mut c_void);
     fn PyTuple_GetItem(tuple: *mut PyObject, index: Py_ssize_t) -> *mut PyObject;
     fn PyTuple_Size(tuple: *mut PyObject) -> Py_ssize_t;
     fn PySequence_Tuple(object: *mut PyObject) -> *mut PyObject;
@@ -462,6 +463,9 @@ impl Columns {
     }
 
     /// Moves the references into tuples, handing the GIL over between columns.
+    /// The tuples hold only `str`, `int` and `bool`, so they cannot be in a
+    /// cycle: untracked, as the collector would leave them after visiting
+    /// their items once (33 ms at 1,000,000 entries, in the next collection).
     unsafe fn into_tuples(&mut self, started: &mut Instant) -> Result<Tuples> {
         let mut tuples = Tuples(Vec::with_capacity(6));
         for column in &mut self.columns {
@@ -470,6 +474,7 @@ impl Columns {
                 for (index, &item) in column.iter().enumerate() {
                     PyTuple_SetItem(tuple.0, index as Py_ssize_t, item);
                 }
+                PyObject_GC_UnTrack(tuple.0.cast());
                 column.clear();
                 tuples.0.push(tuple);
             }
@@ -1028,7 +1033,7 @@ static METHODS: [PyMethodDef; 7] = [
 static mut DEFINITION: PyModuleDef = PyModuleDef {
     base: PyModuleDefBase { refcount: 1, kind: null_mut(), init: std::ptr::null(), index: 0, copy: null_mut() },
     name: c"_fsenum".as_ptr(),
-    doc: c"Native NTFS/ReFS folder tables (Plan/DirectoryEnumerator001.md).".as_ptr(),
+    doc: c"Native NTFS/ReFS folder tables (Done/DirectoryEnumerator001.md).".as_ptr(),
     size: -1,
     methods: &METHODS as *const PyMethodDef,
     slots: null_mut(),

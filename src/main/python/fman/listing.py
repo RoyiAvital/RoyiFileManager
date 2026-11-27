@@ -25,7 +25,7 @@ class Listing:
 	scope: tuple
 	labels: object = None
 	extra: tuple = ()
-	# Core's native folder table (Plan/DirectoryEnumerator001.md); only
+	# Core's native folder table (Done/DirectoryEnumerator001.md); only
 	# _trusted sets it, so replace() and the constructors give None.
 	_native: object = field(default=None, init=False, repr=False, compare=False)
 
@@ -51,7 +51,7 @@ class Listing:
 		Equivalent to ``Listing(location, names, is_dir, ...)`` minus ``__post_init__``:
 		no tuple() copies and none of the validation below. Reserved for
 		``core.fs.local.windows.listing.scan`` with the ``_fsenum`` extension
-		(Plan/DirectoryEnumerator001.md), which also passes its folder table as
+		(Done/DirectoryEnumerator001.md), which also passes its folder table as
 		``native``, and Core's ``os.scandir`` fallback in
 		``LocalFileSystem._scan_entries`` (Done/CodeReview009.md, F13); every other
 		producer - plug-ins, zip://, network://, drives://, Everything, ProcessPane -

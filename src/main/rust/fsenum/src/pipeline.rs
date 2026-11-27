@@ -20,7 +20,8 @@ use std::time::{Duration, Instant};
 /// took 23 ms at 60 KiB and 50 ms at 256 KiB, 200,000 just read ones 47 ms and
 /// 64 ms. Only for a folder whose files nothing has used for a while is 256 KiB
 /// faster, by 5 to 8% (200,000 entries: 43 ms against 47 ms). Windows 11 26300,
-/// NTFS, 2026-11-26.
+/// NTFS, 2026-11-26. ReFS shows no step: 200,000 entries on a hard disk took
+/// 99 ms at 60 KiB, 98 ms at 64 KiB and 95 ms at 256 KiB (2026-11-27).
 const BUFFER_BYTES: usize = 60 << 10;
 /// Batches `open` reads on the calling thread: four with entries (240 KiB,
 /// about one batch of the 256 KiB buffer before) and the call that ends the

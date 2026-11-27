@@ -2,11 +2,6 @@
 
 Open the Command Center with ++ctrl+shift+p++ to see every command.
 
-!!! info "Release Availability"
-    This reference includes Unreleased shortcuts and behavior, such as ++ctrl+u++,
-    keypad selection previews and copying multiple names with ++shift+f11++.
-    Check [feature availability](features.md#availability) for your installed build.
-
 ## Files
 
 | Key                  | Action                          |
@@ -182,3 +177,33 @@ For a Norton Commander or Total Commander style workflow.
 | ++ctrl+f2++   | Sort by size                      |
 | ++ctrl+f3++   | Sort by modified time             |
 | ++ctrl+f4++   | Sort by directory size            |
+
+## QuickView (When Focused)
+
+Press ++tab++ from the file pane to focus QuickView; press ++tab++ or ++esc++ to return.
+
+| Mode        | Key                                                     | Action                                          |
+| ----------- | ------------------------------------------------------- | ----------------------------------------------- |
+| Any         | ++ctrl+q++                                              | Close QuickView                                 |
+| Images      | ++f++ / ++1++                                           | Fit to view / 100% actual pixels                |
+| Images      | ++plus++ / ++minus++ or ++ctrl++ + wheel                | Zoom (5% to 800%)                               |
+| Images      | Arrows / ++shift++ + Arrows                             | Pan 32 / 128 pixels                             |
+| Images      | ++space++                                               | Play or pause an animation                      |
+| PDF         | ++f++ / ++w++                                           | Fit page / Fit width                            |
+| PDF         | ++plus++ / ++minus++ or ++ctrl++ + wheel                | Zoom (25% to 400%)                              |
+| Text / Code | ++ctrl+f++, ++f3++ / ++shift+f3++                       | Find, next match, previous match                |
+| CSV / TSV   | ++ctrl+f++, ++alt+down++                                | Filter all columns / open current column filter |
+| CSV / TSV   | ++ctrl+c++ / ++ctrl+shift+c++                           | Copy selected cells as TSV / with headers       |
+
+See [QuickView](tools.md#quickview) for full details.
+
+## Edit Attributes and Batch File Renamer
+
+| Tool               | Key                       | Action                                         |
+| ------------------ | ------------------------- | ---------------------------------------------- |
+| Edit Attributes    | ++space++ / ++shift+space++ | Cycle attribute state forward / backward     |
+| Edit Attributes    | ++insert++                | Cycle state and move down                      |
+| Edit Attributes    | ++enter++ / ++shift+enter++ | Apply / apply recursively to folder contents |
+| Batch File Renamer | ++ctrl+f++                | Focus the template input                       |
+| Batch File Renamer | ++alt+down++              | Open the current column filter                 |
+| Batch File Renamer | ++enter++ / ++esc++       | Apply visible renames / cancel                 |

@@ -4,11 +4,6 @@
 
 Open a source on one side. Open a destination on the other. Then copy or move.
 
-!!! info "Release Availability"
-  Some instructions below require an Unreleased development build, including
-  pane swapping, pattern selection and numbered duplicate suggestions.
-  Check [feature availability](features.md#availability) for the full list.
-
 <figure class="product-shot" markdown>
   ![{{ app_name }} showing C drive and Windows folder](assets/royifilemanager-dual-pane.png)
   <figcaption>{{ app_name }} showing C:\ and C:\Windows.</figcaption>

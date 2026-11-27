@@ -7,6 +7,18 @@ Press ++ctrl+q++.
 QuickView previews the file under the cursor over the other pane.
 Both folder locations stay unchanged.
 
+### Supported Formats and Limits
+
+| Preview Type        | Formats                                            | Size / Scope Limit                 | Fallback / Notes                                    |
+| ------------------- | -------------------------------------------------- | ---------------------------------- | --------------------------------------------------- |
+| Images & Animations | JPG, PNG, BMP, GIF, ICO, TIFF, WebP, APNG          | 64 MiB, 128 MP (16 MP animations)  | Animations above 16 MP show the first frame         |
+| PDF Documents       | `.pdf`                                             | 64 MiB, 2,000 pages                | Bundled helper process; no text selection or forms  |
+| Text, Code, Markdown | Plain text, source code, `.md`                    | Read 2 MiB; format/highlight 512 KiB | Larger files up to 2 MiB fall back to plain text   |
+| CSV / TSV Tables    | `.csv`, `.tsv`                                     | 512 / 1,024 / 2,048 MB preset      | Switch to Text View (≤ 2 MiB) on demand or on error |
+
+Unsupported, empty, oversized or inaccessible files display an inline status
+message instead of launching an external program.
+
 ### QuickView Or An External Program?
 
 | Need                                                      | Use From The File Pane           |
@@ -41,6 +53,11 @@ of launching the external viewer. Configure F3/F4 through
 
 ### QuickView for PDF Files
 
+<figure class="product-shot" markdown>
+  ![QuickView showing a rendered PDF page beside the file pane](assets/royifilemanager-quickview-pdf.png)
+  <figcaption>Read multi-page PDF documents in place with fit, zoom and page navigation.</figcaption>
+</figure>
+
 - Read PDF files from page 1, fitted to the view.
 - Scroll through all pages, or type a page number and press ++enter++.
 - A bundled helper process renders the pages. No PDF reader is needed.
@@ -62,6 +79,11 @@ Text selection, search, forms and printing are not available.
 <figure class="product-shot" markdown>
   ![QuickView showing syntax-highlighted Python code](assets/royifilemanager-quickview-python.png)
   <figcaption>Read Python source with syntax highlighting.</figcaption>
+</figure>
+
+<figure class="product-shot" markdown>
+  ![QuickView showing rendered Markdown with headings, code and a table](assets/royifilemanager-quickview-markdown.png)
+  <figcaption>Preview Markdown in Rendered mode or switch to Source mode.</figcaption>
 </figure>
 
 - Read plain text and syntax-highlighted source code.
@@ -620,6 +642,11 @@ Right-click one file or folder in a local pane and choose
 Command Center.
 It lists processes keeping the item open, not proven blockers: sharing
 permissions may still allow deleting, moving or renaming it.
+
+<figure class="product-shot" markdown>
+  ![Find blocking processes table showing cmd.exe using a sample folder](assets/royifilemanager-find-blocking-processes.png)
+  <figcaption>Processes keeping a local folder open, with Go To support on Item and Program.</figcaption>
+</figure>
 
 - The table shows Process, PID, Item and Program. ++ctrl+enter++ or a
   double-click on Item or Program goes to that path.

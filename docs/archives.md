@@ -34,6 +34,11 @@ Place the cursor on an archive. Choose a command from the file context menu or t
 | **Unpack here**  | Creates the folder `C:\Work\Reports`                                                    |
 | **Unpack to...** | Puts the archive's content into the folder you type, by default the other pane's folder |
 
+<figure class="product-shot" markdown>
+  ![Unpack to prompt for reports.tar.gz suggesting a target folder](assets/royifilemanager-unpack-to.png)
+  <figcaption>Unpack to... extracts archive contents straight into the chosen folder without entering it.</figcaption>
+</figure>
+
 - Unpack only creates. Nothing is merged or overwritten:
   - **Unpack here** stops if `C:\Work\Reports` exists.
   - **Unpack to...** stops if any top-level item of the archive exists in the chosen folder.
@@ -100,6 +105,17 @@ and New folder inside it. To change an archive:
 1. **Unpack** it.
 2. Change the files.
 3. **Pack** them into a new archive.
+
+```mermaid
+flowchart LR
+    subgraph Read["Read & Extract (One 7-Zip Run)"]
+        A["Archive<br/>(.zip, .7z, .tar, .tar.gz, ...)"] -->|"Single 7-Zip Run<br/>(-snl- skips links)"| S["Temp Stage on<br/>Destination Volume"]
+        S -->|"Atomic Rename<br/>(All or Nothing on Error)"| D["Destination Folder"]
+    end
+    subgraph Modify["How to Change an Archive"]
+        U["1. Unpack"] --> E["2. Edit Local Files"] --> P["3. Pack New Archive"]
+    end
+```
 
 ## Symbolic Links
 

@@ -91,7 +91,7 @@
 - [x] BUG: Extracting the `CelebA` zip file (~200,000 files) is too slow.
 - [x] CHANGE: Add "Unpack to..." as option to unpack the archive content to a path (Other pane as default) without entering it.
 - [x] CHANGE: Add "Unpack to..." and "Unpack here" to context menu on archives.
-- [ ] BUG: Opus claims "`EverythingFoldersIT` fails intermittently: 6 of 80 runs with the original binary, 5 of 105 with the new one.".
+- [x] BUG: Race conditions in the Everything test suite when awaiting pane navigation.
 
 
 ## Performance

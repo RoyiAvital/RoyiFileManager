@@ -26,7 +26,7 @@ def _native_enumerator_candidates():
 
 
 def _load_native_enumerator():
-	"""The `_fsenum` extension (Plan/DirectoryEnumerator001.md); the scanner has no Python fallback.
+	"""The `_fsenum` extension (Done/DirectoryEnumerator001.md); the scanner has no Python fallback.
 
 	Source: src/main/rust/fsenum. The frozen application ships the module next to
 	this file; a repository checkout keeps it at src/main/rust/fsenum/_fsenum.pyd
@@ -82,7 +82,7 @@ def records(data):
 
 
 def scan(location, path, check_canceled, previous=None):
-	"""Safe path (Plan/DirectoryEnumerator001.md): native enumeration, then a
+	"""Safe path (Done/DirectoryEnumerator001.md): native enumeration, then a
 	Listing without re-validation.
 
 	`_fsenum.scan` reads the folder's FILE_ID_EXTD_DIR_INFO batches (see

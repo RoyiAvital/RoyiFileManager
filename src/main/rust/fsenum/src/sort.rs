@@ -6,8 +6,11 @@
 //! the sort starts once every key exists. It is a most-significant-first sort
 //! on 8-byte key chunks that compares integers only:
 //!
-//! 1. Items are bucketed by their first two key bytes; contiguous bucket
-//!    ranges of about equal size go to up to `threads` threads.
+//! 1. Items are bucketed by the two key bytes after the bytes every first
+//!    chunk shares. A bucket with more than its thread's share of the items
+//!    (one stem, "IMG_2024...") is split again after the bytes all its keys
+//!    share, recursively. Runs of buckets of about equal size go to up to
+//!    `threads` threads.
 //! 2. Each bucket is sorted by its 8-byte chunk. Every run of equal chunks is
 //!    resolved by skipping the bytes all its keys share (their longest common
 //!    prefix), loading the next 8-byte chunk and sorting again, recursively.
@@ -19,7 +22,7 @@
 
 use crate::segment::{SEG, SEG_SHIFT};
 use crate::Failure;
-use std::sync::Mutex;
+use std::sync::{Arc, Condvar, Mutex};
 
 const TIED: u32 = 1 << 31;
 
@@ -173,10 +176,135 @@ fn resolve(keys: &Keys, group: &mut [Item], offset: usize) {
     refine(keys, group, offset);
 }
 
+/// Bucket boundaries of a group's items, or of one bucket split again after the
+/// key bytes all its items share.
+struct Level {
+    /// `BUCKETS + 1` positions in the level's items.
+    starts: Vec<usize>,
+    /// Key offset of the items' chunks; every item shares the bytes before it.
+    offset: usize,
+}
+
+const BUCKETS: usize = 1 << 16;
+/// Buckets smaller than this are not split again: one thread sorts them in well
+/// under a millisecond.
+const SPLIT_MIN: usize = 1 << 12;
+/// Splits within splits: each level holds a 512 KiB bucket table. Deeper buckets
+/// (one stem after another, "aaaa...") are sorted on one thread.
+const MAX_DEPTH: usize = 16;
+/// Work items per thread: more items than threads even out their sizes.
+const PIECES_PER_THREAD: usize = 4;
+
+/// Splits `items` (one bucket) by the two key bytes after the bytes all its keys
+/// share; None when every key is the same.
+fn split_bucket(keys: &Keys, items: &mut [Item]) -> Result<Option<Level>, Failure> {
+    let first = keys.key(items[0].entry);
+    // The shared bytes of a sample, checked for every key while the chunks are loaded.
+    let mut common = first.len();
+    for item in items.iter().step_by((items.len() / 256).max(1)) {
+        common = common_prefix(first, keys.key(item.entry), common);
+    }
+    let mut starts = Vec::new();
+    reserve(&mut starts, BUCKETS + 1)?;
+    let (longer, descents) = 'load: loop {
+        starts.clear();
+        starts.resize(BUCKETS + 1, 0usize);
+        let (mut longer, mut descents, mut previous) = (false, 0usize, 0u64);
+        for index in 0..items.len() {
+            let key = keys.key(items[index].entry);
+            if common_prefix(first, key, common) < common {
+                // A key the sample missed: take the bytes every key shares.
+                common = items.iter().fold(common, |shared, item| common_prefix(first, keys.key(item.entry), shared));
+                continue 'load;
+            }
+            let chunk = chunk_at(key, common);
+            items[index].chunk = chunk;
+            starts[(chunk >> 48) as usize + 1] += 1;
+            longer |= key.len() > common;
+            descents += (chunk < previous) as usize;
+            previous = chunk;
+        }
+        break (longer, descents);
+    };
+    // Equal keys: the bucket sorts by entry whatever its chunks hold.
+    if !longer {
+        return Ok(None);
+    }
+    // Two keys differ at `common`, or one ends there: at least two buckets.
+    for bucket in 0..BUCKETS {
+        starts[bucket + 1] += starts[bucket];
+    }
+    // Items in ascending chunk order already sit in their buckets (names that
+    // NTFS lists in their natural order).
+    if descents > 0 {
+        let mut cursor = Vec::new();
+        reserve(&mut cursor, BUCKETS)?;
+        cursor.extend_from_slice(&starts[..BUCKETS]);
+        let mut scattered = Vec::new();
+        reserve(&mut scattered, items.len())?;
+        scattered.resize(items.len(), Item::default());
+        for item in items.iter() {
+            let bucket = (item.chunk >> 48) as usize;
+            scattered[cursor[bucket]] = *item;
+            cursor[bucket] += 1;
+        }
+        items.copy_from_slice(&scattered);
+    }
+    Ok(Some(Level { starts, offset: common }))
+}
+
+/// A part of one group's sort.
+enum Task<'a> {
+    /// Buckets `first..last` of `level`, whose items are `slice` (from level position `base`).
+    Sort { slice: &'a mut [Item], level: Arc<Level>, base: usize, first: usize, last: usize },
+    /// Bucket `bucket` of `level` (`slice`), to split again first.
+    Split { slice: &'a mut [Item], level: Arc<Level>, bucket: usize, depth: usize },
+}
+
+/// Cuts `slice`, the items of `level`, into runs of buckets of about `target`
+/// items, and a Split for each bucket over `limit`.
+fn tasks<'a>(slice: &'a mut [Item], level: &Arc<Level>, depth: usize, limit: usize, target: usize,
+    out: &mut Vec<Task<'a>>) -> Result<(), Failure> {
+    let starts = &level.starts;
+    let mut rest = slice;
+    let mut first = 0;
+    let run = |rest: &mut &'a mut [Item], first: usize, last: usize, out: &mut Vec<Task<'a>>| {
+        let size = starts[last] - starts[first];
+        if size > 0 {
+            let (part, tail) = std::mem::take(rest).split_at_mut(size);
+            *rest = tail;
+            reserve(out, 1)?;
+            out.push(Task::Sort { slice: part, level: level.clone(), base: starts[first], first, last });
+        }
+        Ok::<(), Failure>(())
+    };
+    for bucket in 0..BUCKETS {
+        let size = starts[bucket + 1] - starts[bucket];
+        if size > limit && depth < MAX_DEPTH {
+            run(&mut rest, first, bucket, out)?;
+            let (part, tail) = std::mem::take(&mut rest).split_at_mut(size);
+            rest = tail;
+            reserve(out, 1)?;
+            out.push(Task::Split { slice: part, level: level.clone(), bucket, depth });
+            first = bucket + 1;
+        } else if starts[bucket + 1] - starts[first] >= target {
+            run(&mut rest, first, bucket + 1, out)?;
+            first = bucket + 1;
+        }
+    }
+    run(&mut rest, first, BUCKETS, out)
+}
+
+/// Tasks waiting for a thread; while a bucket is being split, more may come.
+struct Queue<'a> {
+    tasks: Vec<Task<'a>>,
+    splitting: usize,
+    failure: Option<Failure>,
+}
+
 /// Sorts one group (directories or files), given as the builders' parts, on
 /// up to `threads` threads.
 fn sort_group(keys: &Keys, parts: &[&[Item]], threads: usize) -> Result<Vec<Item>, Failure> {
-    const BUCKETS: usize = 1 << 16;
     let total: usize = parts.iter().map(|part| part.len()).sum();
     let mut sorted = Vec::new();
     reserve(&mut sorted, total)?;
@@ -215,50 +343,90 @@ fn sort_group(keys: &Keys, parts: &[&[Item]], threads: usize) -> Result<Vec<Item
         cursor[bucket] += 1;
     }
     drop(cursor);
-    let starts = &starts;
-    let sort_buckets = move |slice: &mut [Item], base: usize, first: usize, last: usize| {
-        for bucket in first..last {
-            let range = &mut slice[starts[bucket] - base..starts[bucket + 1] - base];
-            if range.len() > 1 {
-                sort_by_chunk(range);
-                refine(keys, range, 0);
+    let workers = if total >= 1 << 14 { threads.max(1) } else { 1 };
+    // A bucket with more than a thread's share is split again, so a folder
+    // dominated by one stem ("IMG_2024...") is still sorted on every thread.
+    let limit = if workers > 1 { (total / workers).max(SPLIT_MIN) } else { usize::MAX };
+    let target = total.div_ceil(workers * PIECES_PER_THREAD);
+    let top = Arc::new(Level { starts, offset: 0 });
+    let mut initial = Vec::new();
+    tasks(&mut sorted, &top, 0, limit, target, &mut initial)?;
+    // Splits are taken first: they add work for the other threads.
+    initial.sort_by_key(|task| matches!(task, Task::Split { .. }));
+    let helpers = if initial.iter().any(|task| matches!(task, Task::Split { .. })) { workers } else {
+        initial.len().min(workers)
+    }.saturating_sub(1);
+    let queue = Mutex::new(Queue { tasks: initial, splitting: 0, failure: None });
+    let ready = Condvar::new();
+    let lock = || queue.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let run = || loop {
+        let task = {
+            let mut waiting = lock();
+            loop {
+                if waiting.failure.is_some() {
+                    break None;
+                }
+                if let Some(task) = waiting.tasks.pop() {
+                    waiting.splitting += matches!(task, Task::Split { .. }) as usize;
+                    break Some(task);
+                }
+                if waiting.splitting == 0 {
+                    break None;
+                }
+                waiting = ready.wait(waiting).unwrap_or_else(|poisoned| poisoned.into_inner());
+            }
+        };
+        match task {
+            None => break,
+            Some(Task::Sort { slice, level, base, first, last }) => {
+                for bucket in first..last {
+                    let range = &mut slice[level.starts[bucket] - base..level.starts[bucket + 1] - base];
+                    if range.len() > 1 {
+                        sort_by_chunk(range);
+                        refine(keys, range, level.offset);
+                    }
+                }
+            }
+            Some(Task::Split { slice, level, bucket, depth }) => {
+                // Also on unwinding: the waiting threads must see that this split has ended.
+                struct Done<'q, 'a>(&'q Mutex<Queue<'a>>, &'q Condvar);
+                impl Drop for Done<'_, '_> {
+                    fn drop(&mut self) {
+                        self.0.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).splitting -= 1;
+                        self.1.notify_all();
+                    }
+                }
+                let _done = Done(&queue, &ready);
+                let mut more = Vec::new();
+                let outcome = match split_bucket(keys, slice) {
+                    Ok(Some(child)) => tasks(slice, &Arc::new(child), depth + 1, limit, target, &mut more),
+                    Ok(None) => {
+                        let base = level.starts[bucket];
+                        reserve(&mut more, 1).map(|()| more.push(Task::Sort { slice, level, base, first: bucket,
+                            last: bucket + 1 }))
+                    }
+                    Err(failure) => Err(failure),
+                };
+                let mut waiting = lock();
+                match outcome.and_then(|()| reserve(&mut waiting.tasks, more.len())) {
+                    Ok(()) => waiting.tasks.extend(more),
+                    Err(failure) => { waiting.failure.get_or_insert(failure); }
+                }
             }
         }
     };
-    let workers = if total >= 1 << 14 { threads.max(1) } else { 1 };
-    // The work: contiguous bucket ranges holding about total / workers items each.
-    let mut work = Vec::new();
-    reserve(&mut work, workers)?;
-    let mut rest: &mut [Item] = &mut sorted;
-    let mut first = 0;
-    for worker in 1..=workers {
-        let last = if worker == workers { BUCKETS } else {
-            starts.partition_point(|&start| start < total * worker / workers).clamp(first, BUCKETS)
-        };
-        let base = starts[first];
-        let (slice, tail) = rest.split_at_mut(starts[last] - base);
-        rest = tail;
-        if !slice.is_empty() {
-            work.push((slice, base, first, last));
-        }
-        first = last;
-    }
-    let helpers = work.len().saturating_sub(1);
-    let work = Mutex::new(work);
-    let run = || loop {
-        let next = work.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).pop();
-        let Some((slice, base, first, last)) = next else { break };
-        sort_buckets(slice, base, first, last);
-    };
     std::thread::scope(|scope| {
-        // A helper that cannot start leaves its range to the others.
+        // A helper that cannot start leaves its tasks to the others.
         for _ in 0..helpers {
             let _ = std::thread::Builder::new().name("fsenum-sort".into()).spawn_scoped(scope, &run);
         }
         run();
     });
-    drop(work);
-    Ok(sorted)
+    let failure = queue.into_inner().unwrap_or_else(|poisoned| poisoned.into_inner()).failure;
+    match failure {
+        Some(failure) => Err(failure),
+        None => Ok(sorted),
+    }
 }
 
 /// The finished order of a folder.
@@ -483,6 +651,21 @@ mod tests {
             let owned: Vec<String> = (0..20_000usize).map(|index| format!("{stem}{}", (index * 7919) % 30_000)).collect();
             check(&owned, usize::MAX);
         }
+    }
+
+    #[test]
+    fn a_dominant_stem_is_split_again_and_equals_the_reference() {
+        // Most names in one bucket, with duplicates and directories among them; the
+        // rest elsewhere. Then stems nested deeper than MAX_DEPTH ("x", "xx", ...).
+        let owned: Vec<String> = (0..40_000usize).map(|index| match index % 20 {
+            0 => format!("{:x}", index.wrapping_mul(2_654_435_761) as u32),
+            1 => "IMG_20240101_7.jpg".to_string(),
+            _ => format!("IMG_2024{:02}{:02}_{}.jpg", 1 + index % 12, 1 + index % 28, (index * 7919) % 100_000),
+        }).collect();
+        check(&owned, 9);
+        check(&owned, usize::MAX);
+        let nested: Vec<String> = (0..20_000usize).map(|index| format!("{}{:x}", "x".repeat(index % 50), index)).collect();
+        check(&nested, usize::MAX);
     }
 
     /// cargo test --release bench_name_shapes -- --ignored --nocapture

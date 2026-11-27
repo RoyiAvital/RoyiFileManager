@@ -1,9 +1,10 @@
-"""Tests for the native directory enumerator `_fsenum` (Plan/DirectoryEnumerator001.md).
+"""Tests for the native directory enumerator `_fsenum` (Done/DirectoryEnumerator001.md).
 
 The module under test is the one the scanner loaded (`listing._fsenum`).
 """
 
 import _winapi
+import gc
 import os
 import random
 import unicodedata
@@ -441,6 +442,10 @@ class ScanTest(TestCase):
 				self.assertEqual(fresh.identities, reused.identities)
 				for ascending in (True, False):
 					self.assertEqual(Name().order(fresh, ascending), Name().order(reused, ascending))
+				# Atomic values only: the collector need not visit a million items once.
+				for result in (fresh, reused):
+					self.assertFalse(any(gc.is_tracked(getattr(result, column)) for column in
+						('names', 'is_dir', 'sizes', 'mtimes_ns', 'attributes', 'created_ns')))
 				previous = reused
 		other = listing.scan(self.location + '/other', str(self.folder), lambda: None, previous)
 		self.assertIsNot(previous, other)

@@ -46,10 +46,12 @@ DEFAULT_OUTPUT_DIR = ROOT / 'docs' / 'assets'
 WORK_DIR = ROOT / 'target' / 'docs-screenshots'
 SOURCE_LOG_DIR = ROOT / 'UserSettings' / 'Local' / 'DocsScreenshots'
 SOURCE_CAPTURES = (
-	'overview', 'go-to', 'context-menu', 'filter-pane', 'quick-view', 'quick-view-text', 'quick-view-csv',
+	'overview', 'go-to', 'context-menu', 'filter-pane', 'quick-view', 'quick-view-text',
+	'quick-view-markdown', 'quick-view-pdf', 'quick-view-csv',
 	'fuzzy-find', 'everything-search', 'everything-folders',
 	'search-files', 'find-files', 'favorites', 'directory-size', 'file-hash',
-	'checksum-files', 'process-pane', 'pack-archive', 'quick-table', 'quick-board', 'batch-renamer',
+	'checksum-files', 'process-pane', 'find-blocking-processes', 'pack-archive', 'unpack-to',
+	'quick-table', 'quick-board', 'batch-renamer',
 	'edit-attributes', 'robocopy',
 	'selection', 'duplicate-file', 'free-space'
 )
@@ -84,6 +86,90 @@ def describe_files(folder: Path) -> list[FileSummary]:
 for item in describe_files(Path(".")):
 	print(f"{item.name:24} {item.size:>8,} bytes")
 '''.expandtabs(4)
+MARKDOWN_SAMPLE = '''# Release Summary
+
+A compact, keyboard-focused workflow for daily file tasks.
+
+## Highlights
+
+- **Snapshot Panes**: Load 200,000 files in under 60 ms on NTFS/ReFS.
+- **QuickView**: Inspect images, PDFs, Markdown, code and CSV tables in place.
+- **Read-Only Archives**: Browse `.zip`, `.7z`, `.tar` and `.tar.gz` safely.
+
+## Quick Reference
+
+| Action         | Shortcut |
+| -------------- | -------- |
+| Command Center | `Ctrl+Shift+P` |
+| QuickView      | `Ctrl+Q` |
+| Search Files   | `Alt+F7` |
+
+```python
+from pathlib import Path
+
+print(len(list(Path(".").iterdir())))
+```
+'''
+
+
+def _pdf_sample():
+	"""Two-page PDF 1.4 sample with standard Helvetica fonts and vector accents."""
+	def escape_text(text):
+		return text.replace('\\', '\\\\').replace('(', '\\(').replace(')', '\\)')
+
+	def text_line(font, size, x, y, text, color='0.12 0.13 0.15'):
+		return '%s rg BT /%s %d Tf %d %d Td (%s) Tj ET\n' % (color, font, size, x, y, escape_text(text))
+
+	page1 = [
+		'0.98 0.98 0.99 rg 0 0 595 842 re f\n',
+		'0.14 0.15 0.16 rg 0 742 595 100 re f\n',
+		'0.96 0.56 0.20 rg 0 738 595 4 re f\n',
+		text_line('F2', 24, 48, 792, 'RoyiFileManager - QuickView PDF Sample', '0.96 0.95 0.93'),
+		text_line('F1', 12, 48, 766, 'Multi-page read-only preview rendered by the bundled PDF helper.', '0.78 0.77 0.75'),
+		text_line('F2', 16, 48, 696, '1. Overview'),
+		text_line('F1', 11, 48, 672, 'Press Ctrl+Q on any local or UNC PDF file to inspect it over the opposite pane.'),
+		text_line('F1', 11, 48, 654, 'Fit Page (F), Fit Width (W), zoom (25%-400%) and page navigation work from the keyboard.'),
+		'0.93 0.94 0.96 rg 48 530 499 98 re f\n',
+		'0.80 0.82 0.85 RG 1 w 48 530 499 98 re S\n',
+		text_line('F2', 13, 64, 604, 'Key Capabilities'),
+		text_line('F1', 11, 64, 582, '- Renders in a dedicated helper process; no external PDF reader is needed.'),
+		text_line('F1', 11, 64, 562, '- Handles mixed page sizes independently and preserves reading position on zoom.'),
+		text_line('F1', 11, 64, 542, '- Supports files up to 64 MiB and 2,000 pages with responsive cancellation.'),
+		text_line('F2', 16, 48, 486, '2. Navigation Shortcuts'),
+		text_line('F1', 11, 48, 462, 'F / W                      Fit page / Fit width'),
+		text_line('F1', 11, 48, 444, '+ / - or Ctrl+Wheel        Zoom in or out (25% to 400%)'),
+		text_line('F1', 11, 48, 426, 'Arrows, PgUp / PgDn        Scroll pages continuously'),
+		text_line('F1', 11, 48, 408, 'Tab or Esc                 Return focus to the file pane'),
+		text_line('F1', 10, 48, 48, 'Page 1 of 2 - Sample Document', '0.45 0.46 0.48'),
+	]
+	page2 = [
+		'0.98 0.98 0.99 rg 0 0 595 842 re f\n',
+		text_line('F2', 18, 48, 772, '3. Appendix - Continued'),
+		text_line('F1', 11, 48, 744, 'Second page included to demonstrate multi-page scrolling and page indicator updates.'),
+		text_line('F1', 10, 48, 48, 'Page 2 of 2 - Sample Document', '0.45 0.46 0.48'),
+	]
+	streams = [b''.join(part.encode('ascii') for part in page) for page in (page1, page2)]
+	objects = [
+		b'<< /Type /Catalog /Pages 2 0 R >>',
+		b'<< /Type /Pages /Kids [5 0 R 7 0 R] /Count 2 >>',
+		b'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+		b'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>',
+		b'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 6 0 R >>',
+		b'<< /Length ' + str(len(streams[0])).encode('ascii') + b' >>\nstream\n' + streams[0] + b'endstream',
+		b'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 8 0 R >>',
+		b'<< /Length ' + str(len(streams[1])).encode('ascii') + b' >>\nstream\n' + streams[1] + b'endstream',
+	]
+	output = bytearray(b'%PDF-1.4\n')
+	offsets = [0]
+	for number, content in enumerate(objects, 1):
+		offsets.append(len(output))
+		output.extend(('%d 0 obj\n' % number).encode('ascii') + content + b'\nendobj\n')
+	xref = len(output)
+	output.extend(('xref\n0 %d\n0000000000 65535 f \n' % len(offsets)).encode('ascii'))
+	for offset in offsets[1:]:
+		output.extend(('%010d 00000 n \n' % offset).encode('ascii'))
+	output.extend(('trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n' % (len(offsets), xref)).encode('ascii'))
+	return bytes(output)
 CSV_SAMPLE = '''Order,Date,Customer,City,Product,Quantity,Amount
 1001,2026-03-02,Avery Stone,Z\u00fcrich,Desk lamp,2,84.00
 1002,2026-03-02,Noa Levi,Tel Aviv,"Monitor, 27""",1,329.90
@@ -104,7 +190,7 @@ RIGHT_PANE_CAPTURES = (
 	'context-menu', 'filter-pane', 'search-files', 'find-files', 'file-hash',
 	'process-pane', 'pack-archive', 'quick-table'
 )
-DIALOG_CAPTURES = ('overview', 'go-to', 'fuzzy-find', 'everything-search', 'pack-archive', 'robocopy', 'duplicate-file')
+DIALOG_CAPTURES = ('overview', 'go-to', 'fuzzy-find', 'everything-search', 'pack-archive', 'unpack-to', 'robocopy', 'duplicate-file')
 EVERYTHING_QUERIES = (
 	'ext:jpg;png size:>100kb !img0',
 	'path:Fonts\\ <consola|segoe> ext:ttf !*b.ttf',
@@ -356,10 +442,37 @@ def _source_capture_paths(capture):
 		folder.mkdir(parents=True, exist_ok=True)
 		(folder / 'file_summary.py').write_text(PYTHON_SAMPLE, encoding='utf-8')
 		return folder, windows
+	if capture == 'quick-view-markdown':
+		folder = WORK_DIR / 'source-quick-view-markdown' / 'sample'
+		folder.mkdir(parents=True, exist_ok=True)
+		(folder / 'release_notes.md').write_text(MARKDOWN_SAMPLE, encoding='utf-8')
+		return folder, windows
+	if capture == 'quick-view-pdf':
+		folder = WORK_DIR / 'source-quick-view-pdf' / 'sample'
+		folder.mkdir(parents=True, exist_ok=True)
+		(folder / 'release_summary.pdf').write_bytes(_pdf_sample())
+		return folder, windows
 	if capture == 'quick-view-csv':
 		folder = WORK_DIR / 'source-quick-view-csv' / 'sample'
 		folder.mkdir(parents=True, exist_ok=True)
 		(folder / 'orders.csv').write_text(CSV_SAMPLE, encoding='utf-8', newline='')
+		return folder, windows
+	if capture == 'unpack-to':
+		import io, tarfile
+		folder = WORK_DIR / 'source-unpack-to' / 'sample'
+		folder.mkdir(parents=True, exist_ok=True)
+		archive = folder / 'reports.tar.gz'
+		with tarfile.open(archive, 'w:gz') as tar:
+			for name, payload in (('README.txt', b'Sample archive.\n'), ('summary.csv', b'id,value\n1,42\n')):
+				info = tarfile.TarInfo(name)
+				info.size = len(payload)
+				tar.addfile(info, io.BytesIO(payload))
+		return folder, windows
+	if capture == 'find-blocking-processes':
+		folder = WORK_DIR / 'source-find-blocking-processes' / 'sample'
+		reports = folder / 'Reports'
+		reports.mkdir(parents=True, exist_ok=True)
+		(reports / 'notes.txt').write_text('Documentation sample.\n', encoding='utf-8')
 		return folder, windows
 	if capture in ('fuzzy-find', 'robocopy'):
 		return windows / 'Web', windows
@@ -384,6 +497,8 @@ def _source_outputs(output_dir, capture):
 		'filter-pane': ('royifilemanager-filter-pane.png',),
 		'quick-view': ('royifilemanager-quickview.png',),
 		'quick-view-text': ('royifilemanager-quickview-python.png',),
+		'quick-view-markdown': ('royifilemanager-quickview-markdown.png',),
+		'quick-view-pdf': ('royifilemanager-quickview-pdf.png',),
 		'quick-view-csv': ('royifilemanager-quickview-table.png',),
 		'fuzzy-find': ('royifilemanager-fuzzy-find-recursive.png',),
 		'everything-search': (
@@ -412,7 +527,9 @@ def _source_outputs(output_dir, capture):
 		),
 		'checksum-files': ('royifilemanager-checksum-results.png',),
 		'process-pane': ('royifilemanager-process-pane.png',),
+		'find-blocking-processes': ('royifilemanager-find-blocking-processes.png',),
 		'pack-archive': ('royifilemanager-pack-archive.png',),
+		'unpack-to': ('royifilemanager-unpack-to.png',),
 		'quick-table': (
 			'royifilemanager-ui-quicktable.png',
 			'royifilemanager-ui-quicktable-filter.png',
@@ -519,6 +636,14 @@ def _capture_source_child(args):
 			return
 		def capture_overview_dialog():
 			try:
+				if args._capture == 'unpack-to':
+					if 'reports.tar.gz' not in dialog.labelText():
+						raise RuntimeError('Unpack to prompt did not reference reports.tar.gz')
+					dialog.setTextValue(r'C:\Work\Reports')
+					QApplication.processEvents()
+					finish(_grab_window_with_sample_location(context.main_window,
+						context.window.get_panes()[0]._widget._location_bar, 'Archive sample', dialog), outputs[0])
+					return
 				if args._capture == 'duplicate-file':
 					from PyQt5.QtWidgets import QLineEdit
 					if dialog.textValue() != str(left_path / 'report Copy 2.txt'):
@@ -771,6 +896,55 @@ def _capture_source_child(args):
 				elif session.overlay.canvas.image is not None:
 					finish(
 						context.main_window.grab(), outputs[0],
+						lambda: pane.run_command('toggle_quick_view')
+					)
+			elif args._capture == 'quick-view-markdown':
+				file_url = as_url(str(left_path / 'release_notes.md'))
+				if not state['started']:
+					pane.place_cursor_at(file_url)
+					pane.focus()
+					if pane.get_file_under_cursor() != file_url:
+						return
+					state.update(started=True, settled=0)
+					pane.run_command('toggle_quick_view')
+					return
+				session = getattr(context.main_window, '_quick_view_session', None)
+				view = session.overlay.text_view if session is not None else None
+				if view is None or not view.isVisible() or not view.mode_buttons['rendered'].isChecked():
+					state['settled'] = 0
+					return
+				if 'Release Summary' not in view.browser.toPlainText():
+					raise RuntimeError('QuickView did not render the Markdown sample')
+				if state['settled'] >= 3:
+					finish(
+						_grab_window_with_sample_location(
+							context.main_window, pane._widget._location_bar, 'Markdown sample'
+						), outputs[0],
+						lambda: pane.run_command('toggle_quick_view')
+					)
+			elif args._capture == 'quick-view-pdf':
+				file_url = as_url(str(left_path / 'release_summary.pdf'))
+				if not state['started']:
+					pane.place_cursor_at(file_url)
+					pane.focus()
+					if pane.get_file_under_cursor() != file_url:
+						return
+					state.update(started=True, settled=0)
+					pane.run_command('toggle_quick_view')
+					return
+				session = getattr(context.main_window, '_quick_view_session', None)
+				view = session.overlay.pdf_view if session is not None else None
+				if view is None or not view.isVisible() or not view.canvas.sizes or \
+						not any(key[0] == 0 for key in view.canvas.cache):
+					state['settled'] = 0
+					return
+				if len(view.canvas.sizes) != 2:
+					raise RuntimeError('QuickView PDF sample did not load two pages')
+				if state['settled'] >= 3:
+					finish(
+						_grab_window_with_sample_location(
+							context.main_window, pane._widget._location_bar, 'PDF sample'
+						), outputs[0],
 						lambda: pane.run_command('toggle_quick_view')
 					)
 			elif args._capture == 'quick-view-csv':
@@ -1121,6 +1295,42 @@ def _capture_source_child(args):
 					finish(
 						context.main_window.grab(), outputs[0], filter_bar.close
 					)
+			elif args._capture == 'find-blocking-processes':
+				from fman.impl.ui.facade import QuickTableWindow
+				reports = left_path / 'Reports'
+				if not state['started']:
+					cmd = str(_public_paths()[1] / 'System32' / 'cmd.exe')
+					state['holder'] = subprocess.Popen(
+						[cmd], cwd=str(reports),
+						stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+						creationflags=subprocess.CREATE_NO_WINDOW,
+					)
+					time.sleep(0.15)
+					pane.place_cursor_at(as_url(str(reports)))
+					pane.focus()
+					state.update(started=True, settled=0)
+					pane.run_command('find_locking_processes')
+					return
+				window = next((candidate for candidate in context.main_window.findChildren(QuickTableWindow)
+					if candidate.isVisible() and candidate.windowTitle() == 'Processes using Reports'), None)
+				if window is None or not window.table.settled:
+					state['settled'] = 0
+					return
+				rows = window.table.model.rows
+				if not any(row.cells[0].casefold() == 'cmd.exe' and row.cells[2] == 'Reports' for row in rows):
+					raise RuntimeError('Find blocking processes did not report cmd.exe holding Reports')
+				if state['settled'] >= 3:
+					finish(window.grab(), outputs[0], window.close)
+			elif args._capture == 'unpack-to':
+				file_url = as_url(str(left_path / 'reports.tar.gz'))
+				if state['started']:
+					return
+				pane.place_cursor_at(file_url)
+				if pane.get_file_under_cursor() != file_url:
+					return
+				pane.focus()
+				state['started'] = True
+				pane.run_command('unpack_archive_to')
 			elif args._capture == 'pack-archive':
 				file_url = as_url(str(_public_paths()[1] / 'win.ini'))
 				if state['started']:
@@ -1214,7 +1424,19 @@ def _capture_source_child(args):
 	timer.setInterval(100)
 	timer.timeout.connect(check_ready)
 	timer.start()
-	exit_code = context.run()
+	try:
+		exit_code = context.run()
+	finally:
+		holder = state.get('holder')
+		if holder is not None:
+			try:
+				holder.kill()
+			except OSError:
+				pass
+			try:
+				holder.wait(timeout=5)
+			except subprocess.SubprocessError:
+				pass
 	if errors:
 		raise RuntimeError(errors[0])
 	if not state['captured']:

@@ -4,7 +4,7 @@ version = "1.0.0"
 edition = "2024"
 rust-version = "1.99"
 publish = false
-description = "Native NTFS/ReFS folder tables for RoyiFileManager (Plan/DirectoryEnumerator001.md)"
+description = "Native NTFS/ReFS folder tables for RoyiFileManager (Done/DirectoryEnumerator001.md)"
 
 # No dependencies: CPython (limited API, python3.dll) and Win32 (kernel32.dll)
 # are declared by hand and imported with raw-dylib, so no import library or

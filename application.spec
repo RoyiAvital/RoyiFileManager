@@ -73,7 +73,7 @@ datas = [
 binaries = send2trash_binaries + pdfium_binaries + pdfium_raw_binaries + duckdb_binaries + [
 	(str(Path(sys.prefix) / 'bin' / 'rg.exe'), 'resources/Plugins/SearchFiles/bin'),
 	(str(Path(sys.prefix) / 'bin' / 'fd.exe'), 'resources/Plugins/FindFiles/bin'),
-	# Native directory enumerator (Plan/DirectoryEnumerator001.md): verified by build.py
+	# Native directory enumerator (Done/DirectoryEnumerator001.md): verified by build.py
 	# against src/main/rust/fsenum/fsenum.sha256; as a binary so PyInstaller bundles python3.dll (abi3).
 	(str(root / 'src/main/rust/fsenum/_fsenum.pyd'), 'resources/Plugins/Core/core/fs/local/windows')
 ] + [

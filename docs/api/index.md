@@ -51,6 +51,56 @@ selected files, else the file under the cursor, else `[]`.
 
 Paths in the API are URLs. Use `fman.url` helpers to convert them.
 
+## Snapshot File Systems and Columns
+
+Custom file systems return an immutable `fman.listing.Listing` from `scan(...)`.
+Columns format visible cells without I/O via `text(...)` and supply sort order
+via `keys(...)` or the optional `order(...)` hook:
+
+```python
+from array import array
+from fman.fs import Column, FileSystem
+from fman.listing import Listing
+
+
+class NotesFileSystem(FileSystem):
+    scheme = "notes://"
+    read_only_message = "Notes are read-only."
+
+    def get_default_columns(self, path):
+        return ("core.Name", "my_plugin.WordCount")
+
+    def scan(self, path, check_canceled):
+        check_canceled()
+        return Listing.create(
+            self.scheme + path,
+            ("alpha.txt", "beta.txt"),
+            sizes=(120, 45),
+            extra=(("words", (24, 9)),),
+        )
+
+
+class WordCount(Column):
+    display_name = "Words"
+
+    def text(self, listing, index):
+        return str(listing.column("words")[index])
+
+    def keys(self, listing, ascending):
+        return listing.column("words")
+
+    def order(self, listing, ascending):
+        # Optional fast path: return every entry index in display order,
+        # or return None to fall back to keys(...).
+        values = listing.column("words")
+        indices = sorted(range(len(values)), key=values.__getitem__, reverse=not ascending)
+        return array("I", indices)
+```
+
+Setting `read_only_message` tells the host to refuse every write operation with
+that text before calling any provider. See [Architecture](../architecture.md)
+for how snapshots flow through the pane model.
+
 ## Settings
 
 User-editable settings are YAML files and may contain comments:

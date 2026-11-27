@@ -20,7 +20,7 @@ class Name(Column):
 	def text(self, listing, index):
 		return listing.display_names[index]
 	def order(self, listing, ascending):
-		# The order the native scan sorted (Plan/DirectoryEnumerator001.md), equal
+		# The order the native scan sorted (Done/DirectoryEnumerator001.md), equal
 		# to sorting keys() below; None for listings without a native table.
 		table = listing._native
 		if table is None or listing.labels is not None:

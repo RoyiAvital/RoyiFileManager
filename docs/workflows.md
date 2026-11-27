@@ -3,11 +3,6 @@
 Combine the panes, selection tools and commands to finish a task.
 Open Command Center with ++ctrl+shift+p++ for commands without shortcuts.
 
-!!! info "Release Availability"
-    Pattern previews in the first workflow require an Unreleased development
-    build. On a released build, mark files with ++space++ instead.
-    See [feature availability](features.md#availability).
-
 ## Which Items Will Change?
 
 | Term                      | Meaning                                                                                                                                                  |

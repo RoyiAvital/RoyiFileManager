@@ -1,5 +1,5 @@
 """Gauge and parity check for the native directory enumerator `_fsenum`
-(Plan/DirectoryEnumerator001.md).
+(Done/DirectoryEnumerator001.md).
 
 For each folder, compares the application's scan() from
 core/fs/local/windows/listing.py with a pure-Python reference: the folder's

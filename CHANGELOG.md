@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-11-27
+
+This version focuses on revamping and improving the directory enumeration engine.  
+Starting with version `0.13.0` the application was already very fast. This version makes it even faster.  
+This is a first step to create a virtual file system that supports pipelined operations.
+
 ### Added
 
 - Plug-in API: `Column.order(listing, ascending)`. A column can return its
@@ -17,12 +23,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - NTFS and ReFS folders load faster. A new native enumerator reads the folder
   on its own threads, overlaps the kernel calls with decoding and Python object
   creation, and sorts by name natively. On the reference machine, a
-  200,000-file folder appears complete in 134 ms instead of 425 ms and is first
-  painted after 159 ms instead of 458 ms. Folders of a few hundred files scan
-  in a third of a millisecond, about 40 % faster than before.
+  200,000-file folder appears complete in 49 ms instead of 240 ms and is first
+  painted after 60 ms instead of 255 ms; a 256-file folder is complete in 12 ms
+  instead of 16 ms. A folder of 1,000,000 files loads in about 0.2 s instead of
+  1.2 s, and the window stays responsive meanwhile.
 - Refreshing an unchanged NTFS or ReFS folder reuses the shown listing without
-  creating its objects again. After a change, the unchanged leading entries are
-  reused.
+  creating its objects again: 200,000 files repaint after 42 ms instead of
+  124 ms. After a change, the unchanged leading entries are reused.
 - The native enumerator is written in Rust (`src/main/rust/fsenum`) and replaces
   the C directory parser `_fsparser`. Its notices are in `Plugins/Core/licenses`.
 
@@ -31,6 +38,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The C directory parser `src/main/c` and its scripts
   `src/misc/benchmark_fsparser.py` and `src/misc/validate_fsparser.py`. Use
   `src/misc/benchmark_fsenum.py`.
+
+### Documentation
+
+- Updated [Performance](docs/performance.md) and `README.md` with `0.22.0`
+  benchmark results, architecture milestones and Mermaid latency/memory charts.
+- Added [Architecture](docs/architecture.md) explaining the Rust `fsenum`
+  snapshot pipeline, out-of-process QuickView helpers and layered plug-in host
+  with Mermaid diagrams; updated the API Overview with snapshot `FileSystem`
+  and `Column.order` examples.
+- Added a search-tool comparison table to [Search and Find](docs/search.md),
+  a QuickView formats/limits summary to [Tools](docs/tools.md), an Upgrading
+  guide to [Installation](docs/installation.md), and QuickView / Edit
+  Attributes / Batch File Renamer tables to [Keyboard Shortcuts](docs/shortcuts.md).
+- Added Mermaid flow diagrams to [Archives](docs/archives.md) and
+  [UI Elements](docs/plugins/ui-elements.md), plus automated product
+  screenshots for QuickView PDF, QuickView Markdown, Unpack to... and Find
+  blocking processes.
+- Linked [Everyday Workflows](docs/workflows.md) in the site navigation,
+  updated feature availability to actual release versions, and replaced the
+  removed `copy_paths_to_clipboard` example in [Configuration](docs/configuration.md)
+  with `copy_file_path`.
+
+### Performance
+
+Results of the performance test suite per version. Run time in [ms], lower is better.
+All columns come from the same computer; `0.22.0` was measured on 2026-11-27
+with `python build.py measure` (medians of three fresh processes).
+
+| Test                            |   0.9.0 |   0.9.3 | 0.10.3 | 0.13.0 | 0.13.1 | 0.22.0 |
+|---------------------------------|--------:|--------:|-------:|-------:|-------:|-------:|
+| Pane Load - Small Folder        |   42.23 |   35.20 |  33.93 |  37.52 |  37.02 |  33.98 |
+| Pane Load - Large Folder        | 1001.54 |  964.31 | 958.23 | 758.64 | 266.27 |  57.78 |
+| Filter Bar - Small Folder       |    8.96 |    8.69 |   8.79 |  10.88 |   9.77 |   8.31 |
+| Filter Bar - Large Folder       |  332.17 |  331.28 | 338.27 | 364.34 | 289.53 | 260.81 |
+| Fuzzy Find - Small Folder       |    4.57 |    4.55 |   7.17 |   5.28 |   4.86 |   4.52 |
+| Fuzzy Find - Large Folder       |  408.47 |  407.95 | 441.02 | 357.29 | 354.73 | 354.89 |
+| Fuzzy Find (Recursive)          |   91.68 |   91.05 |  91.91 |  92.54 |  91.28 |  90.79 |
+| QuickView Images - Small Folder |  122.09 |  122.61 | 122.04 | 121.09 | 116.37 | 121.70 |
+| QuickView Images - Large Folder |  123.29 |  121.14 | 135.86 | 119.46 | 120.62 | 121.10 |
+| QuickView Text - Small Folder   |       - |       - | 133.03 | 129.55 | 132.58 | 134.23 |
+| QuickView Text - Large Folder   |       - |       - | 129.47 | 132.35 | 131.50 | 131.74 |
+| QuickView CSV - Full Import     |       - |       - |      - |      - |      - | 916.70 |
+| Selections - Small Folder       |   15.67 |   15.24 |  15.35 |  16.18 |  15.79 |  13.60 |
+| Selections - Large Folder       |   88.18 |   87.85 |  88.36 |  89.65 |  87.64 |  29.59 |
+| Selections Readback             | 1994.44 | 1974.51 |  73.78 |  69.86 |  65.65 |  67.49 |
+| Navigation                      |    7.17 |    7.36 |   7.17 |   7.05 |   6.97 |   6.36 |
+| Refresh / Selection             |  581.97 |  592.84 | 585.17 | 355.99 |  67.59 |  24.29 |
+
+[CelebA](https://mmlab.ie.cuhk.edu.hk/projects/CelebA.html) folder with about 200,000 entries. Lower is better.
+
+| Measurement                | Ver. 0.8.0  | Ver. 0.8.1  | Ver. 0.9.0  | Ver. 0.9.2  | Ver. 0.13.0 | Ver. 0.13.1 | Ver. 0.22.0 |
+|----------------------------|-------------|-------------|-------------|-------------|-------------|-------------|-------------|
+| First Populated Pane Paint | 8.949 [s]   | 5.663 [s]   | 0.583 [s]   | 0.506 [s]   | 0.257 [s]   | 0.112 [s]   | 0.052 [s]   |
+| Metadata Loading Complete  | 17.786 [s]  | 11.498 [s]  | 0.571 [s]   | 0.494 [s]   | 0.244 [s]   | 0.100 [s]   | 0.042 [s]   |
+| Post Paint Qt Commit Work  | 2.765 [s]   | 1.282 [s]   | 0 [s]       | 0 [s]       | 0 [s]       | 0 [s]       | 0 [s]       |
+| Settled Working Memory     | 771.1 [MiB] | 771.3 [MiB] | 165.6 [MiB] | 167.4 [MiB] | 160.3 [MiB] | 145.5 [MiB] | 138.1 [MiB] |
+
+> [!NOTE]
+> * Version `0.22.0` replaced the `C` directory parser with a native `Rust` enumerator that reads, keys and sorts a folder on its own threads and reuses an unchanged listing on refresh.
+> * Version `0.13.1` added native `C` natural sort keys, an unchanged-refresh path without re-sorting or a table reset, a per-projection row map limited to the entries the view restores and a once-per-frame worker yield cadence.
+> * Version `0.13.0` added a native `C` directory parser and a validation free snapshot fast path for `NTFS`/`ReFS` folders.
+> * Versions `0.10.x` optimized the existing code and remove the slower legacy paths.
+> * Version `0.9.x` is the 1st version with the new architecture (_Snapshot Architecture_) which is an order of magnitude faster than `0.8.1`.
+> * Version `0.8.1` had an improved version of the `fman` architecture (About 30% faster than `0.8.0`).
+> * Version `0.8.0` and earlier versions use the `fman` architecture and performance.
 
 ## [0.21.0] - 2026-11-23
 

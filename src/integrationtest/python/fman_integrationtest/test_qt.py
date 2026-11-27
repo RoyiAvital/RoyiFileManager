@@ -37,12 +37,19 @@ class QtIT(TestCase):
 	def run_in_app(self, f, *args, **kwargs):
 		return _QtApp.run(f, *args, **kwargs)
 	def drain_model(self, facade):
+		"""Wait until the pane's current model has settled.
+
+		A navigation replaces the model, and a replaced model is shut down: its
+		scan result is ignored, so it may never settle. Read the current one at
+		every check."""
 		from time import monotonic
-		model = self.run_in_app(facade.sourceModel)
+		def settled():
+			model = facade.sourceModel()
+			return not model._scanning and not model._dirty and \
+				model._committed_revision == model._revision and model._displayed is not None
 		deadline = monotonic() + 5
 		while monotonic() < deadline:
-			if self.run_in_app(lambda: not model._scanning and not model._dirty and
-				model._committed_revision == model._revision and model._displayed is not None):
+			if self.run_in_app(settled):
 				return
 		self.fail('Snapshot model did not settle')
 	def wait_table(self, timeout=5):
@@ -5616,9 +5623,22 @@ class EverythingFoldersIT(QtIT):
 			self.drain(pane)
 		self.errors.report.assert_not_called()
 
-	def manage(self, index=0):
-		self.public_panes[index].run_command('manage_everything_folders')
+	def navigate_with(self, index, action):
+		"""Run an action that navigates the pane, then wait for the new location.
+
+		Navigation swaps the pane's model asynchronously; draining right after the
+		action may find the old, settled model and return too early."""
+		changed = Event()
+		remove = self.public_panes[index].on_path_changed(changed.set)
+		try:
+			action()
+			self.assertTrue(changed.wait(5), 'Pane did not navigate')
+		finally:
+			remove()
 		self.drain(self.panes[index])
+
+	def manage(self, index=0):
+		self.navigate_with(index, lambda: self.public_panes[index].run_command('manage_everything_folders'))
 		self.assertEqual(self.module.FOLDERS_ROOT, self.public_panes[index].get_path())
 		self.errors.report.assert_not_called()
 
@@ -5694,7 +5714,7 @@ class EverythingFoldersIT(QtIT):
 			self.public_panes[0].run_command(command)
 		self.module.save_json.assert_called_once()
 		self.public_panes[0].place_cursor_at(self.row_url(self.root / 'Alpha'))
-		self.press(0, Qt.Key_Return)
+		self.navigate_with(0, lambda: self.press(0, Qt.Key_Return))
 		self.assertEqual(as_url(self.root / 'Alpha'), self.public_panes[0].get_path())
 		self.assertEqual('untouched', (self.root / 'sample.txt').read_text(encoding='utf-8'))
 		self.assertEqual({'Alpha', 'Beta', 'Gamma', 'sample.txt'}, {path.name for path in self.root.iterdir()})
